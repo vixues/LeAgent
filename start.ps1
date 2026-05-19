@@ -699,6 +699,32 @@ function Stop-LeAgentChildren {
     Success 'Shutdown complete'
 }
 
+function Register-InterruptHandler {
+    # Set-StrictMode Latest treats [Console]::CancelKeyPress as a missing property
+    # (it is a .NET event). Register via reflection so Ctrl+C shutdown works on Windows.
+    $handler = [ConsoleCancelEventHandler] {
+        param($sender, $e)
+        $e.Cancel = $true
+        Stop-LeAgentChildren
+        [Environment]::Exit(0)
+    }
+    try {
+        [void][Console]::TreatControlCAsInput = $false
+    }
+    catch { }
+
+    try {
+        $ev = [type]::GetType('System.Console').GetEvent('CancelKeyPress')
+        if ($null -ne $ev) {
+            [void]$ev.AddEventHandler($null, $handler)
+            $script:ConsoleCancelHandler = $handler
+        }
+    }
+    catch {
+        # Non-interactive host (ISE, redirected stdin, automation) — no console events
+    }
+}
+
 # ── Remaining args (bash-style flags) ───────────────────────────
 foreach ($a in $RemainingArguments) {
     switch ($a) {
@@ -718,19 +744,7 @@ if ($Prod) { $Mode = 'prod' }
 if ($Quiet) { $StreamLogs = $false }
 if ($SyncPython) { $ForceUvSync = $true }
 
-try {
-    [Console]::TreatControlCAsInput = $false
-}
-catch { }
-
-$null = [Console]::CancelKeyPress.Add(
-    [ConsoleCancelEventHandler] {
-        param($sender, $e)
-        $e.Cancel = $true
-        Stop-LeAgentChildren
-        [Environment]::Exit(0)
-    }
-)
+Register-InterruptHandler
 
 switch ($Command) {
     'sync-python' {
