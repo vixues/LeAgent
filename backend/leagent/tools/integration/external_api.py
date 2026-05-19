@@ -22,7 +22,14 @@ from urllib.parse import urlencode, urljoin
 import httpx
 import structlog
 
-from leagent.tools.base import BaseTool, ToolCategory, ToolContext
+from leagent.tools.base import (
+    BaseTool,
+    ToolAbortedError,
+    ToolCategory,
+    ToolContext,
+    abortable_sleep,
+)
+from leagent.utils.httpx_proxy import httpx_trust_env
 
 logger = structlog.get_logger(__name__)
 
@@ -517,7 +524,7 @@ class ExternalApiTool(BaseTool):
             if not allowed:
                 if wait_on_limit:
                     logger.info("Rate limited, waiting", wait_seconds=wait_time)
-                    await asyncio.sleep(wait_time)
+                    await abortable_sleep(wait_time, context)
                 else:
                     raise RuntimeError(
                         f"Rate limit exceeded. Retry after {wait_time:.1f}s"
@@ -553,6 +560,7 @@ class ExternalApiTool(BaseTool):
             timeout=timeout,
             follow_redirects=follow_redirects,
             verify=verify_ssl,
+            trust_env=httpx_trust_env(),
         ) as client:
             oauth2_token = None
             if auth_type == AuthType.OAUTH2.value:
@@ -573,6 +581,8 @@ class ExternalApiTool(BaseTool):
             response: httpx.Response | None = None
 
             for attempt in range(max_retries + 1):
+                if context.is_aborted:
+                    raise ToolAbortedError()
                 try:
                     request_kwargs: dict[str, Any] = {
                         "headers": headers,
@@ -616,11 +626,14 @@ class ExternalApiTool(BaseTool):
                                 attempt=attempt + 1,
                                 wait=wait_time,
                             )
-                            await asyncio.sleep(wait_time)
+                            await abortable_sleep(wait_time, context)
                             continue
 
                     response.raise_for_status()
                     break
+
+                except ToolAbortedError:
+                    raise
 
                 except httpx.HTTPStatusError as e:
                     last_error = e
@@ -640,7 +653,7 @@ class ExternalApiTool(BaseTool):
                         attempt=attempt + 1,
                         wait=wait_time,
                     )
-                    await asyncio.sleep(wait_time)
+                    await abortable_sleep(wait_time, context)
 
         if response is None:
             raise RuntimeError(f"Request failed after {max_retries} retries: {last_error}")

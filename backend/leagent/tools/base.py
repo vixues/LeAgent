@@ -128,6 +128,31 @@ class NonRetryableToolError(Exception):
     """Raised for deterministic tool errors that retrying cannot fix."""
 
 
+class ToolAbortedError(NonRetryableToolError):
+    """Raised when the user cancels the agent run during tool execution."""
+
+
+async def abortable_sleep(seconds: float, context: ToolContext, *, chunk_sec: float = 0.2) -> None:
+    """Sleep in small slices so cancellation can interrupt long waits.
+
+    Raises:
+        ToolAbortedError: When ``context.abort_signal`` is set.
+    """
+    if seconds <= 0:
+        if context.is_aborted:
+            raise ToolAbortedError()
+        return
+
+    remaining = float(seconds)
+    chunk = max(0.05, min(chunk_sec, remaining))
+    while remaining > 0:
+        if context.is_aborted:
+            raise ToolAbortedError()
+        step = min(chunk, remaining)
+        await asyncio.sleep(step)
+        remaining -= step
+
+
 # ---------------------------------------------------------------------------
 # Validation result (mirrors reference ValidationResult)
 # ---------------------------------------------------------------------------
@@ -414,10 +439,7 @@ class BaseTool(ABC):
                 return ToolResult.fail("Execution aborted", duration_ms=duration_ms)
 
             try:
-                result = await asyncio.wait_for(
-                    self.execute(params, context),
-                    timeout=self.timeout_sec,
-                )
+                result = await self._invoke_execute(params, context)
                 duration_ms = int((time.monotonic() - start_time) * 1000)
 
                 # 4. Result-size budget enforcement
@@ -445,6 +467,10 @@ class BaseTool(ABC):
                 last_error = f"Tool execution timed out after {self.timeout_sec}s"
                 logger.warning("Tool execution timed out", tool=self.name, timeout_sec=self.timeout_sec, attempt=attempt)
 
+            except ToolAbortedError:
+                duration_ms = int((time.monotonic() - start_time) * 1000)
+                return ToolResult.fail("Execution aborted", duration_ms=duration_ms)
+
             except NonRetryableToolError as e:
                 msg = str(e).strip()
                 last_error = msg if msg else f"{type(e).__name__} ({e!r})"
@@ -464,10 +490,53 @@ class BaseTool(ABC):
             if attempt <= self.max_retries:
                 backoff = 2 ** attempt
                 logger.info("Retrying tool execution", tool=self.name, backoff_sec=backoff)
-                await asyncio.sleep(backoff)
+                try:
+                    await abortable_sleep(backoff, context)
+                except ToolAbortedError:
+                    duration_ms = int((time.monotonic() - start_time) * 1000)
+                    return ToolResult.fail("Execution aborted", duration_ms=duration_ms)
 
         duration_ms = int((time.monotonic() - start_time) * 1000)
         return ToolResult.fail(last_error or "Unknown error", duration_ms=duration_ms, attempts=attempts_used or 1)
+
+    async def _invoke_execute(self, params: dict[str, Any], context: ToolContext) -> Any:
+        """Run ``execute`` with timeout and cooperative cancellation."""
+        if context.abort_signal is None:
+            return await asyncio.wait_for(self.execute(params, context), timeout=self.timeout_sec)
+
+        exec_task = asyncio.create_task(self.execute(params, context))
+        abort_task = asyncio.create_task(context.abort_signal.wait())
+        try:
+            done, _pending = await asyncio.wait(
+                {exec_task, abort_task},
+                timeout=self.timeout_sec,
+                return_when=asyncio.FIRST_COMPLETED,
+            )
+        finally:
+            if not abort_task.done():
+                abort_task.cancel()
+                try:
+                    await abort_task
+                except asyncio.CancelledError:
+                    pass
+
+        if abort_task in done and not exec_task.done():
+            exec_task.cancel()
+            try:
+                await exec_task
+            except asyncio.CancelledError:
+                pass
+            raise ToolAbortedError()
+
+        if exec_task in done:
+            return exec_task.result()
+
+        exec_task.cancel()
+        try:
+            await exec_task
+        except asyncio.CancelledError:
+            pass
+        raise asyncio.TimeoutError()
 
     def _enforce_result_budget(self, result: Any) -> Any:
         """Truncate oversized results to stay within max_result_size_chars."""
