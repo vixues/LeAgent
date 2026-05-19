@@ -40,6 +40,34 @@ $ErrorActionPreference = "Stop"
 $Repo = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 $DesktopElectron = Join-Path $Repo "desktop\electron"
 
+function Remove-PathWithRetry {
+  param(
+    [Parameter(Mandatory = $true)]
+    [string]$Path,
+    [int]$Attempts = 5
+  )
+
+  if (-not (Test-Path -LiteralPath $Path)) { return }
+
+  for ($i = 1; $i -le $Attempts; $i++) {
+    try {
+      Remove-Item -LiteralPath $Path -Recurse -Force -ErrorAction Stop
+      return
+    } catch {
+      if ($i -eq $Attempts) {
+        throw "Unable to remove '$Path'. Close LeAgent, Explorer windows, terminals, or antivirus scans using this folder, then retry. Last error: $_"
+      }
+      Start-Sleep -Seconds $i
+    }
+  }
+}
+
+function Clear-WinPackOutput {
+  $distPack = Join-Path $DesktopElectron "dist-pack"
+  Remove-PathWithRetry (Join-Path $distPack "win-unpacked.tmp")
+  Remove-PathWithRetry (Join-Path $distPack "win-unpacked")
+}
+
 Write-Host "============================================"
 Write-Host "  LeAgent Desktop — Windows Build"
 Write-Host "  Version : $Version"
@@ -133,8 +161,18 @@ try {
   if ($LASTEXITCODE -ne 0) { throw "npm run build (tsc) failed (exit $LASTEXITCODE)" }
 
   $env:VERSION = $Version
-  npx electron-builder --win --x64 --config electron-builder.yml "--c.extraMetadata.version=$Version"
-  if ($LASTEXITCODE -ne 0) { throw "electron-builder failed (exit $LASTEXITCODE)" }
+  Clear-WinPackOutput
+
+  $maxBuildAttempts = 2
+  for ($attempt = 1; $attempt -le $maxBuildAttempts; $attempt++) {
+    npx electron-builder --win --x64 --config electron-builder.yml "--c.extraMetadata.version=$Version"
+    if ($LASTEXITCODE -eq 0) { break }
+    if ($attempt -eq $maxBuildAttempts) { throw "electron-builder failed (exit $LASTEXITCODE)" }
+
+    Write-Warning "electron-builder failed (exit $LASTEXITCODE); clearing Windows pack output and retrying once."
+    Clear-WinPackOutput
+    Start-Sleep -Seconds 2
+  }
 } finally {
   Pop-Location
 }
