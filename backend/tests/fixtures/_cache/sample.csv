@@ -1,0 +1,7 @@
+id,name,amount,date,approved,category
+1,Alice Zhang,1200.5,2024-01-15,true,travel
+2,Bob Li,350.0,2024-01-20,false,meals
+3,Carol Wu,89.99,2024-02-01,true,supplies
+4,David Wang,2500.0,2024-02-10,true,conference
+5,Eve Chen,485.75,2024-02-15,false,meals
+6,Frank Zhang,3200.0,2024-03-01,true,equipment

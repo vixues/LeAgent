@@ -1,0 +1,44 @@
+# 学生：Python 作业语法预检
+workflow:
+  id: TPL-06
+  name: Python 作业语法自检
+  version: "1.0"
+  description: 对示例函数片段做语法校验，提交作业前可类比替换为你的源码字符串。
+  category: quality
+
+  inputs:
+    - name: source_code
+      type: string
+      description: 待校验的 Python 源码
+      required: false
+      default: |
+        def homework_average(scores: list[float]) -> float:
+            """课程作业平均分示例。"""
+            if not scores:
+                return 0.0
+            return sum(scores) / len(scores)
+
+  outputs:
+    - name: syntax
+      type: object
+      description: 校验报告
+
+  nodes:
+    - id: start
+      type: start
+      next: validate
+
+    - id: validate
+      type: tool_call
+      name: 校验 Python 语法
+      tool: syntax_validator
+      params:
+        language: python
+        content: "{{input.source_code}}"
+      output: syntax
+      next: end
+
+    - id: end
+      type: end
+      output:
+        syntax: "{{syntax}}"

@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="LeAgent 企业与治理：RBAC、workspace、数据边界与安全部署。"
+    />
+    <meta name="theme-color" content="#fcfcf9" />
+    <meta property="og:title" content="LeAgent — 企业与治理" />
+    <meta property="og:description" content="RBAC、工作区隔离、通知与自托管合规要点。" />
+    <meta property="og:type" content="website" />
+    <title>LeAgent — 企业与治理</title>
+    <link rel="icon" type="image/svg+xml" href="assets/favicon.svg" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="css/main.css" />
+    <script>
+      (function () {
+        try {
+          var s = localStorage.getItem('leagent-site-theme');
+          var d = document.documentElement;
+          if (s === 'dark') d.classList.add('dark');
+          else if (s === 'light') d.classList.remove('dark');
+          else if (window.matchMedia('(prefers-color-scheme: dark)').matches) d.classList.add('dark');
+        } catch (e) {}
+      })();
+    </script>
+  </head>
+  <body>
+    <a class="sr-only" href="#main">跳到主要内容</a>
+
+    <header class="site-header">
+      <div class="wrap site-header__inner">
+        <a class="brand" href="index.html" aria-label="LeAgent 首页">
+          <img src="assets/favicon.svg" width="36" height="36" alt="" />
+          <span>LeAgent</span>
+        </a>
+
+        <nav class="nav-desktop" aria-label="站点导航">
+          <a href="index.html">概览</a>
+          <a href="features/agent.html">智能体</a>
+          <a href="business.html" aria-current="page">企业</a>
+          <a href="download.html">下载</a>
+          <a href="index.html#quickstart">快速开始</a>
+        </nav>
+
+        <div class="header-actions">
+          <button type="button" class="btn btn--theme" id="theme-toggle" aria-label="切换颜色主题" aria-pressed="false">
+            <svg class="icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">
+              <path stroke-width="2" stroke-linecap="round" d="M21 14.5A7.5 7.5 0 0 1 9.5 3 7.48 7.48 0 0 0 12 12a 7.48 7.48 0 0 0 9 2.5Z" />
+            </svg>
+            <svg class="icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">
+              <circle cx="12" cy="12" r="4" stroke-width="2" />
+              <path stroke-width="2" stroke-linecap="round" d="M12 2v2m0 16v2M4.93 4.93l1.41 1.41m11.32 11.32 1.41 1.41M2 12h2m16 0h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41" />
+            </svg>
+          </button>
+          <button type="button" class="btn btn--ghost" id="nav-toggle" aria-expanded="false" aria-controls="nav-panel">菜单</button>
+        </div>
+      </div>
+      <div class="wrap" id="nav-panel">
+        <nav aria-label="移动端导航">
+          <a href="index.html">概览</a>
+          <a href="features/agent.html">智能体</a>
+          <a href="business.html" aria-current="page">企业</a>
+          <a href="download.html">下载</a>
+          <a href="index.html#quickstart">快速开始</a>
+        </nav>
+      </div>
+    </header>
+
+    <main id="main">
+      <section class="hero wrap" id="top" aria-labelledby="biz-hero-title">
+        <div class="hero__grid hero__grid--media">
+          <div>
+            <span class="hero__eyebrow">RBAC · Workspace · Audit</span>
+            <h1 id="biz-hero-title">更安全地规模化采用 AI 自动化</h1>
+            <p class="hero__lead">
+              将模型能力放进<strong>可隔离的工作区</strong>与<strong>可审计的权限模型</strong>中：同一套 LeAgent，既服务一线业务，也满足平台与合规诉求。
+            </p>
+            <div class="hero__cta">
+              <a class="btn btn--primary" href="download.html">规划部署</a>
+              <a class="btn btn--ghost" href="https://github.com" target="_blank" rel="noopener noreferrer">源码与 Issue</a>
+            </div>
+          </div>
+          <figure class="media-frame media-frame--hero" style="--aspect: 4/3">
+            <div class="media-frame__inner" role="img" aria-label="治理与控制台截图占位">
+              <span class="media-frame__label">插入截图：权限 / 工作区 / 审计视图</span>
+            </div>
+          </figure>
+        </div>
+      </section>
+
+      <section class="section section--tight section--sunken" aria-labelledby="stats-title">
+        <div class="wrap">
+          <h2 id="stats-title" class="sr-only">产品事实</h2>
+          <div class="stat-strip" role="list">
+            <div class="stat-strip__item" role="listitem">
+              <span class="stat-strip__value">80+</span>
+              <span class="stat-strip__label">内置工具品类（领域工具非用户数）</span>
+            </div>
+            <div class="stat-strip__item" role="listitem">
+              <span class="stat-strip__value">8</span>
+              <span class="stat-strip__label">Prompt 分层（可预算裁剪）</span>
+            </div>
+            <div class="stat-strip__item" role="listitem">
+              <span class="stat-strip__value">RBAC</span>
+              <span class="stat-strip__label">权限串 + workspace 数据范围</span>
+            </div>
+            <div class="stat-strip__item" role="listitem">
+              <span class="stat-strip__value">OSS</span>
+              <span class="stat-strip__label">Apache-2.0 可审计源码</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="section" id="pillars-biz" aria-labelledby="biz-pillars-title">
+        <div class="wrap">
+          <header class="section-head">
+            <p class="section-head__eyebrow">LeAgent for Teams</p>
+            <h2 class="section-head__title" id="biz-pillars-title">为团队定制的四条支柱</h2>
+          </header>
+          <div class="quad-grid">
+            <article class="quad-card">
+              <h3 class="quad-card__title">按团队裁剪能力</h3>
+              <p class="quad-card__text">workspace 承载租户数据边界；Skills 与规则把最佳实践编码成可执行策略。</p>
+            </article>
+            <article class="quad-card">
+              <h3 class="quad-card__title">更快推进复杂项目</h3>
+              <p class="quad-card__text">tier 路由与工具并行；工作流把跨角色交付模板化，减少「人肉搬运」。</p>
+            </article>
+            <article class="quad-card">
+              <h3 class="quad-card__title">管理简单</h3>
+              <p class="quad-card__text">Compose / K8s 清单可渐进启用组件；权限模型与前端守卫同源，减少双重配置。</p>
+            </article>
+            <article class="quad-card">
+              <h3 class="quad-card__title">数据防护思路</h3>
+              <p class="quad-card__text">自托管控制平面；会话与文件沙箱路径可审查；敏感集成建议走专用密钥与网络分区。</p>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section class="section section--sunken" id="roles" aria-labelledby="roles-title">
+        <div class="wrap">
+          <header class="section-head">
+            <p class="section-head__eyebrow">典型职能</p>
+            <h2 class="section-head__title" id="roles-title">按职能查看侧重点</h2>
+            <p class="section-head__lead">以下为中性说明，不含虚构客户案例。</p>
+          </header>
+          <div class="biz-tabs" data-tabs>
+            <div class="tablist tablist--biz" role="tablist" aria-label="职能场景">
+              <button type="button" class="tablist__btn is-active" role="tab" aria-selected="true" aria-controls="biz-tab-a" id="biz-a" data-tab-target="biz-tab-a">平台 / DevOps</button>
+              <button type="button" class="tablist__btn" role="tab" aria-selected="false" aria-controls="biz-tab-b" id="biz-b" data-tab-target="biz-tab-b">研发</button>
+              <button type="button" class="tablist__btn" role="tab" aria-selected="false" aria-controls="biz-tab-c" id="biz-c" data-tab-target="biz-tab-c">业务运营</button>
+            </div>
+            <div id="biz-tab-a" class="tab-panel tab-panel--prose is-active" role="tabpanel" aria-labelledby="biz-a">
+              <p>
+                关注镜像构建、密钥注入、观测栈与健康检查；Redis / Postgres / 可选 Milvus 分阶段启用；网关与 Rate limit 保护对外 API。
+              </p>
+            </div>
+            <div id="biz-tab-b" class="tab-panel tab-panel--prose" role="tabpanel" aria-labelledby="biz-b" hidden>
+              <p>
+                使用 coding project、脚本节点与 CLI 缩短验证周期；在 workspace 内隔离实验数据与生产会话。
+              </p>
+            </div>
+            <div id="biz-tab-c" class="tab-panel tab-panel--prose" role="tabpanel" aria-labelledby="biz-c" hidden>
+              <p>
+                通过 IM 渠道与审批类通知对接日常流程；用模板与工作流降低跨部门沟通成本。
+              </p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="section" id="resources" aria-labelledby="res-title">
+        <div class="wrap">
+          <header class="section-head">
+            <p class="section-head__eyebrow">资源</p>
+            <h2 class="section-head__title" id="res-title">文档与仓库</h2>
+          </header>
+          <div class="resource-grid">
+            <a class="resource-card" href="../docs/tutorial.md">
+              <h3 class="resource-card__title">入门教程</h3>
+              <p class="resource-card__text">docs/tutorial.md</p>
+            </a>
+            <a class="resource-card" href="../docs/context-compression-and-usage.md">
+              <h3 class="resource-card__title">上下文与用量</h3>
+              <p class="resource-card__text">压缩与预算策略</p>
+            </a>
+            <a class="resource-card" href="../deploy/README.md">
+              <h3 class="resource-card__title">部署说明</h3>
+              <p class="resource-card__text">deploy/</p>
+            </a>
+            <a class="resource-card" href="../AGENTS.md">
+              <h3 class="resource-card__title">开发者指南</h3>
+              <p class="resource-card__text">AGENTS.md</p>
+            </a>
+          </div>
+        </div>
+      </section>
+
+      <section class="section section--sunken">
+        <div class="wrap">
+          <div class="cta-band">
+            <h2>需要架构评审或扩展集成？</h2>
+            <p>开源协作优先：提交 Issue 描述环境与目标；商业支持请自行联系维护者（此处不放销售表单）。</p>
+            <div class="hero__cta hero__cta--center">
+              <a class="btn btn--primary" href="https://github.com" target="_blank" rel="noopener noreferrer">GitHub</a>
+              <a class="btn btn--ghost" href="download.html">下载页</a>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <div class="wrap site-footer__grid">
+        <div>
+          <strong>LeAgent</strong>
+          <p class="footer-tagline">企业级智能办公自动化平台。</p>
+        </div>
+        <div>
+          <strong>页面</strong>
+          <ul class="footer-list">
+            <li><a href="index.html">概览</a></li>
+            <li><a href="features/agent.html">智能体</a></li>
+            <li><a href="business.html" aria-current="page">企业</a></li>
+            <li><a href="download.html">下载</a></li>
+          </ul>
+        </div>
+        <div>
+          <strong>资源</strong>
+          <ul class="footer-list">
+            <li><a href="../README.md">README</a></li>
+            <li><a href="../CONTRIBUTING.md">贡献指南</a></li>
+          </ul>
+        </div>
+        <div>
+          <strong>条款</strong>
+          <ul class="footer-list">
+            <li><a href="../LICENSE">Apache-2.0</a></li>
+            <li><a href="../CODE_OF_CONDUCT.md">行为准则</a></li>
+          </ul>
+        </div>
+      </div>
+      <div class="wrap footer-meta">
+        <p class="footer-copy">© <span id="y"></span> LeAgent 贡献者</p>
+      </div>
+    </footer>
+
+    <script>
+      document.getElementById('y').textContent = new Date().getFullYear();
+    </script>
+    <script src="js/main.js" defer></script>
+  </body>
+</html>

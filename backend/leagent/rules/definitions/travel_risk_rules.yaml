@@ -1,0 +1,33 @@
+rule_set:
+  id: travel_risk_rules
+  name: "Private Travel Risk Rules"
+  version: "1.0.0"
+  description: "Baseline rules for assessing private travel applications."
+  category: "hr"
+
+  rules:
+    - id: destination_risk_level
+      name: "Destination risk level threshold"
+      severity: "warning"
+      message: "目的地风险等级较高，请重点关注。"
+      condition:
+        type: "threshold"
+        value: "{{ destination.risk_score }}"
+        max: 0.7
+
+    - id: llm_policy_alignment
+      name: "Policy alignment (LLM-assisted judgment)"
+      severity: "warning"
+      message: "根据政策条款和申请信息，LLM认为此行程存在潜在合规风险。"
+      condition:
+        type: "llm_judge"
+        prompt: |
+          请根据以下信息判断因私出国申请是否符合单位相关管理规定，并返回 JSON：
+          {"pass": true/false}
+
+          申请信息：
+          {{ application_text }}
+
+          相关政策要点：
+          {{ policy_summary }}
+

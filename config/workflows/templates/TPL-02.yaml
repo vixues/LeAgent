@@ -1,0 +1,79 @@
+# 通用办公：按扩展名整理文件夹（临时目录内自举示例文件）
+workflow:
+  id: TPL-02
+  name: 文件夹按类型整理（演示）
+  version: "1.0"
+  description: 在临时目录创建若干示例文件，按扩展名归入子文件夹；输出路径与移动清单供执行页查看（无需手动输入路径）。
+  category: productivity
+
+  inputs:
+    - name: temp_prefix
+      type: string
+      description: 临时目录名前缀（用于区分多次演示）
+      required: false
+      default: "wf-organize"
+
+  outputs:
+    - name: organize_result
+      type: object
+      description: 整理结果（目录、移动记录、各文件夹数量）
+
+  nodes:
+    - id: start
+      type: start
+      next: organize
+
+    - id: organize
+      type: script
+      name: 创建示例并按扩展名归档
+      source: |
+        import shutil
+        from pathlib import Path
+        import tempfile
+
+        root = Path(tempfile.mkdtemp(prefix=f"{temp_prefix}-"))
+        samples = [
+            ("readme.txt", "hello"),
+            ("notes.txt", "notes"),
+            ("scan.pdf", "%PDF-1.4 demo"),
+            ("sheet.csv", "a,b\n1,2"),
+            ("thumb.jpg", "demo-bytes"),
+        ]
+        for name, body in samples:
+            (root / name).write_bytes(body.encode("utf-8"))
+
+        moved = []
+        files = [p for p in root.iterdir() if p.is_file()]
+        exts = sorted({(p.suffix.lower().lstrip(".") or "_none") for p in files})
+        for ext in exts:
+            dest = root / ext
+            dest.mkdir(exist_ok=True)
+        for p in files:
+            ext = p.suffix.lower().lstrip(".") or "_none"
+            dest_dir = root / ext
+            target = dest_dir / p.name
+            shutil.move(str(p), str(target))
+            moved.append({"from": p.name, "to": f"{ext}/{p.name}"})
+
+        counts = {}
+        for ext in exts:
+            counts[ext] = len(list((root / ext).iterdir()))
+
+        result = {
+            "demo_root": str(root),
+            "temp_prefix": temp_prefix,
+            "folders_created": exts,
+            "files_moved": moved,
+            "counts_by_folder": counts,
+        }
+        print("organize_done")
+      inputs:
+        temp_prefix: "{{input.temp_prefix}}"
+      timeout_sec: 8.0
+      output: organize_result
+      next: end
+
+    - id: end
+      type: end
+      output:
+        organize_result: "{{organize_result}}"

@@ -1,0 +1,46 @@
+# 演示：日期加法（确定性，不依赖“当前时刻”）
+workflow:
+  id: TPL-10
+  name: 日期加法示例
+  version: "1.0"
+  description: 使用 date_calculator 将固定日期加上若干天，输出格式化结果。
+  category: productivity
+
+  inputs:
+    - name: base_date
+      type: string
+      description: 起始日期（YYYY-MM-DD）
+      required: false
+      default: "2026-04-01"
+    - name: days
+      type: integer
+      description: 要增加的天数（可为负）
+      required: false
+      default: 7
+
+  outputs:
+    - name: shifted
+      type: object
+      description: date_calculator 的输出（含格式化后的日期字符串等）
+
+  nodes:
+    - id: start
+      type: start
+      next: add_days
+
+    - id: add_days
+      type: tool_call
+      name: 加天数
+      tool: date_calculator
+      params:
+        operation: add
+        date: "{{input.base_date}}"
+        days: "{{input.days}}"
+        format: "%Y-%m-%d"
+      output: shifted
+      next: end
+
+    - id: end
+      type: end
+      output:
+        shifted: "{{shifted}}"

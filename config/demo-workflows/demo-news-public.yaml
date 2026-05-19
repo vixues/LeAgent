@@ -1,0 +1,58 @@
+# Demo: public-topic snapshot via Wikipedia API (no Bing/Google key).
+# Import: POST /api/v1/workflow/flows/import or scripts.workflow.import_demo_flows
+id: demo_news_public_wikipedia
+name: "Demo: public news (Wikipedia)"
+description: >-
+  Uses web_search with focus=wikipedia (official API). Safe for demos and CI-friendly
+  when network is allowed. Tweak input.topic for different subjects.
+inputs:
+  - name: topic
+    type: string
+    required: false
+    default: "Federal Reserve"
+outputs:
+  - name: wiki_snapshot
+    value: "${var.news_hit}"
+metadata:
+  category: demo
+  tags:
+    - demo
+    - public-api
+    - web_search
+nodes:
+  start:
+    class_type: StartNode
+    inputs: {}
+    meta:
+      name: Start
+    control:
+      next: news_search
+  news_search:
+    class_type: ToolCallNode
+    inputs:
+      tool: web_search
+      params:
+        query: "${input.topic}"
+        max_results: 5
+        focus: wikipedia
+      output: news_hit
+      retry_count: 1
+      retry_delay_sec: 2.0
+    meta:
+      name: Wikipedia search
+    control:
+      next: end
+  end:
+    class_type: EndNode
+    inputs: {}
+    meta:
+      name: End
+    control: {}
+control:
+  start: start
+  end: end
+  edges: []
+  timeout_sec: 600
+  max_retries: 2
+  tags:
+    - demo

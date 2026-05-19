@@ -1,0 +1,139 @@
+{
+  "version": 1,
+  "license": "CC0-style original vector assets",
+  "basePath": "/pet-presets/",
+  "pets": [
+    {
+      "id": "bird",
+      "label": "Bird",
+      "static": "bird.svg",
+      "motion": "bird-motion.svg",
+      "spriteSheetPng": "bird-spritesheet.png",
+      "spriteSheetGif": "bird-spritesheet.gif",
+      "animatedGif": "bird-animated.gif",
+      "sprite": {
+        "cols": 4,
+        "rows": 4,
+        "cellSize": 96,
+        "frameCount": 16,
+        "frameOrder": "row-major"
+      },
+      "defaultState": "float",
+      "supportedStates": ["idle", "working", "happy", "focus", "jump", "float"],
+      "motionDefaults": {
+        "mode": "auto",
+        "manualMode": "jump",
+        "autoReactivity": "expressive",
+        "motionStyle": "playful",
+        "motionSpeed": 1.25,
+        "idleAnimation": "float"
+      },
+      "recommendedNest": {
+        "themeId": "grass",
+        "accent": "#0d9488",
+        "backgroundPattern": "dots"
+      },
+      "aiPrompt": "Flat 2D teal sparrow desk pet mascot, small UI icon, clean vector shapes, transparent-friendly silhouette, no text, no watermark.",
+      "spritePrompt": "4x4 sprite sheet of a teal bird desk pet: idle float, blink, wing flap, hop, wave, happy bounce, working pulse, transparent background."
+    },
+    {
+      "id": "rabbit",
+      "label": "Rabbit",
+      "static": "rabbit.svg",
+      "motion": "rabbit-motion.svg",
+      "spriteSheetPng": "rabbit-spritesheet.png",
+      "spriteSheetGif": "rabbit-spritesheet.gif",
+      "animatedGif": "rabbit-animated.gif",
+      "sprite": {
+        "cols": 4,
+        "rows": 4,
+        "cellSize": 96,
+        "frameCount": 16,
+        "frameOrder": "row-major"
+      },
+      "defaultState": "hop",
+      "supportedStates": ["idle", "working", "happy", "sleep", "jump", "hop"],
+      "motionDefaults": {
+        "mode": "auto",
+        "manualMode": "jump",
+        "autoReactivity": "normal",
+        "motionStyle": "bouncy",
+        "motionSpeed": 1.1,
+        "idleAnimation": "hop"
+      },
+      "recommendedNest": {
+        "themeId": "wood",
+        "accent": "#c084fc",
+        "backgroundPattern": "grid"
+      },
+      "aiPrompt": "Soft purple rabbit desk pet mascot, cute flat vector style, rounded shapes, clean outline, transparent background, no text.",
+      "spritePrompt": "4x4 uniform sprite sheet of a rabbit desk pet: idle, blink, ear wiggle, hop, jump, sleep, happy bounce, working nod."
+    },
+    {
+      "id": "dog",
+      "label": "Dog",
+      "static": "dog.svg",
+      "motion": "dog-motion.svg",
+      "spriteSheetPng": "dog-spritesheet.png",
+      "spriteSheetGif": "dog-spritesheet.gif",
+      "animatedGif": "dog-animated.gif",
+      "sprite": {
+        "cols": 4,
+        "rows": 4,
+        "cellSize": 96,
+        "frameCount": 16,
+        "frameOrder": "row-major"
+      },
+      "defaultState": "tailWag",
+      "supportedStates": ["idle", "working", "happy", "shake", "wave", "tailWag"],
+      "motionDefaults": {
+        "mode": "auto",
+        "manualMode": "shake",
+        "autoReactivity": "expressive",
+        "motionStyle": "playful",
+        "motionSpeed": 1.35,
+        "idleAnimation": "tailWag"
+      },
+      "recommendedNest": {
+        "themeId": "grass",
+        "accent": "#ea580c",
+        "backgroundPattern": "noise"
+      },
+      "aiPrompt": "Warm orange puppy desk pet mascot, friendly sticker style, bold outline, small UI thumbnail, transparent background, no text.",
+      "spritePrompt": "4x4 sprite sheet of a puppy desk pet: idle wag, blink, ear flop, happy bounce, shake, wave, working pulse, sleep."
+    },
+    {
+      "id": "cat",
+      "label": "Cat",
+      "static": "cat.svg",
+      "motion": "cat-motion.svg",
+      "spriteSheetPng": "cat-spritesheet.png",
+      "spriteSheetGif": "cat-spritesheet.gif",
+      "animatedGif": "cat-animated.gif",
+      "sprite": {
+        "cols": 4,
+        "rows": 4,
+        "cellSize": 96,
+        "frameCount": 16,
+        "frameOrder": "row-major"
+      },
+      "defaultState": "blink",
+      "supportedStates": ["idle", "focus", "sleep", "blink", "lookAround", "stretch"],
+      "motionDefaults": {
+        "mode": "manual",
+        "manualMode": "sleep",
+        "autoReactivity": "subtle",
+        "motionStyle": "focused",
+        "motionSpeed": 0.8,
+        "idleAnimation": "blink"
+      },
+      "recommendedNest": {
+        "themeId": "night",
+        "accent": "#94a3b8",
+        "backgroundPattern": "none"
+      },
+      "aiPrompt": "Calm gray cat desk pet mascot, minimal flat vector, sleepy expression, clean outline, transparent background, no text.",
+      "spritePrompt": "4x4 sprite sheet of a gray cat desk pet: blink, look around, stretch, sleep, focus, happy, working nod, tail sway."
+    }
+  ]
+}

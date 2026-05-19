@@ -1,0 +1,28 @@
+{
+  "about": {
+    "title": "关于",
+    "back": "返回",
+    "product": "产品",
+    "brandName": "LeAgent",
+    "companyLabel": "公司",
+    "company": "Vixues Technology",
+    "authorLabel": "作者",
+    "author": "Cheng Yuanqi",
+    "version": "版本",
+    "edition": "发行形态",
+    "build": "构建",
+    "copyright": "Copyright © 2025-2026 Vixues Technology. All rights reserved.",
+    "thirdParty": "第三方组件声明随安装包分发。",
+    "supportPrefix": "支持：",
+    "supportEmail": "vixues@gmail.com",
+    "checkUpdates": "检查更新",
+    "updateChecking": "正在检查…",
+    "updateAvailable": "有可用更新，请按提示重启应用完成安装。",
+    "updateNone": "当前已是最新版本。",
+    "updateError": "检查更新失败",
+    "description": "本地优先的智能办公自动化平台",
+    "licenseLabel": "许可证",
+    "license": "Apache 许可证 2.0",
+    "websiteLabel": "官网"
+  }
+}

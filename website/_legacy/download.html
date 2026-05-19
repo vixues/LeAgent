@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="获取 LeAgent：Web 客户端、Docker Compose、CLI 与企业渠道接入。" />
+    <meta name="theme-color" content="#fcfcf9" />
+    <meta property="og:title" content="LeAgent — 下载与部署" />
+    <meta property="og:description" content="浏览器、Docker、CLI、集成渠道 — 获取方式一览。" />
+    <meta property="og:type" content="website" />
+    <title>LeAgent — 下载与部署</title>
+    <link rel="icon" type="image/svg+xml" href="assets/favicon.svg" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="css/main.css" />
+    <script>
+      (function () {
+        try {
+          var s = localStorage.getItem('leagent-site-theme');
+          var d = document.documentElement;
+          if (s === 'dark') d.classList.add('dark');
+          else if (s === 'light') d.classList.remove('dark');
+          else if (window.matchMedia('(prefers-color-scheme: dark)').matches) d.classList.add('dark');
+        } catch (e) {}
+      })();
+    </script>
+  </head>
+  <body>
+    <a class="sr-only" href="#main">跳到主要内容</a>
+
+    <header class="site-header">
+      <div class="wrap site-header__inner">
+        <a class="brand" href="index.html" aria-label="LeAgent 首页">
+          <img src="assets/favicon.svg" width="36" height="36" alt="" />
+          <span>LeAgent</span>
+        </a>
+
+        <nav class="nav-desktop" aria-label="站点导航">
+          <a href="index.html">概览</a>
+          <a href="features/agent.html">智能体</a>
+          <a href="business.html">企业</a>
+          <a href="download.html" aria-current="page">下载</a>
+          <a href="index.html#quickstart">快速开始</a>
+        </nav>
+
+        <div class="header-actions">
+          <button type="button" class="btn btn--theme" id="theme-toggle" aria-label="切换颜色主题" aria-pressed="false">
+            <svg class="icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">
+              <path stroke-width="2" stroke-linecap="round" d="M21 14.5A7.5 7.5 0 0 1 9.5 3 7.48 7.48 0 0 0 12 12a 7.48 7.48 0 0 0 9 2.5Z" />
+            </svg>
+            <svg class="icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">
+              <circle cx="12" cy="12" r="4" stroke-width="2" />
+              <path stroke-width="2" stroke-linecap="round" d="M12 2v2m0 16v2M4.93 4.93l1.41 1.41m11.32 11.32 1.41 1.41M2 12h2m16 0h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41" />
+            </svg>
+          </button>
+          <button type="button" class="btn btn--ghost" id="nav-toggle" aria-expanded="false" aria-controls="nav-panel">菜单</button>
+        </div>
+      </div>
+      <div class="wrap" id="nav-panel">
+        <nav aria-label="移动端导航">
+          <a href="index.html">概览</a>
+          <a href="features/agent.html">智能体</a>
+          <a href="business.html">企业</a>
+          <a href="download.html" aria-current="page">下载</a>
+          <a href="index.html#quickstart">快速开始</a>
+        </nav>
+      </div>
+    </header>
+
+    <main id="main">
+      <section class="hero wrap" id="top" aria-labelledby="dl-hero-title">
+        <header class="section-head section-head--hero">
+          <h1 id="dl-hero-title">获取 LeAgent</h1>
+          <p class="section-head__lead section-head__lead--solo">
+            选择最适合你的入口：浏览器客户端、容器化后端、命令行或企业即时通讯集成。以下卡片均可替换为真实截图与下载链接。
+          </p>
+        </header>
+      </section>
+
+      <section class="section section--tight" id="getting-started" aria-labelledby="dl-grid-title">
+        <div class="wrap">
+          <h2 id="dl-grid-title" class="sr-only">部署方式</h2>
+          <div class="download-grid">
+            <article class="download-card">
+              <div class="download-card__media">
+                <figure class="media-frame media-frame--compact" style="--aspect: 16/10">
+                  <div class="media-frame__inner" role="img" aria-label="Web 客户端截图占位">
+                    <span class="media-frame__label">Web UI</span>
+                  </div>
+                </figure>
+              </div>
+              <div class="download-card__body">
+                <h3 class="download-card__title">Web 客户端</h3>
+                <p class="download-card__text">React 19 SPA：聊天、工作流画布、设置与集成入口。构建产物由后端或 CDN 托管。</p>
+                <div class="btn-row">
+                  <a class="btn btn--primary" href="../README.md#development">前端开发说明</a>
+                  <a class="btn btn--ghost" href="index.html">返回概览</a>
+                </div>
+              </div>
+            </article>
+
+            <article class="download-card download-card--reverse">
+              <div class="download-card__media">
+                <figure class="media-frame media-frame--compact" style="--aspect: 16/10">
+                  <div class="media-frame__inner" role="img" aria-label="Docker 截图占位">
+                    <span class="media-frame__label">Docker</span>
+                  </div>
+                </figure>
+              </div>
+              <div class="download-card__body">
+                <h3 class="download-card__title">Docker Compose</h3>
+                <p class="download-card__text">推荐生产路径：<code>deploy/</code>（仓库根目录）。</p>
+                <div class="btn-row">
+                  <a class="btn btn--primary" href="../deploy/README.md">部署文档</a>
+                  <a class="btn btn--ghost" href="index.html#quickstart">Compose 节选</a>
+                </div>
+              </div>
+            </article>
+
+            <article class="download-card">
+              <div class="download-card__media">
+                <figure class="media-frame media-frame--compact" style="--aspect: 16/10">
+                  <div class="media-frame__inner" role="img" aria-label="CLI 截图占位">
+                    <span class="media-frame__label">CLI</span>
+                  </div>
+                </figure>
+              </div>
+              <div class="download-card__body">
+                <h3 class="download-card__title">命令行</h3>
+                <p class="download-card__text">Click CLI：聊天、通道、任务与运维命令；与后台共用认证配置。</p>
+                <div class="btn-row">
+                  <a class="btn btn--primary" href="../README.md#cli">README · CLI</a>
+                  <a class="btn btn--ghost" href="https://github.com" target="_blank" rel="noopener noreferrer">源码</a>
+                </div>
+              </div>
+            </article>
+
+            <article class="download-card download-card--reverse">
+              <div class="download-card__media">
+                <figure class="media-frame media-frame--compact" style="--aspect: 16/10">
+                  <div class="media-frame__inner" role="img" aria-label="渠道集成示意图占位">
+                    <span class="media-frame__label">Channels</span>
+                  </div>
+                </figure>
+              </div>
+              <div class="download-card__body">
+                <h3 class="download-card__title">钉钉 / 飞书 / 企业微信</h3>
+                <p class="download-card__text">多频道模块复用同一运行时；按租户开启并配置凭证。</p>
+                <div class="btn-row">
+                  <a class="btn btn--primary" href="business.html">治理与安全</a>
+                  <a class="btn btn--ghost" href="../README.md">README</a>
+                </div>
+              </div>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section class="section section--sunken" id="openapi" aria-labelledby="api-title">
+        <div class="wrap">
+          <header class="section-head">
+            <p class="section-head__eyebrow">开发者</p>
+            <h2 class="section-head__title" id="api-title">HTTP API 与流式协议</h2>
+            <p class="section-head__lead">REST、SSE、WebSocket 由网关暴露；生产环境请配合 TLS 与限流。</p>
+          </header>
+          <figure class="media-frame" style="--aspect: 21/9">
+            <div class="media-frame__inner" role="img" aria-label="API 或架构示意图占位">
+              <span class="media-frame__label">插入图片：API 网关拓扑或 OpenAPI 摘录（建议超宽屏）</span>
+            </div>
+          </figure>
+        </div>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <div class="wrap site-footer__grid">
+        <div>
+          <strong>LeAgent</strong>
+          <p class="footer-tagline">企业级智能办公自动化平台。</p>
+        </div>
+        <div>
+          <strong>页面</strong>
+          <ul class="footer-list">
+            <li><a href="index.html">概览</a></li>
+            <li><a href="features/agent.html">智能体</a></li>
+            <li><a href="business.html">企业</a></li>
+            <li><a href="download.html" aria-current="page">下载</a></li>
+          </ul>
+        </div>
+        <div>
+          <strong>资源</strong>
+          <ul class="footer-list">
+            <li><a href="../deploy/README.md">Deploy README</a></li>
+            <li><a href="../README.md">根 README</a></li>
+          </ul>
+        </div>
+        <div>
+          <strong>条款</strong>
+          <ul class="footer-list">
+            <li><a href="../LICENSE">Apache-2.0</a></li>
+          </ul>
+        </div>
+      </div>
+      <div class="wrap footer-meta">
+        <p class="footer-copy">© <span id="y"></span> LeAgent 贡献者</p>
+      </div>
+    </footer>
+
+    <script>
+      document.getElementById('y').textContent = new Date().getFullYear();
+    </script>
+    <script src="js/main.js" defer></script>
+  </body>
+</html>

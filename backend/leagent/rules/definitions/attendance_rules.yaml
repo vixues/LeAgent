@@ -1,0 +1,28 @@
+rule_set:
+  id: attendance_rules
+  name: "Attendance Validation Rules"
+  version: "1.0.0"
+  description: "Generic rules for staff and student attendance processing."
+  category: "hr_education"
+
+  rules:
+    - id: not_null_employee_or_student_id
+      name: "Record must have an ID"
+      severity: "error"
+      message: "考勤记录缺少人员编号。"
+      condition:
+        type: "compare"
+        left: "{{ row.id }}"
+        operator: "!="
+        right: null
+
+    - id: valid_date_range
+      name: "Attendance date within allowed range"
+      severity: "warning"
+      message: "考勤日期超出预期范围，请人工复核。"
+      condition:
+        type: "date_range"
+        date: "{{ row.date }}"
+        start: "{{ period.start_date }}"
+        end: "{{ period.end_date }}"
+

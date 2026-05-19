@@ -1,0 +1,18 @@
+{
+  "description": "Baseline captured from a single-node monolith before the microservices split. Replace values with real measurements from `ci-perf.sh`.",
+  "host": "http://localhost:8000",
+  "locust": {
+    "users": 50,
+    "duration_sec": 120,
+    "rps": 45.0,
+    "p50_ms": 120.0,
+    "p95_ms": 620.0,
+    "p99_ms": 1100.0,
+    "error_rate": 0.006
+  },
+  "gates": {
+    "p95_budget_ms": 750.0,
+    "error_budget": 0.01,
+    "throughput_target_multiplier": 5.0
+  }
+}

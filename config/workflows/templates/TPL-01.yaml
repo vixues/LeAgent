@@ -1,0 +1,57 @@
+# 白领/行政：报销或 KPI 抽样汇总（沙箱脚本）
+workflow:
+  id: TPL-01
+  name: 报销明细抽样汇总
+  version: "1.0"
+  description: 模拟多条报销金额，输出笔数、合计、均值与样本列表，适合财务复核演示。
+  category: finance
+
+  inputs:
+    - name: amounts
+      type: array
+      description: 报销金额列表（元）
+      required: false
+      default: [420.5, 1180.0, 236.75, 899.0, 1540.25]
+    - name: precision
+      type: integer
+      description: 统计值保留小数位
+      required: false
+      default: 2
+
+  outputs:
+    - name: summary
+      type: object
+      description: 汇总结果（笔数、合计、均值、最大/最小）
+
+  nodes:
+    - id: start
+      type: start
+      next: summarize
+
+    - id: summarize
+      type: script
+      name: 汇总报销金额
+      source: |
+        import statistics
+        rows = [float(x) for x in amounts]
+        p = int(precision)
+        result = {
+          "scenario": "expense_batch_review",
+          "count": len(rows),
+          "total_yuan": round(sum(rows), p),
+          "mean_yuan": round(statistics.fmean(rows), p) if rows else None,
+          "max_yuan": round(max(rows), p) if rows else None,
+          "min_yuan": round(min(rows), p) if rows else None,
+        }
+        print("expense_summary_ok")
+      inputs:
+        amounts: "{{input.amounts}}"
+        precision: "{{input.precision}}"
+      timeout_sec: 3.0
+      output: summary
+      next: end
+
+    - id: end
+      type: end
+      output:
+        summary: "{{summary}}"

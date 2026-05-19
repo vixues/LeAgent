@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<records>
+  <record id="1"><name>Alice</name><value>100</value></record>
+  <record id="2"><name>Bob</name><value>200</value></record>
+</records>

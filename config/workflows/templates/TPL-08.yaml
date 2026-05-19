@@ -1,0 +1,45 @@
+# 演示：通知工具（admin 通道在无 Webhook 时安全跳过）
+workflow:
+  id: TPL-08
+  name: 通知占位示例
+  version: "1.0"
+  description: 调用 notification 工具 admin 通道；未配置 LEAGENT_ADMIN_WEBHOOK_URL 时跳过外部 HTTP。
+  category: communication
+
+  inputs:
+    - name: message
+      type: string
+      description: 通知正文
+      required: false
+      default: "Workflow template demo ping (TPL-08)"
+    - name: severity
+      type: string
+      description: 严重级别（low / medium / high）
+      required: false
+      default: "low"
+
+  outputs:
+    - name: notify
+      type: object
+      description: 通知工具返回
+
+  nodes:
+    - id: start
+      type: start
+      next: ping
+
+    - id: ping
+      type: tool_call
+      name: Admin 通知
+      tool: notification
+      params:
+        channel: admin
+        message: "{{input.message}}"
+        severity: "{{input.severity}}"
+      output: notify
+      next: end
+
+    - id: end
+      type: end
+      output:
+        notify: "{{notify}}"

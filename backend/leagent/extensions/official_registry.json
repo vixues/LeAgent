@@ -1,0 +1,50 @@
+{
+  "version": 1,
+  "packs": [
+    {
+      "id": "browser",
+      "name": "Browser automation",
+      "description": "Playwright-based web automation (Chromium + deps installed with this pack).",
+      "extras": ["browser"],
+      "uninstall_packages": ["playwright"],
+      "playwright_install": ["chromium"],
+      "playwright_install_deps": true
+    },
+    {
+      "id": "office",
+      "name": "Office & documents",
+      "description": "PyMuPDF, PDF tables, Excel (openpyxl/pandas), and reportlab PDF generation.",
+      "extras": ["office"],
+      "uninstall_packages": [
+        "pymupdf",
+        "pdfplumber",
+        "pypdfium2",
+        "openpyxl",
+        "pandas",
+        "xlsxwriter",
+        "reportlab",
+        "pandasql"
+      ]
+    },
+    {
+      "id": "rag",
+      "name": "Embeddings & RAG (CPU)",
+      "description": "sentence-transformers + onnxruntime for local embedding experiments.",
+      "extras": ["rag"],
+      "uninstall_packages": ["sentence-transformers", "onnxruntime", "torch"]
+    },
+    {
+      "id": "server",
+      "name": "Server / cluster profile",
+      "description": "Postgres (asyncpg), Gunicorn, gRPC, Milvus client libraries.",
+      "extras": ["server"],
+      "uninstall_packages": [
+        "gunicorn",
+        "asyncpg",
+        "grpcio",
+        "grpcio-tools",
+        "pymilvus"
+      ]
+    }
+  ]
+}

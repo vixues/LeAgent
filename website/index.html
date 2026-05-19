@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#070708" />
+    <meta name="description" content="LeAgent — self-hosted intelligent automation. No accounts, no tracking, fully open-source." />
+    <title>LeAgent</title>
+    <link rel="icon" type="image/svg+xml" href="./favicon.svg" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+    <script>
+      (function () {
+        try {
+          if (window.crypto && typeof window.crypto.randomUUID !== 'function') {
+            window.crypto.randomUUID = function () {
+              var bytes = new Uint8Array(16);
+              window.crypto.getRandomValues(bytes);
+              bytes[6] = (bytes[6] & 0x0f) | 0x40;
+              bytes[8] = (bytes[8] & 0x3f) | 0x80;
+              var hex = [];
+              for (var i = 0; i < 256; i++) {
+                hex[i] = (i + 0x100).toString(16).slice(1);
+              }
+              return (
+                hex[bytes[0]] + hex[bytes[1]] + hex[bytes[2]] + hex[bytes[3]] + '-' +
+                hex[bytes[4]] + hex[bytes[5]] + '-' +
+                hex[bytes[6]] + hex[bytes[7]] + '-' +
+                hex[bytes[8]] + hex[bytes[9]] + '-' +
+                hex[bytes[10]] + hex[bytes[11]] + hex[bytes[12]] + hex[bytes[13]] + hex[bytes[14]] + hex[bytes[15]]
+              );
+            };
+          }
+          var t = localStorage.getItem('leagent-site-theme');
+          if (t === 'light' || t === 'dark') {
+            document.documentElement.dataset.theme = t;
+            var m = document.querySelector('meta[name="theme-color"]');
+            if (m) m.setAttribute('content', t === 'dark' ? '#070708' : '#f5f5f0');
+          }
+          var l = localStorage.getItem('leagent-site-language');
+          if (l === 'en-US') document.documentElement.lang = 'en';
+          else if (l === 'zh-CN') document.documentElement.lang = 'zh-CN';
+        } catch (e) {}
+      })();
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

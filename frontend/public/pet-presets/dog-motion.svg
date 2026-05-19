@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-label="Animated dog desk pet">
+  <style>
+    @keyframes wag { 0%,100%{transform:rotate(-4deg)} 50%{transform:rotate(5deg)} }
+    @keyframes ear { 0%,100%{transform:translateY(0)} 50%{transform:translateY(4px)} }
+    @keyframes happy { 0%,100%{transform:scale(1)} 50%{transform:scale(1.035)} }
+    .pet{animation:happy 1.1s ease-in-out infinite;transform-origin:128px 160px}
+    .ear-l{animation:ear .85s ease-in-out infinite;transform-origin:76px 99px}
+    .ear-r{animation:ear .85s ease-in-out infinite reverse;transform-origin:180px 99px}
+    .tail{animation:wag .42s ease-in-out infinite;transform-origin:187px 201px}
+  </style>
+  <rect width="256" height="256" rx="48" fill="#fff7ed"/>
+  <g class="pet">
+    <ellipse cx="128" cy="218" rx="58" ry="11" fill="#9a3412" opacity=".13"/>
+    <g class="ear-l"><path d="M78 81c-25 7-43 31-43 61 0 18 8 31 22 34 19 4 30-13 36-35z" fill="#92400e"/></g>
+    <g class="ear-r"><path d="M178 81c25 7 43 31 43 61 0 18-8 31-22 34-19 4-30-13-36-35z" fill="#92400e"/></g>
+    <circle cx="128" cy="137" r="76" fill="#fdba74"/>
+    <path d="M74 129c8-40 36-67 75-67 27 7 50 31 58 62-22-10-46-11-72-2-24 8-45 10-61 7z" fill="#fed7aa"/>
+    <path d="M108 70c8-14 29-14 39 0l13 24h-65z" fill="#fff7ed"/>
+    <circle cx="101" cy="130" r="9" fill="#1f2937"/><circle cx="155" cy="130" r="9" fill="#1f2937"/>
+    <circle cx="104" cy="127" r="3" fill="#fff"/><circle cx="158" cy="127" r="3" fill="#fff"/>
+    <path d="M128 148c14 0 22 7 18 16-3 8-13 12-18 12s-15-4-18-12c-4-9 4-16 18-16z" fill="#78350f"/>
+    <path d="M118 184c9 8 21 8 30 0" fill="none" stroke="#78350f" stroke-width="7" stroke-linecap="round"/>
+    <g class="tail"><path d="M75 201c35 24 74 26 111 0" fill="none" stroke="#ea580c" stroke-width="9" stroke-linecap="round"/></g>
+    <circle cx="79" cy="158" r="13" fill="#fb923c" opacity=".45"/><circle cx="177" cy="158" r="13" fill="#fb923c" opacity=".45"/>
+  </g>
+</svg>

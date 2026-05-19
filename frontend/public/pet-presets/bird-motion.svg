@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-label="Animated bird desk pet">
+  <style>
+    @keyframes bob { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-7px)} }
+    @keyframes wing { 0%,100%{transform:rotate(-4deg)} 50%{transform:rotate(11deg)} }
+    @keyframes blink { 0%,88%,100%{transform:scaleY(1)} 92%,96%{transform:scaleY(.15)} }
+    .pet{animation:bob 1.8s ease-in-out infinite;transform-origin:128px 145px}
+    .wing{animation:wing .55s ease-in-out infinite;transform-origin:92px 137px}
+    .eye{animation:blink 3.2s ease-in-out infinite;transform-origin:151px 108px}
+  </style>
+  <rect width="256" height="256" rx="48" fill="#ecfeff"/>
+  <g class="pet">
+    <ellipse cx="128" cy="214" rx="50" ry="10" fill="#0f766e" opacity=".13"/>
+    <circle cx="128" cy="134" r="74" fill="#5eead4"/>
+    <path d="M76 134c8-38 38-66 75-70 33 9 55 39 55 74 0 41-34 75-76 75-34 0-61-22-72-52 13 11 30 18 49 18 37 0 68-27 73-62-21 31-63 43-104 17z" fill="#2dd4bf"/>
+    <g class="wing"><path d="M52 127c20-11 38-12 55-2-13 21-34 33-61 31-6-.5-8-8-3-12l9-17z" fill="#99f6e4"/></g>
+    <path d="M180 125l34 16-34 17c-7 3-14-2-14-9v-15c0-8 7-13 14-9z" fill="#f59e0b"/>
+    <g class="eye"><circle cx="151" cy="108" r="9" fill="#0f172a"/><circle cx="154" cy="105" r="3" fill="#fff"/></g>
+    <path d="M103 177c9 8 24 13 39 11" fill="none" stroke="#0f766e" stroke-width="7" stroke-linecap="round"/>
+    <path d="M103 210l-14 17M126 213l-2 21" fill="none" stroke="#f59e0b" stroke-width="8" stroke-linecap="round"/>
+    <path d="M81 70c13-16 32-23 55-19" fill="none" stroke="#14b8a6" stroke-width="9" stroke-linecap="round"/>
+  </g>
+</svg>

@@ -1,0 +1,76 @@
+{
+  "docs": {
+    "title": "Documentation",
+    "tagline": "Help and reference",
+    "viewOnGithub": "Repository and full documentation",
+    "tocTitle": "On this page",
+    "tocSystemIntro": "System introduction",
+    "tocOverview": "Overview",
+    "tocFeatures": "Product areas",
+    "tocQuickStart": "Quick start",
+    "tocPetDesk": "Desk pet & sprites",
+    "sections": {
+      "systemIntro": {
+        "title": "System introduction",
+        "lead": "LeAgent is a unified workspace for business and engineering teams. It links conversational AI, flow orchestration, and knowledge retrieval in one surface so you can ask questions, run flows, and look up source material in a single place—with traceable actions rather than ad-hoc copy-paste across tools. ",
+        "subPositioningTitle": "Positioning and value",
+        "subPositioningBody": "Unlike a chat-only tool or a loose script runner, LeAgent ties together versionable workflows, a managed knowledge base, and configurable model/tool layers. It fits scenarios where you need semi-automation, reproducible steps, and document-grounded decisions. In the workspace you can manage sessions, flow definitions, and knowledge assets together, and reduce context switching. ",
+        "subArchitectureTitle": "Layers and how teams work",
+        "subArchitectureBody": "From a user’s perspective the stack includes: a UI for chat and flow design, knowledge management for documents and indexing, and a backend that exposes APIs, tasks, and execution history (concrete model, vector, and object storage choices depend on your environment). In multi-tenant use, workspaces and permissions isolate data; within a workspace, teams can share flow templates and libraries as ideas move from exploration to stable reuse. ",
+        "subScenariosTitle": "Typical scenarios",
+        "subScenariosBody": "For example: prototype a task in chat with tool calls, then promote the reliable steps to a node graph for scheduled or triggered runs; keep manuals, policies, or FAQs in the knowledge base so answers stay grounded; integrate internal systems with HTTP or script-style nodes, executed in a controlled backend. ",
+        "subExtensibilityTitle": "Deployment and extension",
+        "subExtensibilityBody": "When self-hosting you can change model providers, storage backends, and follow the repository README and docs for production hardening. This in-app page is not a substitute for the deployment guide; for versioning, security, and API contracts, read the repository. For a managed instance, follow the notes your administrator provides. "
+      },
+      "overview": {
+        "title": "Overview",
+        "p1": "The introduction above sets context; in short, this web app is where you chat with the assistant, author workflows, curate the knowledge base, and adjust user-facing settings. ",
+        "p2": "How this page relates to the repo: the in-app docs focus on navigation and product orientation; environment variables, migrations, multi-instance operation, and REST/WebSocket field-level details are documented in the repository (docs, OpenAPI, examples as shipped). ",
+        "p3": "Before you rely on the UI, make sure the frontend can reach a healthy backend; if requests fail, check service URLs, CORS, and auth against your deployment notes. "
+      },
+      "features": {
+        "title": "Product areas"
+      },
+      "quickStart": {
+        "title": "Quick start",
+        "intro": "Once the app loads in the browser and you can sign in or use the instance, walk through the areas below in order. For integration or operations issues, use the repository troubleshooting and API sections first. ",
+        "item1": "In Chat, send messages, inspect tool calls, and browse history to learn what the assistant can and cannot do. ",
+        "item2": "In Workflows, open the list or a template, then try dragging nodes, wiring edges, and a single test run. ",
+        "item3": "In Knowledge, upload a small set of sample documents and ask a question that depends on retrieval. ",
+        "item4": "In Settings, select UI language and theme, and verify account or environment-specific items for your setup. "
+      },
+      "petDesk": {
+        "title": "Desk pet & sprite sheets",
+        "lead": "Pet Space lets you upload sticker-style or line-art images, pick a sidebar appearance, and optionally turn a uniform sprite sheet into an animated GIF in the browser. The chat toolbar shows a small status dot that links to the same settings. ",
+        "spec": "Typical grid: for example 4×4 cells with a fixed inner size per cell (such as 128×128 px). Frames are read in row-major order: left to right, then top to bottom. You can also use separate files named in sequence (e.g. frame_00.png). Use your own art; do not redistribute third-party mascot IP as built-in assets. ",
+        "cta": "Open Pet Space",
+        "ctaHint": "Customize tab includes nest theme, behavior, and the sprite sheet → GIF tool."
+      }
+    },
+    "features": {
+      "chat": {
+        "title": "Chat",
+        "description": "Multi-turn assistant chat with tool/function calls, sessions, and attachments—ideal for task exploration. ",
+        "cta": "Open chat"
+      },
+      "workflows": {
+        "title": "Workflows",
+        "description": "Author node graphs, save versions, and execute so the team reuses the same automation shape. ",
+        "cta": "Open workflows"
+      },
+      "knowledge": {
+        "title": "Knowledge",
+        "description": "Curate documents for indexing so Q&A stays grounded and consistent with your corpus. ",
+        "cta": "Open knowledge base"
+      },
+      "settings": {
+        "title": "Settings",
+        "description": "Language, theme, account and workspace preferences, and some connection options for this instance. ",
+        "cta": "Open settings"
+      }
+    },
+    "links": {
+      "repoHint": "For more detail, see the README and docs directory in the GitHub repository. You can point the in-app link at your real repo or doc site via build-time environment configuration. "
+    }
+  }
+}

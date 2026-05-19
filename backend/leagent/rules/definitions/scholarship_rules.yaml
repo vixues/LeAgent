@@ -1,0 +1,40 @@
+rule_set:
+  id: scholarship_rules
+  name: "Scholarship Evaluation Rules"
+  version: "1.0.0"
+  description: "Baseline rules for scholarship and grant eligibility checks."
+  category: "education"
+
+  rules:
+    - id: gpa_min_threshold
+      name: "Minimum GPA requirement"
+      severity: "error"
+      message: "申请人绩点未达到奖助学金最低要求。"
+      condition:
+        type: "threshold"
+        value: "{{ candidate.gpa }}"
+        min: "{{ policy.gpa_min }}"
+
+    - id: credit_completion
+      name: "Completed credits requirement"
+      severity: "error"
+      message: "已修学分不足，暂不满足评审条件。"
+      condition:
+        type: "threshold"
+        value: "{{ candidate.completed_credits }}"
+        min: "{{ policy.credits_min }}"
+
+    - id: llm_qualitative_review
+      name: "Qualitative review (LLM)"
+      severity: "warning"
+      message: "LLM 对申请材料的综合评价存在疑问，请人工复核。"
+      condition:
+        type: "llm_judge"
+        prompt: |
+          请阅读以下奖助学金申请材料，结合评审通知与历年评审经验，
+          判断此申请是否“整体符合预期”（只考虑文本合理性，不考虑分数阈值）。
+          仅返回 JSON：{"pass": true/false}
+
+          申请材料：
+          {{ application_text }}
+

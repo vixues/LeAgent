@@ -1,0 +1,325 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  /*
+   * Semantic palette — "editorial" light (warm off‑white) + "ink" dark (zinc, no blue cast).
+   * --color-primary matches Tailwind `primary` (sky / cyan-blue).
+   */
+  :root {
+    --color-primary: 2 132 199;
+    --color-background: 252 251 249;
+    --color-surface: 255 255 255;
+    --color-surface-elevated: 255 255 255;
+    --color-surface-sunken: 245 243 240;
+    --color-text: 23 23 23;
+    --color-text-secondary: 91 91 97;
+    --color-text-tertiary: 140 140 150;
+    --color-border: 232 230 226;
+    --color-border-subtle: 244 242 238;
+  }
+
+  .dark {
+    --color-primary: 125 211 252;
+    --color-background: 9 9 10;
+    --color-surface: 22 22 24;
+    --color-surface-elevated: 30 30 33;
+    --color-surface-sunken: 16 16 18;
+    --color-text: 244 244 246;
+    --color-text-secondary: 161 161 170;
+    --color-text-tertiary: 110 110 120;
+    --color-border: 50 50 52;
+    --color-border-subtle: 30 30 32;
+  }
+
+  /*
+    Root scroll model:
+    - The AppShell itself uses h-screen + overflow-hidden, so the "real" scroller
+      lives inside WorkPanel. html/body MUST therefore NOT use overflow:hidden —
+      otherwise fallback pages (auth, docs, error) lose the ability to scroll
+      on short mobile viewports. `overflow-y: auto` is explicit + safe.
+  */
+  html {
+    @apply scroll-smooth font-sans antialiased;
+    height: 100%;
+    overflow-y: auto;
+    color-scheme: light;
+  }
+
+  html.dark {
+    color-scheme: dark;
+  }
+
+  body {
+    @apply min-h-dvh font-sans antialiased;
+    background-color: rgb(var(--color-background));
+    color: rgb(var(--color-text));
+    font-feature-settings: 'rlig' 1, 'calt' 1;
+    overflow-x: hidden;
+  }
+
+  #root {
+    min-height: 100dvh;
+  }
+
+  * {
+    border-color: rgb(var(--color-border));
+  }
+
+  ::selection {
+    @apply bg-primary-500/30;
+  }
+
+  ::-webkit-scrollbar {
+    @apply w-2 h-2;
+  }
+
+  ::-webkit-scrollbar-track {
+    @apply bg-transparent;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    @apply bg-stone-300 dark:bg-zinc-600 rounded-full;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    @apply bg-stone-400 dark:bg-zinc-500;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+}
+
+@layer components {
+  .logo-stage-backdrop {
+    background-size: 145% 145%, 125% 125%, 130% 130%, 140% 140%, 100% 100%;
+    background-position: 0% 50%, 15% 20%, 85% 80%, 50% 100%, 0% 0%;
+    animation: logoStageAurora 12s ease-in-out infinite alternate;
+    transform: scale(1.04);
+    transform-origin: center;
+    will-change: background-position, filter, transform;
+  }
+
+  @keyframes logoStageAurora {
+    0% {
+      background-position: 0% 50%, 15% 20%, 85% 80%, 50% 100%, 0% 0%;
+      filter: saturate(1.06) brightness(1);
+      transform: scale(1.04);
+    }
+
+    50% {
+      background-position: 65% 42%, 40% 8%, 60% 92%, 75% 70%, 0% 0%;
+      filter: saturate(1.14) brightness(1.05);
+      transform: scale(1.075);
+    }
+
+    100% {
+      background-position: 100% 55%, 82% 30%, 18% 72%, 20% 88%, 0% 0%;
+      filter: saturate(1.1) brightness(1.03);
+      transform: scale(1.05);
+    }
+  }
+
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+
+  .btn-primary {
+    @apply btn bg-primary-600 text-white hover:bg-primary-700 focus:ring-primary-500 dark:bg-primary-500 dark:hover:bg-primary-600;
+  }
+
+  .btn-secondary {
+    @apply btn bg-surface-sunken text-foreground hover:bg-border-subtle focus:ring-primary-500/50 dark:bg-surface-elevated dark:hover:bg-surface-sunken;
+  }
+
+  .btn-ghost {
+    @apply btn bg-transparent text-muted-foreground hover:bg-surface-sunken focus:ring-primary-500/50 dark:hover:bg-surface-elevated;
+  }
+
+  .btn-danger {
+    @apply btn bg-red-600 text-white hover:bg-red-700 focus:ring-red-500;
+  }
+
+  .input {
+    @apply w-full rounded-lg border border-border bg-surface px-4 py-2 text-sm text-foreground transition-colors placeholder:text-muted-foreground-tertiary focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-500/20 dark:bg-surface-elevated dark:focus:border-primary-400;
+  }
+
+  .card {
+    @apply rounded-xl border border-border bg-surface p-6 shadow-sm;
+  }
+
+  .badge {
+    @apply inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium;
+  }
+
+  .badge-primary {
+    @apply badge bg-primary-100 text-primary-800 dark:bg-primary-900/30 dark:text-primary-300;
+  }
+
+  .badge-success {
+    @apply badge bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300;
+  }
+
+  .badge-warning {
+    @apply badge bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300;
+  }
+
+  .badge-error {
+    @apply badge bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300;
+  }
+
+  .prose-custom {
+    @apply prose prose-neutral dark:prose-invert max-w-none;
+  }
+
+  .prose-custom code {
+    @apply bg-surface-sunken px-1.5 py-0.5 rounded text-sm font-mono;
+  }
+
+  .prose-custom pre {
+    @apply bg-zinc-900 dark:bg-zinc-950 rounded-lg overflow-hidden;
+  }
+
+  .prose-custom pre code {
+    @apply bg-transparent p-0;
+  }
+
+  /*
+   * pptx-viewer ships dark chrome (#1a1a1a, semi-transparent controls).
+   * Override inline styles with !important so previews match app surfaces.
+   */
+  .pptx-viewer {
+    background-color: rgb(var(--color-surface-sunken)) !important;
+  }
+
+  .pptx-viewer .pptx-slide-container {
+    padding: 8px !important;
+  }
+
+  .pptx-viewer .pptx-controls {
+    background-color: rgb(var(--color-surface-elevated)) !important;
+    border: 1px solid rgb(var(--color-border-subtle));
+    margin-bottom: 8px !important;
+    padding: 8px 12px !important;
+    gap: 10px !important;
+    border-radius: 0.5rem;
+  }
+
+  .pptx-viewer .pptx-prev,
+  .pptx-viewer .pptx-next,
+  .pptx-viewer .pptx-fullscreen-btn {
+    background-color: rgb(var(--color-surface)) !important;
+    color: rgb(var(--color-text)) !important;
+    border: 1px solid rgb(var(--color-border)) !important;
+  }
+
+  .pptx-viewer .pptx-prev:hover,
+  .pptx-viewer .pptx-next:hover,
+  .pptx-viewer .pptx-fullscreen-btn:hover {
+    background-color: rgb(var(--color-surface-sunken)) !important;
+  }
+
+  .pptx-viewer .pptx-counter {
+    color: rgb(var(--color-text-secondary)) !important;
+  }
+}
+
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+
+  /* ReactFlow customizations */
+  .react-flow__node {
+    @apply transition-shadow duration-200;
+  }
+
+  .react-flow__node.selected {
+    @apply z-10;
+  }
+
+  .react-flow__node:hover {
+    @apply z-10;
+  }
+
+  .react-flow__handle {
+    @apply transition-colors duration-200;
+  }
+
+  .react-flow__edge-path {
+    @apply transition-colors duration-200;
+  }
+
+  .react-flow__controls {
+    @apply !border-0;
+  }
+
+  .react-flow__controls-button {
+    @apply !bg-white dark:!bg-zinc-800 !border-stone-200 dark:!border-zinc-600 !text-stone-600 dark:!text-zinc-300;
+    @apply hover:!bg-stone-50 dark:hover:!bg-zinc-700;
+  }
+
+  .react-flow__minimap {
+    @apply !border-0;
+  }
+
+  .animate-in {
+    animation: fadeIn 0.2s ease-out;
+  }
+
+  .slide-in-up {
+    animation: slideUp 0.3s ease-out;
+  }
+
+  .glass {
+    background-color: rgb(var(--color-surface) / 0.85);
+    backdrop-filter: blur(12px);
+  }
+
+  .gradient-text {
+    @apply bg-gradient-to-r from-primary-500 to-cyan-500 bg-clip-text text-transparent;
+  }
+
+  .glow {
+    box-shadow: 0 0 20px rgba(2, 132, 199, 0.24);
+  }
+
+  .dark .glow {
+    box-shadow: 0 0 28px rgba(14, 165, 233, 0.22);
+  }
+
+  .no-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+
+  .theme-transitioning,
+  .theme-transitioning *,
+  .theme-transitioning *::before,
+  .theme-transitioning *::after {
+    transition: background-color 200ms ease-out, color 200ms ease-out, border-color 200ms ease-out !important;
+  }
+
+  .gradient-text-warm {
+    @apply bg-gradient-to-r from-peach-400 via-rose-400 to-sky-400 bg-clip-text text-transparent;
+  }
+
+  .gradient-text-cool {
+    @apply bg-gradient-to-r from-sky-400 via-primary-400 to-cyan-400 bg-clip-text text-transparent;
+  }
+
+  .gradient-text-fresh {
+    @apply bg-gradient-to-r from-mint-400 via-sky-400 to-primary-400 bg-clip-text text-transparent;
+  }
+
+}

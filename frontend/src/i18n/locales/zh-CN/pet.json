@@ -1,0 +1,375 @@
+{
+  "petSpace": {
+    "nav": "宠物空间",
+    "title": "宠物空间",
+    "description": "侧栏桌宠：支持上传 PNG/JPEG/WebP/GIF/SVG 或工程压缩包，选择形象后在侧栏查看状态。",
+    "navCustomize": "定制",
+    "navStudio": "动画工坊",
+    "navShowroom": "展示",
+    "navPersonality": "人格设定",
+    "navLibrary": "素材库",
+    "navAbout": "说明",
+    "personalityTitle": "宠物人格设定",
+    "personalityDescription": "用自由文字描述宠物的角色设定（最多 {{max}} 字）。它会影响宠物气泡问候语的语气，也会让助手调用 emit_pet_bubble 时按这个角色的口吻说话。",
+    "personalityPlaceholder": "示例：你是 Miku，一只活泼的猫娘女朋友，喜欢在句尾加“喵~”。性格温柔、爱撒娇又会调皮地吐槽，语句简短俏皮。",
+    "personalityHint": "建议描述：名字、物种、语气、口头禅、情绪基调，以及绝对不该说的词。无论文档多长，单条气泡仍会限制在 60 字以内。",
+    "personalityCharCount": "{{count}} / {{max}} 字",
+    "personalitySave": "保存人格设定",
+    "personalitySaving": "保存中...",
+    "personalitySaved": "已保存人格设定。",
+    "personalityClear": "清除",
+    "personalityNoProject": "请先创建一个项目，再来设计宠物的人格。",
+    "dockAria": "宠物空间，打开定制页",
+    "dockStatusIdle": "空闲",
+    "dockStatusWorking": "工作中",
+    "dockStatusHappy": "开心",
+    "dockStatusSleep": "休息中",
+    "dockStatusFocus": "专注",
+    "dockStatusExcited": "活泼",
+    "chatChipAria": "宠物空间，打开桌宠设置",
+    "chatChipTitle": "桌宠：{{mode}}",
+    "customizeNoProject": "请先创建项目以保存宠物资源与展示形象。",
+    "customizeIntro": "可上传位图或矢量图（PNG、JPEG、WebP、GIF、SVG）或工程压缩包。可选用系统预设形象，或在下方素材列表中对任意静态图点击「设为形象」。",
+    "uploadProject": "上传工程 / 素材",
+    "pickAppearance": "展示形象（侧栏预览）",
+    "builtinPresetsTitle": "系统预设形象",
+    "builtinPresetsIntro": "应用内置的 CC0 风格矢量小动物，无需上传即可在侧栏显示。清除后可仅使用素材库中的上传图片。",
+    "builtinClear": "清除预设",
+    "builtin": {
+      "bird": "小鸟",
+      "rabbit": "兔子",
+      "dog": "小狗",
+      "cat": "小猫"
+    },
+    "setAppearance": "设为形象",
+    "appearanceCurrent": "当前",
+    "nestTitle": "宠物小窝（侧栏外框）",
+    "nestIntro": "预设底色与可选背景图（来自素材库）。强调色用于描边与氛围。",
+    "nestAccent": "强调色",
+    "nestBackground": "小窝背景图",
+    "nestBackgroundNone": "无（仅预设底色）",
+    "nestBackgroundOpacity": "背景照片不透明度",
+    "nestDockFloorY": "侧栏地面高度",
+    "nestDockFloorYHint": "指桌宠预览区域底部到贴图站立底边（活动平面、地线）的距离，对应侧栏小窝里展示图底边相对外框内容区下沿的留白；贴图下方有透明或空白时可设为负数把角色整体下移。左右走动与起跳仍以此平面为基准。范围 −20–48 像素。",
+    "nestDockFloorYReset": "恢复默认",
+    "nestDockShadowOffsetY": "脚边阴影纵向",
+    "nestDockShadowOffsetYHint": "只移动脚下椭圆柔光阴影，不改地线或角色位置。贴图里脚底不在像素下边缘时，用此项把阴影挪到人物正下方；正值表示阴影在屏幕上更靠下。范围 −28–28 像素。",
+    "nestBackgroundPattern": "纹理叠层",
+    "nestBackgroundFit": "背景适配",
+    "nestBackgroundPosition": "背景位置",
+    "nestBackgroundFitOption": {
+      "cover": "填满裁切",
+      "contain": "完整显示",
+      "repeat": "平铺"
+    },
+    "nestBackgroundPositionOption": {
+      "center": "居中",
+      "top": "顶部",
+      "bottom": "底部",
+      "left": "左侧",
+      "right": "右侧"
+    },
+    "nestPattern": {
+      "none": "无",
+      "dots": "点阵",
+      "grid": "网格",
+      "noise": "噪点"
+    },
+    "showroomLead": "在此浏览内置方案，预览小窝背景、叠层与 Agent 状态，再一键应用或复制 JSON。上传与细项请在「定制」中修改。",
+    "showroomGoCustomize": "打开定制",
+    "nestTheme": {
+      "grass": "草地",
+      "wood": "木纹",
+      "night": "夜色"
+    },
+    "behaviorTitle": "行为模式",
+    "behaviorIntro": "自动模式跟随流式输出，并可调节「动感强度」。手动可固定平静、睡眠、专注（不触发回复后的短暂庆祝闪烁）或活泼待机。",
+    "behaviorMode": "模式",
+    "behaviorManualMode": "手动时",
+    "behaviorAutoReactivity": "动感（自动）",
+    "behaviorIdleAnimation": "待机动画",
+    "behaviorMotionStyle": "动作风格",
+    "behaviorMotionSpeed": "动作速度",
+    "behaviorSimulateStream": "实时预览：模拟工作中",
+    "behaviorAuto": "自动（跟随聊天）",
+    "behaviorManual": "手动",
+    "behaviorCalm": "平静",
+    "behaviorSleep": "睡眠",
+    "behaviorFocus": "专注",
+    "behaviorExcited": "活泼",
+    "manualMode": {
+      "calm": "平静",
+      "sleep": "睡眠",
+      "focus": "专注",
+      "excited": "活泼",
+      "walk": "走动",
+      "wave": "挥手",
+      "jump": "跳跃",
+      "shake": "摇摆",
+      "lookAround": "环顾",
+      "dance": "跳舞"
+    },
+    "idleAnimation": {
+      "none": "无",
+      "breath": "呼吸",
+      "blink": "眨眼",
+      "float": "漂浮",
+      "tailWag": "摇尾",
+      "hop": "轻跳"
+    },
+    "motionStyle": {
+      "gentle": "柔和",
+      "bouncy": "弹跳",
+      "playful": "活泼",
+      "focused": "专注"
+    },
+    "autoReactivity": {
+      "subtle": "克制",
+      "normal": "标准",
+      "expressive": "强烈"
+    },
+    "actionTitle": "动作与状态定义",
+    "actionSummaryLine": "与侧栏同一套解析；展开可对照说明并预览",
+    "actionIntro": "用侧栏同一套状态解析器预览每个 Agent 状态：自动模式跟随流式输出，手动模式固定姿态，待机动画作为 idle 的基底动作。",
+    "actionPreview": "预览状态",
+    "actionPreviewCurrent": "当前设置",
+    "actionRuntimeBadge": "当前",
+    "actionStateColumn": "状态",
+    "actionTriggerColumn": "触发条件",
+    "actionBindingColumn": "绑定方式",
+    "actionDetailsColumn": "说明",
+    "actionCssColumn": "CSS 类名",
+    "actionShowCss": "显示 CSS 类名",
+    "actionHideCss": "隐藏 CSS 类名",
+    "actionSupportedTitle": "当前内置形象支持的动作",
+    "actionSupportedIntro": "来自 manifest；标签含视觉状态与待机层动画；按钮写入推荐行为。",
+    "actionApplyMotionDefaults": "套用推荐行为",
+    "actionManifestUnavailable": "未读取到内置形象动作清单，仍可使用通用动作预览。",
+    "actionStateKind": {
+      "visual": "视觉状态",
+      "idle": "待机层动画",
+      "unknown": "素材说明"
+    },
+    "actionState": {
+      "idle": {
+        "name": "待机",
+        "trigger": "没有流式输出、没有回复完成闪烁，或手动模式为平静。",
+        "binding": "由「待机动画」选择 breath / blink / float / tailWag / hop。"
+      },
+      "working": {
+        "name": "工作中",
+        "trigger": "Agent 正在流式输出时触发。",
+        "binding": "由「自动动感」和「动作风格」控制幅度与节奏。"
+      },
+      "happy": {
+        "name": "开心反馈",
+        "trigger": "流式输出结束后的短暂庆祝闪烁；手动专注会抑制它。",
+        "binding": "由 happy CSS 动作 + 动作风格控制。"
+      },
+      "sleep": {
+        "name": "睡眠",
+        "trigger": "手动模式选择睡眠时固定显示。",
+        "binding": "手动姿态绑定到 sleep。"
+      },
+      "focus": {
+        "name": "专注",
+        "trigger": "手动模式选择专注且未流式输出时显示；流式输出时仍进入工作中。",
+        "binding": "手动姿态绑定到 focus，并关闭回复后庆祝。"
+      },
+      "excited": {
+        "name": "活泼",
+        "trigger": "手动模式选择活泼时作为动态待机。",
+        "binding": "手动姿态绑定到 excited。"
+      },
+      "walk": {
+        "name": "走动",
+        "trigger": "手动模式选择走动时固定显示。",
+        "binding": "手动姿态绑定到 walk。"
+      },
+      "wave": {
+        "name": "挥手",
+        "trigger": "手动模式选择挥手时固定显示。",
+        "binding": "手动姿态绑定到 wave。"
+      },
+      "jump": {
+        "name": "跳跃",
+        "trigger": "手动模式选择跳跃时固定显示。",
+        "binding": "手动姿态绑定到 jump。"
+      },
+      "shake": {
+        "name": "摇摆",
+        "trigger": "手动模式选择摇摆时固定显示。",
+        "binding": "手动姿态绑定到 shake。"
+      },
+      "lookAround": {
+        "name": "环顾",
+        "trigger": "手动模式选择环顾时固定显示。",
+        "binding": "手动姿态绑定到 lookAround。"
+      },
+      "dance": {
+        "name": "跳舞",
+        "trigger": "手动模式选择跳舞时固定显示。",
+        "binding": "手动姿态绑定到 dance。"
+      }
+    },
+    "showcaseTitle": "展示台与预设",
+    "showcaseIntro": "点选预设可预览小窝、背景图、叠层纹理与 Agent 反应；勾选「模拟流式」查看工作中状态。「应用到项目」会写入小窝、行为与内置形象（或按图片序号切换上传素材）。",
+    "showcaseSavedOnly": "当前已保存",
+    "showcaseSavedOnlyDesc": "当前工程里已保存的配置，不叠加预设预览。",
+    "showcaseSimulateStream": "预览：模拟 Agent 正在输出",
+    "showcasePreviewLabel": "侧栏预览",
+    "showcaseApply": "将预设应用到项目",
+    "showcaseApplyHint": "写入小窝与行为；若预设含内置形象或图片序号且列表中有对应图片，会设置展示形象与小窝背景。",
+    "showcaseJsonHint": "合并后的 settings JSON（可复制到接口或文档中替换）",
+    "showcasePreset": {
+      "preset_sparrow": {
+        "name": "麻雀",
+        "desc": "草地小窝、青绿强调色、小鸟形象，漂浮待机，动作轻快。"
+      },
+      "preset_rabbit": {
+        "name": "兔子",
+        "desc": "木纹小窝、淡紫强调色、兔子形象，跳跃待机，动感柔和。"
+      },
+      "preset_puppy": {
+        "name": "小狗",
+        "desc": "草地小窝、暖橙强调色、小狗形象，摇摆待机，工作中更活泼。"
+      },
+      "preset_cat": {
+        "name": "小猫",
+        "desc": "夜色小窝、银灰强调色、小猫形象，眨眼/睡眠配置，侧栏更安静。"
+      },
+      "line_art_default": {
+        "name": "线稿默认",
+        "desc": "草地小窝、点阵叠层、标准动感。"
+      },
+      "wood_studio": {
+        "name": "木纹工作室",
+        "desc": "木纹 + 网格叠层；若有图，第 1 张同时作展示形象与小窝背景。"
+      },
+      "night_coder": {
+        "name": "夜色写码",
+        "desc": "夜色 + 噪点叠层、强烈动感；若有图，第 1 张作小窝背景。"
+      },
+      "focus_companion": {
+        "name": "专注伙伴",
+        "desc": "偏冷静配色，关闭回复后的庆祝闪烁，适合深度工作。"
+      },
+      "excited_helper": {
+        "name": "活泼小助手",
+        "desc": "点阵叠层；第 2 张作形象、第 1 张作背景（有图时）。"
+      },
+      "rest_cafe": {
+        "name": "休息咖啡角",
+        "desc": "木纹 + 网格；手动睡眠，侧栏变暗示意休息。"
+      }
+    },
+    "gifBindMotion": "GIF 随状态叠加滤镜",
+    "gifBindMotionIntro": "侧栏/聊天条展示为 GIF 时，根据空闲、工作、开心、睡眠等状态切换轻微饱和度与明暗（不改变 GIF 内部帧序列）。关闭后仅保留下方通用 CSS 动作。",
+    "spriteTitle": "Sprite sheet转 GIF",
+    "spriteIntro": "从单张图按均匀网格切片，在浏览器内预览 GIF，再上传到本项目。",
+    "spriteSource": "源图片",
+    "spriteCols": "列数",
+    "spriteRows": "行数",
+    "spritePad": "格内边距（像素）",
+    "spriteFps": "每秒帧数",
+    "spriteTransparent": "透明 GIF（低不透明度像素视为透明）",
+    "spriteGenerate": "生成预览",
+    "spriteUpload": "上传 GIF 到项目",
+    "spriteNoImages": "请先上传至少一张图片。",
+    "spriteNeedImage": "无法加载所选图片。",
+    "spriteFormatsNote": "Sprite切片工具需要「单张静态」Sprite sheet（PNG/JPEG/WebP/SVG）。请勿把「已合成的动画 GIF」当作网格源图；请先生成静态Sprite sheet，再用本工具导出 GIF。",
+    "spriteSourceDims": "源图 {{w}}×{{h}} px",
+    "spriteCellEstimate": "{{cols}}×{{rows}} 宫格每格约 {{cw}}×{{ch}} px",
+    "spriteInnerEstimate": "内区（扣掉 2×padding）约 {{iw}}×{{ih}} px",
+    "spriteGridRemainder": "宽高无法被列/行整除，列余 {{rx}} px、行余 {{ry}} px，边缘会被裁切，请调整或裁剪。",
+    "spritePreviewOut": "GIF 输出 {{fw}}×{{fh}} px，共 {{n}} 帧",
+    "spriteAlphaNote": "开启透明时，仅极低 alpha 的像素会写入 GIF 透明；半透明会先与白底混合再量化，避免整图发灰或帧间穿帮。",
+    "studio": {
+      "lead": "像游戏角色一样，为不同状态/技能绑定 GIF 或静图。侧栏与预览会优先显示该状态对应的素材；未绑定时仍使用主形象 + CSS 动效。",
+      "livePreview": "预览",
+      "selectAction": "请先在左侧选择要编辑的动作。",
+      "inspectorHelp": "从工程素材中选一文件，或选内置形象，再调整循环、速度、镜像、适配，以及是否关闭该状态的 CSS 关键帧（建议给 GIF 开，避免双重抖）。",
+      "file": "工程文件",
+      "noFile": "无",
+      "builtin": "内置形象（可选）",
+      "noBuiltin": "无",
+      "loop": "循环",
+      "loopOn": "循环播放",
+      "loopOnce": "只播一次（侧栏约数秒后回退到主形象）",
+      "speed": "片段速度",
+      "mirror": "水平翻转",
+      "fit": "填充方式",
+      "fitContain": "完整显示",
+      "fitCover": "裁切填满",
+      "overrideCss": "取消该状态的关键帧动效（避免与 GIF 叠加）",
+      "clearBinding": "清除此状态绑定",
+      "testPulse": "测试重播",
+      "pulseHint": "预览脉动中 — 已为此状态重触发动画。",
+      "group": {
+        "idle": "待机动画",
+        "work": "工作 / 流式",
+        "reactions": "反应",
+        "life": "姿势与情绪",
+        "skills": "技能与动作"
+      },
+      "batchTitle": "精灵表切片 → 生成 GIF 并绑定",
+      "batchIntro": "选择一张静态精灵表，设置行列与内边距，再选择连续的格子区间（先左到右、再下一行，从 0 起算）导出为一条 GIF。生成后会自动上传并绑定到所选动作槽。",
+      "bindTo": "绑定到动作",
+      "frameStart": "起始帧下标",
+      "frameEnd": "结束帧下标（含）",
+      "batchGifPreview": "GIF 预览",
+      "batchPreviewPlaceholder": "设置参数后点「预览」，在本地生成 GIF",
+      "batchPreviewButton": "预览",
+      "generateAndBind": "生成并绑定",
+      "rangeInvalid": "帧范围无效。有效下标：0–{{n}}。",
+      "autopilotTitle": "自动活动与活动范围",
+      "autopilotDesc": "在侧栏小窝、无消息聊天预览与「定制」大预览（预览选择为「当前状态」时）中，桌宠会站在一条虚拟地线上左右走动、起跳、面向移动方向。轻点桌宠为短暂「开心」反馈；双点为跳跃。点按小窝外框或空白区仍会进入宠物空间。可关闭「自动活动」以固定于中央；动作工坊中的按状态素材绑定、聊天流式/手动状态仍然生效。",
+      "autopilotLabel": "自动在地面线附近活动",
+      "roamRange": "横向活动范围",
+      "roamTight": "小",
+      "roamNormal": "中",
+      "roamWide": "大",
+      "actionWeightsTitle": "自动活动权重（0=从不，5=最常）",
+      "wIdle": "待机/停顿",
+      "wWalk": "行走",
+      "wLookAround": "张望",
+      "wJump": "跳跃",
+      "wWave": "挥手",
+      "wDance": "跳舞",
+      "wShake": "抖动",
+      "resetDefaults": "恢复默认"
+    },
+    "petSceneAria": "小窝中的桌宠",
+    "aboutSectionSceneTitle": "场景与移动：地线与活动",
+    "aboutSectionStudioTitle": "动画工坊：分状态动画绑定",
+    "aboutSceneBody": "侧栏小窝、无消息时聊天区的吉祥物，以及「定制」大预览在「当前状态」时，会启用小型场景：地线、脚边阴影、水平行走与边缘回弹、带抛物线感的起跳。桌宠会朝移动方向朝向。在对话流式输出为「工作中」时自动活动会暂停，优先展示工作态与对应片段。选择系统「减少动态效果」时侧重减弱位移与起跳。可在动画工坊关闭自动活动或调整活动范围与动作配比。",
+    "aboutStudioBody": "在「动画工坊」中可为工作、开心、走路等状态分别指定工程文件或内置形象。每个片段可设循环/单次、速度、镜像、适配，并可关闭该状态对 GIF 的 CSS 叠加以避免「动效叠两层」。亦支持对精灵表某一格区间生成 GIF 并自动写入绑定。未绑定的状态仍回退为「主展示形象 + 行为里的 CSS 动效」。",
+    "aboutSectionOverview": "概览",
+    "aboutBody": "宠物空间按项目保存素材。PNG/JPEG/WebP/GIF/SVG 可作为侧栏桌宠形象或小窝背景；其它类型留在素材库中供下载，后续可扩展解析。侧栏展开时小窝外框在默认 1rem=16px、Tailwind 布局下约为宽 240 CSS 像素：视口 ≥ sm（640px）时高约 118px，宽高比 120:59（例 1200×590、480×236）；视口 < sm 时高约 106px，宽高比 120:53（例 1200×530、480×212）。与上述比一致且用「填满裁切」时边缘不裁；收起侧栏为约 40×40 的近 1:1。根字号或主题若改 rem，像素会跟变，比例仍以当前布局为准。单张不宜过大以免加载慢。",
+    "aboutSectionCustomizeTitle": "定制流程（从上传到侧栏）",
+    "aboutCustomizeSteps": "1）打开宠物空间，确认已有项目（没有则先新建）。\n2）在「定制」页上传素材：桌宠静帧（PNG/JPEG/WebP）、线条清晰的 SVG、透明底 GIF 贴纸，或 zip 等工程包。\n3）展示形象：可点选上方「系统预设形象」芯片；或在下方「展示形象」列表中对某张图点「设为形象」。若你选择了上传图，内置预设会自动让位给该文件。\n4）小窝：选择主题、强调色、可选背景图、透明度与叠层纹理，让侧栏外框与桌面风格一致。\n5）行为：自动模式可跟随聊天流式输出；手动模式可固定睡眠、专注等姿态。\n6）可选：使用下方「Sprite sheet转 GIF」把均匀网格切成动画，再把生成结果上传回同一项目，即可像普通图片一样使用。\n7）「展示」页可预览整套预设并复制合并后的 settings JSON，便于对接接口或写文档。",
+    "aboutSectionFormatsTitle": "格式说明：SVG、GIF 与Sprite sheet",
+    "aboutFormatsBody": "SVG：适合 Logo、线稿吉祥物，侧栏缩略时边缘清晰。\nGIF：可作为展示形象；小预览里浏览器通常显示首帧，完整 GIF 仍按图片元素播放，适合做短循环贴纸。\nSprite sheet：一张图内按「行×列」严格等分格子，工具按先行后列读取帧。请使用静态Sprite sheet；动画 GIF 是时间轴上的多帧，不是规则空间网格，不适合直接当作Sprite sheet源。",
+    "aboutSectionAiTitle": "用 AI 生成素材的建议",
+    "aboutAiBody": "可选用你熟悉且许可条款允许商用的图像模型。\n静帧桌宠示例提示词：「平面 2D 桌宠吉祥物，全身，略侧正面，粗描边，色块少，透明背景，居中，512×512 PNG，无文字无水印」。\nSVG 示例：「极简几何小鸟 SVG 图标，平涂，viewBox 0 0 256 256，不嵌入位图，适合小尺寸 UI」。\nSprite sheet示例：「4×4 均匀网格Sprite sheet，每格内区约 64px，同一角色待机/眨眼/跳跃/挥手，线宽一致，透明背景，单张 PNG」。\n流程：生成 → 下载 → 在本页上传 → 设为形象或走Sprite工具。若导出 GIF 噪点多，可先在模型侧压色或降低渐变，再切片转 GIF。",
+    "aboutSectionSpriteTitle": "Sprite sheet转 GIF（技术说明）",
+    "aboutSpriteBody": "选择列数、行数、格内边距、帧率，以及是否把低不透明像素当作透明。工具会裁切每一格，将颜色量化到小型 Web 调色板，并写出可上传回项目的 GIF。\n帧顺序为先行后列：第 (0,0) 格、(0,1) 格……再进入下一行。\n请仅分发你有权使用的原创或 AI 生成素材；不要内置或传播未授权的第三方吉祥物 IP。",
+    "newProject": "新建项目",
+    "projectName": "项目名称",
+    "create": "创建",
+    "cancel": "取消",
+    "noProjects": "暂无项目",
+    "noProjectsHint": "创建项目后可上传吉祥物立绘、序列帧或 zip 等。",
+    "deleteProject": "删除",
+    "rename": "重命名",
+    "files": "文件",
+    "deleteFile": "删除素材",
+    "deleteFileConfirm": "确定要从项目中删除「{{name}}」吗？此操作不可恢复。",
+    "upload": "上传文件",
+    "noFiles": "该项目中尚无文件",
+    "loadError": "无法加载宠物空间数据。",
+    "libraryBuiltInSamplesTitle": "内置示例素材",
+    "libraryBuiltInSamplesIntro": "以下为应用自带的静态 SVG（CC0 风格），可在新标签页打开预览或下载后上传到当前项目，用于测试展示形象、Sprite 工具等。",
+    "projectNameEditHint": "点击名称或铅笔图标可修改项目名称。"
+  }
+}

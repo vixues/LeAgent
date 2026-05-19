@@ -1,0 +1,28 @@
+{
+  "about": {
+    "title": "About",
+    "back": "Back",
+    "product": "Product",
+    "brandName": "LeAgent",
+    "companyLabel": "Company",
+    "company": "Vixues Technology",
+    "authorLabel": "Author",
+    "author": "Cheng Yuanqi",
+    "version": "Version",
+    "edition": "Edition",
+    "build": "Build",
+    "copyright": "Copyright © 2025-2026 Vixues Technology. All rights reserved.",
+    "thirdParty": "Third-party software notices ship with the installer package.",
+    "supportPrefix": "Support:",
+    "supportEmail": "vixues@gmail.com",
+    "checkUpdates": "Check for updates",
+    "updateChecking": "Checking…",
+    "updateAvailable": "Update available — restart the app to install when prompted.",
+    "updateNone": "You are on the latest version.",
+    "updateError": "Update check failed",
+    "description": "Local-first intelligent office automation platform",
+    "licenseLabel": "License",
+    "license": "Apache License 2.0",
+    "websiteLabel": "Website"
+  }
+}

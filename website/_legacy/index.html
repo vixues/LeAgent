@@ -1,0 +1,332 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="LeAgent — 企业级智能办公自动化平台：对话式 AI、可视化工作流、80+ 工具与可自托管的一体化栈。"
+    />
+    <meta name="theme-color" content="#fcfcf9" />
+    <meta property="og:title" content="LeAgent — 智能办公自动化平台" />
+    <meta
+      property="og:description"
+      content="对话式 AI、可视化工作流、声明式规则与 Skills、多模型路由与认知记忆 — 可自托管部署。"
+    />
+    <meta property="og:type" content="website" />
+    <title>LeAgent — 概览</title>
+    <link rel="icon" type="image/svg+xml" href="assets/favicon.svg" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="css/main.css" />
+    <script>
+      (function () {
+        try {
+          var s = localStorage.getItem('leagent-site-theme');
+          var d = document.documentElement;
+          if (s === 'dark') d.classList.add('dark');
+          else if (s === 'light') d.classList.remove('dark');
+          else if (window.matchMedia('(prefers-color-scheme: dark)').matches) d.classList.add('dark');
+        } catch (e) {}
+      })();
+    </script>
+  </head>
+  <body>
+    <a class="sr-only" href="#main">跳到主要内容</a>
+
+    <header class="site-header">
+      <div class="wrap site-header__inner">
+        <a class="brand" href="index.html" aria-label="LeAgent 首页">
+          <img src="assets/favicon.svg" width="36" height="36" alt="" />
+          <span>LeAgent</span>
+        </a>
+
+        <nav class="nav-desktop" aria-label="站点导航">
+          <a href="index.html" aria-current="page">概览</a>
+          <a href="features/agent.html">智能体</a>
+          <a href="business.html">企业</a>
+          <a href="download.html">下载</a>
+          <a href="index.html#quickstart">快速开始</a>
+        </nav>
+
+        <div class="header-actions">
+          <button
+            type="button"
+            class="btn btn--theme"
+            id="theme-toggle"
+            aria-label="切换颜色主题"
+            aria-pressed="false"
+          >
+            <svg class="icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">
+              <path
+                stroke-width="2"
+                stroke-linecap="round"
+                d="M21 14.5A7.5 7.5 0 0 1 9.5 3 7.48 7.48 0 0 0 12 12a 7.48 7.48 0 0 0 9 2.5Z"
+              />
+            </svg>
+            <svg class="icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">
+              <circle cx="12" cy="12" r="4" stroke-width="2" />
+              <path stroke-width="2" stroke-linecap="round" d="M12 2v2m0 16v2M4.93 4.93l1.41 1.41m11.32 11.32 1.41 1.41M2 12h2m16 0h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41" />
+            </svg>
+          </button>
+          <button
+            type="button"
+            class="btn btn--ghost"
+            id="nav-toggle"
+            aria-expanded="false"
+            aria-controls="nav-panel"
+          >
+            菜单
+          </button>
+        </div>
+      </div>
+      <div class="wrap" id="nav-panel">
+        <nav aria-label="移动端导航">
+          <a href="index.html" aria-current="page">概览</a>
+          <a href="features/agent.html">智能体</a>
+          <a href="business.html">企业</a>
+          <a href="download.html">下载</a>
+          <a href="index.html#quickstart">快速开始</a>
+        </nav>
+      </div>
+    </header>
+
+    <main id="main">
+      <section class="hero wrap" id="top" aria-labelledby="hero-title">
+        <div class="hero__grid hero__grid--media">
+          <div>
+            <span class="hero__eyebrow">Self-hosted · FastAPI · React</span>
+            <h1 id="hero-title">让对话、工作流与工具共享同一套运行时</h1>
+            <p class="hero__lead">
+              LeAgent 将多轮智能体、可视化编排与 80+ 领域工具纳入<strong>可审计、可扩展</strong>的自托管栈 — 从日常问答到跨系统自动化，无需拼凑多套产品。
+            </p>
+            <div class="hero__cta">
+              <a class="btn btn--primary" href="download.html">获取与部署</a>
+              <a class="btn btn--ghost" href="https://github.com" target="_blank" rel="noopener noreferrer">GitHub</a>
+              <a class="btn btn--ghost" href="features/agent.html">了解智能体</a>
+            </div>
+            <p class="hero__note">Apache-2.0 · 适合小型主机至集群部署</p>
+          </div>
+          <figure class="media-frame media-frame--hero" style="--aspect: 4/3">
+            <div class="media-frame__inner" role="img" aria-label="产品界面截图占位">
+              <span class="media-frame__label">插入截图：概览页 Hero（建议 1200×900 WebP）</span>
+            </div>
+            <figcaption class="media-frame__caption">替换为聊天 / 工作台界面预览 · 资源见 <code>assets/images/</code></figcaption>
+          </figure>
+        </div>
+      </section>
+
+      <section class="section section--tight" aria-labelledby="chips-title">
+        <div class="wrap">
+          <h2 id="chips-title" class="sr-only">示例场景</h2>
+          <p class="chip-row__intro">试着从这些方向开始（示意）</p>
+          <div class="chip-row" role="list">
+            <span class="chip" role="listitem">总结附件里的合同要点并生成待办</span>
+            <span class="chip" role="listitem">把 Excel 透视结果写成邮件草稿</span>
+            <span class="chip" role="listitem">将审批流接到钉钉 / 飞书机器人</span>
+            <span class="chip" role="listitem">用工作流定时拉取报表并推送 KPI</span>
+            <span class="chip" role="listitem">为代码仓生成变更说明与评审清单</span>
+          </div>
+        </div>
+      </section>
+
+      <section class="section section--sunken" id="trust" aria-labelledby="trust-title">
+        <div class="wrap">
+          <h2 id="trust-title" class="sr-only">开放与自托管</h2>
+          <div class="trust-strip">
+            <strong>Open Source</strong>
+            <span>数据与模型路由自托管</span>
+            <span>·</span>
+            <span>工具路径沙箱与策略可配</span>
+            <span>·</span>
+            <span>与现有栈渐进集成</span>
+          </div>
+        </div>
+      </section>
+
+      <section class="section" id="pillars" aria-labelledby="pillars-title">
+        <div class="wrap">
+          <header class="section-head">
+            <p class="section-head__eyebrow">四大方向</p>
+            <h2 class="section-head__title" id="pillars-title">覆盖从创意到交付的常见工作负载</h2>
+            <p class="section-head__lead">
+              对齐 ChatGPT「概览」页的多列摘要：写作与研究、会议与效率、代码与自动化、学习与复杂问答 — 在 LeAgent 中映射为对话、流程、工具执行与组织治理。
+            </p>
+          </header>
+          <div class="feature-grid">
+            <article class="feature-card">
+              <h3>对话与写作</h3>
+              <p>分层 Prompt、附件与 GenUI；流式回复与可中止运行，适合草拟公文、润色与多轮澄清。</p>
+            </article>
+            <article class="feature-card">
+              <h3>流程与会议资产</h3>
+              <p>React Flow 与 YAML 双轨；Cron / Webhook 将重复动作沉淀为可观测流程。</p>
+            </article>
+            <article class="feature-card">
+              <h3>代码与自动化</h3>
+              <p>脚本节点、子进程沙箱与 coding project；QueryEngine 统一调度工具调用。</p>
+            </article>
+            <article class="feature-card">
+              <h3>学习与复杂任务</h3>
+              <p>混合检索与 episodic / semantic / procedural 记忆；长上下文由预算与压缩策略约束。</p>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section class="section section--sunken section--bleed" id="explore" aria-labelledby="explore-title">
+        <div class="wrap">
+          <header class="section-head">
+            <p class="section-head__eyebrow">深入探索</p>
+            <h2 class="section-head__title" id="explore-title">更多能力一览</h2>
+            <p class="section-head__lead">精选模块与文档入口（静态页内跳转或外链占位）。</p>
+          </header>
+          <div class="explore-grid">
+            <article class="explore-card">
+              <h3 class="explore-card__title">搜索与网页</h3>
+              <p class="explore-card__text">工具目录中含检索、抓取与摘要；可按租户策略限制出站。</p>
+              <a class="explore-card__link" href="features/agent.html#runtime">查看运行时</a>
+            </article>
+            <article class="explore-card">
+              <h3 class="explore-card__title">画布与 GenUI</h3>
+              <p class="explore-card__text">SSE 推送声明式 UI；导出 PDF / PPTX 与幻灯片组件。</p>
+              <a class="explore-card__link" href="features/agent.html#demo">演示占位区</a>
+            </article>
+            <article class="explore-card">
+              <h3 class="explore-card__title">数据与图表</h3>
+              <p class="explore-card__text">上传表格请求分析与制图；可与工作流节点衔接。</p>
+              <a class="explore-card__link" href="features/agent.html">智能体页</a>
+            </article>
+            <article class="explore-card">
+              <h3 class="explore-card__title">模型与路由</h3>
+              <p class="explore-card__text">tier1 / tier2、多厂商适配；DeepSeek 等可按环境启用。</p>
+              <a class="explore-card__link" href="download.html">部署说明</a>
+            </article>
+            <article class="explore-card">
+              <h3 class="explore-card__title">MCP 与集成</h3>
+              <p class="explore-card__text">MCP 工具代理与 IM 渠道共用一套执行器。</p>
+              <a class="explore-card__link" href="business.html">企业集成</a>
+            </article>
+            <article class="explore-card">
+              <h3 class="explore-card__title">规则与 Skills</h3>
+              <p class="explore-card__text">声明式规则引擎与 SKILL.md 捆绑能力。</p>
+              <a class="explore-card__link" href="../docs/tutorial.md">教程</a>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section class="section" aria-labelledby="cross-title">
+        <div class="wrap">
+          <header class="section-head">
+            <p class="section-head__eyebrow">继续了解</p>
+            <h2 class="section-head__title" id="cross-title">按角色跳到下一页</h2>
+          </header>
+          <div class="cross-grid">
+            <a class="cross-card" href="features/agent.html">
+              <h3 class="cross-card__title">智能体</h3>
+              <p class="cross-card__text">QueryEngine、工具链与「如何上手」步骤。</p>
+              <span class="cross-card__cta">打开</span>
+            </a>
+            <a class="cross-card" href="business.html">
+              <h3 class="cross-card__title">企业与治理</h3>
+              <p class="cross-card__text">RBAC、workspace、通知与合规向部署要点。</p>
+              <span class="cross-card__cta">打开</span>
+            </a>
+            <a class="cross-card" href="download.html">
+              <h3 class="cross-card__title">下载与部署</h3>
+              <p class="cross-card__text">Web、Docker、CLI 与渠道接入入口。</p>
+              <span class="cross-card__cta">打开</span>
+            </a>
+          </div>
+        </div>
+      </section>
+
+      <section class="section section--sunken" id="why-teaser" aria-labelledby="why-teaser-title">
+        <div class="wrap split-feature">
+          <div class="split-feature__text">
+            <h2 id="why-teaser-title">同一管道：QueryEngine → Prompt → Tools</h2>
+            <p>
+              会话状态、文件缓存与用量统计集中在一套循环；显式 Terminal / Continue 过渡；工具经统一执行器与路径沙箱访问资源 — 详见智能体专题页。
+            </p>
+          </div>
+          <figure class="media-frame" style="--aspect: 16/9">
+            <div class="media-frame__inner" role="img" aria-label="架构图占位">
+              <span class="media-frame__label">插入截图：架构或序列图（建议 1600×900）</span>
+            </div>
+          </figure>
+        </div>
+      </section>
+
+      <section class="section" id="quickstart" aria-labelledby="qs-title">
+        <div class="wrap">
+          <div class="cta-band">
+            <h2 id="qs-title">准备好自托管了吗？</h2>
+            <p>Docker Compose 路径摘录；变量说明见 <code>deploy/.env.example</code>。</p>
+            <div class="hero__cta hero__cta--center">
+              <a class="btn btn--primary" href="download.html">查看获取方式</a>
+              <a class="btn btn--ghost" href="https://github.com" target="_blank" rel="noopener noreferrer">GitHub</a>
+            </div>
+            <div class="fast-start">
+              <h3>Docker Compose（节选）</h3>
+              <pre>git clone &lt;YOUR_REPO_URL&gt;
+cd &lt;repo-root&gt;/deploy
+
+cp .env.example .env
+# 至少配置 AUTH_SECRET_KEY、POSTGRES_PASSWORD 等
+
+docker compose up -d</pre>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <div class="wrap site-footer__grid">
+        <div>
+          <strong>LeAgent</strong>
+          <p class="footer-tagline">企业级智能办公自动化平台 — 对话式 AI、可视化工作流与统一工具层。</p>
+        </div>
+        <div>
+          <strong>页面</strong>
+          <ul class="footer-list">
+            <li><a href="index.html">概览</a></li>
+            <li><a href="features/agent.html">智能体</a></li>
+            <li><a href="business.html">企业</a></li>
+            <li><a href="download.html">下载</a></li>
+          </ul>
+        </div>
+        <div>
+          <strong>资源</strong>
+          <ul class="footer-list">
+            <li><a href="index.html#quickstart">快速开始</a></li>
+            <li><a href="../README.md">仓库 README</a></li>
+            <li><a href="../docs/tutorial.md">教程</a></li>
+            <li><a href="../AGENTS.md">AGENTS.md</a></li>
+          </ul>
+        </div>
+        <div>
+          <strong>条款</strong>
+          <ul class="footer-list">
+            <li><a href="../LICENSE">Apache-2.0</a></li>
+            <li><a href="../CODE_OF_CONDUCT.md">行为准则</a></li>
+            <li><a href="../SECURITY.md">安全披露</a></li>
+          </ul>
+        </div>
+      </div>
+      <div class="wrap footer-meta">
+        <p class="footer-copy">© <span id="y"></span> LeAgent 贡献者 · <code>website/</code> 静态站点</p>
+      </div>
+    </footer>
+
+    <script>
+      document.getElementById('y').textContent = new Date().getFullYear();
+    </script>
+    <script src="js/main.js" defer></script>
+  </body>
+</html>

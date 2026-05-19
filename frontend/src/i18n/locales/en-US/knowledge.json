@@ -1,0 +1,35 @@
+{
+  "knowledge": {
+    "title": "Knowledge Base",
+    "description": "Manage and search your document resources",
+    "search": "Search documents...",
+    "upload": "Upload Document",
+    "uploading": "Uploading...",
+    "documents": "Documents",
+    "items": "files",
+    "empty": "No documents yet",
+    "dragOrClick": "Drag files here or click to upload",
+    "selectFiles": "Select Files",
+    "preview": "Document Preview",
+    "selectToPreview": "Select a document to preview",
+    "size": "File Size",
+    "created": "Created",
+    "chunks": "Chunks",
+    "view": "View",
+    "download": "Download",
+    "openExternal": "Open in new tab",
+    "downloadFailed": "Could not download the file. Sign in again or try later.",
+    "confirmDelete": "Are you sure you want to delete this document?",
+    "types": {
+      "image": "Image",
+      "document": "Document",
+      "spreadsheet": "Spreadsheet",
+      "text": "Text",
+      "other": "Other"
+    },
+    "deleteUnavailable": "Delete is not available yet",
+    "searchMatch": "Indexed match",
+    "searchEmpty": "No matching documents",
+    "searchEmptyHint": "Try different keywords"
+  }
+}

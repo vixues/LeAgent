@@ -1,0 +1,83 @@
+{
+  "home": {
+    "welcome": "Welcome back",
+    "subtitle": "Start automating your workflows with LeAgent",
+    "recentFlows": "Recent Workflows",
+    "noFlows": "No workflows yet",
+    "createFirstFlow": "Create your first workflow",
+    "stats": {
+      "totalFlows": "Total Workflows",
+      "runningTasks": "Running Tasks",
+      "completedToday": "Completed Today"
+    },
+    "quickActions": {
+      "title": "Quick Actions",
+      "newChat": "New Chat",
+      "newChatDesc": "Start a conversation with AI",
+      "newFlow": "New Workflow",
+      "newFlowDesc": "Create an automated workflow"
+    },
+    "tips": {
+      "title": "Getting Started",
+      "description": "Learn how to use LeAgent to boost your productivity",
+      "learnMore": "View Documentation"
+    }
+  },
+  "dashboard": {
+    "title": "Dashboard",
+    "description": "Monitor system status and task execution",
+    "refresh": "Refresh",
+    "taskMonitor": "Task Monitor",
+    "searchTasks": "Search tasks...",
+    "activityFeed": "Activity Feed",
+    "noActivity": "No activity yet",
+    "usageChart": "Usage Trends",
+    "noCompletions": "No completed tasks yet",
+    "recentCompletions": "Recent Completions",
+    "pagination": "Showing {{from}}-{{to}} of {{total}}",
+    "timeRange": {
+      "today": "Today",
+      "week": "This Week",
+      "month": "This Month"
+    },
+    "metrics": {
+      "tasksToday": "Tasks Today",
+      "successRate": "Success Rate",
+      "failedTasks": "Failed Tasks",
+      "avgDuration": "Avg Duration"
+    },
+    "chart": {
+      "success": "Success",
+      "failed": "Failed"
+    },
+    "table": {
+      "taskName": "Task Name",
+      "workflow": "Type",
+      "status": "Status",
+      "progress": "Progress",
+      "time": "Time",
+      "actions": "Actions"
+    }
+  },
+  "playground": {
+    "title": "Run Test",
+    "description": "Select a workflow and test execution",
+    "flowSelector": "Select Workflow",
+    "selectFlow": "Select a workflow",
+    "noDescription": "No description",
+    "inputs": "Input Parameters",
+    "noInputs": "This workflow has no input parameters",
+    "selectFlowFirst": "Please select a workflow first",
+    "output": "Output",
+    "noOutput": "No output yet",
+    "runToSeeOutput": "Run the workflow to see results",
+    "run": "Run",
+    "running": "Running...",
+    "executing": "Executing workflow...",
+    "success": "Execution successful",
+    "failed": "Execution failed",
+    "inputPlaceholderForKey": "Enter {{key}}",
+    "duration": "Duration: {{time}}",
+    "logs": "Execution Logs"
+  }
+}

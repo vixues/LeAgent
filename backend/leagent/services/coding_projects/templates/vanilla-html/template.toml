@@ -1,0 +1,7 @@
+runtime_kind = "frontend"
+title = "Vanilla HTML/CSS/JS"
+description = "Zero-dependency static site served by python -m http.server. Great for tiny demos and CI tests where Node is unavailable."
+needs_install = false
+start_argv = ["python", "-u", "-m", "http.server", "$PORT", "--bind", "$HOST", "--directory", "."]
+ready_regex = "Serving HTTP on"
+health_path = "/"

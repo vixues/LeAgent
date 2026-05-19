@@ -1,0 +1,35 @@
+{
+  "knowledge": {
+    "title": "知识库",
+    "description": "管理和检索您的文档资源",
+    "search": "搜索文档...",
+    "upload": "上传文档",
+    "uploading": "上传中...",
+    "documents": "文档列表",
+    "items": "个文件",
+    "empty": "暂无文档",
+    "dragOrClick": "拖拽文件到此处或点击上传",
+    "selectFiles": "选择文件",
+    "preview": "文档预览",
+    "selectToPreview": "选择文档查看详情",
+    "size": "文件大小",
+    "created": "创建时间",
+    "chunks": "分块数",
+    "view": "查看",
+    "download": "下载",
+    "openExternal": "在新标签页打开",
+    "downloadFailed": "下载失败，请重新登录或稍后再试。",
+    "confirmDelete": "确定要删除此文档吗？",
+    "types": {
+      "image": "图片",
+      "document": "文档",
+      "spreadsheet": "表格",
+      "text": "文本",
+      "other": "其他"
+    },
+    "deleteUnavailable": "Delete is not available yet",
+    "searchMatch": "Indexed match",
+    "searchEmpty": "No matching documents",
+    "searchEmptyHint": "Try different keywords"
+  }
+}

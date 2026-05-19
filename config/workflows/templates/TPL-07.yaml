@@ -1,0 +1,54 @@
+# 演示：两段脚本串联
+workflow:
+  id: TPL-07
+  name: 脚本串联示例
+  version: "1.0"
+  description: 第一个脚本生成结构，第二个脚本读取并附加标记，演示节点间变量传递。
+  category: data
+
+  inputs:
+    - name: run_label
+      type: string
+      description: 串联演示的标签（写入第一步输出）
+      required: false
+      default: "chain-demo"
+
+  outputs:
+    - name: second
+      type: object
+      description: 第二步输出
+
+  nodes:
+    - id: start
+      type: start
+      next: step_one
+
+    - id: step_one
+      type: script
+      name: 第一步
+      source: |
+        result = {"step": 1, "items": ["a", "b", "c"], "label": run_label}
+        print("step_one_done")
+      inputs:
+        run_label: "{{input.run_label}}"
+      timeout_sec: 2.0
+      output: first
+      next: step_two
+
+    - id: step_two
+      type: script
+      name: 第二步
+      source: |
+        prev = first if isinstance(first, dict) else {}
+        result = {"step": 2, "received": prev, "ready": True}
+        print("step_two_done")
+      inputs:
+        first: "{{first}}"
+      timeout_sec: 2.0
+      output: second
+      next: end
+
+    - id: end
+      type: end
+      output:
+        second: "{{second}}"

@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="LeAgent 智能体：QueryEngine 会话编排、工具执行与分层 Prompt — 如何上手与能力详解。"
+    />
+    <meta name="theme-color" content="#fcfcf9" />
+    <meta property="og:title" content="LeAgent — 智能体" />
+    <meta property="og:description" content="QueryEngine、工具链、演示占位与扩展入口。" />
+    <meta property="og:type" content="website" />
+    <title>LeAgent — 智能体</title>
+    <link rel="icon" type="image/svg+xml" href="../assets/favicon.svg" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="../css/main.css" />
+    <script>
+      (function () {
+        try {
+          var s = localStorage.getItem('leagent-site-theme');
+          var d = document.documentElement;
+          if (s === 'dark') d.classList.add('dark');
+          else if (s === 'light') d.classList.remove('dark');
+          else if (window.matchMedia('(prefers-color-scheme: dark)').matches) d.classList.add('dark');
+        } catch (e) {}
+      })();
+    </script>
+  </head>
+  <body>
+    <a class="sr-only" href="#main">跳到主要内容</a>
+
+    <header class="site-header">
+      <div class="wrap site-header__inner">
+        <a class="brand" href="../index.html" aria-label="LeAgent 首页">
+          <img src="../assets/favicon.svg" width="36" height="36" alt="" />
+          <span>LeAgent</span>
+        </a>
+
+        <nav class="nav-desktop" aria-label="站点导航">
+          <a href="../index.html">概览</a>
+          <a href="agent.html" aria-current="page">智能体</a>
+          <a href="../business.html">企业</a>
+          <a href="../download.html">下载</a>
+          <a href="../index.html#quickstart">快速开始</a>
+        </nav>
+
+        <div class="header-actions">
+          <button type="button" class="btn btn--theme" id="theme-toggle" aria-label="切换颜色主题" aria-pressed="false">
+            <svg class="icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">
+              <path stroke-width="2" stroke-linecap="round" d="M21 14.5A7.5 7.5 0 0 1 9.5 3 7.48 7.48 0 0 0 12 12a 7.48 7.48 0 0 0 9 2.5Z" />
+            </svg>
+            <svg class="icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">
+              <circle cx="12" cy="12" r="4" stroke-width="2" />
+              <path stroke-width="2" stroke-linecap="round" d="M12 2v2m0 16v2M4.93 4.93l1.41 1.41m11.32 11.32 1.41 1.41M2 12h2m16 0h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41" />
+            </svg>
+          </button>
+          <button type="button" class="btn btn--ghost" id="nav-toggle" aria-expanded="false" aria-controls="nav-panel">菜单</button>
+        </div>
+      </div>
+      <div class="wrap" id="nav-panel">
+        <nav aria-label="移动端导航">
+          <a href="../index.html">概览</a>
+          <a href="agent.html" aria-current="page">智能体</a>
+          <a href="../business.html">企业</a>
+          <a href="../download.html">下载</a>
+          <a href="../index.html#quickstart">快速开始</a>
+        </nav>
+      </div>
+    </header>
+
+    <main id="main">
+      <section class="hero wrap" id="top" aria-labelledby="agent-hero-title">
+        <div class="hero__grid hero__grid--media">
+          <div>
+            <span class="hero__eyebrow">QueryEngine · Tools · PromptBuilder</span>
+            <h1 id="agent-hero-title">面向工程的智能体运行时</h1>
+            <p class="hero__lead">
+              会话级状态、流式 <code>submit_message</code>、工具调用与记忆写入在同一循环内串起；适用于本地自托管与 VPC 部署。
+            </p>
+            <p class="availability-strip">
+              适用于：私有化部署 · 含 REST / SSE API · Apache-2.0 源码可得
+            </p>
+            <div class="hero__cta">
+              <a class="btn btn--primary" href="#how">如何上手</a>
+              <a class="btn btn--ghost" href="../download.html">部署下载</a>
+            </div>
+          </div>
+          <figure class="media-frame media-frame--hero" style="--aspect: 4/3">
+            <div class="media-frame__inner" role="img" aria-label="智能体界面截图占位">
+              <span class="media-frame__label">插入截图：工具调用轨迹 / 对话壳（建议 1200×900）</span>
+            </div>
+          </figure>
+        </div>
+      </section>
+
+      <section class="section section--sunken" id="how" aria-labelledby="how-title">
+        <div class="wrap">
+          <header class="section-head">
+            <p class="section-head__eyebrow">如何上手</p>
+            <h2 class="section-head__title" id="how-title">三步进入可用智能体</h2>
+          </header>
+          <ol class="step-list">
+            <li class="step-list__item">
+              <span class="step-list__num" aria-hidden="true">1</span>
+              <div>
+                <h3 class="step-list__title">接入模型与租户</h3>
+                <p class="step-list__text">配置 LLM 密钥与 tier 路由；启用 JWT / API Key 与 workspace（参见企业页）。</p>
+              </div>
+            </li>
+            <li class="step-list__item">
+              <span class="step-list__num" aria-hidden="true">2</span>
+              <div>
+                <h3 class="step-list__title">装配 Prompt 与工具</h3>
+                <p class="step-list__text">选择模板变体，挂载工具注册表与 Skills；按需打开 MCP。</p>
+              </div>
+            </li>
+            <li class="step-list__item">
+              <span class="step-list__num" aria-hidden="true">3</span>
+              <div>
+                <h3 class="step-list__title">会话内迭代</h3>
+                <p class="step-list__text">用户消息驱动循环直至 Terminal；工具结果写回 SessionManager，可选 GenUI 输出。</p>
+              </div>
+            </li>
+          </ol>
+        </div>
+      </section>
+
+      <section class="section" id="demo" aria-labelledby="demo-title">
+        <div class="wrap">
+          <header class="section-head">
+            <p class="section-head__eyebrow">演示</p>
+            <h2 class="section-head__title" id="demo-title">场景预览（占位）</h2>
+            <p class="section-head__lead">下列 Tab 仅用于版式示意，可替换为视频或 GIF。</p>
+          </header>
+          <div class="demo-tabs" data-tabs>
+            <div class="tablist" role="tablist" aria-label="演示场景">
+              <button type="button" class="tablist__btn is-active" role="tab" aria-selected="true" aria-controls="tab-panel-a" id="tab-a" data-tab-target="tab-panel-a">表格分析</button>
+              <button type="button" class="tablist__btn" role="tab" aria-selected="false" aria-controls="tab-panel-b" id="tab-b" data-tab-target="tab-panel-b">工作流触发</button>
+              <button type="button" class="tablist__btn" role="tab" aria-selected="false" aria-controls="tab-panel-c" id="tab-c" data-tab-target="tab-panel-c">代码评审</button>
+            </div>
+            <div id="tab-panel-a" class="tab-panel is-active" role="tabpanel" aria-labelledby="tab-a">
+              <figure class="media-frame" style="--aspect: 16/9">
+                <div class="media-frame__inner" role="img" aria-label="演示占位 A">
+                  <span class="media-frame__label">插入媒体：表格分析录屏</span>
+                </div>
+              </figure>
+            </div>
+            <div id="tab-panel-b" class="tab-panel" role="tabpanel" aria-labelledby="tab-b" hidden>
+              <figure class="media-frame" style="--aspect: 16/9">
+                <div class="media-frame__inner" role="img" aria-label="演示占位 B">
+                  <span class="media-frame__label">插入媒体：工作流触发录屏</span>
+                </div>
+              </figure>
+            </div>
+            <div id="tab-panel-c" class="tab-panel" role="tabpanel" aria-labelledby="tab-c" hidden>
+              <figure class="media-frame" style="--aspect: 16/9">
+                <div class="media-frame__inner" role="img" aria-label="演示占位 C">
+                  <span class="media-frame__label">插入媒体：代码评审录屏</span>
+                </div>
+              </figure>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="section section--sunken" id="runtime" aria-labelledby="quad-title">
+        <div class="wrap">
+          <header class="section-head">
+            <p class="section-head__eyebrow">核心原则</p>
+            <h2 class="section-head__title" id="quad-title">与模型协同，而不是神秘黑箱</h2>
+          </header>
+          <div class="quad-grid">
+            <article class="quad-card">
+              <h3 class="quad-card__title">卸载复杂步骤</h3>
+              <p class="quad-card__text">工具执行长链路任务：检索、调用外部 API、生成工件，会话状态可追溯。</p>
+            </article>
+            <article class="quad-card">
+              <h3 class="quad-card__title">委派日常事务</h3>
+              <p class="quad-card__text">规则与 Skills 固化格式；Cron / 工作流可将例行动作从聊天中剥离。</p>
+            </article>
+            <article class="quad-card">
+              <h3 class="quad-card__title">接入你的世界</h3>
+              <p class="quad-card__text">渠道与 MCP 扩展数据源；附件与会话目录按沙箱授权。</p>
+            </article>
+            <article class="quad-card">
+              <h3 class="quad-card__title">可控与中止</h3>
+              <p class="quad-card__text">ToolUseContext 携带中止信号；敏感动作可走人工审批与策略引擎。</p>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section class="section" aria-labelledby="more-title">
+        <div class="wrap">
+          <header class="section-head">
+            <p class="section-head__eyebrow">扩展阅读</p>
+            <h2 class="section-head__title" id="more-title">探索更多</h2>
+          </header>
+          <div class="cross-grid cross-grid--two">
+            <a class="cross-card" href="../business.html">
+              <h3 class="cross-card__title">企业集成与治理</h3>
+              <p class="cross-card__text">RBAC、workspace、通知与合规部署。</p>
+              <span class="cross-card__cta">前往</span>
+            </a>
+            <a class="cross-card" href="../download.html">
+              <h3 class="cross-card__title">下载与运行环境</h3>
+              <p class="cross-card__text">Docker、CLI 与 Web 客户端入口。</p>
+              <span class="cross-card__cta">前往</span>
+            </a>
+          </div>
+        </div>
+      </section>
+
+      <section class="section section--sunken">
+        <div class="wrap">
+          <div class="cta-band">
+            <h2>开始一次 POC</h2>
+            <p>从单机 Compose 起步，逐步打开向量库与多渠道。</p>
+            <div class="hero__cta hero__cta--center">
+              <a class="btn btn--primary" href="../download.html">获取软件</a>
+              <a class="btn btn--ghost" href="../index.html#quickstart">Docker 节选</a>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <div class="wrap site-footer__grid">
+        <div>
+          <strong>LeAgent</strong>
+          <p class="footer-tagline">企业级智能办公自动化平台。</p>
+        </div>
+        <div>
+          <strong>页面</strong>
+          <ul class="footer-list">
+            <li><a href="../index.html">概览</a></li>
+            <li><a href="agent.html" aria-current="page">智能体</a></li>
+            <li><a href="../business.html">企业</a></li>
+            <li><a href="../download.html">下载</a></li>
+          </ul>
+        </div>
+        <div>
+          <strong>资源</strong>
+          <ul class="footer-list">
+            <li><a href="../README.md">README</a></li>
+            <li><a href="../backend/docs/tool-system.md">工具系统</a></li>
+            <li><a href="../AGENTS.md">AGENTS.md</a></li>
+          </ul>
+        </div>
+        <div>
+          <strong>条款</strong>
+          <ul class="footer-list">
+            <li><a href="../LICENSE">Apache-2.0</a></li>
+            <li><a href="../SECURITY.md">安全披露</a></li>
+          </ul>
+        </div>
+      </div>
+      <div class="wrap footer-meta">
+        <p class="footer-copy">© <span id="y"></span> LeAgent 贡献者</p>
+      </div>
+    </footer>
+
+    <script>
+      document.getElementById('y').textContent = new Date().getFullYear();
+    </script>
+    <script src="../js/main.js" defer></script>
+  </body>
+</html>

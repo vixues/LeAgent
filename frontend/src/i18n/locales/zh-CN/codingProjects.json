@@ -1,0 +1,80 @@
+{
+  "codingProjects": {
+    "title": "代码项目",
+    "subtitle": "浏览脚手架项目的文件与 Git 状态。需要实时预览时再启动开发服务器。",
+    "confirmDeleteProject": "确定删除该代码项目吗？将移除数据库记录，磁盘上的文件会保留。",
+    "new": "新建项目",
+    "showProjects": "项目列表",
+    "emptyHint": "暂无项目。创建第一个脚手架项目以开始使用。",
+    "selectHint": "请从列表中选择项目，或新建一个。",
+    "createTitle": "新建代码项目",
+    "create": "创建",
+    "fields": {
+      "name": "名称",
+      "namePlaceholder": "我的应用",
+      "template": "模板",
+      "templatePlaceholder": "选择模板",
+      "description": "描述（可选）"
+    },
+    "tabs": {
+      "files": "文件",
+      "git": "Git",
+      "run": "运行"
+    },
+    "files": {
+      "treeTitle": "项目文件",
+      "preview": "预览",
+      "chooseFile": "选择左侧文件以查看内容。",
+      "truncated": "目录列表已截断以保证性能。",
+      "loadError": "无法加载文件列表。",
+      "fileError": "无法加载该文件。",
+      "binaryHint": "该文件类型不支持文本预览。",
+      "copyContents": "复制文件内容"
+    },
+    "git": {
+      "title": "仓库",
+      "notRepo": "当前目录不是 Git 仓库（或无法访问 Git 元数据）。",
+      "noGit": "服务器未安装 Git，无法显示状态。",
+      "branch": "分支",
+      "commit": "HEAD",
+      "workingTree": "工作区",
+      "clean": "工作区干净",
+      "loadError": "无法加载 Git 状态。",
+      "refresh": "刷新",
+      "status": {
+        "untracked": "未跟踪",
+        "modified": "已修改",
+        "added": "已暂存",
+        "deleted": "已删除",
+        "renamed": "已重命名",
+        "unmerged": "冲突",
+        "ignored": "已忽略",
+        "porcelainHint": "Git 状态码：{{code}}（?? 表示尚未纳入版本控制）"
+      }
+    },
+    "run": {
+      "run": "运行",
+      "restart": "重新运行",
+      "stop": "停止",
+      "openExternal": "打开预览",
+      "logs": "日志",
+      "expandPreview": "内嵌预览",
+      "previewUnavailable": "请先启动开发服务器以使用预览。",
+      "fastapiPreviewHint": "FastAPI — 内嵌预览将打开 /docs。",
+      "frontendPreviewHint": "前端开发服务器（支持处启用 HMR）。",
+      "runToPreview": "运行项目后可加载预览。",
+      "logsEmpty": "等待日志输出…",
+      "logsIdle": "项目运行后将在此显示日志。",
+      "logsIdleCrashed": "当前未在运行。若刚异常退出，请查看上方的错误提示或再次点击运行。",
+      "crashedHint": "上次运行异常退出。日志连接成功时，下方可能显示进程输出以便排查。",
+      "logStreamError": "日志流"
+    },
+    "status": {
+      "idle": "空闲",
+      "starting": "启动中",
+      "running": "运行中",
+      "stopping": "停止中",
+      "crashed": "异常退出"
+    }
+  }
+}

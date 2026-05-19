@@ -1,0 +1,161 @@
+{
+  "accounts": {
+    "title": "账户",
+    "description": "管理您的个人资料、工作区、角色和团队待办事项。",
+    "nav": {
+      "profile": "个人资料",
+      "workspaces": "工作区",
+      "todos": "我的待办",
+      "users": "用户",
+      "roles": "角色与权限",
+      "assignments": "任务分派"
+    },
+    "profile": {
+      "title": "个人资料",
+      "description": "更新您的个人信息。用户名和邮箱由管理员维护。",
+      "username": "用户名",
+      "email": "邮箱",
+      "fullName": "姓名",
+      "locale": "首选语言",
+      "timezone": "时区",
+      "saved": "资料已更新",
+      "saveFailed": "无法更新资料",
+      "rbac": {
+        "title": "角色和权限",
+        "roles": "角色",
+        "permissions": "已授予的权限"
+      }
+    },
+    "workspaces": {
+      "title": "工作区",
+      "description": "在您的个人工作区与您参与的共享工作区之间切换。",
+      "create": "新建工作区",
+      "switch": "切换至",
+      "active": "当前",
+      "owner": "所有者",
+      "switched": "已切换至 {{name}}",
+      "switchFailed": "无法切换工作区",
+      "created": "工作区已创建",
+      "createFailed": "无法创建工作区",
+      "kind": {
+        "personal": "个人",
+        "shared": "共享"
+      },
+      "role": {
+        "owner": "所有者",
+        "editor": "编辑者",
+        "viewer": "查看者"
+      },
+      "form": {
+        "name": "名称",
+        "namePlaceholder": "Alpha 团队",
+        "description": "描述"
+      }
+    },
+    "todos": {
+      "title": "我的待办",
+      "description": "在当前工作区中分派给您的任务。",
+      "create": "新建待办",
+      "created": "待办已创建",
+      "createFailed": "无法创建待办",
+      "updateFailed": "无法更新待办",
+      "status": {
+        "not_started": "未开始",
+        "in_progress": "进行中",
+        "blocked": "已阻塞",
+        "done": "已完成",
+        "cancelled": "已取消"
+      },
+      "priority": {
+        "low": "低",
+        "medium": "中",
+        "high": "高",
+        "urgent": "紧急"
+      },
+      "form": {
+        "title": "标题",
+        "description": "描述",
+        "priority": "优先级",
+        "dueAt": "截止时间"
+      },
+      "dueThisWeek": {
+        "title": "本周到期",
+        "description": "未来 7 天内到期的待办事项。",
+        "empty": "本周暂无到期任务。",
+        "viewAll": "查看全部"
+      }
+    },
+    "users": {
+      "title": "用户",
+      "description": "在系统中创建、编辑和停用用户账号。",
+      "search": "搜索用户…",
+      "create": "新建用户",
+      "created": "用户已创建",
+      "createFailed": "无法创建用户",
+      "updated": "用户已更新",
+      "updateFailed": "无法更新用户",
+      "deleted": "用户已删除",
+      "deleteFailed": "无法删除用户",
+      "confirmDelete": "确定删除该用户吗?此操作不可恢复。",
+      "edit": "编辑 {{username}}",
+      "password": "密码",
+      "newPassword": "新密码",
+      "resetPassword": "重置密码",
+      "passwordReset": "密码已重置",
+      "passwordResetFailed": "无法重置密码",
+      "assignRoles": "分配角色",
+      "assignRolesTo": "为 {{username}} 分配角色",
+      "rolesUpdated": "角色已更新",
+      "rolesUpdateFailed": "无法更新角色",
+      "col": {
+        "username": "用户名",
+        "email": "邮箱",
+        "role": "角色",
+        "status": "状态",
+        "lastLogin": "上次登录",
+        "actions": "操作"
+      }
+    },
+    "roles": {
+      "title": "角色与权限",
+      "description": "自定义每个角色的操作权限。系统角色不可删除,但其权限可编辑。",
+      "create": "新建角色",
+      "created": "角色已创建",
+      "createFailed": "无法创建角色",
+      "saved": "角色已更新",
+      "saveFailed": "无法更新角色",
+      "deleted": "角色已删除",
+      "deleteFailed": "无法删除角色",
+      "confirmDelete": "确定删除该角色吗?仅通过该角色授予权限的成员将失去相应权限。",
+      "system": "系统",
+      "selectRole": "在左侧选择一个角色以编辑其权限。",
+      "selectAll": "全选",
+      "deselectAll": "取消全选",
+      "form": {
+        "name": "内部名称",
+        "displayName": "显示名称",
+        "description": "描述"
+      }
+    },
+    "assignments": {
+      "title": "任务分派",
+      "description": "跟踪并分派工作区中的所有待办。",
+      "newAssignment": "分派待办",
+      "created": "待办已分派",
+      "createFailed": "无法创建分派",
+      "assign": "分派",
+      "allAssignees": "全部负责人",
+      "empty": "没有符合筛选条件的待办。",
+      "stats": {
+        "total": "总数",
+        "overdue": "已逾期",
+        "dueThisWeek": "本周到期"
+      },
+      "col": {
+        "title": "标题",
+        "assignee": "负责人",
+        "progress": "进度"
+      }
+    }
+  }
+}

@@ -1,0 +1,9 @@
+runtime_kind = "python"
+title = "Python Project"
+description = "General-purpose Python project with standard package layout, pytest, and a lightweight built-in dev server. Great starting point for scripts, CLIs, data pipelines, or any Python work."
+needs_install = true
+install_marker = ".leagent_install.ok"
+install_argv = ["python", "-m", "pip", "install", "-r", "requirements.txt"]
+start_argv = ["python", "main.py", "--host", "$HOST", "--port", "$PORT"]
+ready_regex = "Serving on"
+health_path = "/"

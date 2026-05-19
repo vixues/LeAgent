@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-label="Animated rabbit desk pet">
+  <style>
+    @keyframes hop { 0%,100%{transform:translateY(0) scale(1)} 45%{transform:translateY(-9px) scale(1.02)} 72%{transform:translateY(2px) scale(.98)} }
+    @keyframes ear { 0%,100%{transform:rotate(0)} 50%{transform:rotate(-5deg)} }
+    @keyframes blink { 0%,86%,100%{transform:scaleY(1)} 91%,95%{transform:scaleY(.14)} }
+    .pet{animation:hop 1.25s ease-in-out infinite;transform-origin:128px 214px}
+    .ear-l{animation:ear 1.4s ease-in-out infinite;transform-origin:104px 98px}
+    .ear-r{animation:ear 1.4s ease-in-out infinite reverse;transform-origin:163px 97px}
+    .eye{animation:blink 3.6s ease-in-out infinite;transform-origin:center}
+  </style>
+  <rect width="256" height="256" rx="48" fill="#fdf4ff"/>
+  <g class="pet">
+    <ellipse cx="128" cy="219" rx="55" ry="10" fill="#7e22ce" opacity=".12"/>
+    <g class="ear-l">
+      <path d="M88 103C70 54 72 20 93 14c22-6 39 29 45 78" fill="#f5d0fe"/>
+      <path d="M100 97C87 55 89 31 98 29c10-3 24 25 29 69" fill="#f0abfc"/>
+    </g>
+    <g class="ear-r">
+      <path d="M151 93c4-50 20-85 43-80 21 5 25 39 9 89" fill="#f5d0fe"/>
+      <path d="M164 96c5-45 18-70 28-68 9 2 13 26 2 70" fill="#f0abfc"/>
+    </g>
+    <circle cx="128" cy="145" r="73" fill="#faf5ff"/>
+    <path d="M68 160c13 38 47 60 83 56 31-4 57-28 66-59-29 17-59 20-89 8-24-10-43-12-60-5z" fill="#f3e8ff"/>
+    <g class="eye"><circle cx="101" cy="132" r="8" fill="#1e293b"/><circle cx="155" cy="132" r="8" fill="#1e293b"/></g>
+    <path d="M128 149l-10 9 10 8 10-8-10-9z" fill="#fb7185"/>
+    <path d="M119 170c5 8 13 8 18 0" fill="none" stroke="#64748b" stroke-width="6" stroke-linecap="round"/>
+    <path d="M55 143l39 7M55 166l40-4M201 143l-39 7M201 166l-40-4" stroke="#c084fc" stroke-width="6" stroke-linecap="round"/>
+    <circle cx="89" cy="154" r="12" fill="#fbcfe8" opacity=".8"/><circle cx="167" cy="154" r="12" fill="#fbcfe8" opacity=".8"/>
+  </g>
+</svg>

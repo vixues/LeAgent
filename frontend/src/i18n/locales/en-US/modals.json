@@ -1,0 +1,146 @@
+{
+  "modals": {
+    "api": {
+      "title": "API Access",
+      "description": "Use the following code to integrate workflow \"{{name}}\"",
+      "widget": "Widget",
+      "apiKeyWarning": "Security Notice",
+      "apiKeyWarningDetail": "Do not expose your API key in client-side code. We recommend proxying API requests through your backend."
+    },
+    "provider": {
+      "errors": {
+        "nameRequired": "Provider name is required",
+        "baseUrlRequired": "Base URL is required",
+        "apiKeyRequired": "API key is required"
+      }
+    },
+    "code": {
+      "title": "Code Editor",
+      "lines": "{{count}} lines",
+      "spaces": "spaces"
+    },
+    "text": {
+      "title": "Text Editor",
+      "edit": "Edit",
+      "preview": "Preview",
+      "bold": "Bold",
+      "italic": "Italic",
+      "heading": "Heading",
+      "list": "List",
+      "code": "Code",
+      "link": "Link",
+      "placeholder": "Enter content...",
+      "noContent": "No content",
+      "characters": "{{count}} characters",
+      "markdownSupported": "Markdown supported"
+    },
+    "flowSettings": {
+      "title": "Workflow Settings",
+      "sections": {
+        "basic": "Basic Info",
+        "permissions": "Permissions",
+        "webhook": "Webhook"
+      },
+      "name": "Name",
+      "namePlaceholder": "Enter workflow name",
+      "description": "Description",
+      "descriptionPlaceholder": "Enter workflow description",
+      "endpoint": "API Endpoint",
+      "endpointHelp": "Only lowercase letters, numbers, and hyphens allowed",
+      "tags": "Tags",
+      "tagPlaceholder": "Press Enter to add tag",
+      "addTag": "Add",
+      "isPublic": "Public Workflow",
+      "isPublicDescription": "Allow unauthenticated users to access this workflow",
+      "canView": "View Permission",
+      "canEdit": "Edit Permission",
+      "canRun": "Run Permission",
+      "permissionOptions": {
+        "all": "Everyone",
+        "admin": "Admins only",
+        "owner": "Owner only"
+      },
+      "webhookEnabled": "Enable Webhook",
+      "webhookEnabledDescription": "Send HTTP callback when workflow completes",
+      "webhookSecret": "Secret",
+      "webhookSecretPlaceholder": "Secret for request verification",
+      "errors": {
+        "nameRequired": "Name is required",
+        "endpointRequired": "Endpoint is required",
+        "endpointInvalid": "Invalid endpoint format. Only lowercase letters, numbers, and hyphens allowed."
+      }
+    },
+    "editNode": {
+      "title": "Edit Node: {{type}}",
+      "tabs": {
+        "parameters": "Parameters",
+        "inputs": "Inputs",
+        "outputs": "Outputs"
+      },
+      "noParameters": "This node has no configurable parameters",
+      "selectOption": "Select option",
+      "addInput": "Add Input",
+      "addOutput": "Add Output",
+      "noInputs": "No input configuration",
+      "noOutputs": "No output configuration",
+      "ioName": "Name",
+      "ioNamePlaceholder": "Enter name",
+      "ioType": "Type",
+      "required": "Required",
+      "errors": {
+        "required": "This field is required"
+      }
+    },
+    "modelProvider": {
+      "types": {
+        "custom": "Custom"
+      }
+    },
+    "io": {
+      "demoSession1": "Demo session 1",
+      "demoSession2": "Demo session 2",
+      "mockReply": "Received your message: {{content}}\n\nThis is a mock response for workflow \"{{flowName}}\".",
+      "newSessionNumber": "New session {{n}}",
+      "title": "Run Test - {{name}}",
+      "sessions": "Sessions",
+      "newChat": "New Session",
+      "selectSession": "Select a session",
+      "noMessages": "Send a message to start",
+      "inputPlaceholder": "Enter test message...",
+      "executionError": "Execution error, please retry",
+      "confirmDelete": "Click again to confirm delete",
+      "session": {
+        "active": "Active",
+        "completed": "Completed",
+        "error": "Error"
+      }
+    },
+    "export": {
+      "title": "Export Workflow",
+      "selectFormat": "Select export format",
+      "preview": "Preview",
+      "download": "Download File",
+      "filename": "Filename"
+    },
+    "confirmation": {
+      "defaultTitle": "Confirm Action"
+    },
+    "fileManager": {
+      "warnOversized": "File {{name}} exceeds the size limit",
+      "title": "File Manager",
+      "searchPlaceholder": "Search files...",
+      "upload": "Upload File",
+      "dragOrClick": "Drag files here or click to upload",
+      "maxSize": "Maximum file size: {{size}}",
+      "noSearchResults": "No matching files found",
+      "empty": "No files yet",
+      "fileCount": "{{count}} files"
+    },
+    "saveChanges": {
+      "title": "Unsaved Changes",
+      "message": "You have unsaved changes. Do you want to save them?",
+      "discard": "Discard",
+      "hint": "Discarded changes cannot be recovered"
+    }
+  }
+}

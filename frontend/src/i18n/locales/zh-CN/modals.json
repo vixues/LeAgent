@@ -1,0 +1,146 @@
+{
+  "modals": {
+    "api": {
+      "title": "API 访问",
+      "description": "使用以下代码集成工作流 \"{{name}}\"",
+      "widget": "嵌入组件",
+      "apiKeyWarning": "安全提示",
+      "apiKeyWarningDetail": "请勿在客户端代码中暴露您的 API 密钥。建议通过后端服务代理 API 请求。"
+    },
+    "provider": {
+      "errors": {
+        "nameRequired": "请输入提供商名称",
+        "baseUrlRequired": "请输入基础 URL",
+        "apiKeyRequired": "请输入 API 密钥"
+      }
+    },
+    "code": {
+      "title": "代码编辑器",
+      "lines": "共 {{count}} 行",
+      "spaces": "空格"
+    },
+    "text": {
+      "title": "文本编辑器",
+      "edit": "编辑",
+      "preview": "预览",
+      "bold": "加粗",
+      "italic": "斜体",
+      "heading": "标题",
+      "list": "列表",
+      "code": "代码",
+      "link": "链接",
+      "placeholder": "请输入内容...",
+      "noContent": "暂无内容",
+      "characters": "共 {{count}} 字符",
+      "markdownSupported": "支持 Markdown 格式"
+    },
+    "flowSettings": {
+      "title": "工作流设置",
+      "sections": {
+        "basic": "基本信息",
+        "permissions": "权限设置",
+        "webhook": "Webhook 配置"
+      },
+      "name": "名称",
+      "namePlaceholder": "请输入工作流名称",
+      "description": "描述",
+      "descriptionPlaceholder": "请输入工作流描述",
+      "endpoint": "API 端点",
+      "endpointHelp": "只能使用小写字母、数字和连字符",
+      "tags": "标签",
+      "tagPlaceholder": "输入标签后回车添加",
+      "addTag": "添加",
+      "isPublic": "公开工作流",
+      "isPublicDescription": "允许未登录用户访问此工作流",
+      "canView": "查看权限",
+      "canEdit": "编辑权限",
+      "canRun": "运行权限",
+      "permissionOptions": {
+        "all": "所有人",
+        "admin": "仅管理员",
+        "owner": "仅所有者"
+      },
+      "webhookEnabled": "启用 Webhook",
+      "webhookEnabledDescription": "工作流完成后发送 HTTP 回调",
+      "webhookSecret": "密钥",
+      "webhookSecretPlaceholder": "用于验证请求来源的密钥",
+      "errors": {
+        "nameRequired": "请输入名称",
+        "endpointRequired": "请输入端点",
+        "endpointInvalid": "端点格式无效，只能使用小写字母、数字和连字符"
+      }
+    },
+    "editNode": {
+      "title": "编辑节点: {{type}}",
+      "tabs": {
+        "parameters": "参数",
+        "inputs": "输入",
+        "outputs": "输出"
+      },
+      "noParameters": "此节点没有可配置的参数",
+      "selectOption": "请选择",
+      "addInput": "添加输入",
+      "addOutput": "添加输出",
+      "noInputs": "暂无输入配置",
+      "noOutputs": "暂无输出配置",
+      "ioName": "名称",
+      "ioNamePlaceholder": "输入名称",
+      "ioType": "类型",
+      "required": "必填",
+      "errors": {
+        "required": "此字段为必填项"
+      }
+    },
+    "modelProvider": {
+      "types": {
+        "custom": "自定义"
+      }
+    },
+    "io": {
+      "demoSession1": "测试会话 1",
+      "demoSession2": "测试会话 2",
+      "mockReply": "收到您的消息：{{content}}\n\n这是工作流 \"{{flowName}}\" 的模拟响应。",
+      "newSessionNumber": "新会话 {{n}}",
+      "title": "运行测试 - {{name}}",
+      "sessions": "会话列表",
+      "newChat": "新会话",
+      "selectSession": "请选择会话",
+      "noMessages": "发送消息开始对话",
+      "inputPlaceholder": "输入测试消息...",
+      "executionError": "执行出错，请重试",
+      "confirmDelete": "再次点击确认删除",
+      "session": {
+        "active": "进行中",
+        "completed": "已完成",
+        "error": "出错"
+      }
+    },
+    "export": {
+      "title": "导出工作流",
+      "selectFormat": "选择导出格式",
+      "preview": "预览",
+      "download": "下载文件",
+      "filename": "文件名"
+    },
+    "confirmation": {
+      "defaultTitle": "确认操作"
+    },
+    "fileManager": {
+      "warnOversized": "文件 {{name}} 超过大小限制",
+      "title": "文件管理",
+      "searchPlaceholder": "搜索文件...",
+      "upload": "上传文件",
+      "dragOrClick": "拖拽文件到此处或点击上传",
+      "maxSize": "最大文件大小: {{size}}",
+      "noSearchResults": "未找到匹配的文件",
+      "empty": "暂无文件",
+      "fileCount": "共 {{count}} 个文件"
+    },
+    "saveChanges": {
+      "title": "未保存的更改",
+      "message": "您有未保存的更改，是否要保存？",
+      "discard": "放弃更改",
+      "hint": "放弃更改后将无法恢复"
+    }
+  }
+}

@@ -1,0 +1,161 @@
+{
+  "accounts": {
+    "title": "Accounts",
+    "description": "Manage your profile, workspaces, roles, and team todos.",
+    "nav": {
+      "profile": "Profile",
+      "workspaces": "Workspaces",
+      "todos": "My Todos",
+      "users": "Users",
+      "roles": "Roles & Permissions",
+      "assignments": "Assignments"
+    },
+    "profile": {
+      "title": "Profile",
+      "description": "Update your personal information. Username and email are managed by administrators.",
+      "username": "Username",
+      "email": "Email",
+      "fullName": "Full name",
+      "locale": "Preferred language",
+      "timezone": "Timezone",
+      "saved": "Profile updated",
+      "saveFailed": "Could not update profile",
+      "rbac": {
+        "title": "Roles and permissions",
+        "roles": "Roles",
+        "permissions": "Granted permissions"
+      }
+    },
+    "workspaces": {
+      "title": "Workspaces",
+      "description": "Switch between your personal workspace and any shared workspaces you belong to.",
+      "create": "New workspace",
+      "switch": "Switch to",
+      "active": "Active",
+      "owner": "Owner",
+      "switched": "Switched to {{name}}",
+      "switchFailed": "Could not switch workspace",
+      "created": "Workspace created",
+      "createFailed": "Could not create workspace",
+      "kind": {
+        "personal": "Personal",
+        "shared": "Shared"
+      },
+      "role": {
+        "owner": "Owner",
+        "editor": "Editor",
+        "viewer": "Viewer"
+      },
+      "form": {
+        "name": "Name",
+        "namePlaceholder": "Team alpha",
+        "description": "Description"
+      }
+    },
+    "todos": {
+      "title": "My todos",
+      "description": "Tasks assigned to you across your active workspace.",
+      "create": "New todo",
+      "created": "Todo created",
+      "createFailed": "Could not create todo",
+      "updateFailed": "Could not update todo",
+      "status": {
+        "not_started": "Not started",
+        "in_progress": "In progress",
+        "blocked": "Blocked",
+        "done": "Done",
+        "cancelled": "Cancelled"
+      },
+      "priority": {
+        "low": "Low",
+        "medium": "Medium",
+        "high": "High",
+        "urgent": "Urgent"
+      },
+      "form": {
+        "title": "Title",
+        "description": "Description",
+        "priority": "Priority",
+        "dueAt": "Due"
+      },
+      "dueThisWeek": {
+        "title": "Due this week",
+        "description": "Your assigned todos with a deadline in the next 7 days.",
+        "empty": "Nothing due soon — nice work.",
+        "viewAll": "View all"
+      }
+    },
+    "users": {
+      "title": "Users",
+      "description": "Create, edit, and deactivate user accounts across the installation.",
+      "search": "Search users…",
+      "create": "New user",
+      "created": "User created",
+      "createFailed": "Could not create user",
+      "updated": "User updated",
+      "updateFailed": "Could not update user",
+      "deleted": "User deleted",
+      "deleteFailed": "Could not delete user",
+      "confirmDelete": "Delete this user? This action cannot be undone.",
+      "edit": "Edit {{username}}",
+      "password": "Password",
+      "newPassword": "New password",
+      "resetPassword": "Reset password",
+      "passwordReset": "Password reset",
+      "passwordResetFailed": "Could not reset password",
+      "assignRoles": "Assign roles",
+      "assignRolesTo": "Assign roles to {{username}}",
+      "rolesUpdated": "Roles updated",
+      "rolesUpdateFailed": "Could not update roles",
+      "col": {
+        "username": "Username",
+        "email": "Email",
+        "role": "Role",
+        "status": "Status",
+        "lastLogin": "Last login",
+        "actions": "Actions"
+      }
+    },
+    "roles": {
+      "title": "Roles and permissions",
+      "description": "Customize what each role can do. System roles cannot be deleted, but their permissions are editable.",
+      "create": "New role",
+      "created": "Role created",
+      "createFailed": "Could not create role",
+      "saved": "Role updated",
+      "saveFailed": "Could not update role",
+      "deleted": "Role deleted",
+      "deleteFailed": "Could not delete role",
+      "confirmDelete": "Delete this role? Members will lose permissions granted only through it.",
+      "system": "System",
+      "selectRole": "Select a role on the left to edit its permissions.",
+      "selectAll": "Select all",
+      "deselectAll": "Deselect all",
+      "form": {
+        "name": "Internal name",
+        "displayName": "Display name",
+        "description": "Description"
+      }
+    },
+    "assignments": {
+      "title": "Assignments",
+      "description": "Track and distribute todos across your workspace.",
+      "newAssignment": "Assign todo",
+      "created": "Todo assigned",
+      "createFailed": "Could not create assignment",
+      "assign": "Assign",
+      "allAssignees": "All assignees",
+      "empty": "No todos matched your filters.",
+      "stats": {
+        "total": "Total",
+        "overdue": "Overdue",
+        "dueThisWeek": "Due this week"
+      },
+      "col": {
+        "title": "Title",
+        "assignee": "Assignee",
+        "progress": "Progress"
+      }
+    }
+  }
+}

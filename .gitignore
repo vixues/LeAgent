@@ -1,0 +1,199 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+# Python/setuptools output — anchor to repo root so `src/**/build` etc. are not ignored
+/build/
+/develop-eggs/
+/dist/
+/downloads/
+/eggs/
+.eggs/
+# Only project-root Python packaging dirs; unanchored `lib/` ignores e.g. frontend/src/lib
+/lib/
+/lib64/
+/parts/
+/sdist/
+/var/
+/wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual environments
+.env
+.venv
+.uv_sync_marker
+# Anchor — unanchored `env/` ignores e.g. frontend/src/env
+/env/
+/venv/
+/ENV/
+/env.bak/
+/venv.bak/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.project
+.pydevproject
+.settings/
+*.sublime-workspace
+*.sublime-project
+
+# Testing
+.tox/
+.nox/
+.coverage
+.coverage.*
+htmlcov/
+.pytest_cache/
+backend/.pytest_leagent_home/
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb
+
+# Node.js
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnp
+.pnp.js
+
+# Frontend — TypeScript / ESLint (entire repo)
+*.tsbuildinfo
+.eslintcache
+
+# Build outputs
+frontend/dist/
+frontend/build/
+website/dist/
+*.js.map
+
+# Environment files
+.env
+.env.local
+.env.*.local
+.env.development.local
+.env.test.local
+.env.production.local
+*.env
+
+# Secrets (repo root only; avoid ignoring e.g. `src/**/secrets`)
+/secrets/
+*.pem
+*.key
+
+# Commercial offline activation batch (never commit real codes)
+desktop/electron/resources/leagent-license/offline_registry.csv
+*.crt
+credentials.json
+service-account.json
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+
+# Logs
+/logs/
+*.log
+npm-debug.log*
+
+# OS files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Docker
+docker-compose.override.yml
+
+# Temporary files
+/tmp/
+/temp/
+*.tmp
+*.temp
+*.bak
+
+# Cache
+.cache/
+*.cache
+
+# MinIO data
+minio_data/
+
+# Redis data
+redis_data/
+
+# PostgreSQL data
+postgres_data/
+
+# Milvus data
+milvus_data/
+
+# Uploads / local workspace data (repo root only — not `frontend/src/components/workspace`)
+/uploads/
+/workspace/
+
+# Generated files
+*.generated.*
+
+# LaTeX auxiliary files
+paper/*.aux
+paper/*.bbl
+paper/*.blg
+paper/*.log
+paper/*.out
+paper/*.toc
+paper/*.fls
+paper/*.fdb_latexmk
+paper/*.synctex.gz
+paper/arxiv_submission/
+
+# Alembic
+alembic/versions/*.pyc
+
+# Playwright
+playwright-report/
+playwright/.cache/
+
+# Type stubs
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# Ruff
+.ruff_cache/
+
+# Documentation build
+docs/_build/
+/site/
+
+# Desktop / Electron staging & artifacts
+desktop/staging/
+desktop/electron/dist/
+desktop/electron/dist-pack/
+desktop/electron/node_modules/
+desktop/electron/resources/runtime/
+desktop/electron/resources/backend-payload/
+desktop/runtime/payload/wheels/
+desktop/runtime/payload/*.exe
+desktop/runtime/payload/*.7z
+desktop/runtime/payload/*.zip
+desktop/runtime/payload/*.enc

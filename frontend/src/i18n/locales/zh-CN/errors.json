@@ -1,0 +1,20 @@
+{
+  "errors": {
+    "notFound": "页面不存在",
+    "unauthorized": "无权访问",
+    "unauthorizedDescription": "您没有权限访问此页面",
+    "serverError": "服务器错误",
+    "networkError": "网络错误，请检查连接",
+    "validationError": "输入验证失败",
+    "unknown": "发生未知错误",
+    "unknownDescription": "请稍后重试",
+    "uploadFailed": "上传失败",
+    "copyFailed": "复制失败",
+    "authLoginFailed": "登录失败",
+    "authRegisterFailed": "注册失败",
+    "authProfileUpdateFailed": "更新失败",
+    "authBootstrapTimeout": "会话校验超时（{{seconds}}s），请检查网络或 API 地址",
+    "errorBoundaryTitle": "出现错误",
+    "errorBoundaryDescription": "抱歉，页面遇到了一些问题。请尝试刷新页面或返回首页。"
+  }
+}

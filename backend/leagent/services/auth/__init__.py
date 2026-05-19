@@ -1,0 +1,67 @@
+"""Auth module — passthrough for single-user execution."""
+
+from leagent.services.auth.deps import (
+    AdminUserId,
+    CurrentPrincipal,
+    CurrentUserId,
+    OptionalUserId,
+    PermissionChecker,
+    RoleChecker,
+    UserPrincipal,
+    get_current_principal,
+    get_current_user_id,
+    get_current_user_id_optional,
+    require_admin,
+    require_dept_head,
+    require_permissions,
+    require_staff,
+)
+from leagent.services.auth.service import (
+    LOCAL_USER_ID,
+    AuthService,
+    TokenPair,
+    TokenPayload,
+    get_auth_service,
+    init_auth_service,
+)
+from leagent.services.auth.signed_url import (
+    SignedToken,
+    SignedUrlError,
+    build_download_url,
+    build_preview_url,
+    create_signed_token,
+    verify_signed_token,
+)
+from leagent.services.auth.tokens import TokenError, decode_token, mint_token
+
+__all__ = [
+    "LOCAL_USER_ID",
+    "AuthService",
+    "TokenPair",
+    "TokenPayload",
+    "get_auth_service",
+    "init_auth_service",
+    "get_current_user_id",
+    "get_current_user_id_optional",
+    "get_current_principal",
+    "UserPrincipal",
+    "RoleChecker",
+    "PermissionChecker",
+    "require_admin",
+    "require_dept_head",
+    "require_staff",
+    "require_permissions",
+    "CurrentUserId",
+    "CurrentPrincipal",
+    "OptionalUserId",
+    "AdminUserId",
+    "SignedToken",
+    "SignedUrlError",
+    "build_download_url",
+    "build_preview_url",
+    "create_signed_token",
+    "verify_signed_token",
+    "TokenError",
+    "decode_token",
+    "mint_token",
+]

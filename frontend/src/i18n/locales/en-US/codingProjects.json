@@ -1,0 +1,80 @@
+{
+  "codingProjects": {
+    "title": "Coding Projects",
+    "subtitle": "Browse scaffolded projects, files, and Git status. Run the dev server when you need a live preview.",
+    "confirmDeleteProject": "Delete this coding project? The database entry will be removed; files on disk are kept.",
+    "new": "New project",
+    "showProjects": "Projects",
+    "emptyHint": "No projects yet. Create your first scaffolded project to get started.",
+    "selectHint": "Select a project from the list, or create a new one.",
+    "createTitle": "New coding project",
+    "create": "Create",
+    "fields": {
+      "name": "Name",
+      "namePlaceholder": "my-awesome-app",
+      "template": "Template",
+      "templatePlaceholder": "Select a template",
+      "description": "Description (optional)"
+    },
+    "tabs": {
+      "files": "Files",
+      "git": "Git",
+      "run": "Run"
+    },
+    "files": {
+      "treeTitle": "Project files",
+      "preview": "Preview",
+      "chooseFile": "Select a file to preview its contents.",
+      "truncated": "Listing truncated for performance.",
+      "loadError": "Could not load file tree.",
+      "fileError": "Could not load this file.",
+      "binaryHint": "This file type cannot be previewed as text.",
+      "copyContents": "Copy file contents"
+    },
+    "git": {
+      "title": "Repository",
+      "notRepo": "This folder is not a Git repository (or Git metadata is unavailable).",
+      "noGit": "Git is not installed on the server — status cannot be shown.",
+      "branch": "Branch",
+      "commit": "HEAD",
+      "workingTree": "Working tree",
+      "clean": "Working tree clean",
+      "loadError": "Could not load Git status.",
+      "refresh": "Refresh",
+      "status": {
+        "untracked": "New",
+        "modified": "Modified",
+        "added": "Added",
+        "deleted": "Deleted",
+        "renamed": "Renamed",
+        "unmerged": "Conflict",
+        "ignored": "Ignored",
+        "porcelainHint": "Git status code: {{code}} (?? = not tracked yet)"
+      }
+    },
+    "run": {
+      "run": "Run",
+      "restart": "Restart",
+      "stop": "Stop",
+      "openExternal": "Open preview",
+      "logs": "Logs",
+      "expandPreview": "Embedded preview",
+      "previewUnavailable": "Start the dev server to enable preview.",
+      "fastapiPreviewHint": "FastAPI — preview opens /docs when embedded.",
+      "frontendPreviewHint": "Frontend dev server with HMR where supported.",
+      "runToPreview": "Run the project to load the preview.",
+      "logsEmpty": "Waiting for log lines…",
+      "logsIdle": "Logs appear when the project is running.",
+      "logsIdleCrashed": "Process is not running. If it exited unexpectedly, check the error messages above or try Run again.",
+      "crashedHint": "The last run exited unexpectedly (crashed). Details may appear below once the log stream connects.",
+      "logStreamError": "Log stream"
+    },
+    "status": {
+      "idle": "Idle",
+      "starting": "Starting",
+      "running": "Running",
+      "stopping": "Stopping",
+      "crashed": "Crashed"
+    }
+  }
+}

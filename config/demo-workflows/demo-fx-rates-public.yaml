@@ -1,0 +1,77 @@
+# Demo: ECB Frankfurter latest FX JSON (no API key) + parse for dashboards.
+# Requires Playwright/Chromium for web_scraper (same as project start.sh defaults).
+id: demo_fx_rates_public
+name: "Demo: FX rates (Frankfurter)"
+description: >-
+  Fetches https://api.frankfurter.app/latest JSON via web_scraper, then json_parser.
+  Inputs base and targets let cron payloads refresh the same flow with different pairs.
+inputs:
+  - name: base
+    type: string
+    required: false
+    default: "USD"
+  - name: targets
+    type: string
+    required: false
+    default: "CNY,EUR,JPY"
+outputs:
+  - name: fx_rates
+    value: "${var.fx_json.data}"
+  - name: scrape_meta
+    value: "${var.fx_page}"
+metadata:
+  category: demo
+  tags:
+    - demo
+    - public-api
+    - frankfurter
+nodes:
+  start:
+    class_type: StartNode
+    inputs: {}
+    meta:
+      name: Start
+    control:
+      next: fx_scrape
+  fx_scrape:
+    class_type: ToolCallNode
+    inputs:
+      tool: web_scraper
+      params:
+        url: "https://api.frankfurter.app/latest?from=${input.base}&to=${input.targets}"
+        extract_text: true
+      output: fx_page
+      retry_count: 1
+      retry_delay_sec: 2.0
+    meta:
+      name: Fetch Frankfurter JSON
+    control:
+      next: fx_parse
+  fx_parse:
+    class_type: ToolCallNode
+    inputs:
+      tool: json_parser
+      params:
+        operation: parse
+        text: "${var.fx_page.data}"
+      output: fx_json
+      retry_count: 0
+      retry_delay_sec: 1.0
+    meta:
+      name: Parse JSON
+    control:
+      next: end
+  end:
+    class_type: EndNode
+    inputs: {}
+    meta:
+      name: End
+    control: {}
+control:
+  start: start
+  end: end
+  edges: []
+  timeout_sec: 900
+  max_retries: 2
+  tags:
+    - demo

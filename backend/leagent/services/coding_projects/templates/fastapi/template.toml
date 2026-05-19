@@ -1,0 +1,9 @@
+runtime_kind = "fastapi"
+title = "FastAPI minimal app"
+description = "FastAPI + uvicorn scaffold with /, /health, /items in-memory CRUD, and a pytest example."
+needs_install = true
+install_marker = ".leagent_install.ok"
+install_argv = ["python", "-m", "pip", "install", "-r", "requirements.txt"]
+start_argv = ["uvicorn", "app.main:app", "--host", "$HOST", "--port", "$PORT", "--reload"]
+ready_regex = "Application startup complete"
+health_path = "/health"

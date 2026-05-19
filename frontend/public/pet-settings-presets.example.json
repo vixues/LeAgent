@@ -1,0 +1,112 @@
+[
+  {
+    "id": "preset_sparrow",
+    "appearance_file_id": null,
+    "appearance_builtin": "bird",
+    "nest": {
+      "themeId": "grass",
+      "accent": "#0d9488",
+      "backgroundOpacity": 0.26,
+      "backgroundPattern": "dots"
+    },
+    "behavior": {
+      "mode": "auto",
+      "manualMode": "jump",
+      "autoReactivity": "expressive",
+      "motionStyle": "playful",
+      "motionSpeed": 1.25,
+      "idleAnimation": "float"
+    }
+  },
+  {
+    "id": "preset_rabbit",
+    "appearance_file_id": null,
+    "appearance_builtin": "rabbit",
+    "nest": {
+      "themeId": "wood",
+      "accent": "#c084fc",
+      "backgroundOpacity": 0.22,
+      "backgroundPattern": "grid"
+    },
+    "behavior": {
+      "mode": "auto",
+      "manualMode": "jump",
+      "autoReactivity": "normal",
+      "motionStyle": "bouncy",
+      "motionSpeed": 1.1,
+      "idleAnimation": "hop"
+    }
+  },
+  {
+    "id": "preset_puppy",
+    "appearance_file_id": null,
+    "appearance_builtin": "dog",
+    "nest": {
+      "themeId": "grass",
+      "accent": "#ea580c",
+      "backgroundOpacity": 0.3,
+      "backgroundPattern": "noise"
+    },
+    "behavior": {
+      "mode": "auto",
+      "manualMode": "shake",
+      "autoReactivity": "expressive",
+      "motionStyle": "playful",
+      "motionSpeed": 1.35,
+      "idleAnimation": "tailWag"
+    }
+  },
+  {
+    "id": "preset_cat",
+    "appearance_file_id": null,
+    "appearance_builtin": "cat",
+    "nest": {
+      "themeId": "night",
+      "accent": "#94a3b8",
+      "backgroundOpacity": 0.2,
+      "backgroundPattern": "none"
+    },
+    "behavior": {
+      "mode": "manual",
+      "manualMode": "sleep",
+      "autoReactivity": "subtle",
+      "motionStyle": "focused",
+      "motionSpeed": 0.8,
+      "idleAnimation": "blink"
+    }
+  },
+  {
+    "id": "line_art_default",
+    "appearance_file_id": null,
+    "nest": {
+      "themeId": "grass",
+      "accent": "#0284c7",
+      "backgroundFileId": null,
+      "backgroundOpacity": 0.22,
+      "backgroundPattern": "dots"
+    },
+    "behavior": { "mode": "auto", "manualMode": "calm", "autoReactivity": "normal" }
+  },
+  {
+    "id": "wood_studio",
+    "appearance_file_id": null,
+    "nest": {
+      "themeId": "wood",
+      "accent": "#c2410c",
+      "backgroundOpacity": 0.3,
+      "backgroundPattern": "grid"
+    },
+    "behavior": { "mode": "auto", "manualMode": "calm", "autoReactivity": "subtle" }
+  },
+  {
+    "id": "night_coder",
+    "appearance_file_id": null,
+    "nest": {
+      "themeId": "night",
+      "accent": "#818cf8",
+      "backgroundOpacity": 0.35,
+      "backgroundPattern": "noise"
+    },
+    "behavior": { "mode": "auto", "manualMode": "calm", "autoReactivity": "expressive" }
+  }
+]

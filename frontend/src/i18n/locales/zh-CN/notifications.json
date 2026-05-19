@@ -1,0 +1,34 @@
+{
+  "notifications": {
+    "title": "通知",
+    "description": "查看系统提醒、待办更新与@提及。",
+    "bell": "通知",
+    "empty": "暂无未读通知。",
+    "markAllRead": "全部标记为已读",
+    "markRead": "标记为已读",
+    "delete": "删除",
+    "unreadBadge": "{{count}} 条未读",
+    "filter": {
+      "all": "全部",
+      "unread": "未读",
+      "category": "类别"
+    },
+    "category": {
+      "system": "系统",
+      "task": "任务",
+      "alert": "警报",
+      "update": "更新",
+      "mention": "提及",
+      "todo": "待办"
+    },
+    "level": {
+      "info": "信息",
+      "warn": "警告",
+      "error": "错误",
+      "success": "成功"
+    },
+    "actions": {
+      "open": "打开"
+    }
+  }
+}

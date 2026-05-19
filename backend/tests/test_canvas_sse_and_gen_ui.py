@@ -1,0 +1,887 @@
+"""Tests for canvas companion SSE events and generative UI schema validation."""
+
+from uuid import uuid4
+
+import pytest
+
+from leagent.api.v1 import chat as chat_mod
+from jsonschema.exceptions import ValidationError
+
+from leagent.services.gen_ui.schema import (
+    normalize_ui_tree,
+    validate_ui_patch,
+    validate_ui_tree,
+)
+from leagent.services.canvas.service import (
+    build_preview_html,
+    mint_preview_token,
+    preview_query_path,
+    sanitize_html,
+)
+from leagent.config.settings import CanvasSettings, Settings
+from leagent.services.database.models.canvas import CanvasContentType, CanvasDocument
+from leagent.tools.base import ToolContext
+from leagent.tools.canvas.canvas_publish import CanvasPublishTool
+from leagent.tools.canvas.genui_guide import GetGenuiGuideTool
+from leagent.tools.canvas.html_guide import GetHtmlCanvasGuideTool
+from leagent.tools.canvas.ui_components import EmitUiTreeTool
+
+
+def test_canvas_publish_params_accepts_html_blob_id() -> None:
+    tool = CanvasPublishTool()
+    ok, err = tool.validate_params(
+        {
+            "title": "Page",
+            "mode": "html",
+            "session_id": "current",
+            "html_blob_id": "a" * 32,
+        },
+    )
+    assert ok, err
+
+
+def test_canvas_publish_params_accepts_current_and_omitted_session_id():
+    """JSON schema must allow 'current' (7 chars) and optional session_id; models use both."""
+    tool = CanvasPublishTool()
+    ok, err = tool.validate_params(
+        {
+            "title": "Dashboard",
+            "mode": "html",
+            "session_id": "current",
+            "html": "<div>ok</div>",
+        },
+    )
+    assert ok, err
+    ok2, err2 = tool.validate_params(
+        {
+            "title": "Dashboard",
+            "mode": "html",
+            "html": "<div>ok</div>",
+        },
+    )
+    assert ok2, err2
+
+
+def test_companion_canvas_event():
+    out = chat_mod._companion_sse_events(
+        "tool_result",
+        {
+            "name": "canvas_publish",
+            "success": True,
+            "data": {
+                "canvas_id": str(uuid4()),
+                "revision": 1,
+                "preview_path": "/api/v1/canvas/preview?token=abc",
+                "title": "T",
+                "content_type": "html",
+                "trust": "hosted",
+                "open_in_panel": True,
+            },
+        },
+    )
+    assert len(out) == 1
+    assert out[0][0] == "canvas"
+    assert "preview_path" in out[0][1]
+
+
+def test_companion_emit_ui():
+    out = chat_mod._companion_sse_events(
+        "tool_result",
+        {
+            "name": "emit_ui_tree",
+            "success": True,
+            "data": {
+                "payload": {
+                    "tree": {
+                        "schemaVersion": "1",
+                        "root": {"nodeId": "1", "kind": "Text", "props": {"value": "x"}},
+                    }
+                }
+            },
+        },
+    )
+    assert any(x[0] == "ui_tree" for x in out)
+
+
+def test_companion_includes_tool_call_id():
+    tid = "call_abc123"
+    out = chat_mod._companion_sse_events(
+        "tool_result",
+        {
+            "tool_call_id": tid,
+            "name": "emit_ui_tree",
+            "success": True,
+            "data": {
+                "payload": {
+                    "tree": {
+                        "schemaVersion": "1",
+                        "root": {"nodeId": "1", "kind": "Text", "props": {"value": "x"}},
+                    }
+                }
+            },
+        },
+    )
+    ui = next(x for x in out if x[0] == "ui_tree")
+    assert ui[1].get("tool_call_id") == tid
+
+
+def test_validate_root_ui_slot():
+    tree = {
+        "schemaVersion": "1",
+        "root": {
+            "nodeId": "1",
+            "kind": "Stack",
+            "props": {"uiSlot": "weather"},
+            "children": [{"nodeId": "2", "kind": "Text", "props": {"value": "hi"}}],
+        },
+    }
+    validate_ui_tree(tree, max_depth=10, max_nodes=20)
+
+
+def test_validate_root_ui_slot_rejects_invalid():
+    tree = {
+        "schemaVersion": "1",
+        "root": {"nodeId": "1", "kind": "Stack", "props": {"uiSlot": "nope"}, "children": []},
+    }
+    with pytest.raises(Exception):
+        validate_ui_tree(tree, max_depth=10, max_nodes=20)
+
+
+def test_validate_poster_media_layout_kinds():
+    """AspectBox, DesignSurface, LiveCamera, and extended Image validate as schema v1."""
+    tree = {
+        "schemaVersion": "1",
+        "root": {
+            "nodeId": "root",
+            "kind": "DesignSurface",
+            "props": {"preset": "slide", "padding": "md"},
+            "children": [
+                {
+                    "nodeId": "ab",
+                    "kind": "AspectBox",
+                    "props": {"ratio": "16:9", "rounded": True},
+                    "children": [
+                        {
+                            "nodeId": "cam",
+                            "kind": "LiveCamera",
+                            "props": {"facingMode": "user", "mirrored": True},
+                            "children": [],
+                        },
+                        {
+                            "nodeId": "img",
+                            "kind": "Image",
+                            "props": {
+                                "src": "https://example.com/p.png",
+                                "alt": "x",
+                                "fit": "cover",
+                                "lightbox": True,
+                            },
+                            "children": [],
+                        },
+                    ],
+                }
+            ],
+        },
+    }
+    out = validate_ui_tree(tree, max_depth=12, max_nodes=30)
+    assert out["root"]["kind"] == "DesignSurface"
+    assert out["root"]["children"][0]["kind"] == "AspectBox"
+    assert out["root"]["children"][0]["children"][0]["kind"] == "LiveCamera"
+
+
+def test_validate_ui_tree_accepts_chart_node():
+    tree = {
+        "schemaVersion": "1",
+        "root": {
+            "nodeId": "chart-root",
+            "kind": "Chart",
+            "props": {
+                "chart": "line",
+                "title": "Revenue",
+                "categories": ["A", "B", "C"],
+                "series": [{"name": "Q", "values": [10, 20, 30]}],
+                "height": 260,
+                "showGrid": True,
+            },
+        },
+    }
+    out = validate_ui_tree(tree, max_depth=10, max_nodes=20)
+    assert out["root"]["kind"] == "Chart"
+
+
+def test_print_renderer_chart_table_fallback():
+    from leagent.services.gen_ui.print_renderer import render_pages_html
+
+    tree = {
+        "schemaVersion": "1",
+        "root": {
+            "nodeId": "chart-root",
+            "kind": "Chart",
+            "props": {
+                "chart": "bar",
+                "title": "Sales",
+                "categories": ["Jan", "Feb"],
+                "series": [{"name": "Units", "values": [5, 7]}],
+            },
+        },
+    }
+    norm = validate_ui_tree(tree, max_depth=10, max_nodes=20)
+    html = render_pages_html(norm, mode="document")
+    assert "Sales" in html
+    assert "<table" in html
+
+
+def test_validate_gen_ui():
+    t = {
+        "schemaVersion": "1",
+        "root": {"nodeId": "1", "kind": "Stack", "children": []},
+    }
+    out = validate_ui_tree(t, max_depth=10, max_nodes=20)
+    assert out["schemaVersion"] == "1"
+    assert out["root"]["nodeId"] == "1"
+    validate_ui_patch(
+        {
+            "patches": [{"op": "replace", "path": "/root", "value": {"nodeId": "1", "kind": "Text"}}]
+        }
+    )
+
+
+def test_validate_gen_ui_normalizes_missing_schema_and_node_ids():
+    partial = {"root": {"kind": "Text", "props": {"value": "x"}}}
+    out = validate_ui_tree(partial, max_depth=10, max_nodes=20)
+    assert out["schemaVersion"] == "1"
+    assert out["root"]["kind"] == "Text"
+    assert out["root"]["nodeId"]
+    assert len(out["root"]["nodeId"]) >= 1
+
+
+def test_validate_coerces_legacy_type_to_kind():
+    """LLM output often uses ``type`` like React; schema and frontend use ``kind``."""
+    tree = {
+        "root": {
+            "type": "Stack",
+            "props": {"spacing": "lg"},
+            "children": [{"type": "Text", "props": {"value": "hi"}}],
+        },
+    }
+    out = validate_ui_tree(tree, max_depth=10, max_nodes=20)
+    assert out["root"]["kind"] == "Stack"
+    assert out["root"]["children"][0]["kind"] == "Text"
+    assert "type" not in out["root"]
+    assert "type" not in out["root"]["children"][0]
+
+
+def test_validate_wraps_bare_root_node_with_type():
+    """Some models pass the root Stack/Grid as the top-level object (no schemaVersion/root)."""
+    tree = {
+        "type": "Stack",
+        "props": {"gap": "lg"},
+        "children": [{"type": "Text", "props": {"value": "x"}}],
+    }
+    out = validate_ui_tree(tree, max_depth=10, max_nodes=20)
+    assert out["schemaVersion"] == "1"
+    assert out["root"]["kind"] == "Stack"
+    assert out["root"]["children"][0]["kind"] == "Text"
+
+
+def test_validate_normalizes_common_model_prop_aliases():
+    tree = {
+        "type": "Stack",
+        "props": {"gap": "lg", "padding": "12px"},
+        "children": [
+            {
+                "type": "Row",
+                "props": {"gap": "sm", "alignment": "start"},
+                "children": [
+                    {"type": "Badge", "props": {"text": "回顾性研究", "variant": "info"}},
+                    {"type": "Text", "props": {"content": "摘要"}},
+                    {"type": "Image", "props": {"imageUrl": "https://example.com/a.png"}},
+                ],
+            }
+        ],
+    }
+    out = validate_ui_tree(tree, max_depth=10, max_nodes=20)
+    root = out["root"]
+    row = root["children"][0]
+    assert root["props"]["gap"] == 16
+    assert root["props"]["padding"] == 12
+    assert row["props"]["gap"] == 8
+    assert row["props"]["align"] == "start"
+    assert row["children"][0]["props"]["value"] == "回顾性研究"
+    assert row["children"][1]["props"]["value"] == "摘要"
+    assert row["children"][2]["props"]["src"] == "https://example.com/a.png"
+
+
+def test_normalize_slide_deck_expands_props_slides():
+    tree = {
+        "schemaVersion": "1",
+        "root": {
+            "kind": "SlideDeck",
+            "props": {
+                "title": "Deck",
+                "slides": [
+                    {
+                        "title": "Cover",
+                        "subtitle": "Sub",
+                        "content": "Body",
+                        "variant": "cover",
+                    },
+                    {
+                        "title": "Inner",
+                        "variant": "content",
+                        "children": [{"kind": "Text", "props": {"value": "hello"}}],
+                    },
+                ],
+            },
+        },
+    }
+    out = validate_ui_tree(tree, max_depth=30, max_nodes=300)
+    root = out["root"]
+    assert root["kind"] == "SlideDeck"
+    assert "slides" not in (root.get("props") or {})
+    ch = root["children"]
+    assert len(ch) == 2
+    assert ch[0]["kind"] == "Slide"
+    assert ch[0]["props"]["title"] == "Cover"
+    assert ch[0]["props"]["layout"] == "cover"
+    kinds0 = [n.get("kind") for n in ch[0]["children"]]
+    assert "Text" in kinds0
+    assert ch[1]["kind"] == "Slide"
+    assert ch[1]["children"][0]["props"]["value"] == "hello"
+
+
+def test_normalize_slide_deck_keeps_explicit_slide_children_over_props_slides():
+    tree = {
+        "schemaVersion": "1",
+        "root": {
+            "kind": "SlideDeck",
+            "props": {"slides": [{"title": "From slides array"}]},
+            "children": [{"kind": "Slide", "props": {"title": "Explicit"}}],
+        },
+    }
+    out = validate_ui_tree(tree, max_depth=20, max_nodes=50)
+    root = out["root"]
+    assert len(root["children"]) == 1
+    assert root["children"][0]["props"]["title"] == "Explicit"
+
+
+@pytest.mark.asyncio
+async def test_emit_ui_tree_accepts_tree_as_json_string():
+    """Some providers serialize the whole tree as a JSON string; schema allows oneOf object|string."""
+    tool = EmitUiTreeTool()
+    raw = '{"schemaVersion":"1","root":{"nodeId":"1","kind":"Stack","children":[]}}'
+    ok, err = tool.validate_params({"tree": raw})
+    assert ok, err
+    result = await tool.execute({"tree": raw}, ToolContext(user_id="u1", session_id="s1"))
+    assert result["payload"]["tree"]["schemaVersion"] == "1"
+
+
+@pytest.mark.asyncio
+async def test_emit_ui_tree_returns_normalized_payload_for_sse():
+    result = await EmitUiTreeTool().execute(
+        {"tree": {"type": "Badge", "props": {"text": "Ready", "variant": "success"}}},
+        ToolContext(user_id="u1", session_id="s1"),
+    )
+    tree = result["payload"]["tree"]
+    assert tree["root"]["kind"] == "Badge"
+    assert tree["root"]["props"]["value"] == "Ready"
+
+    out = chat_mod._companion_sse_events(
+        "tool_result",
+        {"name": "emit_ui_tree", "success": True, "data": result},
+    )
+    assert out == [("ui_tree", {"tree": tree, "canvas_id": None})]
+
+
+def test_normalize_lifts_known_flat_card_props():
+    """Catalog-documented flat keys (title/subtitle/padding/variant) lift into props."""
+    tree = {
+        "kind": "Card",
+        "title": "X",
+        "subtitle": "Y",
+        "padding": "lg",
+        "variant": "elevated",
+        "children": [{"kind": "Text", "value": "hi"}],
+    }
+    out = validate_ui_tree(tree, max_depth=10, max_nodes=20)
+    root_props = out["root"]["props"]
+    assert root_props["title"] == "X"
+    assert root_props["subtitle"] == "Y"
+    assert root_props["padding"] == "lg"
+    assert root_props["variant"] == "elevated"
+    # Flat keys are gone from the node level after lifting.
+    for key in ("title", "subtitle", "padding", "variant"):
+        assert key not in out["root"]
+    assert out["root"]["children"][0]["props"]["value"] == "hi"
+
+
+def test_normalize_lifts_flat_props_recursively():
+    """Mirrors the reported failure: nested Tabs > TabItem > MetricCard flat shape."""
+    tree = {
+        "kind": "Stack",
+        "gap": 12,
+        "children": [
+            {
+                "kind": "Tabs",
+                "defaultTab": "A",
+                "children": [
+                    {
+                        "kind": "TabItem",
+                        "label": "A",
+                        "children": [
+                            {
+                                "kind": "MetricCard",
+                                "title": "Users",
+                                "value": "100",
+                                "delta": "+5%",
+                                "trend": "up",
+                            },
+                        ],
+                    },
+                ],
+            },
+        ],
+    }
+    out = validate_ui_tree(tree, max_depth=10, max_nodes=20)
+    root = out["root"]
+    tabs = root["children"][0]
+    tab_item = tabs["children"][0]
+    metric = tab_item["children"][0]
+    assert root["props"]["gap"] == 12
+    assert tabs["props"]["defaultTab"] == "A"
+    assert tab_item["props"]["label"] == "A"
+    assert metric["props"]["title"] == "Users"
+    assert metric["props"]["value"] == "100"
+    assert metric["props"]["delta"] == "+5%"
+    assert metric["props"]["trend"] == "up"
+
+
+def test_normalize_keeps_unknown_flat_keys_failing():
+    """Unknown flat keys are NOT silently absorbed — schema raises a real error."""
+    tree = {"kind": "Card", "banana": "yes"}
+    with pytest.raises(ValidationError):
+        validate_ui_tree(tree, max_depth=10, max_nodes=20)
+
+
+def test_normalize_caller_props_win_over_flat():
+    """Explicit props.<key> takes precedence over a duplicate flat key."""
+    tree = {
+        "kind": "Card",
+        "title": "flat",
+        "props": {"title": "explicit"},
+    }
+    out = normalize_ui_tree(tree)
+    assert out["root"]["props"]["title"] == "explicit"
+    assert "title" not in out["root"]
+
+
+@pytest.mark.asyncio
+async def test_emit_ui_tree_invalid_json_string_includes_decode_hint():
+    """Malformed nested JSON string surfaces byte position so the model can fix escapes."""
+    bad = '{"root":{"kind":"Text","props":{"value":"broken "inner" quote"}}}'
+    with pytest.raises(ValueError) as excinfo:
+        await EmitUiTreeTool().execute(
+            {"tree": bad}, ToolContext(user_id="u1", session_id="s1")
+        )
+    msg = str(excinfo.value)
+    assert "tree is not valid JSON" in msg
+    assert "byte" in msg
+    assert "Near:" in msg
+
+
+@pytest.mark.asyncio
+async def test_emit_ui_tree_accepts_real_failing_payload():
+    """Trimmed copy of the user-reported failing tree must validate end-to-end."""
+    failing = {
+        "root": {
+            "kind": "Stack",
+            "gap": 24,
+            "padding": 16,
+            "children": [
+                {
+                    "kind": "Card",
+                    "title": "Canvas demo",
+                    "subtitle": "Gen UI shape",
+                    "variant": "elevated",
+                    "padding": "lg",
+                    "children": [
+                        {
+                            "kind": "Text",
+                            "value": "Inline gen UI renders in chat",
+                            "size": "base",
+                        },
+                    ],
+                },
+                {
+                    "kind": "Tabs",
+                    "defaultTab": "Dashboard",
+                    "children": [
+                        {
+                            "kind": "TabItem",
+                            "label": "Dashboard",
+                            "children": [
+                                {
+                                    "kind": "Grid",
+                                    "columns": 3,
+                                    "gap": 16,
+                                    "children": [
+                                        {
+                                            "kind": "MetricCard",
+                                            "title": "Active users",
+                                            "value": "12,847",
+                                            "delta": "+12.5%",
+                                            "trend": "up",
+                                            "period": "vs last month",
+                                            "icon": "👥",
+                                        },
+                                    ],
+                                },
+                            ],
+                        },
+                    ],
+                },
+            ],
+        },
+    }
+    result = await EmitUiTreeTool().execute(
+        {"tree": failing}, ToolContext(user_id="u1", session_id="s1")
+    )
+    tree = result["payload"]["tree"]
+    root = tree["root"]
+    assert root["kind"] == "Stack"
+    assert root["props"]["gap"] == 24
+    card = root["children"][0]
+    assert card["kind"] == "Card"
+    assert card["props"]["title"] == "Canvas demo"
+    assert card["props"]["padding"] == "lg"
+    metric = root["children"][1]["children"][0]["children"][0]["children"][0]
+    assert metric["kind"] == "MetricCard"
+    assert metric["props"]["title"] == "Active users"
+    assert metric["props"]["delta"] == "+12.5%"
+
+
+def _minimal_settings() -> Settings:
+    return Settings(
+        canvas=CanvasSettings(preview_signing_secret="sign-secret" * 2),
+    )
+
+
+def test_preview_token_and_path():
+    s = _minimal_settings()
+    uid = uuid4()
+    cid = uuid4()
+    tok = mint_preview_token(s, canvas_id=cid, revision=1, user_id=uid)
+    p = preview_query_path(tok)
+    assert "/api/v1/canvas/preview" in p
+    assert "token=" in p
+
+
+def test_build_preview_html_wraps_fragment():
+    s = _minimal_settings()
+    doc = CanvasDocument(
+        id=uuid4(),
+        canvas_id=uuid4(),
+        revision=1,
+        session_id=uuid4(),
+        user_id=uuid4(),
+        title="x",
+        content_type=CanvasContentType.HTML.value,
+        html_body="<p>hi</p>",
+    )
+    html, _m = build_preview_html(doc, s)
+    assert "<!DOCTYPE html>" in html
+    assert "<p>hi</p>" in html
+
+
+def test_build_preview_html_professional_shell():
+    """Professional HTML shell includes Tailwind CDN, Inter font, and utility classes."""
+    s = _minimal_settings()
+    doc = CanvasDocument(
+        id=uuid4(),
+        canvas_id=uuid4(),
+        revision=1,
+        session_id=uuid4(),
+        user_id=uuid4(),
+        title="Dashboard",
+        content_type=CanvasContentType.HTML.value,
+        html_body='<div class="wa-card">Hello</div>',
+    )
+    html, mime = build_preview_html(doc, s)
+    assert "<!DOCTYPE html>" in html
+    assert "cdn.tailwindcss.com" in html
+    assert "Inter" in html
+    assert "wa-card" in html
+    assert "wa-gradient" in html
+    assert "prefers-color-scheme: dark" in html
+    assert "scrollbar-width: none" in html
+    assert "text/html" in mime
+
+
+def test_build_preview_html_injects_tailwind_into_full_document():
+    """Full <!DOCTYPE html>… from the agent must still get Tailwind when CDN is absent."""
+    s = _minimal_settings()
+    full = """<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"/><title>T</title></head>
+<body><div class="p-4 text-lg font-semibold text-primary-600">Styled</div></body></html>"""
+    doc = CanvasDocument(
+        id=uuid4(),
+        canvas_id=uuid4(),
+        revision=1,
+        session_id=uuid4(),
+        user_id=uuid4(),
+        title="Full",
+        content_type=CanvasContentType.HTML.value,
+        html_body=full,
+    )
+    html, _mime = build_preview_html(doc, s)
+    assert html.count("cdn.tailwindcss.com") >= 1
+    assert "tailwind.config" in html
+    assert "Styled" in html
+
+
+def test_sanitize_html_fragment_preserves_tailwind_class_svg_and_style():
+    """Fragments must keep class/style, inline <style>, and SVG (Tailwind + charts)."""
+    frag = (
+        '<style>.chart{color:blue}</style>'
+        '<div class="p-4 wa-card text-primary-600" style="margin:8px">'
+        '<svg viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg">'
+        '<circle cx="10" cy="10" r="8" fill="currentColor"/>'
+        "</svg></div>"
+    )
+    out = sanitize_html(frag, max_bytes=1024 * 1024)
+    assert "wa-card" in out
+    assert "text-primary-600" in out
+    assert 'style="margin:8px"' in out or "margin:8px" in out
+    assert ".chart{color:blue}" in out or "color:blue" in out
+    assert "<svg" in out.lower()
+    assert "<circle" in out.lower()
+
+
+def test_sanitize_html_fragment_strips_inline_handlers_and_bad_scripts():
+    out = sanitize_html(
+        '<div onclick="alert(1)" class="ok">x</div><script>evil()</script>',
+        max_bytes=1024 * 1024,
+    )
+    assert "onclick" not in out.lower()
+    assert "evil" not in out
+    assert "ok" in out
+
+
+def test_sanitize_html_full_document_preserves_style_strips_inline_script():
+    full = """<!DOCTYPE html>
+<html><head><style>body{color:navy}</style></head>
+<body><div class="hero">Hi</div><script>alert(1)</script>
+<script src="https://cdn.tailwindcss.com"></script>
+</body></html>"""
+    out = sanitize_html(full, max_bytes=1024 * 1024)
+    assert "color:navy" in out
+    assert "hero" in out
+    assert "alert(1)" not in out
+    assert "cdn.tailwindcss.com" in out
+
+
+def test_sanitize_html_full_document_strips_javascript_href():
+    full = """<!DOCTYPE html><html><body>
+<a href="javascript:void(0)" class="link">x</a>
+<a href="https://example.com/" class="safe">y</a>
+</body></html>"""
+    out = sanitize_html(full, max_bytes=1024 * 1024)
+    assert "javascript:" not in out.lower()
+    assert "example.com" in out
+    assert "safe" in out
+
+
+def test_build_preview_html_uses_sanitized_body_classes():
+    """Simulate publish path: stored html_body is sanitize_html(agent_html)."""
+    s = _minimal_settings()
+    raw = '<div class="rounded-xl p-6 shadow-md bg-slate-100 dark:bg-slate-800">Card</div>'
+    body = sanitize_html(raw, max_bytes=s.canvas.max_html_bytes)
+    doc = CanvasDocument(
+        id=uuid4(),
+        canvas_id=uuid4(),
+        revision=1,
+        session_id=uuid4(),
+        user_id=uuid4(),
+        title="Sanitized",
+        content_type=CanvasContentType.HTML.value,
+        html_body=body,
+    )
+    html, _mime = build_preview_html(doc, s)
+    assert "rounded-xl" in html
+    assert "dark:bg-slate-800" in html
+    assert "Card" in html
+
+
+@pytest.mark.asyncio
+async def test_get_html_canvas_guide_returns_payload():
+    data = await GetHtmlCanvasGuideTool().execute({}, ToolContext(user_id="u1", session_id="s1"))
+    assert "shipped_utility_classes" in data
+    assert "wa-card" in data["shipped_utility_classes"]
+    assert "reference_template" in data
+
+
+@pytest.mark.asyncio
+async def test_get_genui_guide_returns_payload():
+    data = await GetGenuiGuideTool().execute({}, ToolContext(user_id="u1", session_id="s1"))
+    assert "wire_format_and_syntax" in data
+    assert "layout_structure" in data
+    assert "emoji_and_icons" in data
+    assert "workflow_order" in data
+
+
+def test_list_component_catalog_returns_singleton_list():
+    from leagent.services.gen_ui.schema import list_component_catalog
+
+    a = list_component_catalog()
+    b = list_component_catalog()
+    assert a is b
+    assert len(a) > 0
+    design_surface = next(item for item in a if item["kind"] == "DesignSurface")
+    assert "geek" in design_surface["props"]["preset"]
+
+
+def test_validate_weather_card_tree():
+    """WeatherCard with forecast validates correctly."""
+    tree = {
+        "root": {
+            "kind": "WeatherCard",
+            "props": {
+                "location": "Beijing",
+                "temperature": "23°C",
+                "condition": "Partly Cloudy",
+                "icon": "⛅",
+                "humidity": "65%",
+                "wind": "12 km/h",
+                "forecast": [
+                    {"day": "Mon", "high": "25°C", "low": "18°C", "icon": "☀️"},
+                    {"day": "Tue", "high": "22°C", "low": "16°C", "icon": "🌧️"},
+                ],
+            },
+        }
+    }
+    out = validate_ui_tree(tree, max_depth=10, max_nodes=20)
+    assert out["schemaVersion"] == "1"
+    assert out["root"]["kind"] == "WeatherCard"
+    assert out["root"]["props"]["location"] == "Beijing"
+    assert out["root"]["nodeId"]
+
+
+def test_validate_metric_card_tree():
+    tree = {
+        "root": {
+            "kind": "MetricCard",
+            "props": {
+                "title": "Revenue",
+                "value": "$1.2M",
+                "delta": "+5.2%",
+                "trend": "up",
+                "period": "vs last week",
+                "icon": "💰",
+            },
+        }
+    }
+    out = validate_ui_tree(tree, max_depth=10, max_nodes=20)
+    assert out["root"]["kind"] == "MetricCard"
+    assert out["root"]["props"]["delta"] == "+5.2%"
+
+
+def test_validate_interactive_button_tree():
+    tree = {
+        "root": {
+            "kind": "InteractiveButton",
+            "props": {
+                "label": "Submit",
+                "actionId": "submit-form",
+                "icon": "🚀",
+                "variant": "primary",
+                "size": "md",
+                "tooltip": "Click to submit",
+                "disabled": False,
+            },
+        }
+    }
+    out = validate_ui_tree(tree, max_depth=10, max_nodes=20)
+    assert out["root"]["kind"] == "InteractiveButton"
+    assert out["root"]["props"]["actionId"] == "submit-form"
+
+
+def test_validate_new_layout_components():
+    """Grid, Row, Tabs, Accordion all validate as valid kinds."""
+    for kind in ["Grid", "Row", "Tabs", "Accordion", "ScrollArea", "Spacer"]:
+        tree = {"root": {"kind": kind}}
+        out = validate_ui_tree(tree, max_depth=10, max_nodes=20)
+        assert out["root"]["kind"] == kind
+
+
+def test_validate_data_display_components():
+    """Badge, Tag, Stat, Progress, Table, etc. all validate."""
+    for kind in [
+        "Badge", "Tag", "Stat", "Progress", "Avatar", "Image",
+        "Icon", "Table", "List", "CodeBlock", "Markdown",
+    ]:
+        tree = {"root": {"kind": kind}}
+        out = validate_ui_tree(tree, max_depth=10, max_nodes=20)
+        assert out["root"]["kind"] == kind
+
+
+def test_validate_rich_card_components():
+    """All rich card kinds validate."""
+    for kind in [
+        "WeatherCard", "DataCard", "MetricCard", "ProfileCard",
+        "MediaCard", "AlertCard", "TimelineCard",
+    ]:
+        tree = {"root": {"kind": kind}}
+        out = validate_ui_tree(tree, max_depth=10, max_nodes=20)
+        assert out["root"]["kind"] == kind
+
+
+def test_validate_feedback_components():
+    for kind in ["Alert", "Callout"]:
+        tree = {
+            "root": {
+                "kind": kind,
+                "props": {"title": "Note", "message": "Hello", "severity": "info"},
+            }
+        }
+        out = validate_ui_tree(tree, max_depth=10, max_nodes=20)
+        assert out["root"]["kind"] == kind
+
+
+def test_validate_complex_dashboard_tree():
+    """A realistic dashboard tree with Grid, MetricCards, and a Table."""
+    tree = {
+        "root": {
+            "kind": "Stack",
+            "children": [
+                {"kind": "Heading", "props": {"level": 1, "value": "Dashboard"}},
+                {
+                    "kind": "Grid",
+                    "props": {"columns": 3, "gap": 16},
+                    "children": [
+                        {"kind": "MetricCard", "props": {"title": "Users", "value": "1,234", "delta": "+12%", "trend": "up"}},
+                        {"kind": "MetricCard", "props": {"title": "Revenue", "value": "$45K", "delta": "-3%", "trend": "down"}},
+                        {"kind": "MetricCard", "props": {"title": "Orders", "value": "567", "delta": "+8%", "trend": "up"}},
+                    ],
+                },
+                {
+                    "kind": "Table",
+                    "props": {"headers": ["Name", "Status", "Amount"], "striped": True},
+                    "children": [
+                        {
+                            "kind": "TableRow",
+                            "children": [
+                                {"kind": "TableCell", "props": {"value": "Alice"}},
+                                {"kind": "TableCell", "props": {"value": "Active"}},
+                                {"kind": "TableCell", "props": {"value": "$1,200", "align": "right", "bold": True}},
+                            ],
+                        },
+                    ],
+                },
+            ],
+        }
+    }
+    out = validate_ui_tree(tree, max_depth=10, max_nodes=50)
+    assert out["root"]["kind"] == "Stack"
+    grid = out["root"]["children"][1]
+    assert grid["kind"] == "Grid"
+    assert len(grid["children"]) == 3

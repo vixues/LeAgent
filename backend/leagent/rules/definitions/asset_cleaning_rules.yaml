@@ -1,0 +1,28 @@
+rule_set:
+  id: asset_cleaning_rules
+  name: "Asset Data Cleaning Rules"
+  version: "1.0.0"
+  description: "Rules for validating and normalizing OA-exported asset tables."
+  category: "logistics"
+
+  rules:
+    - id: not_null_asset_id
+      name: "Asset ID required"
+      severity: "error"
+      message: "资产记录缺少资产编号。"
+      condition:
+        type: "compare"
+        left: "{{ row.asset_id }}"
+        operator: "!="
+        right: null
+
+    - id: purchase_date_not_future
+      name: "Purchase date not in future"
+      severity: "warning"
+      message: "资产购置日期在未来，请检查是否录入错误。"
+      condition:
+        type: "date_range"
+        date: "{{ row.purchase_date }}"
+        start: "2000-01-01"
+        end: "{{ now.date }}"
+

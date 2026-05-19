@@ -1,0 +1,83 @@
+{
+  "home": {
+    "welcome": "欢迎回来",
+    "subtitle": "开始使用 LeAgent 自动化您的工作流程",
+    "recentFlows": "最近工作流",
+    "noFlows": "还没有工作流",
+    "createFirstFlow": "创建第一个工作流",
+    "stats": {
+      "totalFlows": "工作流总数",
+      "runningTasks": "运行中任务",
+      "completedToday": "今日完成"
+    },
+    "quickActions": {
+      "title": "快速操作",
+      "newChat": "新建对话",
+      "newChatDesc": "与 AI 助手开始对话",
+      "newFlow": "新建工作流",
+      "newFlowDesc": "创建自动化工作流程"
+    },
+    "tips": {
+      "title": "快速入门",
+      "description": "了解如何使用 LeAgent 提升您的工作效率",
+      "learnMore": "查看文档"
+    }
+  },
+  "dashboard": {
+    "title": "仪表盘",
+    "description": "监控系统运行状态和任务执行情况",
+    "refresh": "刷新",
+    "taskMonitor": "任务监控",
+    "searchTasks": "搜索任务...",
+    "activityFeed": "活动动态",
+    "noActivity": "暂无活动",
+    "usageChart": "使用趋势",
+    "noCompletions": "暂无已完成任务",
+    "recentCompletions": "最近完成",
+    "pagination": "显示 {{from}}-{{to}} 共 {{total}} 条",
+    "timeRange": {
+      "today": "今天",
+      "week": "本周",
+      "month": "本月"
+    },
+    "metrics": {
+      "tasksToday": "今日任务",
+      "successRate": "成功率",
+      "failedTasks": "失败任务",
+      "avgDuration": "平均耗时"
+    },
+    "chart": {
+      "success": "成功",
+      "failed": "失败"
+    },
+    "table": {
+      "taskName": "任务名称",
+      "workflow": "类型",
+      "status": "状态",
+      "progress": "进度",
+      "time": "时间",
+      "actions": "操作"
+    }
+  },
+  "playground": {
+    "title": "运行测试",
+    "description": "选择工作流并测试执行",
+    "flowSelector": "选择工作流",
+    "selectFlow": "请选择工作流",
+    "noDescription": "暂无描述",
+    "inputs": "输入参数",
+    "noInputs": "该工作流无需输入参数",
+    "selectFlowFirst": "请先选择工作流",
+    "output": "运行结果",
+    "noOutput": "暂无输出",
+    "runToSeeOutput": "运行工作流查看结果",
+    "run": "运行",
+    "running": "运行中...",
+    "executing": "正在执行工作流...",
+    "success": "执行成功",
+    "failed": "执行失败",
+    "inputPlaceholderForKey": "输入 {{key}}",
+    "duration": "耗时 {{time}}",
+    "logs": "执行日志"
+  }
+}

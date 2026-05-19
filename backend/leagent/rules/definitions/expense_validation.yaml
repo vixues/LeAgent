@@ -1,0 +1,145 @@
+id: expense_validation
+name: Expense Validation Rules
+description: Rules for validating expense reports and reimbursement requests
+version: "1.0.0"
+enabled: true
+tags:
+  - finance
+  - expense
+  - validation
+
+rules:
+  - id: max_single_expense
+    name: Maximum Single Expense
+    description: Individual expense must not exceed the maximum limit
+    severity: error
+    condition:
+      type: threshold
+      params:
+        value: "{{amount}}"
+        max: 5000
+    message: "Expense amount {{amount}} exceeds maximum allowed (5000)"
+    tags:
+      - amount
+      - limit
+
+  - id: minimum_amount
+    name: Minimum Amount Required
+    description: Expense amount must be at least 1
+    severity: error
+    condition:
+      type: threshold
+      params:
+        value: "{{amount}}"
+        min: 1
+    message: "Expense amount must be at least 1"
+    tags:
+      - amount
+
+  - id: valid_category
+    name: Valid Expense Category
+    description: Expense must belong to a recognized category
+    severity: warning
+    condition:
+      type: compare
+      params:
+        left: "{{category}}"
+        operator: in
+        right:
+          - travel
+          - meals
+          - supplies
+          - equipment
+          - software
+          - training
+          - other
+    message: "Unknown expense category: {{category}}"
+    tags:
+      - category
+
+  - id: receipt_required_high_value
+    name: Receipt Required for High Value
+    description: Expenses over 100 require a receipt
+    severity: error
+    condition:
+      type: cross_validate
+      params:
+        fields:
+          - amount
+          - has_receipt
+        validation_type: conditional
+        condition_field: amount_over_threshold
+        condition_value: true
+        required_fields:
+          - has_receipt
+    message: "Receipt required for expenses over 100"
+    enabled: false
+    tags:
+      - receipt
+      - compliance
+
+  - id: description_format
+    name: Description Format
+    description: Description should be meaningful (at least 10 characters)
+    severity: warning
+    condition:
+      type: regex_match
+      params:
+        value: "{{description}}"
+        pattern: "^.{10,}$"
+        must_match: true
+    message: "Description should be at least 10 characters"
+    tags:
+      - description
+
+  - id: date_not_future
+    name: No Future Dates
+    description: Expense date cannot be in the future
+    severity: error
+    condition:
+      type: date_range
+      params:
+        date: "{{expense_date}}"
+        start: "2020-01-01"
+        end: "{{evaluation_date}}"
+    message: "Expense date {{expense_date}} cannot be after {{evaluation_date}}"
+    tags:
+      - date
+
+  - id: submission_timeliness
+    name: Timely Submission
+    description: Expense must be submitted within 30 days
+    severity: warning
+    condition:
+      type: date_diff
+      params:
+        from_date: "{{expense_date}}"
+        to_date: "{{submission_date}}"
+        max_days: 30
+    message: "Expense submitted more than 30 days after occurrence"
+    tags:
+      - date
+      - compliance
+
+  - id: required_fields_present
+    name: Required Fields
+    description: All required fields must be present
+    severity: error
+    condition:
+      type: contains_all
+      params:
+        source: "{{fields_present}}"
+        required:
+          - amount
+          - category
+          - description
+          - expense_date
+    message: "Missing required fields: {{missing}}"
+    tags:
+      - validation
+      - required
+
+metadata:
+  author: LeAgent System
+  last_updated: "2024-01-15"
+  department: finance

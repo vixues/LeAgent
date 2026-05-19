@@ -1,0 +1,1130 @@
+@import "tailwindcss";
+
+/* ── Design tokens (Tailwind integration) ──────────────────────── */
+@theme {
+  --color-void: var(--t-void);
+  --color-surface: var(--t-surface);
+  --color-surface-raised: var(--t-surface-raised);
+  --color-surface-hover: var(--t-surface-hover);
+  --color-border: var(--t-border);
+  --color-border-subtle: var(--t-border-subtle);
+  --color-text-primary: var(--t-text-primary);
+  --color-text-secondary: var(--t-text-secondary);
+  --color-text-muted: var(--t-text-muted);
+  --color-accent: var(--t-accent);
+  --color-accent-dim: var(--t-accent-dim);
+  --color-accent-glow: var(--t-accent-glow);
+  --color-brand: var(--t-brand);
+
+  --font-display: "Space Grotesk", system-ui, sans-serif;
+  --font-body: "Inter", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, monospace;
+}
+
+/* ── Dark theme (default) ──────────────────────────────────────── */
+html, html[data-theme="dark"] {
+  --t-void: #070708;
+  --t-surface: #0a0a0d;
+  --t-surface-raised: #111118;
+  --t-surface-hover: #16161f;
+  --t-border: #1e1e2a;
+  --t-border-subtle: #14141e;
+  --t-text-primary: #e8e8ec;
+  --t-text-secondary: #8a8a9a;
+  --t-text-muted: #55556a;
+  --t-accent: #7dd3fc;
+  --t-accent-dim: rgba(125, 211, 252, 0.12);
+  --t-accent-glow: rgba(125, 211, 252, 0.06);
+  --t-brand: #5cb8fa;
+  --t-glass-bg: rgba(18, 20, 28, 0.32);
+  --t-glass-border: rgba(255, 255, 255, 0.07);
+  --t-glass-edge-top: rgba(255, 255, 255, 0.12);
+  --t-glass-edge-bot: rgba(255, 255, 255, 0.02);
+  --t-glass-spec: rgba(255, 255, 255, 0.07);
+  /* Flat shadow — contact only, no inner weight band */
+  --t-glass-shadow:
+    0 0 0 0.5px rgba(255, 255, 255, 0.04) inset,
+    0 1px 3px 0 rgba(0, 0, 0, 0.14),
+    0 6px 16px -8px rgba(0, 0, 0, 0.22);
+  --t-glass-shadow-hover:
+    0 0 0 0.5px rgba(255, 255, 255, 0.06) inset,
+    0 1px 3px 0 rgba(0, 0, 0, 0.16),
+    0 8px 22px -8px rgba(0, 0, 0, 0.28);
+  --t-accent-shadow:
+    0 0 0 0.5px rgba(255, 255, 255, 0.12) inset,
+    0 1px 3px 0 rgba(0, 0, 0, 0.12),
+    0 6px 18px -4px rgba(125, 211, 252, 0.28);
+
+  /* ── Ambient backdrop — I Ching palette ── */
+  /* 玄 (xuán, cosmic indigo) overhead, 墨 (ink) underfoot */
+  --t-bg-wash-top: rgba(14, 22, 48, 0.55);
+  --t-bg-wash-bottom: rgba(28, 18, 38, 0.40);
+  /* 青 jade — east/wood */
+  --t-aurora-cool: rgba(92, 179, 168, 0.45);
+  /* 朱 vermillion — south/fire */
+  --t-aurora-warm: rgba(212, 100, 74, 0.35);
+  /* 苍 deep-cyan — heavenly water */
+  --t-aurora-brand: rgba(110, 170, 210, 0.45);
+  /* 紫 imperial violet — twilight */
+  --t-aurora-violet: rgba(138, 100, 178, 0.42);
+  /* 素 raw silk — soft light beam */
+  --t-aurora-beam: rgba(220, 215, 200, 0.10);
+  --t-vignette: rgba(5, 8, 14, 0.70);
+  /* Title-bar — translucent fill behind blur */
+  --t-titlebar-top: rgba(8, 12, 22, 0.82);
+  --t-titlebar-halo: rgba(125, 211, 252, 0.10);
+  color-scheme: dark;
+}
+
+/* ── Light theme ───────────────────────────────────────────────── */
+html[data-theme="light"] {
+  --t-void: #f5f5f0;
+  --t-surface: #eeeee8;
+  --t-surface-raised: #e6e6df;
+  --t-surface-hover: #ddddd6;
+  --t-border: #c8c8be;
+  --t-border-subtle: #d6d6cc;
+  --t-text-primary: #1a1a1f;
+  --t-text-secondary: #4a4a56;
+  --t-text-muted: #7a7a88;
+  --t-accent: #1a8fbf;
+  --t-accent-dim: rgba(26, 143, 191, 0.10);
+  --t-accent-glow: rgba(26, 143, 191, 0.05);
+  --t-brand: #2a7da8;
+  --t-glass-bg: rgba(252, 251, 245, 0.30);
+  --t-glass-border: rgba(0, 0, 0, 0.05);
+  --t-glass-edge-top: rgba(255, 255, 255, 0.55);
+  --t-glass-edge-bot: rgba(0, 0, 0, 0.04);
+  --t-glass-spec: rgba(255, 255, 255, 0.35);
+  /* Flat shadow — contact only */
+  --t-glass-shadow:
+    0 0 0 0.5px rgba(255, 255, 255, 0.30) inset,
+    0 1px 3px 0 rgba(80, 60, 40, 0.05),
+    0 6px 16px -8px rgba(80, 60, 40, 0.10);
+  --t-glass-shadow-hover:
+    0 0 0 0.5px rgba(255, 255, 255, 0.40) inset,
+    0 1px 3px 0 rgba(80, 60, 40, 0.06),
+    0 8px 22px -8px rgba(80, 60, 40, 0.14);
+  --t-accent-shadow:
+    0 0 0 0.5px rgba(255, 255, 255, 0.40) inset,
+    0 1px 3px 0 rgba(80, 60, 40, 0.06),
+    0 6px 18px -4px rgba(26, 143, 191, 0.22);
+
+  /* ── Ambient backdrop — I Ching palette (paper / ink wash) ── */
+  /* 素 raw silk at sky, 墨 faint ink near earth */
+  --t-bg-wash-top: rgba(196, 212, 220, 0.45);
+  --t-bg-wash-bottom: rgba(220, 210, 195, 0.35);
+  /* 青 jade ink */
+  --t-aurora-cool: rgba(120, 180, 170, 0.32);
+  /* 朱 muted vermillion */
+  --t-aurora-warm: rgba(220, 150, 120, 0.30);
+  /* 苍 misted cyan */
+  --t-aurora-brand: rgba(120, 165, 195, 0.30);
+  /* 紫 dusted plum */
+  --t-aurora-violet: rgba(170, 145, 195, 0.26);
+  /* 素 paper light beam */
+  --t-aurora-beam: rgba(255, 252, 240, 0.50);
+  --t-vignette: rgba(225, 220, 205, 0.55);
+  /* Title-bar — translucent fill behind blur */
+  --t-titlebar-top: rgba(240, 240, 232, 0.82);
+  --t-titlebar-halo: rgba(26, 143, 191, 0.08);
+  color-scheme: light;
+}
+
+/* ── Base ──────────────────────────────────────────────────────── */
+html {
+  scroll-behavior: smooth;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  font-family: var(--font-body);
+  background-color: var(--color-void);
+  color: var(--color-text-primary);
+  line-height: 1.7;
+  transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+::selection {
+  background-color: var(--color-accent-dim);
+  color: var(--color-accent);
+}
+
+/* ── Typography ────────────────────────────────────────────────── */
+h1, h2, h3, h4, h5, h6 {
+  font-family: var(--font-display);
+  line-height: 1.15;
+  letter-spacing: -0.02em;
+}
+
+code, pre, kbd {
+  font-family: var(--font-mono);
+}
+
+/* ── Glassmorphism — flat, subtle translucency ─────────────────── */
+.glass {
+  position: relative;
+  border: 1px solid transparent;
+  background-image:
+    linear-gradient(var(--t-glass-bg), var(--t-glass-bg)),
+    linear-gradient(
+      150deg,
+      var(--t-glass-edge-top) 0%,
+      var(--t-glass-edge-bot) 55%,
+      var(--t-glass-edge-top) 100%
+    );
+  background-origin: border-box;
+  background-clip: padding-box, border-box;
+  backdrop-filter: blur(16px) saturate(140%);
+  -webkit-backdrop-filter: blur(16px) saturate(140%);
+  box-shadow: var(--t-glass-shadow);
+}
+
+.glass-subtle {
+  background-color: var(--t-glass-bg);
+  backdrop-filter: blur(10px) saturate(120%);
+  -webkit-backdrop-filter: blur(10px) saturate(120%);
+}
+
+/* ── Editorial layout — claim grids, hero canvases ─────────── */
+
+/*
+ * Section eyebrow — small monospace metadata above each section
+ * title. Carries hierarchy on its own; no leading numerals or
+ * connecting rules.
+ */
+.eyebrow {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+}
+
+/*
+ * Claim grid — short-copy item grid in 2 or 3 columns. No separators;
+ * relies on whitespace and type weight for hierarchy. Modeled on the
+ * "Why professionals choose X" pattern from comfy.org and similar
+ * editorial product pages.
+ */
+.claim-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 2.5rem 3rem;
+}
+
+@media (min-width: 768px) {
+  .claim-grid--2 {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .claim-grid--3 {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+.claim {
+  position: relative;
+  padding-top: 0.875rem;
+  border-top: 1px solid var(--color-border-subtle);
+}
+
+.claim__label {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+  margin-bottom: 0.625rem;
+}
+
+.claim__title {
+  font-family: var(--font-display);
+  font-size: 1.125rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--color-text-primary);
+  margin-bottom: 0.5rem;
+}
+
+.claim__body {
+  color: var(--color-text-secondary);
+  font-size: 0.9rem;
+  line-height: 1.65;
+  max-width: 32ch;
+}
+
+/*
+ * Hero canvas — large dedicated imagery zone. Soft layered radial
+ * gradients give it visible weight even before real artwork lands.
+ * Use as the focal element of a hero section.
+ */
+.hero-canvas {
+  position: relative;
+  border-radius: 16px;
+  overflow: hidden;
+  border: 1px solid var(--color-border-subtle);
+  background-color: color-mix(in oklab, var(--color-surface) 55%, transparent);
+  background-image:
+    radial-gradient(
+      60% 80% at 18% 0%,
+      color-mix(in oklab, var(--color-accent) 22%, transparent) 0%,
+      transparent 60%
+    ),
+    radial-gradient(
+      55% 70% at 90% 100%,
+      color-mix(in oklab, var(--color-brand) 16%, transparent) 0%,
+      transparent 60%
+    ),
+    radial-gradient(
+      40% 50% at 50% 50%,
+      color-mix(in oklab, var(--t-accent-glow) 40%, transparent) 0%,
+      transparent 70%
+    );
+}
+
+.hero-canvas__inner {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  aspect-ratio: 16 / 9;
+}
+
+.hero-canvas__inner--tall {
+  aspect-ratio: 4 / 3;
+}
+
+/*
+ * Soft top-light overlay so the canvas reads as a physical surface
+ * rather than a flat gradient.
+ */
+.hero-canvas::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.045) 0%,
+    transparent 45%,
+    rgba(0, 0, 0, 0.10) 100%
+  );
+  mix-blend-mode: overlay;
+}
+
+/*
+ * Frame — bordered container for screenshots, code samples, and
+ * other inline media. Subtle 1px rule + soft surface tint, no glass
+ * shadow. Use this in place of `.card` when the element is purely
+ * presentational (not interactive).
+ */
+.frame {
+  position: relative;
+  border: 1px solid var(--color-border-subtle);
+  background-color: color-mix(in oklab, var(--color-surface) 50%, transparent);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+/* ── Code panel — compact terminal block with fixed copy affordance ─ */
+.code-panel {
+  overflow: hidden;
+  border: 1px solid var(--color-border-subtle);
+  border-radius: 10px;
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in oklab, var(--color-surface-raised) 78%, transparent) 0%,
+      color-mix(in oklab, var(--color-surface) 62%, transparent) 100%
+    );
+  box-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.08),
+    0 12px 28px -22px rgba(0, 0, 0, 0.42);
+}
+
+.code-panel__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.625rem 0.75rem 0.625rem 1rem;
+  border-bottom: 1px solid var(--color-border-subtle);
+}
+
+.code-panel__title {
+  font-family: var(--font-display);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--color-text-primary);
+}
+
+.code-panel__lang {
+  margin-top: 0.125rem;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+}
+
+.code-panel__copy {
+  border-radius: 6px;
+  padding: 0.375rem 0.625rem;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--color-text-muted);
+  background-color: color-mix(in oklab, var(--color-surface-hover) 55%, transparent);
+  transition: color 0.15s ease, background-color 0.15s ease;
+}
+
+.code-panel__copy:hover {
+  color: var(--color-accent);
+  background-color: var(--color-surface-hover);
+}
+
+.code-panel__body {
+  overflow-x: auto;
+  padding: 1rem;
+  font-family: var(--font-mono);
+  font-size: 0.8125rem;
+  line-height: 1.65;
+  color: var(--color-text-secondary);
+}
+
+/* ── Install card — LeAgent workspace-inspired panel ───────────── */
+.workspace-install {
+  overflow: hidden;
+  border: 1px solid var(--color-border-subtle);
+  border-radius: 12px;
+  background-color: color-mix(in oklab, var(--color-surface) 72%, transparent);
+  box-shadow:
+    0 0 0 0.5px rgba(255, 255, 255, 0.04) inset,
+    0 18px 42px -30px rgba(0, 0, 0, 0.48);
+}
+
+.workspace-install__header {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  min-height: 38px;
+  padding: 0 0.75rem;
+  border-bottom: 1px solid var(--color-border-subtle);
+  background-color: color-mix(in oklab, var(--color-surface-raised) 52%, transparent);
+}
+
+.workspace-install__heading {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: 0.5rem;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+}
+
+.workspace-install__badge {
+  border-radius: 999px;
+  background-color: color-mix(in oklab, var(--color-accent) 12%, transparent);
+  padding: 0.125rem 0.5rem;
+  color: var(--color-accent);
+  letter-spacing: 0.04em;
+}
+
+.workspace-install__copy {
+  margin-left: auto;
+  border-radius: 6px;
+  padding: 0.25rem 0.5rem;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--color-text-muted);
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.workspace-install__copy:hover {
+  background-color: var(--color-surface-hover);
+  color: var(--color-accent);
+}
+
+.workspace-install__body {
+  display: grid;
+  min-height: 220px;
+}
+
+@media (min-width: 768px) {
+  .workspace-install__body {
+    grid-template-columns: 210px minmax(0, 1fr);
+  }
+}
+
+.workspace-install__rail {
+  border-bottom: 1px solid var(--color-border-subtle);
+  background-color: color-mix(in oklab, var(--color-surface-raised) 30%, transparent);
+  padding: 0.875rem;
+}
+
+@media (min-width: 768px) {
+  .workspace-install__rail {
+    border-right: 1px solid var(--color-border-subtle);
+    border-bottom: 0;
+  }
+}
+
+.workspace-install__label {
+  margin-bottom: 0.5rem;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+}
+
+.workspace-install__stack {
+  display: grid;
+  gap: 0.25rem;
+}
+
+.workspace-install__option {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  border-radius: 8px;
+  padding: 0.5rem 0.625rem;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--color-text-secondary);
+  text-align: left;
+  transition: background-color 0.15s ease, color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.workspace-install__option:hover {
+  background-color: color-mix(in oklab, var(--color-surface-hover) 48%, transparent);
+  color: var(--color-text-primary);
+}
+
+.workspace-install__option--active {
+  background-color: var(--color-surface-hover);
+  color: var(--color-accent);
+  box-shadow: 0 0 0 1px color-mix(in oklab, var(--color-accent) 18%, transparent) inset;
+}
+
+.workspace-install__main {
+  min-width: 0;
+  background-color: color-mix(in oklab, var(--color-void) 58%, transparent);
+}
+
+.workspace-install__codebar {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  min-height: 36px;
+  border-bottom: 1px solid var(--color-border-subtle);
+  padding: 0 0.875rem;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--color-text-muted);
+}
+
+.workspace-install__file {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.workspace-install__dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background-color: var(--color-accent);
+  box-shadow: 0 0 12px var(--t-accent-dim);
+}
+
+.workspace-install__lang {
+  margin-left: auto;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+}
+
+.workspace-install__code {
+  overflow: auto;
+  margin: 0;
+  padding: 0.875rem 0;
+  font-family: var(--font-mono);
+  font-size: 0.8125rem;
+  line-height: 1.7;
+  color: var(--color-text-secondary);
+}
+
+.workspace-install__code table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.workspace-install__line {
+  width: 3rem;
+  user-select: none;
+  border-right: 1px solid var(--color-border-subtle);
+  padding-right: 0.75rem;
+  text-align: right;
+  vertical-align: top;
+  color: var(--color-text-muted);
+}
+
+.workspace-install__cmd {
+  padding-left: 0.875rem;
+  padding-right: 1rem;
+  white-space: pre;
+}
+
+.workspace-install__footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.625rem 1.25rem;
+  border-top: 1px solid var(--color-border-subtle);
+  padding: 0.625rem 0.75rem;
+  background-color: color-mix(in oklab, var(--color-surface-raised) 48%, transparent);
+}
+
+.workspace-install__reqs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.375rem 0.875rem;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--color-text-muted);
+}
+
+.workspace-install__links {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+}
+
+.workspace-install__links a {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  transition: color 0.15s ease;
+}
+
+.workspace-install__links a:hover {
+  color: var(--color-accent);
+}
+
+.workspace-install__note {
+  width: 100%;
+  font-size: 0.6875rem;
+  line-height: 1.6;
+  color: var(--color-text-muted);
+}
+
+/*
+ * Inline rule — slim hairline used to separate dense editorial blocks
+ * within a single section.
+ */
+.rule {
+  height: 1px;
+  background: var(--color-border-subtle);
+  border: 0;
+}
+
+/*
+ * Segmented control — flat horizontal toggle (used for OS tabs etc).
+ * Replaces card-as-tab patterns with a dense, professional input.
+ */
+.segmented {
+  display: inline-flex;
+  align-items: center;
+  gap: 0;
+  border: 1px solid var(--color-border-subtle);
+  border-radius: 8px;
+  padding: 3px;
+  background-color: color-mix(in oklab, var(--color-surface) 40%, transparent);
+}
+
+.segmented__item {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.875rem;
+  border-radius: 6px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  letter-spacing: 0.02em;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  transition: color 0.15s ease, background-color 0.15s ease;
+}
+
+.segmented__item:hover {
+  color: var(--color-text-secondary);
+}
+
+.segmented__item--active {
+  background-color: var(--color-surface-hover);
+  color: var(--color-accent);
+}
+
+/* ── Card — flat glass + cursor-tracked prismatic refraction ──── */
+.card {
+  position: relative;
+  border: 1px solid transparent;
+  background-image:
+    linear-gradient(var(--t-glass-bg), var(--t-glass-bg)),
+    linear-gradient(
+      150deg,
+      var(--t-glass-edge-top) 0%,
+      var(--t-glass-edge-bot) 55%,
+      var(--t-glass-edge-top) 100%
+    );
+  background-origin: border-box;
+  background-clip: padding-box, border-box;
+  backdrop-filter: blur(16px) saturate(140%);
+  -webkit-backdrop-filter: blur(16px) saturate(140%);
+  box-shadow: var(--t-glass-shadow);
+  border-radius: 14px;
+  overflow: hidden;
+  transition: box-shadow 0.35s ease;
+}
+
+/*
+ * Prismatic refraction overlay — three offset radial gradients simulate
+ * caustic light + chromatic dispersion that tracks the cursor via
+ * --rx / --ry custom properties (set by useRefraction hook).
+ */
+.card::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.45s cubic-bezier(0.22, 1, 0.36, 1);
+  background:
+    radial-gradient(
+      clamp(280px, 55%, 600px) circle at var(--rx, 50%) var(--ry, 50%),
+      rgba(255, 255, 255, 0.09) 0%,
+      rgba(255, 255, 255, 0.025) 35%,
+      transparent 65%
+    ),
+    radial-gradient(
+      clamp(260px, 50%, 500px) circle at calc(var(--rx, 50%) + 6%) calc(var(--ry, 50%) + 4%),
+      rgba(255, 170, 80, 0.055) 0%,
+      transparent 45%
+    ),
+    radial-gradient(
+      clamp(260px, 50%, 500px) circle at calc(var(--rx, 50%) - 6%) calc(var(--ry, 50%) - 4%),
+      rgba(80, 160, 255, 0.065) 0%,
+      transparent 45%
+    );
+  mix-blend-mode: overlay;
+}
+
+/*
+ * Secondary prismatic layer — a faint surface specular that adds
+ * depth when the caustic is active.
+ */
+.card::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.5s cubic-bezier(0.22, 1, 0.36, 1);
+  background: radial-gradient(
+    clamp(200px, 40%, 420px) circle at var(--rx, 50%) var(--ry, 50%),
+    rgba(255, 255, 255, 0.045) 0%,
+    transparent 55%
+  );
+}
+
+.card-interactive {
+  cursor: pointer;
+}
+
+.card-interactive:hover,
+.card-interactive:focus-visible {
+  box-shadow: var(--t-glass-shadow-hover);
+}
+
+.card-interactive:hover::before,
+.card-interactive:focus-visible::before {
+  opacity: 1;
+}
+
+.card-interactive:hover::after,
+.card-interactive:focus-visible::after {
+  opacity: 0.7;
+}
+
+/* ── Icon tile — minimal accent badge ──────────────────────────── */
+.icon-tile {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  border: 1px solid transparent;
+  background-image:
+    linear-gradient(
+      150deg,
+      color-mix(in oklab, var(--t-accent) 8%, transparent) 0%,
+      transparent 65%
+    ),
+    linear-gradient(
+      150deg,
+      var(--t-glass-edge-top) 0%,
+      var(--t-glass-edge-bot) 60%,
+      var(--t-glass-edge-top) 100%
+    );
+  background-origin: border-box;
+  background-clip: padding-box, border-box;
+  color: var(--color-accent);
+  box-shadow:
+    0 0 0 0.5px rgba(255, 255, 255, 0.04) inset,
+    0 1px 2px rgba(0, 0, 0, 0.08);
+  transition: box-shadow 0.3s ease;
+}
+
+.icon-tile::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: radial-gradient(
+    100% 70% at 20% -5%,
+    var(--t-glass-spec) 0%,
+    transparent 50%
+  );
+  opacity: 0.5;
+  mix-blend-mode: overlay;
+  pointer-events: none;
+}
+
+.card-interactive:hover .icon-tile {
+  box-shadow:
+    0 0 0 0.5px rgba(255, 255, 255, 0.08) inset,
+    0 1px 2px rgba(0, 0, 0, 0.10),
+    0 4px 12px -4px var(--t-accent-dim);
+}
+
+/* ── Buttons — primary / ghost / quiet ─────────────────────────── */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  height: 40px;
+  padding: 0 18px;
+  border-radius: 10px;
+  font-family: var(--font-display);
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  line-height: 1;
+  transition:
+    box-shadow 0.3s ease,
+    background-color 0.2s ease,
+    color 0.2s ease;
+  cursor: pointer;
+  border: 1px solid transparent;
+  white-space: nowrap;
+}
+
+.btn:focus-visible {
+  outline: 1px solid var(--t-accent);
+  outline-offset: 2px;
+}
+
+.btn-primary {
+  position: relative;
+  background: linear-gradient(
+    180deg,
+    color-mix(in oklab, var(--t-accent) 92%, white 8%) 0%,
+    var(--t-accent) 100%
+  );
+  color: var(--t-void);
+  box-shadow: var(--t-accent-shadow);
+  overflow: hidden;
+}
+
+/*
+ * Combined light-sweep + cursor-tracked refraction on primary button.
+ * The radial caustic follows --rx / --ry; the linear sweep slides via
+ * background-position on hover.
+ */
+.btn-primary::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  opacity: 0;
+  background:
+    radial-gradient(
+      140px circle at var(--rx, 50%) var(--ry, 50%),
+      rgba(255, 255, 255, 0.32) 0%,
+      rgba(255, 255, 255, 0.08) 40%,
+      transparent 70%
+    ),
+    linear-gradient(
+      105deg,
+      transparent 0%,
+      transparent 35%,
+      rgba(255, 255, 255, 0.30) 45%,
+      rgba(255, 255, 255, 0.08) 55%,
+      transparent 65%,
+      transparent 100%
+    );
+  background-size: 100% 100%, 250% 100%;
+  background-position: 0 0, 100% 0;
+  transition:
+    opacity 0.35s cubic-bezier(0.22, 1, 0.36, 1),
+    background-position 0.6s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.btn-primary:hover {
+  box-shadow:
+    0 0 0 0.5px rgba(255, 255, 255, 0.15) inset,
+    0 1px 3px 0 rgba(0, 0, 0, 0.14),
+    0 8px 22px -6px color-mix(in oklab, var(--t-accent) 40%, transparent);
+}
+
+.btn-primary:hover::before {
+  opacity: 1;
+  background-position: 0 0, 0% 0;
+}
+
+.btn-ghost {
+  position: relative;
+  border: 1px solid transparent;
+  background-image:
+    linear-gradient(var(--t-glass-bg), var(--t-glass-bg)),
+    linear-gradient(
+      150deg,
+      var(--t-glass-edge-top) 0%,
+      var(--t-glass-edge-bot) 55%,
+      var(--t-glass-edge-top) 100%
+    );
+  background-origin: border-box;
+  background-clip: padding-box, border-box;
+  color: var(--color-text-secondary);
+  backdrop-filter: blur(12px) saturate(130%);
+  -webkit-backdrop-filter: blur(12px) saturate(130%);
+  box-shadow: var(--t-glass-shadow);
+  overflow: hidden;
+}
+
+/*
+ * Combined cursor-tracked refraction + sweep on ghost button.
+ * Same layering technique as btn-primary.
+ */
+.btn-ghost::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  opacity: 0;
+  mix-blend-mode: overlay;
+  background:
+    radial-gradient(
+      120px circle at var(--rx, 50%) var(--ry, 50%),
+      rgba(255, 255, 255, 0.18) 0%,
+      transparent 60%
+    ),
+    linear-gradient(
+      105deg,
+      transparent 0%,
+      transparent 35%,
+      var(--t-glass-spec) 45%,
+      transparent 55%,
+      transparent 100%
+    );
+  background-size: 100% 100%, 250% 100%;
+  background-position: 0 0, 100% 0;
+  transition:
+    opacity 0.35s cubic-bezier(0.22, 1, 0.36, 1),
+    background-position 0.6s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.btn-ghost:hover {
+  color: var(--color-text-primary);
+  box-shadow: var(--t-glass-shadow-hover);
+}
+
+.btn-ghost:hover::after {
+  opacity: 1;
+  background-position: 0 0, 0% 0;
+}
+
+.btn-sm {
+  height: 32px;
+  padding: 0 14px;
+  font-size: 12px;
+  border-radius: 8px;
+}
+
+.btn-quiet {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-display);
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--color-accent);
+  transition: color 0.2s ease, gap 0.2s ease;
+}
+
+.btn-quiet:hover {
+  color: color-mix(in oklab, var(--t-accent) 85%, white 15%);
+  gap: 10px;
+}
+
+/* ── Immersive title-bar — transparent with subtle blur ── */
+.glass-bar {
+  position: relative;
+  border: 0;
+  background-color: transparent;
+  backdrop-filter: blur(12px) saturate(120%);
+  -webkit-backdrop-filter: blur(12px) saturate(120%);
+}
+
+/* Soft halo line at the bottom edge */
+.glass-bar::after {
+  content: "";
+  position: absolute;
+  inset: auto 0 0 0;
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    transparent 5%,
+    var(--t-titlebar-halo) 30%,
+    var(--t-titlebar-halo) 70%,
+    transparent 95%
+  );
+  opacity: 0.5;
+  pointer-events: none;
+}
+
+/* ── Scroll-reveal animation ───────────────────────────────────── */
+@keyframes reveal-up {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.reveal {
+  opacity: 0;
+}
+
+.reveal.revealed {
+  animation: reveal-up 0.6s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+/* Stagger children */
+.reveal-stagger > .reveal:nth-child(1) { animation-delay: 0ms; }
+.reveal-stagger > .reveal:nth-child(2) { animation-delay: 80ms; }
+.reveal-stagger > .reveal:nth-child(3) { animation-delay: 160ms; }
+.reveal-stagger > .reveal:nth-child(4) { animation-delay: 240ms; }
+.reveal-stagger > .reveal:nth-child(5) { animation-delay: 320ms; }
+.reveal-stagger > .reveal:nth-child(6) { animation-delay: 400ms; }
+
+/* ── Aurora orb drift ──────────────────────────────────────────── */
+@keyframes aurora-drift-1 {
+  0%, 100% { transform: translate3d(0, 0, 0) scale(1); }
+  33%     { transform: translate3d(-4%, 5%, 0) scale(1.08); }
+  66%     { transform: translate3d(3%, -3%, 0) scale(0.95); }
+}
+
+@keyframes aurora-drift-2 {
+  0%, 100% { transform: translate3d(0, 0, 0) scale(1); }
+  40%     { transform: translate3d(6%, -4%, 0) scale(1.1); }
+  75%     { transform: translate3d(-3%, 5%, 0) scale(0.94); }
+}
+
+@keyframes aurora-drift-3 {
+  0%, 100% { transform: translate3d(0, 0, 0) scale(1); }
+  50%     { transform: translate3d(5%, 6%, 0) scale(1.06); }
+}
+
+@keyframes aurora-drift-4 {
+  0%, 100% { transform: translate3d(0, 0, 0) scale(1); }
+  45%     { transform: translate3d(-6%, -4%, 0) scale(1.1); }
+  80%     { transform: translate3d(4%, 3%, 0) scale(0.92); }
+}
+
+/* ── Card refraction — no longer uses rotation keyframe ────────── */
+
+/* ── Tilted beam sweep ─────────────────────────────────────────── */
+@keyframes beam-sweep {
+  0%   { transform: translate3d(-8%, -6%, 0) rotate(-2deg); opacity: 0.55; }
+  50%  { transform: translate3d(2%, 0, 0) rotate(0deg);     opacity: 0.75; }
+  100% { transform: translate3d(8%, 6%, 0) rotate(2deg);    opacity: 0.55; }
+}
+
+/* ── Reduced motion ────────────────────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  .aurora-orb,
+  .aurora-beam,
+  .reveal.revealed {
+    animation: none !important;
+  }
+
+  .reveal {
+    opacity: 1;
+  }
+
+  .card::before,
+  .card::after,
+  .btn-primary::before,
+  .btn-ghost::after {
+    transition: none !important;
+  }
+}
+
+/* ── Hairline divider ──────────────────────────────────────────── */
+.hairline {
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    var(--color-border) 30%,
+    var(--color-border) 70%,
+    transparent 100%
+  );
+}
+
+/* ── Code block scrollbar ──────────────────────────────────────── */
+pre::-webkit-scrollbar {
+  height: 4px;
+}
+pre::-webkit-scrollbar-track {
+  background: transparent;
+}
+pre::-webkit-scrollbar-thumb {
+  background: var(--color-border);
+  border-radius: 2px;
+}

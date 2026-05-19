@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-label="Cat desk pet">
+  <rect width="256" height="256" rx="48" fill="#f8fafc"/>
+  <path d="M67 101l10-60c2-10 15-13 22-5l35 42" fill="#64748b"/>
+  <path d="M189 101l-10-60c-2-10-15-13-22-5l-35 42" fill="#64748b"/>
+  <path d="M83 88l6-33 20 29" fill="#cbd5e1"/>
+  <path d="M173 88l-6-33-20 29" fill="#cbd5e1"/>
+  <circle cx="128" cy="139" r="75" fill="#94a3b8"/>
+  <path d="M67 139c10 43 43 72 84 72 27 0 51-13 65-35-29 11-57 8-84-10-22-14-44-23-65-27z" fill="#cbd5e1"/>
+  <path d="M96 79c17-10 47-11 65 0" fill="none" stroke="#475569" stroke-width="8" stroke-linecap="round"/>
+  <circle cx="101" cy="129" r="9" fill="#0f172a"/>
+  <circle cx="155" cy="129" r="9" fill="#0f172a"/>
+  <path d="M126 148l-11 9 11 9 11-9-11-9z" fill="#fb7185"/>
+  <path d="M117 172c5 7 16 7 22 0" fill="none" stroke="#334155" stroke-width="6" stroke-linecap="round"/>
+  <path d="M52 145l42 8M53 169l41-6M204 145l-42 8M203 169l-41-6" stroke="#475569" stroke-width="6" stroke-linecap="round"/>
+  <path d="M187 201c27-7 43-28 35-52" fill="none" stroke="#64748b" stroke-width="13" stroke-linecap="round"/>
+  <circle cx="128" cy="128" r="4" fill="#fff"/>
+</svg>

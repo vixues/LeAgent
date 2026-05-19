@@ -1,0 +1,56 @@
+# =============================================================================
+# LeAgent — development overlay (hot reload, same SQLite-only stack as base)
+# Usage from repo root:
+#   docker compose -f deploy/docker-compose.yml -f deploy/docker-compose.dev.yml up -d --build
+# =============================================================================
+
+name: leagent
+
+services:
+  leagent:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+      target: development
+    volumes:
+      - ../backend/leagent:/app/leagent:cached
+      - ../backend/alembic:/app/alembic:cached
+      - ../backend/tests:/app/tests:cached
+      - ../backend/leagent_core:/app/leagent_core:cached
+      - ../backend/pyproject.toml:/app/pyproject.toml:ro
+      - ../backend/alembic.ini:/app/alembic.ini:ro
+      - leagent-data:/app/data
+      - leagent-uploads:/app/uploads
+      - leagent-logs:/app/logs
+      - leagent-cache:/app/cache
+    environment:
+      LEAGENT_DEBUG: "true"
+      LEAGENT_LOG_LEVEL: DEBUG
+      LEAGENT_ENVIRONMENT: development
+      LEAGENT_WORKERS: "1"
+    ports:
+      - "${LEAGENT_HOST_PORT:-8000}:8000"
+      - "5678:5678"
+    command: >
+      uvicorn leagent.main:app
+      --host 0.0.0.0
+      --port 8000
+      --reload
+      --reload-dir /app/leagent
+      --log-level debug
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  mailhog:
+    image: mailhog/mailhog:v1.0.1
+    container_name: leagent-mailhog
+    restart: unless-stopped
+    profiles:
+      - tools
+    ports:
+      - "1025:1025"
+      - "8025:8025"

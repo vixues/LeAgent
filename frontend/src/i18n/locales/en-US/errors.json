@@ -1,0 +1,20 @@
+{
+  "errors": {
+    "notFound": "Page not found",
+    "unauthorized": "Unauthorized access",
+    "unauthorizedDescription": "You do not have permission to view this page.",
+    "serverError": "Server error",
+    "networkError": "Network error. Please check your connection.",
+    "validationError": "Validation failed",
+    "unknown": "An unknown error occurred",
+    "unknownDescription": "Please try again later.",
+    "uploadFailed": "Upload failed",
+    "copyFailed": "Copy failed",
+    "authLoginFailed": "Sign-in failed",
+    "authRegisterFailed": "Registration failed",
+    "authProfileUpdateFailed": "Update failed",
+    "authBootstrapTimeout": "Session check timed out ({{seconds}}s). Check your network or API URL.",
+    "errorBoundaryTitle": "Something went wrong",
+    "errorBoundaryDescription": "Sorry, this page hit a problem. Try refreshing or go back home."
+  }
+}

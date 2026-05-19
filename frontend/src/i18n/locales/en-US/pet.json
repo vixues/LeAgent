@@ -1,0 +1,375 @@
+{
+  "petSpace": {
+    "nav": "Pet Space",
+    "title": "Pet Space",
+    "description": "Your desk pet — upload PNG/JPEG/WebP/GIF/SVG or zips, pick an appearance, and see it in the sidebar.",
+    "navCustomize": "Customize",
+    "navStudio": "Action studio",
+    "navShowroom": "Showroom",
+    "navPersonality": "Personality",
+    "navLibrary": "Library",
+    "navAbout": "About",
+    "personalityTitle": "Pet personality",
+    "personalityDescription": "Write a free-form character document (up to {{max}} characters). It tunes the tone of pet bubble greetings and the voice used when the assistant calls emit_pet_bubble.",
+    "personalityPlaceholder": "Example: You are Miku, a playful cat girlfriend who ends sentences with \"nya~\". You are warm, supportive, and gently teasing. Keep replies short and lively.",
+    "personalityHint": "Tip: describe name, species, tone, speech tics, mood, and any phrases the pet should never say. Lines stay short (max 60 chars per bubble) regardless of this document.",
+    "personalityCharCount": "{{count}} / {{max}} characters",
+    "personalitySave": "Save personality",
+    "personalitySaving": "Saving...",
+    "personalitySaved": "Personality saved.",
+    "personalityClear": "Clear",
+    "personalityNoProject": "Create a project to design your pet's personality.",
+    "dockAria": "Pet Space — open customization",
+    "dockStatusIdle": "Idle",
+    "dockStatusWorking": "Working",
+    "dockStatusHappy": "Happy",
+    "dockStatusSleep": "Resting",
+    "dockStatusFocus": "Focused",
+    "dockStatusExcited": "Upbeat",
+    "chatChipAria": "Pet Space — open desk pet settings",
+    "chatChipTitle": "Pet: {{mode}}",
+    "customizeNoProject": "Create a project to store your pet assets and appearance.",
+    "customizeIntro": "Upload raster or vector images (PNG, JPEG, WebP, GIF, SVG) or project archives. Pick a built-in mascot or choose any uploaded still image as the sidebar appearance.",
+    "uploadProject": "Upload project / asset",
+    "pickAppearance": "Appearance (sidebar preview)",
+    "builtinPresetsTitle": "Built-in mascots",
+    "builtinPresetsIntro": "CC0-style vector art bundled with the app — no upload required. Pick one, or clear to rely on uploaded images only.",
+    "builtinClear": "Clear preset",
+    "builtin": {
+      "bird": "Bird",
+      "rabbit": "Rabbit",
+      "dog": "Dog",
+      "cat": "Cat"
+    },
+    "setAppearance": "Use as appearance",
+    "appearanceCurrent": "Current",
+    "nestTitle": "Pet nest (sidebar frame)",
+    "nestIntro": "Preset wash and optional background from your library. Accent color tints the frame.",
+    "nestAccent": "Accent color",
+    "nestBackground": "Nest background",
+    "nestBackgroundNone": "None (preset only)",
+    "nestBackgroundOpacity": "Background photo opacity",
+    "nestDockFloorY": "Sidebar ground height",
+    "nestDockFloorYHint": "Distance from the pet preview box bottom to where the graphic sits (standing plane, roam, jump, floor line). Matches the gap under the image when feet align with the bitmap edge; use negative values if the sprite has empty padding below the feet or the card has inner padding. Range −20–48 px.",
+    "nestDockFloorYReset": "Default",
+    "nestDockShadowOffsetY": "Foot shadow offset",
+    "nestDockShadowOffsetYHint": "Moves only the soft shadow under the pet (not the floor line). Use when feet are not at the bottom of the image so the shadow can sit under the character. Range −28–28 px; positive moves the shadow downward on screen.",
+    "nestBackgroundPattern": "Pattern overlay",
+    "nestBackgroundFit": "Background fit",
+    "nestBackgroundPosition": "Background position",
+    "nestBackgroundFitOption": {
+      "cover": "Cover",
+      "contain": "Contain",
+      "repeat": "Repeat"
+    },
+    "nestBackgroundPositionOption": {
+      "center": "Center",
+      "top": "Top",
+      "bottom": "Bottom",
+      "left": "Left",
+      "right": "Right"
+    },
+    "nestPattern": {
+      "none": "None",
+      "dots": "Dots",
+      "grid": "Grid",
+      "noise": "Noise"
+    },
+    "showroomLead": "Browse built-in looks, preview nest background + pattern, then apply or copy JSON. Edit uploads and fine controls under Customize.",
+    "showroomGoCustomize": "Open Customize",
+    "nestTheme": {
+      "grass": "Grass",
+      "wood": "Wood",
+      "night": "Night"
+    },
+    "behaviorTitle": "Behavior",
+    "behaviorIntro": "Auto follows chat streaming with adjustable motion intensity. Manual pins posture: calm, sleep, focus (no celebration flash after replies), or upbeat idle.",
+    "behaviorMode": "Mode",
+    "behaviorManualMode": "When manual",
+    "behaviorAutoReactivity": "Motion (auto)",
+    "behaviorIdleAnimation": "Idle animation",
+    "behaviorMotionStyle": "Motion style",
+    "behaviorMotionSpeed": "Motion speed",
+    "behaviorSimulateStream": "Live preview: simulate working",
+    "behaviorAuto": "Auto (follow chat)",
+    "behaviorManual": "Manual",
+    "behaviorCalm": "Calm",
+    "behaviorSleep": "Sleep",
+    "behaviorFocus": "Focus",
+    "behaviorExcited": "Upbeat",
+    "manualMode": {
+      "calm": "Calm",
+      "sleep": "Sleep",
+      "focus": "Focus",
+      "excited": "Upbeat",
+      "walk": "Walk",
+      "wave": "Wave",
+      "jump": "Jump",
+      "shake": "Shake",
+      "lookAround": "Look around",
+      "dance": "Dance"
+    },
+    "idleAnimation": {
+      "none": "None",
+      "breath": "Breathing",
+      "blink": "Blink",
+      "float": "Float",
+      "tailWag": "Tail wag",
+      "hop": "Hop"
+    },
+    "motionStyle": {
+      "gentle": "Gentle",
+      "bouncy": "Bouncy",
+      "playful": "Playful",
+      "focused": "Focused"
+    },
+    "autoReactivity": {
+      "subtle": "Subtle",
+      "normal": "Normal",
+      "expressive": "Expressive"
+    },
+    "actionTitle": "Actions & state definitions",
+    "actionSummaryLine": "Same resolver as the dock — expand for mapping & preview",
+    "actionIntro": "Preview each Agent state with the same resolver used by the dock. Auto follows streaming output, manual pins a posture, and idle animation is the base motion for idle.",
+    "actionPreview": "Preview state",
+    "actionPreviewCurrent": "Current settings",
+    "actionRuntimeBadge": "Live",
+    "actionStateColumn": "State",
+    "actionTriggerColumn": "Trigger",
+    "actionBindingColumn": "Binding",
+    "actionDetailsColumn": "How it works",
+    "actionCssColumn": "CSS classes",
+    "actionShowCss": "Show CSS classes",
+    "actionHideCss": "Hide CSS classes",
+    "actionSupportedTitle": "Supported actions for this built-in mascot",
+    "actionSupportedIntro": "Tags from manifest (visual + idle-layer). Button applies recommended behavior.",
+    "actionApplyMotionDefaults": "Apply recommended behavior",
+    "actionManifestUnavailable": "Could not read the built-in mascot action manifest; generic action preview still works.",
+    "actionStateKind": {
+      "visual": "Visual state",
+      "idle": "Idle-layer animation",
+      "unknown": "Asset note"
+    },
+    "actionState": {
+      "idle": {
+        "name": "Idle",
+        "trigger": "No streaming output, no post-reply flash, or manual mode is calm.",
+        "binding": "Controlled by Idle animation: breath / blink / float / tailWag / hop."
+      },
+      "working": {
+        "name": "Working",
+        "trigger": "Triggered while the Agent is streaming a response.",
+        "binding": "Controlled by Auto motion and Motion style."
+      },
+      "happy": {
+        "name": "Happy feedback",
+        "trigger": "Brief celebration after streaming ends; manual focus suppresses it.",
+        "binding": "Uses happy CSS motion plus Motion style."
+      },
+      "sleep": {
+        "name": "Sleep",
+        "trigger": "Pinned when manual mode is set to sleep.",
+        "binding": "Manual posture bound to sleep."
+      },
+      "focus": {
+        "name": "Focus",
+        "trigger": "Shown when manual mode is focus and the Agent is not streaming; streaming still becomes working.",
+        "binding": "Manual posture bound to focus and disables post-reply celebration."
+      },
+      "excited": {
+        "name": "Upbeat",
+        "trigger": "Used as a lively idle state when manual mode is excited.",
+        "binding": "Manual posture bound to excited."
+      },
+      "walk": {
+        "name": "Walk",
+        "trigger": "Pinned when manual mode is walk.",
+        "binding": "Manual posture bound to walk."
+      },
+      "wave": {
+        "name": "Wave",
+        "trigger": "Pinned when manual mode is wave.",
+        "binding": "Manual posture bound to wave."
+      },
+      "jump": {
+        "name": "Jump",
+        "trigger": "Pinned when manual mode is jump.",
+        "binding": "Manual posture bound to jump."
+      },
+      "shake": {
+        "name": "Shake",
+        "trigger": "Pinned when manual mode is shake.",
+        "binding": "Manual posture bound to shake."
+      },
+      "lookAround": {
+        "name": "Look around",
+        "trigger": "Pinned when manual mode is look around.",
+        "binding": "Manual posture bound to lookAround."
+      },
+      "dance": {
+        "name": "Dance",
+        "trigger": "Pinned when manual mode is dance.",
+        "binding": "Manual posture bound to dance."
+      }
+    },
+    "showcaseTitle": "Showcase & presets",
+    "showcaseIntro": "Tap a preset to preview nest, background, pattern, mascot, and Agent reaction. Use \"simulate streaming\" for the working state. Apply writes nest/behavior and the built-in mascot or image slots when defined.",
+    "showcaseSavedOnly": "Saved project",
+    "showcaseSavedOnlyDesc": "What is stored on the project today — no preset overlay.",
+    "showcaseSimulateStream": "Preview: simulate Agent streaming",
+    "showcasePreviewLabel": "Dock preview",
+    "showcaseApply": "Apply preset to project",
+    "showcaseApplyHint": "Copies nest & behavior; sets built-in mascot or appearance / nest background from image indices when the preset defines them.",
+    "showcaseJsonHint": "Merged settings JSON (copy to replace in API or docs)",
+    "showcasePreset": {
+      "preset_sparrow": {
+        "name": "Sparrow",
+        "desc": "Grass nest, teal accent, bird mascot, floating idle and lively jump-ready motion."
+      },
+      "preset_rabbit": {
+        "name": "Rabbit",
+        "desc": "Wood nest, soft purple accent, rabbit mascot, bouncy hop idle and gentle auto motion."
+      },
+      "preset_puppy": {
+        "name": "Puppy",
+        "desc": "Grass nest, warm orange, dog mascot, tail-wag idle and expressive working motion."
+      },
+      "preset_cat": {
+        "name": "Cat",
+        "desc": "Night nest, muted silver, cat mascot, blink/sleep profile for a calm dock."
+      },
+      "line_art_default": {
+        "name": "Line-art default",
+        "desc": "Grass nest, light dots overlay, balanced motion."
+      },
+      "wood_studio": {
+        "name": "Wood studio",
+        "desc": "Wood theme + grid; uses first project image for appearance and background when available."
+      },
+      "night_coder": {
+        "name": "Night coder",
+        "desc": "Night nest, noise overlay, expressive motion; first image as background when available."
+      },
+      "focus_companion": {
+        "name": "Focus companion",
+        "desc": "Muted nest, no post-reply celebration flash — good for deep work."
+      },
+      "excited_helper": {
+        "name": "Upbeat helper",
+        "desc": "Dots + lively idle; second image as appearance and first as background when available."
+      },
+      "rest_cafe": {
+        "name": "Rest / café",
+        "desc": "Manual sleep, wood + grid — dimmed dock for breaks."
+      }
+    },
+    "gifBindMotion": "GIF state tint",
+    "gifBindMotionIntro": "When the dock/chat chip uses a GIF appearance, subtly shift saturation and brightness per idle/working/happy/sleep/etc. The GIF keeps its own timeline; this only adds a state-bound filter on top. Turn off to rely on generic CSS motion only.",
+    "spriteTitle": "Sprite sheet → GIF",
+    "spriteIntro": "Slice a uniform grid from one image, preview an animated GIF in the browser, then upload it to this project.",
+    "spriteSource": "Source image",
+    "spriteCols": "Columns",
+    "spriteRows": "Rows",
+    "spritePad": "Inner pad (px)",
+    "spriteFps": "Frames per second",
+    "spriteTransparent": "Transparent GIF (low alpha → transparent)",
+    "spriteGenerate": "Generate preview",
+    "spriteUpload": "Upload GIF to project",
+    "spriteNoImages": "Upload at least one image to use this tool.",
+    "spriteNeedImage": "Could not load the selected image.",
+    "spriteFormatsNote": "Sprite slicing expects a single still sheet (PNG/JPEG/WebP/SVG). Do not point it at an animated GIF as the source grid; export a static sprite sheet first, then generate a GIF from that sheet.",
+    "spriteSourceDims": "Source {{w}}×{{h}} px",
+    "spriteCellEstimate": "{{cols}}×{{rows}} grid ≈ {{cw}}×{{ch}} px per cell",
+    "spriteInnerEstimate": "Inner crop (after 2×padding) ≈ {{iw}}×{{ih}} px",
+    "spriteGridRemainder": "Width/height are not divisible by columns/rows (column remainder {{rx}} px, row remainder {{ry}} px). Edges are cropped—adjust the grid or crop the sheet.",
+    "spritePreviewOut": "GIF output {{fw}}×{{fh}} px, {{n}} frames",
+    "spriteAlphaNote": "With transparency on, only near-zero alpha becomes GIF-transparent; softer edges are flattened onto white before quantization to avoid graying and frame ghosting.",
+    "studio": {
+      "lead": "Bind GIFs (or static images) to each emotional / skill state like a game character. The sidebar and previews prefer the bound clip for that state; otherwise the main appearance and CSS motion are used.",
+      "livePreview": "Preview",
+      "selectAction": "Select an action on the left to edit its binding.",
+      "inspectorHelp": "Choose a file from the project, or a built-in mascot, then tune loop, speed, mirror, fit, and whether to override CSS keyframes (recommended for animated GIFs).",
+      "file": "Project file",
+      "noFile": "None",
+      "builtin": "Built-in mascot (optional)",
+      "noBuiltin": "None",
+      "loop": "Loop",
+      "loopOn": "Loop",
+      "loopOnce": "Play once (sidebar falls back to main look after a short time)",
+      "speed": "Clip speed",
+      "mirror": "Horizontal flip",
+      "fit": "Object fit",
+      "fitContain": "Contain",
+      "fitCover": "Cover",
+      "overrideCss": "Strip state keyframe CSS (avoid double motion on top of GIFs)",
+      "clearBinding": "Remove binding for this state",
+      "testPulse": "Test pulse (replay)",
+      "pulseHint": "Pulsing preview — re-triggers the clip for this state.",
+      "group": {
+        "idle": "Idle & idle layers",
+        "work": "Work & stream",
+        "reactions": "Reactions",
+        "life": "Stance & mood",
+        "skills": "Skills & moves"
+      },
+      "batchTitle": "Sprite sheet — slice to GIF and bind",
+      "batchIntro": "Pick a still sprite sheet, set grid, then choose a contiguous range of cell indices (left to right, top to bottom) to export as one animated GIF. It uploads to the project and binds to the selected action slot.",
+      "bindTo": "Bind to action",
+      "frameStart": "Start frame (index)",
+      "frameEnd": "End frame (index, inclusive)",
+      "batchGifPreview": "GIF preview",
+      "batchPreviewPlaceholder": "Adjust settings, then preview the GIF locally",
+      "batchPreviewButton": "Preview",
+      "generateAndBind": "Generate and bind",
+      "rangeInvalid": "Frame range is invalid. Valid indices: 0–{{n}}.",
+      "autopilotTitle": "Autopilot & walk space",
+      "autopilotDesc": "In the nest, empty-chat preview, and Customize (current state), the pet can stand on a virtual ground line, walk side to side, jump, and face the direction of movement. Single-click the pet for a short happy reaction; double-click to jump. Clicking the nest border (not the character) still opens Pet Space. Turn off autopilot to keep the character centered; you can still use Action studio clip bindings and manual/streaming states.",
+      "autopilotLabel": "Autopilot (roaming on the ground line)",
+      "roamRange": "Walk area width",
+      "roamTight": "Tight",
+      "roamNormal": "Normal",
+      "roamWide": "Wide",
+      "actionWeightsTitle": "Autopilot action weights (0 = never, 5 = most often)",
+      "wIdle": "Idle / pause",
+      "wWalk": "Walk",
+      "wLookAround": "Look around",
+      "wJump": "Jump",
+      "wWave": "Wave",
+      "wDance": "Dance",
+      "wShake": "Shake",
+      "resetDefaults": "Reset to defaults"
+    },
+    "petSceneAria": "Pet in nest",
+    "aboutSectionSceneTitle": "Scene engine: ground and movement",
+    "aboutSectionStudioTitle": "Action studio: per-state animation clips",
+    "aboutSceneBody": "The dock nest, the empty chat mascot, and the Customize large preview (when the preview selector is on “current”) use a small scene: a ground line, shadow, horizontal walking with edge turn-around, and jump curves. The pet faces its movement. During chat streaming, autopilot pauses and the “working” state (and any working clip) takes over. “Reduced motion” hides the walk/jump and keeps a calmer look. In Action studio you can disable autopilot or change roam width and action mix.",
+    "aboutStudioBody": "In Action studio you assign project files (or built-ins) to states such as working, happy, or walk. Each entry can use loop, speed, mirror, and fit, and you can opt to strip the built-in keyframe filter so a GIF is not “double animated”. A sprite sheet can be split into a GIF for a sub-range of cells and auto-bound to a slot. If a state is unbound, the main appearance and behavior CSS continue to apply.",
+    "aboutSectionOverview": "Overview",
+    "aboutBody": "Pet Space stores assets per project. Raster and vector images can be used as the dock mascot or nest background. Other file types stay in the library for download; more parsers can be added later. With the rail expanded, the nest frame is about 240 CSS px wide; at the default 16px rem it is ~118px tall from the sm breakpoint (640px) up (ratio 120:59 — e.g. 1200×590 or 480×236), and ~106px tall below sm (120:53 — e.g. 1200×530 or 480×212). Match one of those ratios with Cover to avoid cropping. Collapsed rail uses a ~40×40 (~1:1) thumb. If root font size or spacing tokens change, CSS pixel sizes shift but the rem-derived layout stays the same. Keep files reasonably small for fast loads.",
+    "aboutSectionCustomizeTitle": "Customization flow",
+    "aboutCustomizeSteps": "1) Open Pet Space and ensure you have a project (create one if needed).\n2) On Customize, upload your art: mascot stills (PNG/JPEG/WebP), crisp SVG line art, transparent GIF stickers, or a zip of project files.\n3) Appearance: either pick a built-in mascot chip, or scroll to \"Appearance\" and press \"Use as appearance\" on a listed image. Uploading a new file automatically clears the built-in mascot when you pick that file.\n4) Nest: choose a theme, accent, optional background image, opacity, and pattern so the sidebar frame matches your desk.\n5) Behavior: set Auto (follows chat streaming) or Manual (sleep/focus/etc.).\n6) Optional: use \"Sprite sheet → GIF\" below to turn a uniform grid into an animated GIF, then upload the GIF back into the same project for use like any other image.\n7) Showroom lets you preview preset bundles and copy merged JSON for APIs or docs.",
+    "aboutSectionFormatsTitle": "Formats: SVG, GIF, and sprite sheets",
+    "aboutFormatsBody": "SVG: best for logos and line-art mascots; scales cleanly in the dock.\nGIF: supported as an appearance. Browsers usually show the first frame in small previews; full GIF playback still uses the image element, so short loops work well as stickers.\nSprite sheet: one bitmap or SVG with a strict rows×columns grid of equal cells. The tool reads frames left-to-right, then top-to-bottom. Use a still sheet; animated GIFs are not a reliable grid source because frames are time-based, not spatial cells.",
+    "aboutSectionAiTitle": "Using AI to create assets",
+    "aboutAiBody": "Pick any image model you trust and keep commercial/usage terms in mind.\nStill mascot prompt (example): \"Flat 2D desk pet mascot, full body, front three-quarter view, thick clean outlines, limited palette, transparent background, centered, 512×512 PNG, no text, no watermark\".\nSVG prompt (example): \"Single SVG icon, minimalist bird mascot, geometric shapes, flat fills, viewBox 0 0 256 256, no embedded raster, suitable for small UI thumbnail\".\nSprite sheet prompt (example): \"Sprite sheet, 4×4 uniform grid, 64px inner cell, same character idle + blink + hop + wave, consistent line weight, transparent background, one PNG\".\nWorkflow: generate → download → upload here → set appearance or run the sprite tool. If edges look noisy, ask the model for a flatter palette or re-export with fewer colors before GIF conversion.",
+    "aboutSectionSpriteTitle": "Sprite sheet → GIF (technical)",
+    "aboutSpriteBody": "Pick columns, rows, inner pad, FPS, and optional transparency. The tool crops each cell, quantizes colors to a small web palette, and writes an animated GIF you can upload to the project.\nFrames are row-major: cell (0,0), (0,1), … then the next row.\nUse your own art or AI-generated art you are allowed to ship; do not redistribute third-party mascot IP you do not own.",
+    "newProject": "New project",
+    "projectName": "Project name",
+    "create": "Create",
+    "cancel": "Cancel",
+    "noProjects": "No projects yet",
+    "noProjectsHint": "Create a project to upload mascot art, sprites, or zip bundles.",
+    "deleteProject": "Delete",
+    "rename": "Rename",
+    "files": "Files",
+    "deleteFile": "Remove asset",
+    "deleteFileConfirm": "Remove \"{{name}}\" from this project? This cannot be undone.",
+    "upload": "Upload file",
+    "noFiles": "No files in this project",
+    "loadError": "Could not load Pet Space data.",
+    "libraryBuiltInSamplesTitle": "Built-in sample assets",
+    "libraryBuiltInSamplesIntro": "Bundled static SVGs (CC0-style). Open in a new tab to preview or download, then upload into the selected project to test appearance and the sprite tool.",
+    "projectNameEditHint": "Click the title or pencil to rename this project."
+  }
+}

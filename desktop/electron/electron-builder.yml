@@ -1,0 +1,83 @@
+appId: dev.leagent.desktop
+productName: LeAgent
+copyright: Copyright © 2024–2026 LeAgent Team
+
+asar: true
+asarUnpack:
+  - "resources/runtime/**"
+  - "resources/backend-payload/**"
+
+extraResources:
+  - from: "../../frontend/dist"
+    to: "frontend"
+  - from: "resources/runtime"
+    to: "runtime"
+    filter: ["**/*"]
+  - from: "resources/backend-payload"
+    to: "backend-payload"
+    filter: ["**/*"]
+
+files:
+  - "dist/**"
+  - "splash/**"
+  - "package.json"
+
+directories:
+  output: "dist-pack"
+
+mac:
+  category: public.app-category.productivity
+  hardenedRuntime: true
+  gatekeeperAssess: false
+  target:
+    - target: dmg
+      arch: [arm64, x64]
+    - target: zip
+      arch: [arm64, x64]
+  icon: resources/icons/icon.icns
+  entitlements: build/entitlements.mac.plist
+  entitlementsInherit: build/entitlements.mac.plist
+  notarize: false
+
+win:
+  target:
+    - target: nsis
+      arch: [x64]
+  icon: resources/icons/icon.ico
+
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: always
+  createStartMenuShortcut: true
+  shortcutName: LeAgent
+  uninstallDisplayName: LeAgent
+  include: build/installer.nsh
+
+linux:
+  target:
+    - target: AppImage
+      arch: [x64]
+    - target: deb
+      arch: [x64]
+  icon: resources/icons/icon.png
+  category: Office
+  synopsis: Local-first intelligent office automation
+  description: LeAgent combines LLMs with workflow automation for a fully local AI office assistant.
+  maintainer: Cheng Yuanqi <vixues@gmail.com>
+  desktop:
+    entry:
+      StartupWMClass: leagent-desktop
+
+deb:
+  depends:
+    - libgtk-3-0
+    - libnotify4
+    - libnss3
+    - libxss1
+    - libxtst6
+    - xdg-utils
+    - libatspi2.0-0
+    - libuuid1
+    - libsecret-1-0

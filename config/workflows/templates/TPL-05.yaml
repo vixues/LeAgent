@@ -1,0 +1,72 @@
+# 行政：请假条例命中检查（演示）
+workflow:
+  id: TPL-05
+  name: 请假申请字段校验
+  version: "1.0"
+  description: 对演示请假数据执行规则匹配，检查状态与类型是否符合预设。
+  category: compliance
+
+  inputs:
+    - name: leave_status
+      type: string
+      description: 申请状态字段值
+      required: false
+      default: "submitted"
+    - name: leave_type
+      type: string
+      description: 假期类型
+      required: false
+      default: "annual"
+    - name: days
+      type: integer
+      description: 请假天数
+      required: false
+      default: 2
+    - name: dept
+      type: string
+      description: 部门标识
+      required: false
+      default: "admin"
+    - name: max_days_rule
+      type: integer
+      description: 规则中「天数上限」比较值
+      required: false
+      default: 15
+
+  outputs:
+    - name: rules_result
+      type: object
+      description: 规则评估结果
+
+  nodes:
+    - id: start
+      type: start
+      next: match
+
+    - id: match
+      type: tool_call
+      name: 评估请假规则
+      tool: rule_matcher
+      params:
+        operation: evaluate
+        data:
+          status: "{{input.leave_status}}"
+          leave_type: "{{input.leave_type}}"
+          days: "{{input.days}}"
+          dept: "{{input.dept}}"
+        rules:
+          - id: status_ok
+            field: status
+            operator: eq
+            value: "{{input.leave_status}}"
+          - id: days_reasonable
+            field: days
+            operator: le
+            value: "{{input.max_days_rule}}"
+      output: rules_result
+      next: end
+
+    - id: end
+      type: end
+      output:
+        rules_result: "{{rules_result}}"

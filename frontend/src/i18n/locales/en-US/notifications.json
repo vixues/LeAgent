@@ -1,0 +1,34 @@
+{
+  "notifications": {
+    "title": "Notifications",
+    "description": "Review system alerts, todo updates, and mentions.",
+    "bell": "Notifications",
+    "empty": "You're all caught up.",
+    "markAllRead": "Mark all as read",
+    "markRead": "Mark as read",
+    "delete": "Delete",
+    "unreadBadge": "{{count}} unread",
+    "filter": {
+      "all": "All",
+      "unread": "Unread",
+      "category": "Category"
+    },
+    "category": {
+      "system": "System",
+      "task": "Tasks",
+      "alert": "Alerts",
+      "update": "Updates",
+      "mention": "Mentions",
+      "todo": "Todos"
+    },
+    "level": {
+      "info": "Info",
+      "warn": "Warning",
+      "error": "Error",
+      "success": "Success"
+    },
+    "actions": {
+      "open": "Open"
+    }
+  }
+}

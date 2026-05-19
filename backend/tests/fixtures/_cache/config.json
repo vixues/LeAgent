@@ -1,0 +1,15 @@
+{
+  "app": {
+    "name": "leagent",
+    "version": "1.0.0",
+    "debug": false
+  },
+  "database": {
+    "host": "localhost",
+    "port": 5432
+  },
+  "features": [
+    "feature_a",
+    "feature_b"
+  ]
+}
