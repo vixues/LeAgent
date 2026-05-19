@@ -1,18 +1,17 @@
 ; LeAgent NSIS custom installer hooks
 ; Included by electron-builder via nsis.include in electron-builder.yml
-
-!include "MUI2.nsh"
+;
+; NOTE: Do NOT !include "MUI2.nsh" here — electron-builder's own NSIS
+; scaffolding already includes it, and a second include causes conflicts.
+; Likewise, do NOT insert MUI_PAGE_DIRECTORY inside customInstallMode;
+; electron-builder's assisted installer adds that page automatically when
+; allowToChangeInstallationDirectory is true in electron-builder.yml.
 
 ; ── Custom pages ──
 
 !macro customInit
   ; Per-user install by default
   StrCpy $INSTDIR "$LOCALAPPDATA\LeAgent"
-!macroend
-
-!macro customInstallMode
-  ; Allow the user to choose per-user or per-machine
-  !insertmacro MUI_PAGE_DIRECTORY
 !macroend
 
 ; ── Uninstall prompt for user data ──
