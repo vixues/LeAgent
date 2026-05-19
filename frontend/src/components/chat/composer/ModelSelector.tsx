@@ -137,13 +137,8 @@ export function ModelSelector({
                   : 'text-muted-foreground hover:bg-surface-sunken hover:text-foreground',
               )}
             >
-              <span className="mt-0.5 flex-shrink-0">{model.icon}</span>
-              <div className="min-w-0">
-                <div className="text-xs font-medium">{model.label}</div>
-                <div className="text-[11px] text-muted-foreground-tertiary">
-                  {model.description}
-                </div>
-              </div>
+              <span className="flex-shrink-0">{model.icon}</span>
+              <span className="min-w-0 truncate">{model.label}</span>
             </button>
           ))}
         </div>
