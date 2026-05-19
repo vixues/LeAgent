@@ -86,6 +86,7 @@ class TaskManager:
         self._handlers: dict[TaskType, TaskHandler] = {}
         self._active_contexts: dict[str, TaskContext] = {}
         self._running_tasks: dict[str, asyncio.Task[Any]] = {}
+        self._kill_owned_cancellations: set[str] = set()
         # Optional distributed registry (populated by service manager once
         # Redis is online). Remains None in single-process tests / dev.
         self._distributed: Any | None = None
@@ -271,7 +272,8 @@ class TaskManager:
                     session.add(task)
 
         except asyncio.CancelledError:
-            await self._mark_killed(task_id)
+            if task_id not in self._kill_owned_cancellations:
+                await self._mark_killed(task_id)
         except asyncio.TimeoutError:
             ctx.abort()
             await self._mark_timeout(task_id)
@@ -281,6 +283,7 @@ class TaskManager:
         finally:
             self._active_contexts.pop(task_id, None)
             self._running_tasks.pop(task_id, None)
+            self._kill_owned_cancellations.discard(task_id)
             if self._distributed is not None:
                 try:
                     await self._distributed.deregister(task_id)
@@ -318,6 +321,7 @@ class TaskManager:
 
         bg = self._running_tasks.get(task_id)
         if bg and not bg.done():
+            self._kill_owned_cancellations.add(task_id)
             bg.cancel()
         elif self._distributed is not None:
             try:

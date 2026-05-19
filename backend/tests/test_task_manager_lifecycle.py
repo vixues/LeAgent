@@ -264,6 +264,16 @@ async def test_spawn_exception_marks_failed(fake_db: _InMemoryDB) -> None:
 async def test_kill_transitions_to_killed(fake_db: _InMemoryDB) -> None:
     mgr = TaskManager()
     mgr.register_handler(_BlockingHandler())
+    mark_killed_calls = 0
+    original_mark_killed = mgr._mark_killed
+
+    async def _track_mark_killed(task_id: str) -> None:
+        nonlocal mark_killed_calls
+        mark_killed_calls += 1
+        await original_mark_killed(task_id)
+
+    mgr._mark_killed = _track_mark_killed
+
     async with fake_db.session() as session:
         task = await mgr.create_task(
             session, name="unit-block", task_type=TaskType.AGENT
@@ -282,6 +292,8 @@ async def test_kill_transitions_to_killed(fake_db: _InMemoryDB) -> None:
         return (await _fetch_status(fake_db, task_id)) == TaskStatus.KILLED
 
     await _wait_until(_is_killed)
+    await asyncio.sleep(0)
+    assert mark_killed_calls == 0
 
 
 @pytest.mark.asyncio
