@@ -268,7 +268,7 @@ set "BASH_PREFIX=export UV_SYNC_EXTRAS='!SAFE_EXTRAS!' UV_INDEX_URL='!SAFE_INDEX
 if not "!FLAG_SKIPINIT!"=="1" (
   if "!FLAG_DRYRUN!"=="0" (
     echo [leagent] Running ./start.sh sync-python and leagent init --defaults ...
-    "!BASH_EXE!" -lc "!BASH_PREFIX!cd '!UNIX_DIR!' && chmod +x start.sh 2>/dev/null; ./start.sh sync-python && uv run --directory backend leagent init --defaults"
+    "!BASH_EXE!" -lc "!BASH_PREFIX!cd '!UNIX_DIR!' && { chmod +x start.sh 2>/dev/null || true; ./start.sh sync-python && uv run --directory backend leagent init --defaults; }"
     if errorlevel 1 (
       echo [leagent] sync-python / leagent init failed 1>&2
       exit /b 1
@@ -278,7 +278,7 @@ if not "!FLAG_SKIPINIT!"=="1" (
 
 if "!FLAG_NOCHECK!"=="0" if "!FLAG_SKIPSTART!"=="0" (
   echo [leagent] Running ./start.sh check ...
-  "!BASH_EXE!" -lc "!BASH_PREFIX!cd '!UNIX_DIR!' && chmod +x start.sh 2>/dev/null; ./start.sh check"
+  "!BASH_EXE!" -lc "!BASH_PREFIX!cd '!UNIX_DIR!' && { chmod +x start.sh 2>/dev/null || true; ./start.sh check; }"
   if errorlevel 1 (
     echo [leagent] ./start.sh check failed 1>&2
     exit /b 1

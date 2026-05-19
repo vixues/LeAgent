@@ -227,14 +227,24 @@ function Invoke-GitCloneOrUpdate {
     }
     else {
         Write-LeAgentInfo "Cloning $Url -> $TargetDir (ref: $Branch) ..."
-        $cloned = $false
-        Invoke-WithRetry -Label 'git clone' -ScriptBlock {
-            git clone --depth 1 --branch $Branch $Url $TargetDir
-            if ($LASTEXITCODE -ne 0) { throw 'shallow clone failed' }
-            $script:cloned = $true
+        $shallowCloned = $false
+        try {
+            Invoke-WithRetry -Label 'git clone' -ScriptBlock {
+                if (Test-Path -LiteralPath $TargetDir) {
+                    Remove-Item -LiteralPath $TargetDir -Recurse -Force -ErrorAction SilentlyContinue
+                }
+                git clone --depth 1 --branch $Branch $Url $TargetDir
+                if ($LASTEXITCODE -ne 0) { throw 'shallow clone failed' }
+            }
+            $shallowCloned = $true
         }
-        if (-not $cloned) {
+        catch {
             Write-LeAgentWarn 'Shallow branch clone failed; full clone ...'
+        }
+        if (-not $shallowCloned) {
+            if (Test-Path -LiteralPath $TargetDir) {
+                Remove-Item -LiteralPath $TargetDir -Recurse -Force -ErrorAction SilentlyContinue
+            }
             Invoke-WithRetry -Label 'git clone (full)' -ScriptBlock {
                 git clone $Url $TargetDir
                 if ($LASTEXITCODE -ne 0) { throw 'git clone failed' }
@@ -301,13 +311,13 @@ $bashPrefix = "export UV_SYNC_EXTRAS='$exportExtras' UV_INDEX_URL='$exportIndex'
 
 if (-not $SkipInit) {
     Write-LeAgentInfo 'Running ./start.sh sync-python and leagent init --defaults ...'
-    & $bash @('-lc', "${bashPrefix}cd '$unixDir' && chmod +x start.sh 2>/dev/null; ./start.sh sync-python && uv run --directory backend leagent init --defaults")
+    & $bash @('-lc', "${bashPrefix}cd '$unixDir' && { chmod +x start.sh 2>/dev/null || true; ./start.sh sync-python && uv run --directory backend leagent init --defaults; }")
     if ($LASTEXITCODE -ne 0) { throw './start.sh sync-python / leagent init failed' }
 }
 
 if ($RunCheck -and -not $SkipStart) {
     Write-LeAgentInfo 'Running ./start.sh check ...'
-    & $bash @('-lc', "${bashPrefix}cd '$unixDir' && chmod +x start.sh 2>/dev/null; ./start.sh check")
+    & $bash @('-lc', "${bashPrefix}cd '$unixDir' && { chmod +x start.sh 2>/dev/null || true; ./start.sh check; }")
     if ($LASTEXITCODE -ne 0) { throw './start.sh check failed' }
 }
 

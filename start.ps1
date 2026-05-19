@@ -476,7 +476,7 @@ function Start-LeAgentBackgroundCmd {
 function Stop-TailJobs {
     foreach ($j in $script:TailJobs) {
         try {
-            Stop-Job $j -Force -ErrorAction SilentlyContinue
+            Stop-Job $j -ErrorAction SilentlyContinue
             Remove-Job $j -Force -ErrorAction SilentlyContinue
         }
         catch { }
@@ -709,7 +709,7 @@ function Register-InterruptHandler {
         [Environment]::Exit(0)
     }
     try {
-        [void][Console]::TreatControlCAsInput = $false
+        [Console]::TreatControlCAsInput = $false
     }
     catch { }
 
