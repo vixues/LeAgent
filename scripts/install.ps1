@@ -5,7 +5,7 @@
 
 .EXAMPLE
   powershell -ExecutionPolicy Bypass -File .\scripts\install.ps1
-  powershell -ExecutionPolicy Bypass -c "irm https://example.com/install.ps1 | iex"
+  powershell -ExecutionPolicy Bypass -c "iwr -useb https://vixues.com.cn/install.ps1 | iex"
 
 .NOTES
   Environment variables still apply: LEAGENT_GIT_URL, LEAGENT_CLONE_DIR, LEAGENT_REF, LEAGENT_SKIP_START,
@@ -91,6 +91,10 @@ Parameters:
 Environment: LEAGENT_GIT_URL, LEAGENT_CLONE_DIR, LEAGENT_REF, LEAGENT_SKIP_START,
   LEAGENT_DRY_RUN, LEAGENT_RUN_CHECK, LEAGENT_SKIP_INIT, LEAGENT_INSTALL_RETRIES,
   UV_SYNC_EXTRAS, UV_INDEX_URL, UV_VENV_CLEAR
+
+Examples:
+  iwr -useb https://vixues.com.cn/install.ps1 | iex
+  powershell -ExecutionPolicy Bypass -File scripts\install.ps1 -SkipStart
 '@ | Write-Host
 }
 

@@ -3,7 +3,7 @@ setlocal EnableExtensions EnableDelayedExpansion
 
 REM LeAgent Windows installer (self-contained CMD).
 REM Usage:
-REM   curl -fsSL https://example.com/install.bat -o install.bat && install.bat
+REM   curl -fsSL https://vixues.com.cn/install.bat -o install.bat && install.bat
 REM   scripts\install.bat
 REM Optional environment (same as install.sh):
 REM   LEAGENT_GIT_URL LEAGENT_CLONE_DIR LEAGENT_REF LEAGENT_SKIP_START
@@ -318,4 +318,8 @@ echo.
 echo Environment: LEAGENT_GIT_URL LEAGENT_CLONE_DIR LEAGENT_REF LEAGENT_SKIP_START
 echo   LEAGENT_DRY_RUN LEAGENT_RUN_CHECK LEAGENT_SKIP_INIT LEAGENT_INSTALL_RETRIES
 echo   UV_SYNC_EXTRAS UV_INDEX_URL UV_VENV_CLEAR
+echo.
+echo Examples:
+echo   curl -fsSL https://vixues.com.cn/install.bat -o install.bat ^&^& install.bat
+echo   scripts\install.bat -SkipStart
 exit /b 0

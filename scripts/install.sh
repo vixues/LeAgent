@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # LeAgent installer (Unix / Git Bash)
 # Usage:
-#   curl -fsSL https://example.com/install.sh | bash
+#   curl -fsSL https://vixues.com.cn/install.sh | bash
 #   bash scripts/install.sh --help
 #
 # Environment (flags override when passed):
@@ -126,8 +126,8 @@ Environment:
   LEAGENT_INSTALL_RETRIES  UV_SYNC_EXTRAS  UV_INDEX_URL  UV_VENV_CLEAR
 
 Examples:
-  curl -fsSL https://example.com/install.sh | bash
-  curl -fsSL https://example.com/install.sh | bash -s -- --skip-start
+  curl -fsSL https://vixues.com.cn/install.sh | bash
+  curl -fsSL https://vixues.com.cn/install.sh | bash -s -- --skip-start
   bash install.sh --from-source "\$HOME/src/LeAgent" --skip-start
 EOF
             exit 0 ;;
