@@ -28,7 +28,7 @@ export function SiteHeader() {
         {/* Brand */}
         <Link
           to="/"
-          className="flex items-center gap-3 font-display text-lg font-semibold tracking-tight text-text-primary"
+          className="flex items-center gap-3 font-display text-xl font-semibold tracking-tight text-text-primary"
         >
           <img src={faviconUrl} width={36} height={36} alt="" />
           LeAgent
@@ -43,7 +43,7 @@ export function SiteHeader() {
                 key={item.to}
                 to={item.to}
                 className={cn(
-                  "font-body text-sm transition-colors duration-200",
+                  "font-body text-base transition-colors duration-200",
                   active
                     ? "text-accent"
                     : "text-text-secondary hover:text-text-primary",
@@ -113,7 +113,7 @@ export function SiteHeader() {
                 key={item.to}
                 to={item.to}
                 onClick={() => setOpen(false)}
-                className="block py-2 text-sm text-text-secondary transition-colors hover:text-text-primary"
+                className="block py-2 text-base text-text-secondary transition-colors hover:text-text-primary"
               >
                 {item.label}
               </Link>
