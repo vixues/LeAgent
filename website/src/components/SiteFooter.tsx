@@ -38,7 +38,8 @@ export function SiteFooter() {
             </h4>
             <ul className="space-y-2 text-sm">
               {[
-                { to: "/about", label: t.nav.about },
+                { to: "/", label: t.nav.about },
+                { to: "/about", label: t.nav.intro },
                 { to: "/business", label: t.nav.business },
                 { to: "/download", label: t.nav.download },
                 { to: "/pets", label: t.nav.pets },

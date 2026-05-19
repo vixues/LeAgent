@@ -12,20 +12,14 @@ export default function Home() {
 
   return (
     <>
-      {/* ── Hero ─────────────────────────────────────────────── */}
       <Section className="pt-32 pb-12">
         <div className="grid items-end gap-10 md:grid-cols-12 md:gap-x-12">
           <div className="md:col-span-8">
-            <Reveal>
-              <p className="eyebrow mb-6">{t.home.kicker}</p>
-            </Reveal>
             <Reveal delay={80}>
               <h1 className="font-display text-4xl font-semibold leading-[1.04] tracking-tight text-text-primary md:text-6xl lg:text-7xl">
                 {t.home.heroLine1}
                 <br />
                 <span className="text-accent">{t.home.heroLine2}</span>
-                <br />
-                {t.home.heroLine3}
               </h1>
             </Reveal>
           </div>
@@ -36,8 +30,8 @@ export default function Home() {
             </p>
             <div className="mt-6 flex flex-wrap items-center gap-3">
               <Link to="/download" className="btn btn-primary">
+                <Icon name="download" className="h-4 w-4" />
                 {t.common.download}
-                <Icon name="arrow" className="h-4 w-4" />
               </Link>
               <a
                 href={REPO_URL}
@@ -60,7 +54,7 @@ export default function Home() {
             <div className="hero-canvas__inner">
               <img
                 src="/images/previews/home-preview.png"
-                alt="LeAgent desktop preview"
+                alt="LeAgent workspace"
                 className="h-full w-full object-cover"
               />
             </div>
@@ -68,28 +62,40 @@ export default function Home() {
         </Reveal>
       </Section>
 
-      {/* ── Foundations ──────────────────────────────────────── */}
-      <Section id="intro" className="pt-20 pb-24 md:pt-28 md:pb-32">
+      <Section className="pt-20 pb-24 md:pt-28 md:pb-32">
         <SectionHead
-          eyebrow={t.home.principlesEyebrow}
-          title={t.home.principlesTitle}
-          lede={t.home.introP1}
+          eyebrow={t.home.overviewEyebrow}
+          title={t.home.overviewTitle}
+          lede={t.home.overviewLede}
         />
         <ClaimGrid columns={3}>
           {t.principles.slice(0, 3).map((p) => (
-            <Claim key={p.title} title={p.title}>
+            <Claim key={p.title} icon={p.icon} title={p.title}>
               {p.short}
             </Claim>
           ))}
         </ClaimGrid>
       </Section>
 
-      {/* ── Continue reading ─────────────────────────────────── */}
+      <Section className="pt-0 pb-24">
+        <SectionHead
+          eyebrow={t.home.principlesEyebrow}
+          title={t.home.principlesTitle}
+        />
+        <ClaimGrid columns={3}>
+          {t.principles.slice(3).map((p) => (
+            <Claim key={p.title} icon={p.icon} title={p.title}>
+              {p.short}
+            </Claim>
+          ))}
+        </ClaimGrid>
+      </Section>
+
       <Section className="pt-0 pb-24">
         <div className="grid items-baseline gap-x-12 gap-y-8 md:grid-cols-12">
           <div className="md:col-span-7">
             <h2 className="font-display text-2xl font-semibold tracking-tight text-text-primary md:text-3xl">
-              {t.home.businessTitle}
+              {t.home.continueTitle}
             </h2>
           </div>
 
@@ -101,8 +107,8 @@ export default function Home() {
               {[
                 {
                   to: "/about",
-                  label: t.common.learnMore,
-                  meta: "about",
+                  label: t.common.viewFeatures,
+                  meta: "intro",
                 },
                 {
                   to: "/business",

@@ -11,13 +11,9 @@ export default function Business() {
 
   return (
     <>
-      {/* ── Lede ─────────────────────────────────────────────── */}
       <Section className="pt-32 pb-12">
         <div className="grid items-end gap-10 md:grid-cols-12 md:gap-x-12">
           <div className="md:col-span-7">
-            <Reveal>
-              <p className="eyebrow mb-6">{t.business.eyebrow}</p>
-            </Reveal>
             <Reveal delay={80}>
               <h1 className="font-display text-3xl font-semibold leading-[1.08] tracking-tight whitespace-pre-line text-text-primary md:text-5xl lg:text-6xl">
                 {t.business.title}
@@ -36,7 +32,7 @@ export default function Business() {
             <div className="hero-canvas__inner">
               <img
                 src="/images/previews/workflow-preview.png"
-                alt="LeAgent workflow canvas"
+                alt="LeAgent workflow"
                 className="h-full w-full object-cover"
               />
             </div>
@@ -44,7 +40,6 @@ export default function Business() {
         </Reveal>
       </Section>
 
-      {/* ── Use cases ────────────────────────────────────────── */}
       <Section className="pt-20 pb-24 md:pt-28 md:pb-28">
         <SectionHead
           eyebrow={t.business.useCasesEyebrow}
@@ -59,7 +54,6 @@ export default function Business() {
         </ClaimGrid>
       </Section>
 
-      {/* ── Capabilities + inline CTA ────────────────────────── */}
       <Section className="pt-0 pb-24">
         <SectionHead
           eyebrow={t.business.capabilitiesEyebrow}
@@ -74,16 +68,21 @@ export default function Business() {
         </ClaimGrid>
 
         <div className="mt-16 flex flex-wrap items-baseline justify-between gap-x-12 gap-y-4">
-          <p className="font-display text-lg font-medium text-text-primary md:text-xl">
-            {t.business.ctaTitle}
-          </p>
+          <div>
+            <p className="font-display text-lg font-medium text-text-primary md:text-xl">
+              {t.business.ctaTitle}
+            </p>
+            <p className="mt-2 max-w-xl text-sm leading-relaxed text-text-secondary">
+              {t.business.ctaSub}
+            </p>
+          </div>
           <div className="flex flex-wrap gap-3">
-            <Link to="/download" className="btn btn-primary">
-              {t.common.download}
+            <Link to="/company" className="btn btn-primary">
+              {t.common.contactCustom}
               <Icon name="arrow" className="h-4 w-4" />
             </Link>
-            <Link to="/about" className="btn btn-ghost">
-              {t.common.learnMore}
+            <Link to="/download" className="btn btn-ghost">
+              {t.common.startBuilding}
             </Link>
           </div>
         </div>

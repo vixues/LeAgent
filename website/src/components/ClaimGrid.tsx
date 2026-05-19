@@ -1,4 +1,6 @@
 import type { ReactNode } from "react";
+import type { IconName } from "@/components/Icon";
+import { Icon } from "@/components/Icon";
 import { cn } from "@/lib/cn";
 
 interface ClaimGridProps {
@@ -34,6 +36,7 @@ export function ClaimGrid({
 interface ClaimProps {
   /** Optional small label rendered above the title (e.g. an index) */
   label?: string;
+  icon?: IconName;
   title: ReactNode;
   children: ReactNode;
   className?: string;
@@ -43,9 +46,14 @@ interface ClaimProps {
  * A single claim: optional label + title + one short paragraph.
  * Designed for one-screen scannability — keep body to ~25 words.
  */
-export function Claim({ label, title, children, className }: ClaimProps) {
+export function Claim({ label, icon, title, children, className }: ClaimProps) {
   return (
     <div className={cn("claim", className)}>
+      {icon && (
+        <span className="icon-tile mb-3" aria-hidden>
+          <Icon name={icon} className="h-4 w-4" />
+        </span>
+      )}
       {label && <p className="claim__label">{label}</p>}
       <h3 className="claim__title">{title}</h3>
       <p className="claim__body">{children}</p>

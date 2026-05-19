@@ -15,9 +15,6 @@ export default function Download() {
       <Section className="pt-32 pb-10">
         <div className="grid items-end gap-10 md:grid-cols-12 md:gap-x-12">
           <div className="md:col-span-7">
-            <Reveal>
-              <p className="eyebrow mb-6">{t.downloadPage.eyebrow}</p>
-            </Reveal>
             <Reveal delay={80}>
               <h1 className="font-display text-3xl font-semibold leading-[1.08] tracking-tight text-text-primary md:text-5xl lg:text-6xl">
                 {t.downloadPage.title}
@@ -55,8 +52,8 @@ export default function Download() {
       {/* ── Install ──────────────────────────────────────────── */}
       <Section className="pt-12 pb-24">
         <SectionHead
-          eyebrow={t.about.installEyebrow}
-          title={t.about.installTitle}
+          eyebrow={t.downloadPage.installEyebrow}
+          title={t.downloadPage.installTitle}
         />
         <InstallCard />
       </Section>

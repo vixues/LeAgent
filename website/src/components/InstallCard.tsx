@@ -161,7 +161,7 @@ export function InstallCard({
               <Icon name="github" className="h-3 w-3" />
               Releases
             </a>
-            <Link to="/about#install">Docs</Link>
+            <Link to="/download">Docs</Link>
             <a href={REPO_URL} target="_blank" rel="noopener noreferrer">
               <Icon name="external" className="h-3 w-3" />
               Source

@@ -4,6 +4,8 @@ export type IconName =
   | "noAccount"
   | "noTracking"
   | "openSource"
+  | "extensible"
+  | "localData"
   | "developer"
   | "privacy"
   | "linux"
@@ -72,6 +74,23 @@ export function Icon({ name, className, strokeWidth = 1.5 }: IconProps) {
           <path d="m9 17-5-5 5-5" />
           <path d="m15 7 5 5-5 5" />
           <path d="m14 6-4 12" opacity="0.7" />
+        </svg>
+      );
+    case "extensible":
+      return (
+        <svg {...common}>
+          <rect x="3" y="3" width="7" height="7" rx="1.5" />
+          <rect x="14" y="3" width="7" height="7" rx="1.5" />
+          <rect x="8.5" y="14" width="7" height="7" rx="1.5" />
+          <path d="M10 6.5h4M12 10v4" opacity="0.7" />
+        </svg>
+      );
+    case "localData":
+      return (
+        <svg {...common}>
+          <ellipse cx="12" cy="7" rx="7" ry="2.5" />
+          <path d="M5 7v10c0 1.38 3.13 2.5 7 2.5s7-1.12 7-2.5V7" />
+          <path d="M5 12c0 1.38 3.13 2.5 7 2.5s7-1.12 7-2.5" opacity="0.55" />
         </svg>
       );
     case "developer":

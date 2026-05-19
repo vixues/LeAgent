@@ -14,8 +14,8 @@ export function SiteHeader() {
   const { t } = useI18n();
 
   const navItems = [
-    { label: t.nav.about, to: "/about" },
-    { label: t.nav.intro, to: "/", hash: "#intro" },
+    { label: t.nav.about, to: "/" },
+    { label: t.nav.intro, to: "/about" },
     { label: t.nav.business, to: "/business" },
     { label: t.nav.download, to: "/download" },
     { label: t.nav.pets, to: "/pets" },
@@ -37,23 +37,11 @@ export function SiteHeader() {
         {/* Desktop nav */}
         <nav className="hidden items-center gap-8 md:flex" aria-label="Main">
           {navItems.map((item) => {
-            const hash = "hash" in item ? item.hash : undefined;
-            const active = hash ? pathname === "/" : pathname === item.to;
+            const active = pathname === item.to;
             return (
               <Link
-                key={item.to + (hash || "")}
+                key={item.to}
                 to={item.to}
-                onClick={
-                  hash
-                    ? () => {
-                        setTimeout(() => {
-                          document
-                            .querySelector(hash)
-                            ?.scrollIntoView({ behavior: "smooth" });
-                        }, 50);
-                      }
-                    : undefined
-                }
                 className={cn(
                   "font-body text-sm transition-colors duration-200",
                   active
@@ -120,21 +108,11 @@ export function SiteHeader() {
           aria-label="Mobile"
         >
           {navItems.map((item) => {
-            const hash = "hash" in item ? item.hash : undefined;
             return (
               <Link
-                key={item.to + (hash || "")}
+                key={item.to}
                 to={item.to}
-                onClick={() => {
-                  setOpen(false);
-                  if (hash) {
-                    setTimeout(() => {
-                      document
-                        .querySelector(hash)
-                        ?.scrollIntoView({ behavior: "smooth" });
-                    }, 50);
-                  }
-                }}
+                onClick={() => setOpen(false)}
                 className="block py-2 text-sm text-text-secondary transition-colors hover:text-text-primary"
               >
                 {item.label}
