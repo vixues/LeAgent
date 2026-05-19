@@ -29,7 +29,6 @@ COPY backend/pyproject.toml backend/README.md ./
 COPY backend/leagent/ leagent/
 COPY backend/leagent_core/ leagent_core/
 COPY backend/alembic.ini ./
-COPY backend/alembic/ alembic/
 
 RUN pip install --upgrade pip wheel setuptools && \
     pip install -e ".[ocr,browser]" || pip install -e ".[ocr]" || pip install -e .
@@ -100,7 +99,6 @@ RUN chown -R $APP_USER:$APP_USER /home/$APP_USER/.cache || true
 
 COPY --chown=$APP_USER:$APP_USER --from=builder /build/leagent /app/leagent
 COPY --chown=$APP_USER:$APP_USER --from=builder /build/leagent_core /app/leagent_core
-COPY --chown=$APP_USER:$APP_USER --from=builder /build/alembic /app/alembic
 COPY --chown=$APP_USER:$APP_USER --from=builder /build/alembic.ini /app/alembic.ini
 COPY --chown=$APP_USER:$APP_USER --from=builder /build/pyproject.toml /app/pyproject.toml
 COPY --chown=$APP_USER:$APP_USER --from=builder /build/README.md /app/README.md

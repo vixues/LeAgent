@@ -14,7 +14,6 @@ services:
       target: development
     volumes:
       - ../backend/leagent:/app/leagent:cached
-      - ../backend/alembic:/app/alembic:cached
       - ../backend/tests:/app/tests:cached
       - ../backend/leagent_core:/app/leagent_core:cached
       - ../backend/pyproject.toml:/app/pyproject.toml:ro
