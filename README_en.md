@@ -30,7 +30,8 @@
 **LeAgent** is a self-hostable platform for building LLM-powered automation: chat assistants, drag-and-drop workflows, declarative rules, skills, and integrations — without stitching together separate products.
 
 - **Agent runtime** — multi-turn sessions with streaming, tool execution, tiered model routing, layered prompts, and cognitive memory
-- **100+ tools** — documents, web, data, code execution, databases, generative UI, coding projects, and more
+- **Skills** — [Agent Skills v1.0](https://agentskills.my/specification) `SKILL.md` bundles with progressive disclosure and on-demand loading; built-in skills, install from links/archives, and a pluggable HTTP skill registry
+- **100+ offline tools** — documents, web, data, code execution, databases, generative UI, coding projects, and more
 - **Visual workflows** — ReactFlow editor with YAML export, templates, and every tool as a typed node
 - **Multi-provider LLM** — OpenAI, Anthropic, DeepSeek, DashScope, Azure OpenAI, Ollama, vLLM
 - **Zero-config default** — SQLite out of the box, single Docker container, optional PostgreSQL / Milvus
