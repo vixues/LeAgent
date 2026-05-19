@@ -156,7 +156,6 @@ interface Translation {
     gifsSub: string;
     gifs: PetGif[];
     downloadLabel: string;
-    downloadAll: string;
     placeholderNote: string;
   };
   principles: Principle[];
@@ -321,14 +320,14 @@ export const translations: Record<Lang, Translation> = {
         { title: "省电模式", description: "60 秒没动作就化成一帧水墨静画，CPU 占用接近于零。" },
       ],
       wallpapersTitle: "壁纸合集",
-      wallpapersSub: "为 LeAgent 桌面挑的几张极简壁纸，4K 和 5K 两个分辨率。点一下就能下载。",
+      wallpapersSub: "为 LeAgent 桌面挑的几张极简壁纸。点一下就能下载。",
       wallpapers: [
-        { title: "玄空", tag: "深空 · 4K", swatch: "linear-gradient(135deg, #0a1428 0%, #1c2440 50%, #322048 100%)" },
-        { title: "青山", tag: "山水 · 5K", swatch: "linear-gradient(160deg, #1a3a3a 0%, #3a6868 50%, #6a9a9a 100%)" },
-        { title: "朱砂", tag: "霁色 · 4K", swatch: "linear-gradient(140deg, #2a1818 0%, #6a3024 50%, #c25a3a 100%)" },
-        { title: "素纸", tag: "白昼 · 5K", swatch: "linear-gradient(150deg, #f5f0e6 0%, #e6dcc8 50%, #c8b89a 100%)" },
-        { title: "墨韵", tag: "夜色 · 4K", swatch: "linear-gradient(135deg, #0a0a0d 0%, #1a1a22 50%, #2a2a36 100%)" },
-        { title: "苍穹", tag: "天青 · 5K", swatch: "linear-gradient(160deg, #1a3a5c 0%, #2a6a96 50%, #5ca8d6 100%)" },
+        { title: "玄空", tag: "深空", swatch: "linear-gradient(135deg, #0a1428 0%, #1c2440 50%, #322048 100%)" },
+        { title: "青山", tag: "山水", swatch: "linear-gradient(160deg, #1a3a3a 0%, #3a6868 50%, #6a9a9a 100%)" },
+        { title: "朱砂", tag: "霁色", swatch: "linear-gradient(140deg, #2a1818 0%, #6a3024 50%, #c25a3a 100%)" },
+        { title: "素纸", tag: "白昼", swatch: "linear-gradient(150deg, #f5f0e6 0%, #e6dcc8 50%, #c8b89a 100%)" },
+        { title: "墨韵", tag: "夜色", swatch: "linear-gradient(135deg, #0a0a0d 0%, #1a1a22 50%, #2a2a36 100%)" },
+        { title: "苍穹", tag: "天青", swatch: "linear-gradient(160deg, #1a3a5c 0%, #2a6a96 50%, #5ca8d6 100%)" },
       ],
       gifsTitle: "宠物动图",
       gifsSub: "可以直接拖进去用的动画包。GIF 和 APNG 两种格式，看心情挑。",
@@ -343,7 +342,6 @@ export const translations: Record<Lang, Translation> = {
         { name: "夜灯", mood: "静夜呼吸" },
       ],
       downloadLabel: "下载",
-      downloadAll: "打包下载全部",
       placeholderNote: "下载链接指向 GitHub Releases — 正式资源跟随公开版本一起发布。",
     },
     principles: [
@@ -589,14 +587,14 @@ cd LeAgent
         { title: "Gentle on the battery", description: "Idles into a still ink-painting frame after 60 seconds. Near-zero CPU when it’s just sitting there." },
       ],
       wallpapersTitle: "Wallpaper collection",
-      wallpapersSub: "A small set of minimal wallpapers, tuned to feel at home behind LeAgent. 4K and 5K. Click one to download.",
+      wallpapersSub: "A small set of minimal wallpapers, tuned to feel at home behind LeAgent. Click one to download.",
       wallpapers: [
-        { title: "Xuan", tag: "Deep space · 4K", swatch: "linear-gradient(135deg, #0a1428 0%, #1c2440 50%, #322048 100%)" },
-        { title: "Qing Shan", tag: "Jade mountain · 5K", swatch: "linear-gradient(160deg, #1a3a3a 0%, #3a6868 50%, #6a9a9a 100%)" },
-        { title: "Vermillion", tag: "Sunset · 4K", swatch: "linear-gradient(140deg, #2a1818 0%, #6a3024 50%, #c25a3a 100%)" },
-        { title: "Raw Silk", tag: "Daylight · 5K", swatch: "linear-gradient(150deg, #f5f0e6 0%, #e6dcc8 50%, #c8b89a 100%)" },
-        { title: "Ink Mood", tag: "Night · 4K", swatch: "linear-gradient(135deg, #0a0a0d 0%, #1a1a22 50%, #2a2a36 100%)" },
-        { title: "Cang", tag: "Heaven cyan · 5K", swatch: "linear-gradient(160deg, #1a3a5c 0%, #2a6a96 50%, #5ca8d6 100%)" },
+        { title: "Xuan", tag: "Deep space", swatch: "linear-gradient(135deg, #0a1428 0%, #1c2440 50%, #322048 100%)" },
+        { title: "Qing Shan", tag: "Jade mountain", swatch: "linear-gradient(160deg, #1a3a3a 0%, #3a6868 50%, #6a9a9a 100%)" },
+        { title: "Vermillion", tag: "Sunset", swatch: "linear-gradient(140deg, #2a1818 0%, #6a3024 50%, #c25a3a 100%)" },
+        { title: "Raw Silk", tag: "Daylight", swatch: "linear-gradient(150deg, #f5f0e6 0%, #e6dcc8 50%, #c8b89a 100%)" },
+        { title: "Ink Mood", tag: "Night", swatch: "linear-gradient(135deg, #0a0a0d 0%, #1a1a22 50%, #2a2a36 100%)" },
+        { title: "Cang", tag: "Heaven cyan", swatch: "linear-gradient(160deg, #1a3a5c 0%, #2a6a96 50%, #5ca8d6 100%)" },
       ],
       gifsTitle: "Animated pets",
       gifsSub: "Animation packs you can drop straight in. GIF + APNG — pick whichever works.",
@@ -611,7 +609,6 @@ cd LeAgent
         { name: "Night Lamp", mood: "breathing in dark" },
       ],
       downloadLabel: "Download",
-      downloadAll: "Download all as ZIP",
       placeholderNote: "Downloads point to GitHub Releases — the real assets land with the public release.",
     },
     principles: [

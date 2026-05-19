@@ -4,7 +4,6 @@ import { ClaimGrid, Claim } from "@/components/ClaimGrid";
 import { Reveal } from "@/components/Reveal";
 import { Icon } from "@/components/Icon";
 import { useI18n } from "@/i18n/I18nProvider";
-import { RELEASES_URL } from "@/lib/content";
 
 const WALLPAPER_IMAGES = [
   "/images/pets/wallpapers/xuan.png",
@@ -86,17 +85,6 @@ export default function Pets() {
           eyebrow="wallpapers"
           title={t.pets.wallpapersTitle}
           lede={t.pets.wallpapersSub}
-          aside={
-            <a
-              href={RELEASES_URL}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="btn btn-ghost btn-sm"
-            >
-              <Icon name="download" className="h-4 w-4" />
-              {t.pets.downloadAll}
-            </a>
-          }
         />
 
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
