@@ -11,6 +11,10 @@ export const README_URL = `${REPO_URL}/blob/main/README.md`;
 export const LICENSE_URL = `${REPO_URL}/blob/main/LICENSE`;
 export const SECURITY_URL = `${REPO_URL}/blob/main/SECURITY.md`;
 
+/** MIIT ICP filing (鄂ICP备2026023482号) */
+export const ICP_BEIAN_URL = "https://beian.miit.gov.cn/";
+export const ICP_BEIAN_NUMBER = "鄂ICP备2026023482号";
+
 export const INSTALL_SH_URL = `${SITE_ORIGIN}/install.sh`;
 export const INSTALL_PS1_URL = `${SITE_ORIGIN}/install.ps1`;
 export const INSTALL_BAT_URL = `${SITE_ORIGIN}/install.bat`;

@@ -11,4 +11,10 @@ Place product screenshots here for the Introduction page (`/about`):
 | `webpage-generation.png` | Web page generation |
 | `workflow.png` | Workflow builder |
 
-Recommended aspect ratio: 16:10. Until files are added, the site shows styled placeholders.
+Recommended aspect ratio: 16:10 (e.g. 1280×800).
+
+Bundled `*.png` files are simple placeholders (mock UI + label). Replace any file with a real screenshot using the same filename. To regenerate placeholders:
+
+```bash
+python3 scripts/generate-feature-placeholders.py
+```

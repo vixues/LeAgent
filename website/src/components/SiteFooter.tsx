@@ -1,6 +1,8 @@
 import { Link } from "react-router-dom";
 import { useI18n } from "@/i18n/I18nProvider";
 import {
+  ICP_BEIAN_NUMBER,
+  ICP_BEIAN_URL,
   LICENSE_URL,
   README_URL,
   RELEASES_URL,
@@ -129,7 +131,20 @@ export function SiteFooter() {
         {/* Bottom bar */}
         <div className="hairline mt-12" />
         <div className="mt-6 flex flex-col items-center justify-between gap-2 text-xs text-text-muted md:flex-row">
-          <span>{t.footer.copyright}</span>
+          <div className="flex flex-wrap items-center justify-center gap-x-2 gap-y-1">
+            <span>{t.footer.copyright}</span>
+            <span className="opacity-30" aria-hidden="true">
+              &middot;
+            </span>
+            <a
+              href={ICP_BEIAN_URL}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="transition-colors hover:text-text-secondary"
+            >
+              {ICP_BEIAN_NUMBER}
+            </a>
+          </div>
           <div className="text-center font-mono">
             <span className="opacity-60">{t.footer.tao}</span>
             <span className="mx-2 opacity-30">&middot;</span>

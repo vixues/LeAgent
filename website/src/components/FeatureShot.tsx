@@ -24,7 +24,7 @@ export function FeatureShot({
   const num = String(index + 1).padStart(2, "0");
 
   return (
-    <article className={cn("feature-shot frame", className)}>
+    <article className={cn("feature-shot", className)}>
       <div className="feature-shot__preview">
         <img
           src={item.imageSrc}

@@ -267,63 +267,21 @@ code, pre, kbd {
   max-width: 32ch;
 }
 
-/*
- * Hero canvas — large dedicated imagery zone. Soft layered radial
- * gradients give it visible weight even before real artwork lands.
- * Use as the focal element of a hero section.
- */
+/* Hero canvas — large preview imagery in hero sections. */
 .hero-canvas {
   position: relative;
-  border-radius: 16px;
-  overflow: hidden;
-  border: 1px solid var(--color-border-subtle);
-  background-color: color-mix(in oklab, var(--color-surface) 55%, transparent);
-  background-image:
-    radial-gradient(
-      60% 80% at 18% 0%,
-      color-mix(in oklab, var(--color-accent) 22%, transparent) 0%,
-      transparent 60%
-    ),
-    radial-gradient(
-      55% 70% at 90% 100%,
-      color-mix(in oklab, var(--color-brand) 16%, transparent) 0%,
-      transparent 60%
-    ),
-    radial-gradient(
-      40% 50% at 50% 50%,
-      color-mix(in oklab, var(--t-accent-glow) 40%, transparent) 0%,
-      transparent 70%
-    );
 }
 
 .hero-canvas__inner {
   position: relative;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  aspect-ratio: 16 / 9;
 }
 
-.hero-canvas__inner--tall {
-  aspect-ratio: 4 / 3;
-}
-
-/*
- * Soft top-light overlay so the canvas reads as a physical surface
- * rather than a flat gradient.
- */
-.hero-canvas::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  background: linear-gradient(
-    180deg,
-    rgba(255, 255, 255, 0.045) 0%,
-    transparent 45%,
-    rgba(0, 0, 0, 0.10) 100%
-  );
-  mix-blend-mode: overlay;
+.hero-canvas__image,
+.feature-shot__image {
+  display: block;
+  width: 100%;
+  height: auto;
+  max-width: 100%;
 }
 
 /*
@@ -657,31 +615,18 @@ code, pre, kbd {
   }
 }
 
-.feature-shot {
-  overflow: hidden;
-}
-
 .feature-shot__preview {
   position: relative;
-  aspect-ratio: 16 / 10;
-  overflow: hidden;
-  background-color: color-mix(in oklab, var(--color-surface) 60%, transparent);
-}
-
-.feature-shot__image {
-  height: 100%;
-  width: 100%;
-  object-fit: cover;
 }
 
 .feature-shot__placeholder {
-  position: absolute;
-  inset: 0;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   gap: 0.5rem;
+  min-height: 12rem;
+  aspect-ratio: 16 / 10;
   padding: 1.5rem;
   text-align: center;
   background:
@@ -690,6 +635,10 @@ code, pre, kbd {
       color-mix(in oklab, var(--color-surface-raised) 80%, transparent),
       color-mix(in oklab, var(--color-void) 70%, transparent)
     );
+}
+
+.feature-shot__placeholder[hidden] {
+  display: none;
 }
 
 .feature-shot__num {

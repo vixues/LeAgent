@@ -55,7 +55,7 @@ export default function Home() {
               <img
                 src="/images/previews/home-preview.png"
                 alt="LeAgent workspace"
-                className="h-full w-full object-cover"
+                className="hero-canvas__image"
               />
             </div>
           </div>

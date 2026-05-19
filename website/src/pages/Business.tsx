@@ -27,17 +27,6 @@ export default function Business() {
           </Reveal>
         </div>
 
-        <Reveal delay={220}>
-          <div className="hero-canvas mt-16">
-            <div className="hero-canvas__inner">
-              <img
-                src="/images/previews/workflow-preview.png"
-                alt="LeAgent workflow"
-                className="h-full w-full object-cover"
-              />
-            </div>
-          </div>
-        </Reveal>
       </Section>
 
       <Section className="pt-20 pb-24 md:pt-28 md:pb-28">

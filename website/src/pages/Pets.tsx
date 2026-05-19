@@ -56,7 +56,7 @@ export default function Pets() {
               <img
                 src="/images/previews/pet-preview.png"
                 alt="LeAgent desktop pet preview"
-                className="h-full w-full object-cover"
+                className="hero-canvas__image"
               />
             </div>
           </div>
