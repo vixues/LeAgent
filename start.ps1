@@ -44,6 +44,16 @@ $ErrorActionPreference = 'Stop'
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 Set-Location $ScriptDir
 
+# Windows console: UTF-8 so box-drawing and symbols render correctly.
+if ($env:OS -eq 'Windows_NT') {
+    try {
+        $utf8 = [System.Text.UTF8Encoding]::new()
+        [Console]::OutputEncoding = $utf8
+        $OutputEncoding = $utf8
+    }
+    catch { }
+}
+
 # ── Load .env (simple KEY=VALUE; Process scope) ─────────────────
 $EnvFile = Join-Path $ScriptDir '.env'
 if (Test-Path $EnvFile) {
@@ -180,13 +190,22 @@ function Acquire-Lock {
     if (Test-Path $LockFile) {
         $lockPid = (Get-Content $LockFile -ErrorAction SilentlyContinue | Select-Object -First 1)
         if ($lockPid) {
-            $proc = Get-Process -Id ([int]$lockPid) -ErrorAction SilentlyContinue
-            if ($proc) {
-                Fail "Another LeAgent instance is running (PID $lockPid). Use '.\start.ps1 stop' first, or remove $LockFile."
+            if ([int]$lockPid -eq $PID) {
+                Warn 'Stale lock from a previous run in this shell - removing'
+                Remove-Item $LockFile -Force -ErrorAction SilentlyContinue
+            }
+            else {
+                $proc = Get-Process -Id ([int]$lockPid) -ErrorAction SilentlyContinue
+                if ($proc) {
+                    Fail "Another LeAgent instance is running (PID $lockPid). Use '.\start.ps1 stop' first, or remove $LockFile."
+                }
+                Warn "Stale lock file found (PID $lockPid no longer running) - removing"
+                Remove-Item $LockFile -Force -ErrorAction SilentlyContinue
             }
         }
-        Warn "Stale lock file found (PID $lockPid no longer running) — removing"
-        Remove-Item $LockFile -Force -ErrorAction SilentlyContinue
+        else {
+            Remove-Item $LockFile -Force -ErrorAction SilentlyContinue
+        }
     }
     $PID | Set-Content -Path $LockFile -Encoding UTF8
 }
@@ -212,11 +231,11 @@ function Get-PidsOnPort([int] $Port) {
         }
     }
     catch { }
-    return ($pids | Sort-Object -Unique)
+    return @($pids | Sort-Object -Unique)
 }
 
 function Kill-Port([int] $Port) {
-    $pids = Get-PidsOnPort $Port
+    $pids = @(Get-PidsOnPort $Port)
     if ($pids.Count -eq 0) { return }
 
     foreach ($p in $pids) {
@@ -227,11 +246,11 @@ function Kill-Port([int] $Port) {
     while ($waited -lt $ShutdownGraceSec) {
         Start-Sleep -Seconds 1
         $waited++
-        $remaining = Get-PidsOnPort $Port
+        $remaining = @(Get-PidsOnPort $Port)
         if ($remaining.Count -eq 0) { return }
     }
 
-    $remaining = Get-PidsOnPort $Port
+    $remaining = @(Get-PidsOnPort $Port)
     foreach ($p in $remaining) {
         try { Stop-Process -Id $p -Force -ErrorAction SilentlyContinue } catch { }
     }
@@ -256,10 +275,25 @@ function Rotate-Log([string] $LogPath) {
     }
 }
 
-function Get-UvExe {
+function Ensure-UvOnPath {
     $g = Get-Command uv -ErrorAction SilentlyContinue
-    if (-not $g) { return $null }
-    return $g.Source
+    if ($g) { return $g.Source }
+
+    foreach ($p in @(
+            (Join-Path $HOME '.local\bin\uv.exe'),
+            (Join-Path $HOME '.cargo\bin\uv.exe')
+        )) {
+        if (Test-Path -LiteralPath $p) {
+            $dir = Split-Path $p -Parent
+            $env:PATH = "$dir;$env:PATH"
+            return $p
+        }
+    }
+    return $null
+}
+
+function Get-UvExe {
+    Ensure-UvOnPath
 }
 
 function Test-NodeSupportsVite([string] $NodePath) {
@@ -318,14 +352,15 @@ function Test-Prerequisites {
     param([bool] $WantFrontend = $true)
     Step 'Checking prerequisites'
     if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
-        Fail "git is not installed — https://git-scm.com/download/win"
+        Fail 'git is not installed - https://git-scm.com/download/win'
     }
     Success "git $(git --version)"
 
-    if (-not (Get-Command uv -ErrorAction SilentlyContinue)) {
-        Fail "uv is not installed — https://docs.astral.sh/uv/"
+    $uvExe = Ensure-UvOnPath
+    if (-not $uvExe) {
+        Fail 'uv is not installed - https://docs.astral.sh/uv/ (or: irm https://astral.sh/uv/install.ps1 | iex)'
     }
-    $uvVer = ((uv --version) | Select-Object -First 1).ToString().Trim()
+    $uvVer = ((& $uvExe --version) | Select-Object -First 1).ToString().Trim()
     Success "uv $uvVer"
 
     if ($WantFrontend) {
@@ -616,8 +651,8 @@ function Wait-BackendReady {
 # ── Status ─────────────────────────────────────────────────────
 function Show-Status {
     Step 'LeAgent service status'
-    $bPids = Get-PidsOnPort ([int]$BackendPort)
-    $fPids = Get-PidsOnPort ([int]$FrontendPort)
+    $bPids = @(Get-PidsOnPort ([int]$BackendPort))
+    $fPids = @(Get-PidsOnPort ([int]$FrontendPort))
 
     if ($bPids.Count -gt 0) {
         Success "Backend  listening on :$BackendPort  (PIDs: $($bPids -join ', '))"
@@ -795,13 +830,15 @@ switch ($Command) {
     'stop' {
         Kill-Port ([int]$BackendPort)
         Kill-Port ([int]$FrontendPort)
-        Release-Lock
+        if (Test-Path $LockFile) {
+            Remove-Item $LockFile -Force -ErrorAction SilentlyContinue
+        }
         Success "Stopped LeAgent processes on ports $BackendPort, $FrontendPort"
     }
     'backend' {
-        Acquire-Lock
         Print-Banner
         Test-Prerequisites $false
+        Acquire-Lock
         Start-BackendService
         Wait-OrBackgroundMessage
     }
@@ -812,9 +849,9 @@ switch ($Command) {
         Wait-OrBackgroundMessage
     }
     default {
-        Acquire-Lock
         Print-Banner
         Test-Prerequisites $true
+        Acquire-Lock
         Start-BackendService
         Wait-BackendReady
         Start-FrontendService
