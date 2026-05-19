@@ -5,7 +5,7 @@ import { useI18n } from "@/i18n/I18nProvider";
 import { CONTACT } from "@/lib/content";
 
 interface ContactLink {
-  labelKey: "email" | "github" | "twitter" | "website";
+  labelKey: "email" | "github" | "xiaohongshu" | "website";
   value: string;
   href: string;
   icon: IconName;
@@ -27,10 +27,11 @@ const LINKS: ContactLink[] = [
     external: true,
   },
   {
-    labelKey: "twitter",
-    value: CONTACT.twitter,
-    href: "/#/company",
-    icon: "twitter",
+    labelKey: "xiaohongshu",
+    value: CONTACT.xiaohongshu,
+    href: CONTACT.xiaohongshuUrl,
+    icon: "xiaohongshu",
+    external: true,
   },
   {
     labelKey: "website",
@@ -56,11 +57,6 @@ export default function Company() {
             </h1>
           </Reveal>
           <Reveal delay={140}>
-            <p className="mt-3 text-text-secondary leading-relaxed">
-              {t.company.role}
-            </p>
-          </Reveal>
-          <Reveal delay={220}>
             <div className="mt-10 border-l border-border pl-4 font-mono text-sm">
               <p className="text-text-secondary">{t.company.tao}</p>
               <p className="mt-1 text-text-muted/70 italic">

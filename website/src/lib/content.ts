@@ -18,9 +18,11 @@ export const INSTALL_BAT_URL = `${SITE_ORIGIN}/install.bat`;
 export type OsKey = "linux" | "macos" | "windows";
 
 export const CONTACT = {
-  name: "Your Name",
-  email: "email@example.com",
-  github: "github.com/your-handle",
-  twitter: "@your_handle",
+  name: "Cheng Yuanqi",
+  email: "vixues@gmail.com",
+  github: "github.com/vixues",
+  xiaohongshu: "@vixues",
+  xiaohongshuUrl:
+    "https://www.xiaohongshu.com/user/profile/5eb3f82e000000000100206e",
   website: "/",
 } as const;

@@ -7,7 +7,6 @@ import { cn } from '@/lib/utils';
 interface ModelOption {
   id: string;
   label: string;
-  description: string;
   icon: React.ReactNode;
 }
 
@@ -31,9 +30,6 @@ export function ModelSelector({
     const autoOption: ModelOption = {
       id: 'auto',
       label: t('chat.modelSelectorAuto', { defaultValue: 'Auto' }),
-      description: t('chat.modelSelectorAutoDescription', {
-        defaultValue: 'Use the default configured model',
-      }),
       icon: <Sparkles className="w-3.5 h-3.5" />,
     };
 
@@ -46,10 +42,6 @@ export function ModelSelector({
             .map((model) => ({
               id: `${provider.name}/${model.name}`,
               label: model.name,
-              description:
-                model.description?.trim()
-                  || provider.label
-                  || provider.name,
               icon: <Bot className="w-3.5 h-3.5" />,
             })),
         ) ?? [];
@@ -139,7 +131,7 @@ export function ModelSelector({
                 setOpen(false);
               }}
               className={cn(
-                'w-full flex items-start gap-2.5 px-3 py-2 rounded-lg text-left transition-colors',
+                'w-full flex items-center gap-2 px-3 py-2 rounded-lg text-left text-xs font-medium transition-colors',
                 model.id === value
                   ? 'bg-primary-50 dark:bg-primary-900/20 text-foreground'
                   : 'text-muted-foreground hover:bg-surface-sunken hover:text-foreground',

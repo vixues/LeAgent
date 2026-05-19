@@ -132,13 +132,12 @@ interface Translation {
   };
   company: {
     eyebrow: string;
-    role: string;
     tao: string;
     taoSub: string;
     contactLabels: {
       email: string;
       github: string;
-      twitter: string;
+      xiaohongshu: string;
       website: string;
     };
   };
@@ -297,13 +296,12 @@ export const translations: Record<Lang, Translation> = {
     },
     company: {
       eyebrow: "开发者",
-      role: "由一个人开发，由一个人维护",
       tao: "易简，则理得矣",
       taoSub: "少则得，多则惑",
       contactLabels: {
         email: "邮箱",
         github: "GitHub",
-        twitter: "X / Twitter",
+        xiaohongshu: "小红书",
         website: "个人网站",
       },
     },
@@ -411,20 +409,18 @@ export const translations: Record<Lang, Translation> = {
     install: {
       linux: {
         label: "Linux",
-        steps: `# 克隆并启动
-curl -fsSL ${INSTALL_SH_URL} | bash
-cd ~/leagent-desktop
-./start.sh`,
+        steps: `curl -fsSL ${INSTALL_SH_URL} | bash
+leagent init
+leagent app`,
         fromSource: `git clone ${REPO_URL}.git
 cd LeAgent
 ./start.sh`,
       },
       macos: {
         label: "macOS",
-        steps: `# 克隆并启动
-curl -fsSL ${INSTALL_SH_URL} | bash
-cd ~/leagent-desktop
-./start.sh`,
+        steps: `curl -fsSL ${INSTALL_SH_URL} | bash
+leagent init
+leagent app`,
         fromSource: `git clone ${REPO_URL}.git
 cd LeAgent
 ./start.sh`,
@@ -433,8 +429,8 @@ cd LeAgent
         label: "Windows",
         steps: `# PowerShell（如需要请以管理员身份运行）
 iwr -useb ${INSTALL_PS1_URL} | iex
-cd $HOME\\leagent-desktop
-.\\start.ps1`,
+leagent init
+leagent app`,
         fromSource: `git clone ${REPO_URL}.git
 cd LeAgent
 .\\start.ps1`,
@@ -568,13 +564,12 @@ cd LeAgent
     },
     company: {
       eyebrow: "the maker",
-      role: "Built and maintained by one person",
       tao: "Keep change simple; the pattern becomes clear.",
       taoSub: "In less, there is gain; in excess, confusion.",
       contactLabels: {
         email: "Email",
         github: "GitHub",
-        twitter: "X / Twitter",
+        xiaohongshu: "Xiaohongshu",
         website: "Website",
       },
     },
@@ -682,20 +677,18 @@ cd LeAgent
     install: {
       linux: {
         label: "Linux",
-        steps: `# Clone and start
-curl -fsSL ${INSTALL_SH_URL} | bash
-cd ~/leagent-desktop
-./start.sh`,
+        steps: `curl -fsSL ${INSTALL_SH_URL} | bash
+leagent init
+leagent app`,
         fromSource: `git clone ${REPO_URL}.git
 cd LeAgent
 ./start.sh`,
       },
       macos: {
         label: "macOS",
-        steps: `# Clone and start
-curl -fsSL ${INSTALL_SH_URL} | bash
-cd ~/leagent-desktop
-./start.sh`,
+        steps: `curl -fsSL ${INSTALL_SH_URL} | bash
+leagent init
+leagent app`,
         fromSource: `git clone ${REPO_URL}.git
 cd LeAgent
 ./start.sh`,
@@ -704,8 +697,8 @@ cd LeAgent
         label: "Windows",
         steps: `# PowerShell (run as Administrator if needed)
 iwr -useb ${INSTALL_PS1_URL} | iex
-cd $HOME\\leagent-desktop
-.\\start.ps1`,
+leagent init
+leagent app`,
         fromSource: `git clone ${REPO_URL}.git
 cd LeAgent
 .\\start.ps1`,
