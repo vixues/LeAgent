@@ -1,4 +1,8 @@
-const REPO_URL = "https://github.com/vixues/LeAgent";
+import {
+  INSTALL_PS1_URL,
+  INSTALL_SH_URL,
+  REPO_URL,
+} from "@/lib/content";
 
 export type Lang = "zh-CN" | "en-US";
 
@@ -222,7 +226,7 @@ export const translations: Record<Lang, Translation> = {
       introP1: "LeAgent 把对话式智能体、可视化工作流编辑器，加上 80+ 现成工具，全部塞进一个自托管的进程里跑。会话状态、文件缓存、Token 预算都在一个循环里管 — 状态转换显式可见，代码沙箱执行，Prompt 分层组织。",
       introP2: "不用在几个产品之间来回拼接，也不依赖云。就一份代码 — 你可以打开它、读懂它、按自己的需要改它。",
       introCode: `# 三条命令即可开始
-git clone https://github.com/vixues/LeAgent.git
+git clone ${REPO_URL}.git
 cd LeAgent
 ./start.sh`,
       principlesEyebrow: "核心理念",
@@ -387,7 +391,7 @@ cd LeAgent
       linux: {
         label: "Linux",
         steps: `# 克隆并启动
-curl -fsSL https://raw.githubusercontent.com/vixues/LeAgent/main/scripts/install.sh | bash
+curl -fsSL ${INSTALL_SH_URL} | bash
 cd ~/leagent-desktop
 ./start.sh`,
         fromSource: `git clone ${REPO_URL}.git
@@ -397,7 +401,7 @@ cd LeAgent
       macos: {
         label: "macOS",
         steps: `# 克隆并启动
-curl -fsSL https://raw.githubusercontent.com/vixues/LeAgent/main/scripts/install.sh | bash
+curl -fsSL ${INSTALL_SH_URL} | bash
 cd ~/leagent-desktop
 ./start.sh`,
         fromSource: `git clone ${REPO_URL}.git
@@ -407,7 +411,7 @@ cd LeAgent
       windows: {
         label: "Windows",
         steps: `# PowerShell（如需要请以管理员身份运行）
-iwr -useb https://raw.githubusercontent.com/vixues/LeAgent/main/scripts/install.ps1 | iex
+iwr -useb ${INSTALL_PS1_URL} | iex
 cd $HOME\\leagent-desktop
 .\\start.ps1`,
         fromSource: `git clone ${REPO_URL}.git
@@ -464,7 +468,7 @@ cd LeAgent
       introP1: "LeAgent brings together a chat-style agent, a visual workflow builder, and 80+ ready-made tools \u2014 all running together as a single self-hosted process. Session state, file caching, and token budgets are handled in one loop: explicit transitions, sandboxed execution, layered prompts.",
       introP2: "Nothing to wire up between vendors. Nothing in the cloud. Just one codebase you can open, read, and shape to your own needs.",
       introCode: `# Get started in three commands
-git clone https://github.com/vixues/LeAgent.git
+git clone ${REPO_URL}.git
 cd LeAgent
 ./start.sh`,
       principlesEyebrow: "core principles",
@@ -629,7 +633,7 @@ cd LeAgent
       linux: {
         label: "Linux",
         steps: `# Clone and start
-curl -fsSL https://raw.githubusercontent.com/vixues/LeAgent/main/scripts/install.sh | bash
+curl -fsSL ${INSTALL_SH_URL} | bash
 cd ~/leagent-desktop
 ./start.sh`,
         fromSource: `git clone ${REPO_URL}.git
@@ -639,7 +643,7 @@ cd LeAgent
       macos: {
         label: "macOS",
         steps: `# Clone and start
-curl -fsSL https://raw.githubusercontent.com/vixues/LeAgent/main/scripts/install.sh | bash
+curl -fsSL ${INSTALL_SH_URL} | bash
 cd ~/leagent-desktop
 ./start.sh`,
         fromSource: `git clone ${REPO_URL}.git
@@ -649,7 +653,7 @@ cd LeAgent
       windows: {
         label: "Windows",
         steps: `# PowerShell (run as Administrator if needed)
-iwr -useb https://raw.githubusercontent.com/vixues/LeAgent/main/scripts/install.ps1 | iex
+iwr -useb ${INSTALL_PS1_URL} | iex
 cd $HOME\\leagent-desktop
 .\\start.ps1`,
         fromSource: `git clone ${REPO_URL}.git

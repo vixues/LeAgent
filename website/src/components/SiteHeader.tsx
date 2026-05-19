@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { cn } from "@/lib/cn";
+import { REPO_URL } from "@/lib/content";
 import { useI18n } from "@/i18n/I18nProvider";
 import { LanguageToggle } from "./LanguageToggle";
 import { ThemeToggle } from "./ThemeToggle";
@@ -72,7 +73,7 @@ export function SiteHeader() {
           <ThemeToggle />
 
           <a
-            href="https://github.com/vixues/LeAgent"
+            href={REPO_URL}
             target="_blank"
             rel="noopener noreferrer"
             className="hidden text-text-secondary transition-colors hover:text-text-primary md:block"

@@ -4,3 +4,6 @@ dist
 *.log
 .env
 .env.local
+public/install.sh
+public/install.ps1
+public/install.bat

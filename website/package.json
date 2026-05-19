@@ -5,9 +5,11 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "prebuild": "cp -f ../scripts/install.sh ../scripts/install.ps1 ../scripts/install.bat public/",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "check:links": "node scripts/check-external-links.mjs"
   },
   "dependencies": {
     "react": "^19.1.0",

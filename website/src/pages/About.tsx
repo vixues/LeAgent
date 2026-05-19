@@ -4,6 +4,7 @@ import { ClaimGrid, Claim } from "@/components/ClaimGrid";
 import { Reveal } from "@/components/Reveal";
 import { InstallCard } from "@/components/InstallCard";
 import { useI18n } from "@/i18n/I18nProvider";
+import { README_URL } from "@/lib/content";
 
 export default function About() {
   const { t } = useI18n();
@@ -74,7 +75,7 @@ export default function About() {
             <>
               {t.about.installFooter}{" "}
               <a
-                href="https://github.com/vixues/LeAgent/blob/main/README.md"
+                href={README_URL}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="text-accent/80 transition-colors hover:text-accent"

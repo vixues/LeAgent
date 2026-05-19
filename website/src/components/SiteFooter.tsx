@@ -1,5 +1,12 @@
 import { Link } from "react-router-dom";
 import { useI18n } from "@/i18n/I18nProvider";
+import {
+  LICENSE_URL,
+  README_URL,
+  RELEASES_URL,
+  REPO_URL,
+  SECURITY_URL,
+} from "@/lib/content";
 
 const faviconUrl = `${import.meta.env.BASE_URL}favicon.svg`;
 
@@ -57,7 +64,7 @@ export function SiteFooter() {
             <ul className="space-y-2 text-sm">
               <li>
                 <a
-                  href="https://github.com/vixues/LeAgent"
+                  href={REPO_URL}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="text-text-secondary transition-colors hover:text-text-primary"
@@ -67,7 +74,7 @@ export function SiteFooter() {
               </li>
               <li>
                 <a
-                  href="https://github.com/vixues/LeAgent/blob/main/README.md"
+                  href={README_URL}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="text-text-secondary transition-colors hover:text-text-primary"
@@ -77,7 +84,7 @@ export function SiteFooter() {
               </li>
               <li>
                 <a
-                  href="https://github.com/vixues/LeAgent/releases"
+                  href={RELEASES_URL}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="text-text-secondary transition-colors hover:text-text-primary"
@@ -96,7 +103,7 @@ export function SiteFooter() {
             <ul className="space-y-2 text-sm">
               <li>
                 <a
-                  href="https://github.com/vixues/LeAgent/blob/main/LICENSE"
+                  href={LICENSE_URL}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="text-text-secondary transition-colors hover:text-text-primary"
@@ -106,7 +113,7 @@ export function SiteFooter() {
               </li>
               <li>
                 <a
-                  href="https://github.com/vixues/LeAgent/blob/main/SECURITY.md"
+                  href={SECURITY_URL}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="text-text-secondary transition-colors hover:text-text-primary"

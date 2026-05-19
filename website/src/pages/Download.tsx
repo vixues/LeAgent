@@ -4,11 +4,7 @@ import { Reveal } from "@/components/Reveal";
 import { InstallCard } from "@/components/InstallCard";
 import { Icon } from "@/components/Icon";
 import { useI18n } from "@/i18n/I18nProvider";
-
-const DIRECT_DOWNLOAD_LINKS = {
-  windows: "#",
-  macos: "#",
-} as const;
+import { RELEASES_URL } from "@/lib/content";
 
 export default function Download() {
   const { t } = useI18n();
@@ -34,14 +30,18 @@ export default function Download() {
             </p>
             <div className="mt-7 flex flex-col gap-3 sm:flex-row">
               <a
-                href={DIRECT_DOWNLOAD_LINKS.windows}
+                href={RELEASES_URL}
+                target="_blank"
+                rel="noopener noreferrer"
                 className="glass group inline-flex items-center justify-center gap-2 rounded-full px-5 py-3 text-sm font-medium text-text-primary transition hover:-translate-y-0.5 hover:text-accent"
               >
                 <Icon name="windows" className="h-4 w-4" />
                 <span>{t.downloadPage.windowsButton}</span>
               </a>
               <a
-                href={DIRECT_DOWNLOAD_LINKS.macos}
+                href={RELEASES_URL}
+                target="_blank"
+                rel="noopener noreferrer"
                 className="glass group inline-flex items-center justify-center gap-2 rounded-full px-5 py-3 text-sm font-medium text-text-primary transition hover:-translate-y-0.5 hover:text-accent"
               >
                 <Icon name="macos" className="h-4 w-4" />
