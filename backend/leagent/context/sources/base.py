@@ -21,6 +21,8 @@ if TYPE_CHECKING:
     from leagent.services.session import SessionManager
     from leagent.skills.manager import SkillsManager
     from leagent.tools.base import ToolPermissionContext
+    from leagent.tools.code.artifact import SessionArtifactStore
+    from leagent.tools.code.operations import OperationJournal
     from leagent.tools.registry import ToolRegistry
 
 
@@ -70,6 +72,12 @@ class ResolveContext:
 
     # registry reference for template lookups
     prompt_registry: Any = None
+
+    # Persistent artifact metadata store for cross-turn awareness
+    artifact_store: "SessionArtifactStore | None" = None
+
+    # Ordered operation log for the current session
+    operation_journal: "OperationJournal | None" = None
 
 
 @runtime_checkable

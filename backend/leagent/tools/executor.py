@@ -544,6 +544,22 @@ def _close_truncated_json_object(raw: str) -> str | None:
     return text + suffix
 
 
+def _extract_truncated_string_value(raw: str, key: str) -> str | None:
+    """Extract a string value for *key* even when the closing quote is missing (truncated output)."""
+    match = re.search(rf'"{re.escape(key)}"\s*:\s*"', raw)
+    if not match:
+        return None
+    value_start = match.end()
+    value_end = _find_json_string_end(raw, value_start)
+    if value_end is not None:
+        try:
+            return json.loads(f'"{raw[value_start:value_end]}"')
+        except json.JSONDecodeError:
+            return raw[value_start:value_end]
+    # Truncated: take everything after the opening quote, stripping trailing whitespace
+    return raw[value_start:].rstrip()
+
+
 def _recover_tool_argument_blob_args(raw: str) -> dict[str, Any] | None:
     """Recover ``tool_argument_blob`` append args when ``chunk`` breaks outer JSON.
 
@@ -551,6 +567,10 @@ def _recover_tool_argument_blob_args(raw: str) -> dict[str, Any] | None:
     break the tool-call JSON. We extract the chunk content and re-encode
     it as ``chunk_base64`` so downstream processing never sees raw markup
     in a JSON string.
+
+    Also handles truncated ``chunk_base64`` values where the output token
+    limit cut the string before the closing quote — we take whatever base64
+    was emitted and let downstream decode it tolerantly.
     """
     text = _strip_json_code_fence(raw)
     low = text.lower()
@@ -572,6 +592,14 @@ def _recover_tool_argument_blob_args(raw: str) -> dict[str, Any] | None:
     b64_info = _extract_json_string_value(text, "chunk_base64")
     if b64_info is not None:
         recovered: dict[str, Any] = {"action": action, "chunk_base64": b64_info[0]}
+        if blob_id:
+            recovered["blob_id"] = blob_id
+        return recovered
+
+    # Truncated chunk_base64: the string was cut off before the closing quote
+    truncated_b64 = _extract_truncated_string_value(text, "chunk_base64")
+    if truncated_b64 and len(truncated_b64) > 8:
+        recovered = {"action": action, "chunk_base64": truncated_b64}
         if blob_id:
             recovered["blob_id"] = blob_id
         return recovered
@@ -756,21 +784,18 @@ def _format_code_execution_raw_args_error(raw: str, err: json.JSONDecodeError) -
     likely_truncated = incomplete_object and (unterminated or len(raw) > 800)
 
     parts = [
-        "`code_execution` did not run: bulk code must not live in tool-call JSON — "
-        "that path is for small snippets only; large bodies belong in `tool_argument_blob` "
-        "then `source_blob_id` (same idea as other `*_blob_id` fields). "
-        "The payload could not be decoded as complete arguments. Inlining a large Python "
-        "`source` inside JSON is fragile because the stream may be cut off, or Python string "
-        "literals contain `\"` that must not appear raw inside the JSON text.",
+        "`code_execution` did not run: the tool-call JSON could not be decoded. "
+        "The runtime usually auto-recovers inline `source`, but this call "
+        "could not be salvaged.",
     ]
     if likely_truncated:
         parts.append(
-            "This call looks incomplete (for example JSON that never reaches a closing "
-            "`}` / closing quote on `source`)."
+            "The call appears truncated (JSON never reaches a closing `}` or "
+            "closing quote on `source`)."
         )
     parts.append(
-        "Use `tool_argument_blob` (create → append → finalize) then call "
-        "`code_execution` with `source_blob_id` instead of `source`."
+        "Retry with proper JSON escaping (escape `\"` as `\\\"` and newlines "
+        "as `\\n`). If it fails again, use `tool_argument_blob` + `source_blob_id`."
     )
     return " ".join(parts)
 
@@ -779,12 +804,15 @@ def _format_tool_argument_blob_raw_args_error(raw: str, err: json.JSONDecodeErro
     """Explain ``tool_argument_blob`` ``__raw__`` failures (HTML-in-chunk JSON breaks)."""
     return (
         "`tool_argument_blob` did not run: the tool call is not valid JSON. "
-        "For `action=append`, inlining a large `chunk` that contains HTML or JSX "
-        "often breaks parsing because JSON string literals cannot contain raw "
-        "double quotes from attributes unless every quote is escaped correctly. "
+        "For webpage HTML, prefer a single `canvas_publish(mode=html, html=...)` "
+        "call; the runtime can auto-recover malformed inline HTML and publish it "
+        "without this multi-step blob flow. If you are intentionally continuing "
+        "blob staging, raw HTML in `chunk` often breaks parsing because JSON "
+        "string literals cannot contain raw double quotes from attributes unless "
+        "every quote is escaped correctly. "
         f"Parse error: {err.msg}. "
-        "Retry using `chunk_base64` (standard base64 of UTF-8 bytes, no data: URL prefix) "
-        "instead of `chunk`, or split into smaller `chunk` strings with strict JSON escaping."
+        "For blob staging, retry using `chunk_base64` (standard base64 of UTF-8 "
+        "bytes, no data: URL prefix) instead of `chunk`."
     )
 
 
@@ -797,11 +825,21 @@ def _tool_json_parse_recovery_hint(tool_name: str | None, raw: str) -> str:
     if tool_name in ("emit_ui_tree", "emit_ui_patch"):
         return " Prefer a smaller `tree` or incremental `emit_ui_patch`."
     if tool_name == "canvas_publish":
-        return " For large HTML use `tool_argument_blob` + `html_blob_id`."
+        return (
+            " The runtime usually auto-recovers inline `html`. "
+            "If this fails again, try `html_files` (map of path → source) "
+            "or `tool_argument_blob` + `html_blob_id` as a last resort."
+        )
     if tool_name in ("project_write", "project_apply_patch", "project_edit"):
-        return " For large bodies use `*_blob_id` from `tool_argument_blob`."
+        return (
+            " The runtime usually auto-recovers inline content. "
+            "If this fails again, use `*_blob_id` from `tool_argument_blob`."
+        )
     if tool_name == "tool_argument_blob":
-        return " For append with HTML/JSX use `chunk_base64` instead of `chunk`."
+        return (
+            " For webpage HTML, prefer direct `canvas_publish(html=...)`; "
+            "for intentional blob append with HTML/JSX use `chunk_base64`."
+        )
     return ""
 
 

@@ -166,6 +166,77 @@ async def _try_blob_streaming_ingest(
     }
 
 
+_DIRECT_INGEST_TOOLS: dict[str, tuple[str, str]] = {
+    "project_write": ("content", "content_blob_id"),
+    "code_execution": ("source", "source_blob_id"),
+    "canvas_publish": ("html", "html_blob_id"),
+}
+
+
+async def _try_direct_content_ingest(
+    tool_name: str, raw_args: str,
+) -> dict[str, Any] | None:
+    """Salvage broken tool calls by auto-staging their content field as a blob.
+
+    When JSON parsing fails because the large text field (``content``,
+    ``source``, or ``html``) contains unescaped characters, we extract the
+    field using the executor's per-tool recovery helpers and stage it into a
+    finalized blob, then return a synthetic args dict with the matching
+    ``*_blob_id`` so the tool consumes the content without the LLM needing
+    to go through the multi-step ``tool_argument_blob`` flow.
+
+    Supported tools: ``project_write``, ``code_execution``, ``canvas_publish``.
+    """
+    spec = _DIRECT_INGEST_TOOLS.get(tool_name)
+    if spec is None:
+        return None
+    content_key, blob_key = spec
+
+    from leagent.tools.executor import (
+        _recover_canvas_publish_args,
+        _recover_code_execution_args,
+        _recover_project_write_args,
+    )
+
+    _RECOVER = {
+        "project_write": _recover_project_write_args,
+        "code_execution": _recover_code_execution_args,
+        "canvas_publish": _recover_canvas_publish_args,
+    }
+
+    recover_fn = _RECOVER.get(tool_name)
+    if recover_fn is None:
+        return None
+    recovered = recover_fn(raw_args)
+    if recovered is None:
+        return None
+    content = recovered.get(content_key)
+    if not isinstance(content, str) or not content.strip():
+        return None
+
+    from leagent.tools.util.tool_argument_blob import ToolArgumentBlobStore
+
+    ingest_sid = "__streaming_ingest__"
+    blob_id = await ToolArgumentBlobStore.create(ingest_sid)
+    append_result = await ToolArgumentBlobStore.append(ingest_sid, blob_id, content)
+    if not append_result.get("ok"):
+        await ToolArgumentBlobStore.discard(ingest_sid, blob_id)
+        return None
+    await ToolArgumentBlobStore.finalize(ingest_sid, blob_id)
+
+    n_bytes = len(content.encode("utf-8"))
+    logger.info(
+        "direct_content_ingest",
+        tool=tool_name,
+        blob_id=blob_id,
+        bytes=n_bytes,
+    )
+    result = dict(recovered)
+    result.pop(content_key, None)
+    result[blob_key] = blob_id
+    return result
+
+
 def _try_salvage_truncated_ui_tree(
     tool_name: str, raw_args: str,
 ) -> dict[str, Any] | None:
@@ -568,6 +639,10 @@ def _make_llm_call_model(llm: "LLMService") -> CallModel:
                     )
                     if ingested is not None:
                         args = ingested
+                    elif (content_ingested := await _try_direct_content_ingest(
+                        tc.get("name", ""), args_str,
+                    )) is not None:
+                        args = content_ingested
                     elif (salvaged := _try_salvage_truncated_ui_tree(
                         tc.get("name", ""), args_str,
                     )) is not None:

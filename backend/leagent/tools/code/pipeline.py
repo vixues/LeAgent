@@ -31,6 +31,7 @@ from leagent.tools.code.artifact import (
     ArtifactKind,
     CodeArtifact,
     CodeArtifactRegistry,
+    SessionArtifactStore,
 )
 
 if TYPE_CHECKING:
@@ -83,8 +84,13 @@ def _detect_language(target_path: str | None) -> str:
 class CodeGenerationPipeline:
     """Stateless pipeline that tools call to produce validated artifacts."""
 
-    def __init__(self, registry: CodeArtifactRegistry) -> None:
+    def __init__(
+        self,
+        registry: CodeArtifactRegistry,
+        artifact_store: SessionArtifactStore | None = None,
+    ) -> None:
         self._registry = registry
+        self._artifact_store = artifact_store
 
     async def prepare(
         self,
@@ -118,6 +124,12 @@ class CodeGenerationPipeline:
             self._validate(artifact)
 
         self._registry.register(artifact)
+
+        if self._artifact_store is not None:
+            try:
+                self._artifact_store.persist(artifact)
+            except Exception:  # noqa: BLE001
+                logger.debug("artifact_store_persist_error", exc_info=True)
 
         await self._fire_hook(artifact, context)
 
@@ -196,6 +208,7 @@ class CodeGenerationPipeline:
 # ---------------------------------------------------------------------------
 
 _CONTEXT_REGISTRY_KEY = "_code_artifact_registry"
+_CONTEXT_ARTIFACT_STORE_KEY = "_session_artifact_store"
 
 
 def get_pipeline(context: "ToolContext") -> CodeGenerationPipeline | None:
@@ -211,4 +224,46 @@ def get_pipeline(context: "ToolContext") -> CodeGenerationPipeline | None:
         return None
     if not isinstance(registry, CodeArtifactRegistry):
         return None
-    return CodeGenerationPipeline(registry)
+    store = extra.get(_CONTEXT_ARTIFACT_STORE_KEY)
+    if store is not None and not isinstance(store, SessionArtifactStore):
+        store = None
+    return CodeGenerationPipeline(registry, artifact_store=store)
+
+
+def record_operation(
+    context: "ToolContext",
+    *,
+    tool: str,
+    kind: str,
+    path: str | None = None,
+    summary: str = "",
+    success: bool = True,
+    artifact_id: str | None = None,
+    verification: str | None = None,
+) -> None:
+    """Append a :class:`JournalEntry` to the session journal (best-effort).
+
+    Called by each code-producing tool after execution completes.
+    """
+    from leagent.tools.code.operations import (
+        JOURNAL_CONTEXT_KEY,
+        JournalEntry,
+        OperationJournal,
+    )
+
+    extra = getattr(context, "extra", None) or {}
+    journal = extra.get(JOURNAL_CONTEXT_KEY)
+    if journal is None or not isinstance(journal, OperationJournal):
+        return
+    try:
+        journal.append(JournalEntry(
+            tool=tool,
+            kind=kind,
+            path=path,
+            summary=summary,
+            success=success,
+            artifact_id=artifact_id,
+            verification=verification,
+        ))
+    except Exception:  # noqa: BLE001
+        logger.debug("record_operation_error", exc_info=True)

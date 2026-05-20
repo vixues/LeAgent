@@ -41,20 +41,21 @@ class CanvasPublishTool(BaseTool):
         "`emit_ui_tree`, which renders inline in the chat without opening the workspace. "
         "session_id: real chat UUID, or omit / pass 'current' to use the active "
         "session from context. "
-        "mode=html: for anything beyond a tiny snippet, do **not** inline `html` in "
-        "this tool call (JSON will break on quotes/newlines). Prefer `html_files` "
-        "(map path → source) with `html_bundle_entry` for multi-file pages (index.html + "
-        "style.css + app.js); local `<link rel=stylesheet href=…>` / `<script src=…>` "
-        "are inlined server-side into one preview document. Large single bodies: use "
-        "`tool_argument_blob` then `html_blob_id`. Inline `html` only for small fragments. "
+        "mode=html: **inline the HTML directly in `html`** — the runtime "
+        "auto-recovers malformed JSON. Escape double quotes as \\\" and "
+        "newlines as \\n. For multi-asset pages (HTML + CSS + JS) use "
+        "`html_files` (map path → source) with `html_bundle_entry`; "
+        "local <link>/<script> refs are inlined server-side. "
         "The host injects Tailwind, Inter, and shipped "
-        "utility classes; call `get_html_canvas_guide` first for class names + template. "
+        "utility classes; call `get_html_canvas_guide` only when you need "
+        "the reference template or exact class names. "
         "mode=embed_url: allowlisted iframe embeds (Google Maps, YouTube, "
         "Vimeo, OpenStreetMap). "
         "mode=gen_ui: persisted gen UI snapshot (rare; prefer `emit_ui_tree` "
         "for live inline rendering)."
     )
     category = ToolCategory.CANVAS
+    aliases = ["webpage_write", "html_write"]
     is_read_only = False
     is_concurrency_safe = True
     search_hint = "html canvas preview publish maps embed"
@@ -74,13 +75,17 @@ class CanvasPublishTool(BaseTool):
                 "mode": {"type": "string", "enum": ["html", "embed_url", "gen_ui"]},
                 "html": {
                     "type": "string",
-                    "description": "Inline HTML for mode=html (small snippets only).",
+                    "description": (
+                        "Full HTML document for mode=html. Inline directly — the "
+                        "runtime auto-recovers if JSON escaping breaks. Preferred "
+                        "over `html_blob_id` for single-page documents."
+                    ),
                 },
                 "html_blob_id": {
                     "type": "string",
                     "description": (
-                        "For mode=html, finalized blob id from `tool_argument_blob` "
-                        "containing the document (preferred for full single-file pages)."
+                        "For mode=html, finalized blob id from `tool_argument_blob`. "
+                        "Fallback when a prior inline `html` call failed."
                     ),
                 },
                 "html_files": {

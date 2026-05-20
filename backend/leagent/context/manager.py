@@ -42,6 +42,8 @@ if TYPE_CHECKING:
     from leagent.services.session import SessionManager
     from leagent.skills.manager import SkillsManager
     from leagent.tools.base import ToolPermissionContext
+    from leagent.tools.code.artifact import SessionArtifactStore
+    from leagent.tools.code.operations import OperationJournal
     from leagent.tools.registry import ToolRegistry
 
 logger = structlog.get_logger(__name__)
@@ -80,6 +82,8 @@ class ContextManager:
         file_state: FileState | None = None,
         working_set: WorkingSet | None = None,
         artifact_tracker: ArtifactErrorTracker | None = None,
+        artifact_store: "SessionArtifactStore | None" = None,
+        operation_journal: "OperationJournal | None" = None,
     ) -> None:
         self.cwd = cwd
         self._settings = settings
@@ -95,6 +99,8 @@ class ContextManager:
         self.agent_id = agent_id
         self.variant = variant
         self.template_variant = template_variant
+        self.artifact_store = artifact_store
+        self.operation_journal = operation_journal
 
         self.file_state: FileState = file_state or FileState(
             max_entries=self._cfg("file_state_max_entries", 64),
@@ -340,6 +346,8 @@ class ContextManager:
             recent_reads_attachment_limit=self._cfg("recent_reads_attachment_limit", 5),
             prompt_registry=self.prompt_registry,
             project_roots=list(project_roots or []),
+            artifact_store=self.artifact_store,
+            operation_journal=self.operation_journal,
         )
 
     async def _resolve_sources(

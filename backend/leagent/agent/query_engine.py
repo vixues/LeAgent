@@ -16,8 +16,9 @@ from typing import TYPE_CHECKING, Any, AsyncIterator
 from uuid import UUID, uuid4
 
 from leagent.agent.deps import QueryDeps, production_deps
-from leagent.tools.code.artifact import CodeArtifactRegistry
-from leagent.tools.code.pipeline import _CONTEXT_REGISTRY_KEY
+from leagent.tools.code.artifact import CodeArtifactRegistry, SessionArtifactStore
+from leagent.tools.code.operations import JOURNAL_CONTEXT_KEY, OperationJournal
+from leagent.tools.code.pipeline import _CONTEXT_ARTIFACT_STORE_KEY, _CONTEXT_REGISTRY_KEY
 from leagent.agent.query import (
     AssistantMessage,
     QueryParams,
@@ -142,6 +143,8 @@ class QueryEngine:
         self._last_built_prompt: "BuiltPrompt | None" = None
         self._artifact_registrar = ArtifactRegistrar(config.session_manager)
         self._ingested_produced_paths: set[str] = set()
+        self._artifact_store = SessionArtifactStore()
+        self._operation_journal = OperationJournal()
 
         self._context: ContextManager = config.context_manager or ContextManager(
             cwd=config.cwd,
@@ -159,6 +162,8 @@ class QueryEngine:
             variant=config.prompt_variant,
             template_variant=config.prompt_template_variant,
             file_state=config.file_state,
+            artifact_store=self._artifact_store,
+            operation_journal=self._operation_journal,
         )
 
     # ------------------------------------------------------------------
@@ -280,6 +285,10 @@ class QueryEngine:
         _tool_extra = dict(self.config.tool_extra)
         if _CONTEXT_REGISTRY_KEY not in _tool_extra:
             _tool_extra[_CONTEXT_REGISTRY_KEY] = CodeArtifactRegistry()
+        if _CONTEXT_ARTIFACT_STORE_KEY not in _tool_extra:
+            _tool_extra[_CONTEXT_ARTIFACT_STORE_KEY] = self._artifact_store
+        if JOURNAL_CONTEXT_KEY not in _tool_extra:
+            _tool_extra[JOURNAL_CONTEXT_KEY] = self._operation_journal
         if self.config.hooks is not None:
             _tool_extra["hooks"] = self.config.hooks
 

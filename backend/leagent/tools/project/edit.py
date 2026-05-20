@@ -26,6 +26,7 @@ import structlog
 from leagent.tools.base import BaseTool, ToolCategory, ToolContext
 from leagent.tools.project._fs import (
     apply_str_replace,
+    resolve_content,
     resolve_in_project,
     select_project_root,
 )
@@ -122,36 +123,17 @@ class ProjectEditTool(BaseTool):
         params: dict[str, Any],
         context: ToolContext,
     ) -> dict[str, Any]:
-        from leagent.tools.util.tool_argument_blob import resolve_blob_text
-
         root = select_project_root(
             context, explicit=params.get("project_path"),
         )
         resolved = resolve_in_project(root, params["path"], must_exist=True)
 
-        old_blob = params.get("old_string_blob_id")
-        if isinstance(old_blob, str) and old_blob.strip():
-            try:
-                old_string = await resolve_blob_text(context, old_blob)
-            except ValueError as exc:
-                return {"error": str(exc), "path": resolved.rel_path}
-        else:
-            raw_old = params.get("old_string")
-            old_string = raw_old if isinstance(raw_old, str) else ""
-
-        new_blob = params.get("new_string_blob_id")
-        if isinstance(new_blob, str) and new_blob.strip():
-            try:
-                new_string = await resolve_blob_text(
-                    context, new_blob, allow_empty=True,
-                )
-            except ValueError as exc:
-                return {"error": str(exc), "path": resolved.rel_path}
-        else:
-            raw_new = params.get("new_string")
-            new_string = raw_new if isinstance(raw_new, str) else ""
-
-        if not old_string:
+        try:
+            old_string = await resolve_content(
+                params, context,
+                inline_key="old_string", blob_key="old_string_blob_id",
+            )
+        except ValueError:
             return {
                 "error": (
                     "Provide non-empty `old_string` or a finalized "
@@ -159,6 +141,15 @@ class ProjectEditTool(BaseTool):
                 ),
                 "path": resolved.rel_path,
             }
+
+        try:
+            new_string = await resolve_content(
+                params, context,
+                inline_key="new_string", blob_key="new_string_blob_id",
+                allow_empty=True,
+            )
+        except ValueError as exc:
+            return {"error": str(exc), "path": resolved.rel_path}
         # new_string may be intentionally empty (delete matched region).
 
         await self._track_artifact(
@@ -181,6 +172,16 @@ class ProjectEditTool(BaseTool):
             "project_edit",
             path=resolved.rel_path,
             replacements=result.replacements,
+        )
+
+        from leagent.tools.code.pipeline import record_operation
+
+        record_operation(
+            context,
+            tool="project_edit",
+            kind="file_edit",
+            path=resolved.rel_path,
+            summary=f"{result.replacements} replacement(s)",
         )
         return {
             "path": resolved.rel_path,

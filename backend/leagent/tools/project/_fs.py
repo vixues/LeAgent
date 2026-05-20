@@ -660,6 +660,45 @@ def _strip_diff_prefix(header: str) -> str:
     return cleaned.lstrip("/")
 
 
+async def resolve_content(
+    params: dict,
+    context: "ToolContext",
+    *,
+    inline_key: str = "content",
+    blob_key: str = "content_blob_id",
+    allow_empty: bool = False,
+) -> str:
+    """Resolve a text payload from either an inline param or a staged blob.
+
+    Centralises the duplicated ``*_blob_id`` resolution pattern used by
+    ``project_write``, ``project_edit``, ``project_apply_patch``, and
+    ``code_execution``.  The blob path delegates to
+    :func:`~leagent.tools.util.tool_argument_blob.resolve_blob_text`.
+
+    Raises :class:`ValueError` when neither source provides usable text
+    (unless *allow_empty* is set).
+    """
+    from typing import Any
+
+    blob_raw: Any = params.get(blob_key)
+    if isinstance(blob_raw, str) and blob_raw.strip():
+        from leagent.tools.util.tool_argument_blob import resolve_blob_text
+
+        return await resolve_blob_text(
+            context, blob_raw, allow_empty=allow_empty,
+        )
+
+    raw = params.get(inline_key)
+    text = raw if isinstance(raw, str) else ""
+
+    if not allow_empty and not text.strip():
+        raise ValueError(
+            f"Provide non-empty `{inline_key}` or a finalized "
+            f"`{blob_key}` (from `tool_argument_blob`)."
+        )
+    return text
+
+
 __all__ = [
     "DEFAULT_IGNORE_DIRS",
     "DEFAULT_IGNORE_GLOBS",
@@ -669,6 +708,7 @@ __all__ = [
     "ResolvedFile",
     "select_project_root",
     "resolve_in_project",
+    "resolve_content",
     "IgnoreMatcher",
     "walk_project",
     "looks_binary",

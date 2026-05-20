@@ -25,6 +25,7 @@ import structlog
 from leagent.tools.base import BaseTool, ToolCategory, ToolContext
 from leagent.tools.project._fs import (
     apply_unified_diff,
+    resolve_content,
     select_project_root,
 )
 
@@ -94,23 +95,13 @@ class ProjectApplyPatchTool(BaseTool):
         root = select_project_root(
             context, explicit=params.get("project_path"),
         )
-        blob_raw = params.get("diff_blob_id")
-        if isinstance(blob_raw, str) and blob_raw.strip():
-            from leagent.tools.util.tool_argument_blob import resolve_blob_text
-
-            try:
-                diff_text = await resolve_blob_text(context, blob_raw)
-            except ValueError as exc:
-                return {"error": str(exc)}
-        else:
-            diff_text = params.get("diff") or ""
-        if not isinstance(diff_text, str) or not diff_text.strip():
-            return {
-                "error": (
-                    "Provide non-empty `diff` or a finalized `diff_blob_id` "
-                    "(from `tool_argument_blob`)."
-                ),
-            }
+        try:
+            diff_text = await resolve_content(
+                params, context,
+                inline_key="diff", blob_key="diff_blob_id",
+            )
+        except ValueError as exc:
+            return {"error": str(exc)}
 
         await self._track_artifact(diff_text, context)
 
@@ -128,6 +119,17 @@ class ProjectApplyPatchTool(BaseTool):
             for pf in applied
         ]
         logger.info("project_apply_patch", files=len(files))
+
+        from leagent.tools.code.pipeline import record_operation
+
+        paths = [pf.rel_path for pf in applied]
+        record_operation(
+            context,
+            tool="project_apply_patch",
+            kind="file_patch",
+            path=paths[0] if len(paths) == 1 else None,
+            summary=f"{len(files)} file(s) patched",
+        )
         return {
             "files": files,
             "count": len(files),

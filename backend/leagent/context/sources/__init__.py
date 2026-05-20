@@ -37,6 +37,7 @@ def _lazy_load() -> None:
         project_memory,
         recall,
         recent_reads,
+        session_artifacts,
         session_attachments,
         tool_history,
         user_instructions,

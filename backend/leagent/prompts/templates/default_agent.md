@@ -14,6 +14,9 @@ layers:
 policies:
   - file_access
   - database_tool
+  - canvas_routing
+  - blob_staging
+  - genui_components
   - canvas_design
   - document_fonts
   - human_gate

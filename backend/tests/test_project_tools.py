@@ -597,3 +597,99 @@ async def test_tool_argument_blob_blob_disk_path_and_discard(
     )
     assert discarded.success, discarded.error
     assert discarded.data.get("ok") is True
+
+
+# ---------------------------------------------------------------------------
+# Operation-model compatibility: tool returns validate as typed ops
+# ---------------------------------------------------------------------------
+
+
+def _ctx_with_journal(project: Path) -> ToolContext:
+    """Build a tool context with an OperationJournal attached."""
+    from leagent.tools.code.operations import JOURNAL_CONTEXT_KEY, OperationJournal
+
+    return ToolContext(
+        user_id="u1",
+        session_id="s1",
+        extra={
+            "project_roots": [str(project)],
+            JOURNAL_CONTEXT_KEY: OperationJournal(),
+        },
+    )
+
+
+@pytest.mark.asyncio
+async def test_project_write_result_validates_as_file_write_op(project: Path) -> None:
+    """project_write return dict must be a valid FileWriteOp."""
+    from leagent.tools.code.operations import FileWriteOp
+    from leagent.tools.project.write import ProjectWriteTool
+
+    ctx = _ctx_with_journal(project)
+    res = await _run(ProjectWriteTool(), {
+        "path": "src/new_mod.py",
+        "content": "X = 1\n",
+    }, ctx)
+    assert res.success, res.error
+    op = FileWriteOp.model_validate(res.data)
+    assert op.path == "src/new_mod.py"
+    assert op.created is True
+    assert op.bytes_written > 0
+
+
+@pytest.mark.asyncio
+async def test_project_edit_result_validates_as_file_edit_op(project: Path) -> None:
+    """project_edit return dict must be a valid FileEditOp."""
+    from leagent.tools.code.operations import FileEditOp
+    from leagent.tools.project.edit import ProjectEditTool
+
+    ctx = _ctx_with_journal(project)
+    res = await _run(ProjectEditTool(), {
+        "path": "src/app.py",
+        "old_string": "def greet(name: str) -> str:",
+        "new_string": "def greet(name: str, greeting: str = 'hello') -> str:",
+    }, ctx)
+    assert res.success, res.error
+    op = FileEditOp.model_validate(res.data)
+    assert op.path == "src/app.py"
+    assert op.replacements == 1
+
+
+@pytest.mark.asyncio
+async def test_project_write_records_journal_entry(project: Path) -> None:
+    """project_write must append a JournalEntry to the operation journal."""
+    from leagent.tools.code.operations import JOURNAL_CONTEXT_KEY, OperationJournal
+    from leagent.tools.project.write import ProjectWriteTool
+
+    ctx = _ctx_with_journal(project)
+    journal: OperationJournal = ctx.extra[JOURNAL_CONTEXT_KEY]
+    assert len(journal) == 0
+
+    await _run(ProjectWriteTool(), {
+        "path": "src/journaled.py",
+        "content": "Y = 2\n",
+    }, ctx)
+    assert len(journal) == 1
+    entry = journal.recent()[0]
+    assert entry.tool == "project_write"
+    assert entry.kind == "file_write"
+    assert entry.path == "src/journaled.py"
+
+
+@pytest.mark.asyncio
+async def test_project_edit_records_journal_entry(project: Path) -> None:
+    """project_edit must append a JournalEntry to the operation journal."""
+    from leagent.tools.code.operations import JOURNAL_CONTEXT_KEY, OperationJournal
+    from leagent.tools.project.edit import ProjectEditTool
+
+    ctx = _ctx_with_journal(project)
+    journal: OperationJournal = ctx.extra[JOURNAL_CONTEXT_KEY]
+
+    await _run(ProjectEditTool(), {
+        "path": "src/app.py",
+        "old_string": "def greet(name: str) -> str:",
+        "new_string": "def greet(name: str) -> str:  # updated",
+    }, ctx)
+    assert len(journal) == 1
+    entry = journal.recent()[0]
+    assert entry.tool == "project_edit"
+    assert entry.kind == "file_edit"

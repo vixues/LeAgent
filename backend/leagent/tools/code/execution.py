@@ -91,6 +91,41 @@ class CodeExecutionEnvelope(TypedDict, total=False):
     source_length: int
     artifact_id: str | None
     syntax_diagnostics: list[dict[str, Any]] | None
+    suggested_fix_region: dict[str, Any] | None
+    workspace_file: str | None
+
+
+def _extract_fix_region(
+    stderr: str,
+    syntax_diagnostics: list[dict[str, Any]] | None,
+) -> dict[str, Any] | None:
+    """Parse stderr traceback or syntax diagnostics to identify the failing region."""
+    if syntax_diagnostics:
+        first = syntax_diagnostics[0]
+        line = first.get("line")
+        if isinstance(line, int):
+            return {
+                "start_line": max(1, line - 2),
+                "end_line": line + 2,
+                "message": first.get("message", ""),
+            }
+
+    import re
+
+    tb_match = re.search(
+        r'File "(?:<sandbox>|<code_execution>|<string>)", line (\d+)',
+        stderr,
+    )
+    if tb_match:
+        line = int(tb_match.group(1))
+        err_lines = stderr.strip().splitlines()
+        last_line = err_lines[-1] if err_lines else ""
+        return {
+            "start_line": max(1, line - 2),
+            "end_line": line + 2,
+            "message": last_line,
+        }
+    return None
 
 
 def _build_envelope(
@@ -113,11 +148,17 @@ def _build_envelope(
     artifact_id: str | None = None,
     syntax_diagnostics: list[dict[str, Any]] | None = None,
     include_source_echo: bool = False,
+    workspace_file: str | None = None,
 ) -> dict[str, Any]:
     """Build a complete :class:`CodeExecutionEnvelope` dict.
 
     Every exit path calls this so the envelope shape is always uniform.
     """
+    is_error = status not in ("ok", None)
+    fix_region = (
+        _extract_fix_region(stderr, syntax_diagnostics) if is_error else None
+    )
+
     envelope: dict[str, Any] = {
         "status": status,
         "error": error,
@@ -137,6 +178,8 @@ def _build_envelope(
         "source_length": len(source),
         "artifact_id": artifact_id,
         "syntax_diagnostics": syntax_diagnostics,
+        "suggested_fix_region": fix_region,
+        "workspace_file": workspace_file,
     }
     return envelope
 
@@ -462,6 +505,19 @@ class CodeExecutionTool(BaseTool):
                     ),
                     "default": False,
                 },
+                "workspace_file": {
+                    "type": "string",
+                    "description": (
+                        "Relative path inside the session workspace to use as "
+                        "the source. If the file exists it is read as the "
+                        "program (omit `source` / `source_blob_id`). The "
+                        "last-executed source is always persisted as "
+                        "`__last_source__.py` so you can edit it with "
+                        "`project_edit` and re-execute by passing "
+                        "`workspace_file=__last_source__.py` without "
+                        "re-transmitting the full source."
+                    ),
+                },
             },
             "additionalProperties": False,
         }
@@ -496,21 +552,25 @@ class CodeExecutionTool(BaseTool):
         Returns ``(source, artifact)`` on success, or
         ``(error_envelope_dict, None)`` if execution should be blocked.
         """
-        blob_raw = params.get("source_blob_id")
-        if isinstance(blob_raw, str) and blob_raw.strip():
-            from leagent.tools.util.tool_argument_blob import resolve_blob_text
+        ws_file_raw = params.get("workspace_file")
+        if isinstance(ws_file_raw, str) and ws_file_raw.strip():
+            source = self._read_workspace_file(ws_file_raw.strip(), context)
+        else:
+            from leagent.tools.project._fs import resolve_content
 
             try:
-                source = await resolve_blob_text(context, blob_raw)
+                source = await resolve_content(
+                    params, context,
+                    inline_key="source", blob_key="source_blob_id",
+                )
             except ValueError as exc:
-                raise ValueError(str(exc)) from exc
-        else:
-            source = params.get("source") or ""
-        if not isinstance(source, str) or not source.strip():
-            raise ValueError(
-                "Provide non-empty `source` or a finalized `source_blob_id` "
-                "(from `tool_argument_blob`)."
-            )
+                raise ValueError(
+                    str(exc) or (
+                        "Provide non-empty `source`, `source_blob_id`, or "
+                        "`workspace_file` pointing to an existing file in "
+                        "the session workspace."
+                    )
+                ) from exc
 
         skip_syntax = bool(params.get("skip_syntax_check", False))
         artifact = await self._prepare_artifact(source, params, context, skip_syntax)
@@ -675,6 +735,7 @@ class CodeExecutionTool(BaseTool):
         )
 
         if result.status == "timeout":
+            persisted = self._persist_source(source, context)
             return _build_envelope(
                 status="timeout",
                 source=source,
@@ -688,6 +749,7 @@ class CodeExecutionTool(BaseTool):
                 workspace=str(workspace.path),
                 artifact_id=artifact_id,
                 include_source_echo=True,
+                workspace_file=persisted,
             )
 
         try:
@@ -696,6 +758,8 @@ class CodeExecutionTool(BaseTool):
             logger.warning("code_execution_quota_exceeded", error=str(exc))
 
         from leagent.services.session.artifacts import strip_inline_base64_payloads
+
+        persisted_file = self._persist_source(source, context)
 
         is_error = result.status not in ("ok", None)
         error_type: ErrorType | None = "runtime" if is_error else None
@@ -719,7 +783,19 @@ class CodeExecutionTool(BaseTool):
                 returncode=result.returncode,
                 artifact_id=artifact_id,
                 include_source_echo=is_error,
+                workspace_file=persisted_file,
             )
+        )
+
+        from leagent.tools.code.pipeline import record_operation
+
+        record_operation(
+            context,
+            tool="code_execution",
+            kind="execute",
+            summary=f"{result.status} ({result.duration_ms}ms)",
+            success=not is_error,
+            artifact_id=artifact_id,
         )
         return envelope
 
@@ -842,6 +918,40 @@ class CodeExecutionTool(BaseTool):
                     f"Staged files exceed {cfg.max_inline_total_bytes} bytes total"
                 )
             workspace.write_bytes(str(rel_path), raw)
+
+    _LAST_SOURCE_NAME = "__last_source__.py"
+
+    def _read_workspace_file(self, rel_path: str, context: ToolContext) -> str:
+        """Read a file from the session workspace as source text."""
+        workspace = self._get_workspace(context)
+        target = workspace.path / rel_path
+        try:
+            resolved = target.resolve()
+            resolved.relative_to(workspace.path.resolve())
+        except (OSError, ValueError) as exc:
+            raise ValueError(
+                f"workspace_file {rel_path!r} escapes the workspace: {exc}"
+            ) from exc
+        if not resolved.is_file():
+            raise ValueError(
+                f"workspace_file {rel_path!r} does not exist in the session "
+                f"workspace ({workspace.path}). Run with `source` first, "
+                "then re-execute via `workspace_file`."
+            )
+        return resolved.read_text(encoding="utf-8", errors="replace")
+
+    def _persist_source(self, source: str, context: ToolContext) -> str | None:
+        """Write the executed source to ``__last_source__.py`` for incremental repair."""
+        try:
+            workspace = self._get_workspace(context)
+            workspace.write_bytes(
+                self._LAST_SOURCE_NAME,
+                source.encode("utf-8"),
+            )
+            return self._LAST_SOURCE_NAME
+        except Exception:  # noqa: BLE001
+            logger.debug("persist_last_source_error", exc_info=True)
+            return None
 
     def gc_workspaces(self) -> list[str]:
         """Expose the workspace GC for external schedulers."""

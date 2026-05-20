@@ -7,6 +7,11 @@ intentional whole-file rewrites where a surgical patch would be larger
 than the rewrite itself. To stop the LLM from accidentally clobbering
 files it never read, the tool refuses to overwrite an existing file
 unless ``overwrite=True`` is passed in the same call.
+
+The tool supports ``validate_only=True`` for dry-run syntax checking
+without writing to disk. When used, the pipeline still creates a
+:class:`~leagent.tools.code.artifact.CodeArtifact`, validates syntax,
+and returns diagnostics — but the file is not modified.
 """
 
 from __future__ import annotations
@@ -17,6 +22,7 @@ import structlog
 
 from leagent.tools.base import BaseTool, ToolCategory, ToolContext
 from leagent.tools.project._fs import (
+    resolve_content,
     resolve_in_project,
     select_project_root,
 )
@@ -33,8 +39,9 @@ class ProjectWriteTool(BaseTool):
         "Prefer `project_edit` / `project_apply_patch` for changes to "
         "existing files; use this for brand-new files or intentional "
         "whole-file rewrites. Pass `overwrite=true` to replace an "
-        "existing file. For large bodies, use `tool_argument_blob` then "
-        "`content_blob_id` instead of inlining `content` in JSON."
+        "existing file. Pass `validate_only=true` to syntax-check "
+        "without writing. For large bodies, use `tool_argument_blob` "
+        "then `content_blob_id` instead of inlining `content` in JSON."
     )
     category = ToolCategory.CODE
     aliases = ["write_file", "code_write"]
@@ -42,7 +49,7 @@ class ProjectWriteTool(BaseTool):
     is_read_only = False
     is_destructive = True
     interrupt_behavior = "block"
-    max_result_size_chars = 32_000
+    max_result_size_chars = 128_000
     timeout_sec = 30
 
     @property
@@ -94,6 +101,15 @@ class ProjectWriteTool(BaseTool):
                     ),
                     "default": True,
                 },
+                "validate_only": {
+                    "type": "boolean",
+                    "description": (
+                        "When true, run syntax validation on the content "
+                        "without writing to disk. Returns diagnostics so "
+                        "the LLM can fix issues before committing."
+                    ),
+                    "default": False,
+                },
             },
             "required": ["path"],
             "additionalProperties": False,
@@ -101,6 +117,8 @@ class ProjectWriteTool(BaseTool):
 
     def get_activity_description(self, params: dict[str, Any] | None = None) -> str | None:
         path = (params or {}).get("path")
+        if (params or {}).get("validate_only"):
+            return f"Validating {path}" if path else "Validating project file"
         return f"Writing {path}" if path else "Writing project file"
 
     async def execute(
@@ -115,24 +133,33 @@ class ProjectWriteTool(BaseTool):
 
         overwrite = bool(params.get("overwrite") or False)
         create_parents = bool(params.get("create_parents", True))
+        validate_only = bool(params.get("validate_only") or False)
 
-        blob_raw = params.get("content_blob_id")
-        if isinstance(blob_raw, str) and blob_raw.strip():
-            from leagent.tools.util.tool_argument_blob import resolve_blob_text
+        try:
+            content = await resolve_content(
+                params, context,
+                inline_key="content", blob_key="content_blob_id",
+            )
+        except ValueError as exc:
+            return {"error": str(exc)}
 
-            try:
-                content = await resolve_blob_text(context, blob_raw)
-            except ValueError as exc:
-                return {"error": str(exc)}
-        else:
-            content = params.get("content")
-        if not isinstance(content, str) or not content.strip():
-            return {
-                "error": (
-                    "Provide non-empty `content` or a finalized `content_blob_id` "
-                    "(from `tool_argument_blob`)."
-                ),
+        artifact = await self._track_artifact(
+            content, resolved.rel_path, context,
+        )
+
+        if validate_only:
+            result: dict[str, Any] = {
+                "path": resolved.rel_path,
+                "validate_only": True,
+                "source_length": len(content),
             }
+            if artifact is not None:
+                result["artifact_id"] = artifact.artifact_id
+                result["syntax_valid"] = artifact.syntax_valid
+                result["language"] = artifact.language
+                if artifact.diagnostics:
+                    result["syntax_diagnostics"] = artifact.diagnostics
+            return result
 
         existed = resolved.abs_path.exists()
         if existed and not overwrite:
@@ -158,8 +185,6 @@ class ProjectWriteTool(BaseTool):
                 "path": resolved.rel_path,
             }
 
-        await self._track_artifact(content, resolved.rel_path, context)
-
         encoded = content.encode("utf-8")
         resolved.abs_path.write_bytes(encoded)
         logger.info(
@@ -168,25 +193,47 @@ class ProjectWriteTool(BaseTool):
             bytes=len(encoded),
             overwrote=existed,
         )
-        return {
+        result = {
             "path": resolved.rel_path,
             "bytes_written": len(encoded),
             "lines": content.count("\n") + (0 if content.endswith("\n") else 1),
             "created": not existed,
         }
+        if artifact is not None:
+            result["artifact_id"] = artifact.artifact_id
+            result["syntax_valid"] = artifact.syntax_valid
+            result["language"] = artifact.language
+            result["kind"] = artifact.kind.value
+            result["source_length"] = len(artifact.source)
+            result["target_path"] = artifact.target_path
+            if artifact.diagnostics:
+                result["syntax_diagnostics"] = artifact.diagnostics
+
+        from leagent.tools.code.pipeline import record_operation
+
+        record_operation(
+            context,
+            tool="project_write",
+            kind="file_write",
+            path=resolved.rel_path,
+            summary=f"{'created' if not existed else 'overwrote'} ({len(encoded)} bytes)",
+            artifact_id=artifact.artifact_id if artifact else None,
+        )
+        return result
 
     @staticmethod
     async def _track_artifact(
         content: str, rel_path: str, context: ToolContext,
-    ) -> None:
+    ) -> Any:
+        """Create a CodeArtifact via the pipeline; returns the artifact or None."""
         try:
             from leagent.tools.code.pipeline import get_pipeline
             from leagent.tools.code.artifact import ArtifactKind
 
             pipeline = get_pipeline(context)
             if pipeline is None:
-                return
-            await pipeline.prepare(
+                return None
+            return await pipeline.prepare(
                 kind=ArtifactKind.FILE_WRITE,
                 source=content,
                 language="auto",
@@ -196,3 +243,4 @@ class ProjectWriteTool(BaseTool):
             )
         except Exception:  # noqa: BLE001
             logger.debug("project_write_artifact_tracking_error", exc_info=True)
+            return None
