@@ -22,7 +22,7 @@
 </p>
 
 <p align="center">
-  <img src="docs/assets/screenshots/hero_en.jpg" alt="LeAgent Screenshot" width="720">
+  <img src="docs/assets/screenshots/hero-en.jpg" alt="LeAgent Screenshot" width="720">
 </p>
 
 ---
