@@ -5,7 +5,7 @@
 <h1 align="center">LeAgent</h1>
 
 <p align="center">
-  <strong>本地优先的智能办公自动化平台 — 对话式 AI、可视化工作流、百余项工具，一处部署。</strong>
+  <strong>Local-first intelligent office automation — conversational AI, visual workflows, and 100+ tools in one deployable stack.</strong>
 </p>
 
 <p align="center">
@@ -18,98 +18,98 @@
 </p>
 
 <p align="center">
-  <a href="README_en.md">English</a>
+  <a href="README_zh.md">中文文档</a>
 </p>
 
 <p align="center">
-  <img src="docs/assets/screenshots/hero.jpg" alt="LeAgent 产品概览" width="720">
+  <img src="docs/assets/screenshots/hero-en.jpg" alt="LeAgent Screenshot" width="720">
 </p>
 
 ---
 
-**LeAgent** 是可自托管的 LLM 自动化平台，将对话助手、拖拽式工作流、声明式规则、技能与各类集成整合在同一套栈里，无需再拼凑多款零散产品。
+**LeAgent** is a self-hostable platform for building LLM-powered automation: chat assistants, drag-and-drop workflows, declarative rules, skills, and integrations — without stitching together separate products.
 
-- **Agent 运行时** — 多轮对话、流式输出、工具调用、分层模型路由与提示词，以及情景 / 语义 / 程序性认知记忆
-- **Skills** — 符合 [Agent Skills v1.0](https://agentskills.my/specification) 的 `SKILL.md` 技能包，渐进式披露与按需加载；内置技能、从链接/压缩包安装，以及可插拔 HTTP 技能注册表
-- **100+离线工具** — 文档、网页、数据、代码执行、数据库、Generative UI、编码项目等
-- **侧栏桌宠** — 可定制形象与背景、行走/跳跃动画与人格气泡；支持上传 PNG / SVG / GIF 或精灵图，并随聊天流式输出与会话状态联动
-- **可视化工作流** — ReactFlow 编辑器，支持 YAML 导出与模板；每个工具自动映射为带类型的工作流节点
-- **多LLM供应商** — 支持 DeepSeek、通义千问、OpenAI、Ollama、vLLM 等（当前以 DeepSeek 完成深度验证，推荐优先使用）
-- **零配置起步** — 默认 SQLite，单容器 Docker 即可运行；可按需接入 PostgreSQL / Milvus
+- **Agent runtime** — multi-turn sessions with streaming, tool execution, tiered model routing, layered prompts, and episodic / semantic / procedural cognitive memory
+- **Skills** — [Agent Skills v1.0](https://agentskills.my/specification) `SKILL.md` bundles with progressive disclosure and on-demand loading; built-in skills, install from links/archives, and a pluggable HTTP skill registry
+- **100+ offline tools** — documents, web, data, code execution, databases, generative UI, coding projects, and more
+- **Sidebar desk pet** — customizable avatar and background, walk/jump animations, and personality bubbles; upload PNG / SVG / GIF or sprite sheets, synced with chat streaming and session state
+- **Visual workflows** — ReactFlow editor with YAML export, templates, and every tool as a typed node
+- **Multi-provider LLM** — DeepSeek, DashScope (Qwen), OpenAI, Ollama, vLLM, and more (DeepSeek is currently the most thoroughly validated; recommended for first use)
+- **Zero-config default** — SQLite out of the box, single Docker container, optional PostgreSQL / Milvus
 
 ---
 
-## 快速开始
+## Quick Start
 
-### 本地开发（适合二次开发）
+### Local dev (recommended for hackers)
 
-**环境要求：** git、[uv](https://docs.astral.sh/uv/)、Node.js 20+ 或 22+
+**Prerequisites:** git, [uv](https://docs.astral.sh/uv/), Node.js 20+ or 22+
 
 ```bash
 git clone https://github.com/vixues/LeAgent.git
 cd LeAgent
-./start.sh                # 后端 :7860 + 前端 :5173
+./start.sh                # backend :7860 + frontend :5173
 ```
 
 ### Docker
 
 ```bash
 cd LeAgent/deploy
-cp .env.example .env      # 配置 LEAGENT_SECRET_KEY 与模型提供商密钥
+cp .env.example .env      # set LEAGENT_SECRET_KEY + provider keys
 docker compose up -d --build
 ```
 
-API 文档：`http://localhost:8000/docs`
+API at `http://localhost:8000/docs`.
 
-### 手动安装
+### Manual setup
 
 ```bash
-# 后端
+# Backend
 cd backend
 uv sync --extra dev
 uv run leagent init
 uv run leagent app
 
-# 前端（另开终端）
+# Frontend (separate terminal)
 cd frontend
 npm install && npm run dev
 ```
 
-### 一键安装
+### One-line install
 
 ```bash
 curl -fsSL https://vixues.com.cn/install.sh | bash
 ```
 
-### 桌面客户端（测试版，功能仍在完善）
+### Desktop app (Beta — features still being refined)
 
-各平台安装包随 GitHub Release 发布，下载即可使用，无需单独安装 Python、Node 或 Docker。
+Installers for each platform ship with every GitHub release — download and run. No separate Python, Node, or Docker install required.
 
-| 平台 | 下载 | 说明 |
+| Platform | Download | Notes |
 | --- | --- | --- |
-| **Windows 10/11（x64）** | [`LeAgent-Setup-*.exe`](../../releases/latest) | NSIS 安装包，自动创建桌面与开始菜单快捷方式 |
-| **macOS（Apple 芯片）** | [`LeAgent-*-arm64.dmg`](../../releases/latest) | 未签名 — 安装后执行 `xattr -dr com.apple.quarantine /Applications/LeAgent.app` |
-| **macOS（Intel）** | [`LeAgent-*.dmg`](../../releases/latest) | 同上，需处理 Gatekeeper 提示 |
-| **Linux（x64）** | [`LeAgent-*.AppImage`](../../releases/latest) / [`LeAgent-*.deb`](../../releases/latest) | AppImage：`chmod +x` 后运行；`.deb`：`sudo dpkg -i` |
+| **Windows 10/11 (x64)** | [`LeAgent-Setup-*.exe`](../../releases/latest) | NSIS installer; desktop + start-menu shortcut |
+| **macOS (Apple Silicon)** | [`LeAgent-*-arm64.dmg`](../../releases/latest) | Unsigned — `xattr -dr com.apple.quarantine /Applications/LeAgent.app` after install |
+| **macOS (Intel)** | [`LeAgent-*.dmg`](../../releases/latest) | Same Gatekeeper note as above |
+| **Linux (x64)** | [`LeAgent-*.AppImage`](../../releases/latest) / [`LeAgent-*.deb`](../../releases/latest) | AppImage: `chmod +x` then run. `.deb`: `sudo dpkg -i` |
 
-桌面版内置 Python 运行时与后端，安装后即可独立运行。
+The desktop build bundles its own Python runtime and backend — ready to run after install.
 
-全部历史版本：**<https://github.com/vixues/LeAgent/releases>**
-
----
-
-## 参与贡献
-
-欢迎提交 Issue 与 Pull Request：
-
-1. 较大改动或范围不明确的修改，请先开 Issue 讨论。
-2. 请为涉及改动的部分运行测试（`cd backend && uv run pytest tests/ -v` / `cd frontend && npm run test`）。
-3. 遵循 [`AGENTS.md`](AGENTS.md) 中的代码规范与 i18n 规则。
-
-更多说明见 [`CONTRIBUTING.md`](CONTRIBUTING.md)。
+See all releases: **<https://github.com/vixues/LeAgent/releases>**
 
 ---
 
-## 许可证
+## Contributing
 
-Apache License 2.0 — 详见 [`LICENSE`](LICENSE)。
+Issues and pull requests are welcome. Please:
+
+1. Open an issue for larger changes or ambiguous scope.
+2. Run tests (`cd backend && uv run pytest tests/ -v` / `cd frontend && npm run test`) for touched areas.
+3. Follow [`AGENTS.md`](AGENTS.md) for coding conventions and i18n rules.
+
+See [`CONTRIBUTING.md`](CONTRIBUTING.md) for full guidelines.
+
+---
+
+## License
+
+Apache License 2.0 — see [`LICENSE`](LICENSE).
