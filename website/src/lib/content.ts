@@ -15,6 +15,11 @@ export const SECURITY_URL = `${REPO_URL}/blob/main/SECURITY.md`;
 export const ICP_BEIAN_URL = "https://beian.miit.gov.cn/";
 export const ICP_BEIAN_NUMBER = "鄂ICP备2026023482号";
 
+/** Public security bureau filing (粤公网安备44030002012706号) */
+export const PSB_BEIAN_RECORD_CODE = "44030002012706";
+export const PSB_BEIAN_URL = `https://www.beian.gov.cn/portal/registerSystemInfo?recordcode=${PSB_BEIAN_RECORD_CODE}`;
+export const PSB_BEIAN_NUMBER = "粤公网安备44030002012706号";
+
 export const INSTALL_SH_URL = `${SITE_ORIGIN}/install.sh`;
 export const INSTALL_PS1_URL = `${SITE_ORIGIN}/install.ps1`;
 export const INSTALL_BAT_URL = `${SITE_ORIGIN}/install.bat`;

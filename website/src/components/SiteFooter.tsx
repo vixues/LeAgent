@@ -3,6 +3,8 @@ import { useI18n } from "@/i18n/I18nProvider";
 import {
   ICP_BEIAN_NUMBER,
   ICP_BEIAN_URL,
+  PSB_BEIAN_NUMBER,
+  PSB_BEIAN_URL,
   LICENSE_URL,
   README_URL,
   RELEASES_URL,
@@ -143,6 +145,17 @@ export function SiteFooter() {
               className="transition-colors hover:text-text-secondary"
             >
               {ICP_BEIAN_NUMBER}
+            </a>
+            <span className="opacity-30" aria-hidden="true">
+              &middot;
+            </span>
+            <a
+              href={PSB_BEIAN_URL}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="transition-colors hover:text-text-secondary"
+            >
+              {PSB_BEIAN_NUMBER}
             </a>
           </div>
           <div className="text-center font-mono">
