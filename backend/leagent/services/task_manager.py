@@ -245,11 +245,15 @@ class TaskManager:
                 if task.session_id:
                     handler_params.setdefault("session_id", str(task.session_id))
 
+            # Do not hold the manager's task-row transaction while a handler
+            # runs; SQLite readers can otherwise block kill/cancel commits.
+            async with db.session() as handler_session:
                 result = await asyncio.wait_for(
-                    handler.spawn(ctx, handler_params, session),
+                    handler.spawn(ctx, handler_params, handler_session),
                     timeout=timeout,
                 )
 
+            async with db.session() as session:
                 task = await session.get(Task, UUID(task_id))
                 if task and not is_terminal_task_status(task.status):
                     if ctx.abort_event.is_set():
