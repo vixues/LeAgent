@@ -244,6 +244,28 @@ class TestBlobStreamingIngest:
         )
         assert result is None
 
+    async def test_streaming_ingest_truncated_base64_partial_blob(self) -> None:
+        """Truncated base64 in create_and_finalize saves partial content, not finalized."""
+        from leagent.agent.deps import _try_blob_streaming_ingest
+
+        full_html = "<p>Hello world from truncated ingest</p>"
+        valid_b64 = base64.b64encode(full_html.encode()).decode()
+        # Simulate LLM output cut mid-base64 (invalid padding / incomplete group)
+        truncated_b64 = valid_b64[: len(valid_b64) - 3]
+        raw = (
+            '{"action":"create_and_finalize",'
+            f'"chunk_base64":"{truncated_b64}"'
+        )
+        result = await _try_blob_streaming_ingest("tool_argument_blob", raw)
+        assert result is not None
+        assert result.get("_truncated") is True
+        assert result.get("_chunk_ingested") is True
+        blob_id = result["blob_id"]
+        # Blob must exist but not be finalized (take without finalize returns None)
+        sid = "__streaming_ingest__"
+        text = await ToolArgumentBlobStore.take_utf8_text(sid, blob_id)
+        assert text is None
+
 
 # ---------------------------------------------------------------------------
 # find_session_for_blob

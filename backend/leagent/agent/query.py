@@ -541,8 +541,30 @@ async def _query_loop(params: QueryParams) -> AsyncIterator[Any]:
             if (
                 "max_output" in err_kind or finish_reason == "length"
             ) and state.max_output_tokens_recovery_count < 2:
+                had_truncated = any(
+                    isinstance(tc.get("arguments"), dict)
+                    and isinstance(tc["arguments"].get("__raw__"), str)
+                    for tc in tool_calls
+                )
+                recovery_messages = list(state.messages)
+                if had_truncated:
+                    recovery_messages.append({
+                        "role": "user",
+                        "content": (
+                            "[System: your previous output was truncated because "
+                            "the tool call arguments exceeded the output token "
+                            "limit. Do NOT retry the same approach. For large "
+                            "content: use `tool_argument_blob` with "
+                            "`action=create`, then multiple `action=append` "
+                            "calls with `chunk_base64` (each under 60 000 "
+                            "base64 chars), then `action=finalize`. Pass the "
+                            "`blob_id` to the consuming tool. NEVER use "
+                            "`create_and_finalize` for content larger than "
+                            "~2 000 characters.]"
+                        ),
+                    })
                 state = QueryState(
-                    messages=state.messages,
+                    messages=recovery_messages,
                     tool_use_context=state.tool_use_context,
                     auto_compact_tracking=state.auto_compact_tracking,
                     max_output_tokens_recovery_count=state.max_output_tokens_recovery_count
@@ -569,26 +591,96 @@ async def _query_loop(params: QueryParams) -> AsyncIterator[Any]:
             finish_reason == "length"
             and state.max_output_tokens_recovery_count < 2
         ):
+            had_truncated_tool_args = any(
+                isinstance(tc.get("arguments"), dict)
+                and isinstance(tc["arguments"].get("__raw__"), str)
+                for tc in tool_calls
+            )
+            recovery_attempt = state.max_output_tokens_recovery_count + 1
             logger.info(
                 "query_loop_length_truncation_recovery",
                 extra={
-                    "recovery_attempt": state.max_output_tokens_recovery_count + 1,
+                    "recovery_attempt": recovery_attempt,
                     "had_tool_calls": bool(assistant_msg.tool_calls),
+                    "had_truncated_tool_args": had_truncated_tool_args,
                     "text_len": len(assistant_text),
                 },
             )
+            recovery_messages = list(state.messages)
+            if had_truncated_tool_args:
+                recovery_messages.append({
+                    "role": "user",
+                    "content": (
+                        "[System: your previous output was truncated because "
+                        "the tool call arguments exceeded the output token "
+                        "limit. Do NOT retry the same approach. For large "
+                        "content (HTML pages, long code): use "
+                        "`tool_argument_blob` with `action=create` first, "
+                        "then multiple `action=append` calls with "
+                        "`chunk_base64` (each chunk under 60 000 base64 "
+                        "characters), then `action=finalize`. Pass the "
+                        "resulting `blob_id` to `canvas_publish` as "
+                        "`html_blob_id` or to `code_execution` as "
+                        "`source_blob_id`. NEVER use `create_and_finalize` "
+                        "for content larger than ~2 000 characters.]"
+                    ),
+                })
             state = QueryState(
-                messages=state.messages,
+                messages=recovery_messages,
                 tool_use_context=state.tool_use_context,
                 auto_compact_tracking=state.auto_compact_tracking,
-                max_output_tokens_recovery_count=state.max_output_tokens_recovery_count
-                + 1,
+                max_output_tokens_recovery_count=recovery_attempt,
                 has_attempted_reactive_compact=state.has_attempted_reactive_compact,
                 max_output_tokens_override=(params.max_output_tokens or 4096) * 2,
                 turn_count=state.turn_count,
                 transition=Continue(reason=ContinueReason.MAX_OUTPUT_TOKENS_RECOVERY),
             )
             continue
+
+        # ------------------------------------------------------------------
+        # 3b) Exhausted output-length recovery: emit a user-visible error
+        #     instead of silently completing with no output.
+        # ------------------------------------------------------------------
+        if (
+            finish_reason == "length"
+            and state.max_output_tokens_recovery_count >= 2
+            and not assistant_msg.tool_calls
+        ):
+            logger.warning(
+                "query_loop_length_recovery_exhausted",
+                extra={
+                    "recovery_count": state.max_output_tokens_recovery_count,
+                    "text_len": len(assistant_text),
+                },
+            )
+            fallback_text = (
+                assistant_text
+                + "\n\n"
+                + "[The response was interrupted because the generated "
+                "content exceeded the maximum output length. Please try "
+                "a simpler request, or ask me to break the task into "
+                "smaller steps.]"
+            ) if assistant_text.strip() else (
+                "[The response could not be completed because the "
+                "generated content exceeded the maximum output length "
+                "after multiple attempts. Please try a simpler request, "
+                "or ask me to break the task into smaller steps.]"
+            )
+            yield AssistantMessage(
+                content=fallback_text,
+                tool_calls=[],
+                usage=usage,
+                model=model_name,
+            )
+            yield Terminal(
+                reason=TerminalReason.COMPLETED,
+                meta={
+                    "turn_count": state.turn_count,
+                    "usage": tracking.get("usage", {}),
+                    "truncation_exhausted": True,
+                },
+            )
+            return
 
         # Persist the assistant turn into history before any follow-up.
         new_messages = [*state.messages, assistant_msg.to_openai()]

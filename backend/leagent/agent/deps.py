@@ -60,13 +60,36 @@ async def _try_blob_streaming_ingest(
         return None
 
     import base64 as _b64
+    import binascii as _binascii
 
     b64_str = recovered.get("chunk_base64", "")
     if not b64_str:
         return None
-    try:
-        chunk_text = _b64.b64decode(b64_str).decode("utf-8")
-    except Exception:  # noqa: BLE001
+
+    def _decode_b64_tolerant(raw: str) -> str | None:
+        """Decode base64, trimming trailing incomplete groups if truncated."""
+        stripped = raw.strip()
+        if not stripped:
+            return None
+        try:
+            return _b64.b64decode(stripped, validate=True).decode("utf-8")
+        except (_binascii.Error, ValueError, UnicodeDecodeError):
+            pass
+        # Truncated output: trim to the nearest multiple-of-4 boundary
+        trimmed = stripped[: len(stripped) - (len(stripped) % 4)]
+        if len(trimmed) < 4:
+            return None
+        try:
+            return _b64.b64decode(trimmed, validate=True).decode("utf-8")
+        except (_binascii.Error, ValueError, UnicodeDecodeError):
+            # Last resort: non-strict decode (ignores whitespace / bad chars)
+            try:
+                return _b64.b64decode(trimmed).decode("utf-8", errors="ignore")
+            except Exception:  # noqa: BLE001
+                return None
+
+    chunk_text = _decode_b64_tolerant(b64_str)
+    if chunk_text is None:
         return None
 
     action = recovered.get("action", "append")
@@ -78,10 +101,36 @@ async def _try_blob_streaming_ingest(
     n_bytes = len(chunk_text.encode("utf-8"))
 
     if action == "create_and_finalize":
+        # Check whether this was salvaged from a truncated base64 string
+        # (original b64 didn't decode cleanly and we had to trim).
+        was_truncated = False
+        try:
+            _b64.b64decode(b64_str.strip(), validate=True).decode("utf-8")
+        except Exception:  # noqa: BLE001
+            was_truncated = True
+
         new_id = await ToolArgumentBlobStore.create(ingest_sid)
         result = await ToolArgumentBlobStore.append(ingest_sid, new_id, chunk_text)
         if not result.get("ok"):
             return None
+
+        if was_truncated:
+            # Partial content saved but NOT finalized — the LLM should
+            # continue appending via action=append and then finalize.
+            logger.info(
+                "blob_streaming_ingest_partial_create",
+                blob_id=new_id,
+                bytes=n_bytes,
+                truncated=True,
+            )
+            return {
+                "action": "create_and_finalize",
+                "blob_id": new_id,
+                "_chunk_ingested": True,
+                "_ingested_bytes": n_bytes,
+                "_truncated": True,
+            }
+
         await ToolArgumentBlobStore.finalize(ingest_sid, new_id)
         logger.info(
             "blob_streaming_ingest_create_and_finalize",

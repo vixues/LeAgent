@@ -1000,6 +1000,86 @@ class TestLengthTruncationRecovery:
         terminals = [e for e in events if isinstance(e, Terminal)]
         assert len(terminals) == 1
         assert terminals[0].reason == TerminalReason.COMPLETED
+        assistants = [e for e in events if isinstance(e, AssistantMessage)]
+        assert any(
+            "maximum output length" in a.content.lower()
+            or "interrupted" in a.content.lower()
+            for a in assistants
+        )
+        assert terminals[0].meta.get("truncation_exhausted") is True
+
+    @pytest.mark.asyncio
+    async def test_length_truncation_injects_recovery_hint_for_raw_tool_args(
+        self,
+    ) -> None:
+        """When length truncation breaks tool JSON, retry messages include staging hint."""
+        captured_messages: list[list[dict[str, Any]]] = []
+
+        async def _call_model(
+            *,
+            messages,
+            system_prompt,
+            tools,
+            tool_use_context,
+            temperature=None,
+            max_output_tokens=None,
+            model_tier="tier1",
+        ):
+            captured_messages.append(list(messages))
+            if len(captured_messages) == 1:
+                yield ModelStreamEvent(
+                    tool_call={
+                        "id": "call_trunc",
+                        "name": "tool_argument_blob",
+                        "arguments": {
+                            "__raw__": (
+                                '{"action":"create_and_finalize",'
+                                '"chunk_base64":"PCFET0NUWVBFIGh0bWw'
+                            ),
+                        },
+                    }
+                )
+                yield ModelStreamEvent(
+                    message_stop={
+                        "finish_reason": "length",
+                        "usage": {"total_tokens": 4000},
+                    }
+                )
+            else:
+                yield ModelStreamEvent(content_delta="ok")
+                yield ModelStreamEvent(
+                    message_stop={"finish_reason": "stop", "usage": {}}
+                )
+
+        deps = QueryDeps(
+            call_model=_call_model,
+            microcompact=_identity_compact,
+            autocompact=_identity_compact,
+        )
+        registry = _make_registry()
+        ctx = _make_ctx(registry)
+        params = QueryParams(
+            messages=[{"role": "user", "content": "publish html"}],
+            system_prompt="test",
+            tool_use_context=ctx,
+            deps=deps,
+            max_output_tokens=4096,
+        )
+
+        events: list[Any] = []
+        async for item in query(params):
+            events.append(item)
+
+        assert len(captured_messages) >= 2
+        retry_msgs = captured_messages[1]
+        hint_msgs = [
+            m
+            for m in retry_msgs
+            if m.get("role") == "user"
+            and "tool_argument_blob" in str(m.get("content", ""))
+            and "create_and_finalize" in str(m.get("content", ""))
+        ]
+        assert hint_msgs, "expected chunked-staging hint on recovery retry"
 
     @pytest.mark.asyncio
     async def test_length_with_stream_error_still_recovers(self) -> None:

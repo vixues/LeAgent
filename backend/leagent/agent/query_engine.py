@@ -83,7 +83,7 @@ class QueryEngineConfig:
     max_turns: int = 15
     max_tool_calls_per_turn: int = 10
     temperature: float | None = 0.1
-    max_output_tokens: int | None = 4096
+    max_output_tokens: int | None = 8192
     model_tier: str = "tier1"
     model_provider: str | None = None
     model_name: str | None = None

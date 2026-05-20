@@ -198,3 +198,19 @@ Example: `{ "kind": "Card", "props": {"title":"Sales","padding":"md"},
   more reliable than a single giant tree.
 - For very large content, move to `canvas_publish(mode=html)` only if the
   user actually wants a page.
+
+### Output token limits — mandatory chunked staging for full HTML pages
+
+Your output has a token limit. A full HTML page **will** exceed it if you
+try to emit it in a single tool call. **Always** use the multi-step blob
+flow for full pages:
+
+1. `tool_argument_blob(action=create)` — returns a `blob_id`.
+2. `tool_argument_blob(action=append, blob_id=…, chunk_base64=…)` — repeat
+   for each ~4 KB chunk of content (each chunk ≤ 60 000 base64 characters).
+3. `tool_argument_blob(action=finalize, blob_id=…)`.
+4. `canvas_publish(mode=html, html_blob_id=…)`.
+
+**NEVER** use `create_and_finalize` for a full page — it requires the entire
+content in one tool call, which will be truncated. **NEVER** inline the HTML
+directly in `canvas_publish(html=…)` for anything beyond a small snippet.

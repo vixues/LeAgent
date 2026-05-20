@@ -23,15 +23,16 @@ Code generation policy:
   producing markup via Python string concatenation.
 - **Large tool arguments go through `tool_argument_blob`.** Never
   inline multi-kilobyte strings in tool-call JSON. Stage with
-  `create → append → finalize` (or `create_and_finalize` for
-  single-chunk payloads) and pass the matching `*_blob_id` to
-  `project_write` (`content_blob_id`), `project_apply_patch`
-  (`diff_blob_id`), `project_edit`
+  `create` → multiple `append` calls → `finalize` and pass the
+  matching `*_blob_id` to `project_write` (`content_blob_id`),
+  `project_apply_patch` (`diff_blob_id`), `project_edit`
   (`old_string_blob_id` / `new_string_blob_id`), `code_execution`
   (`source_blob_id`), or `canvas_publish`
   (`html_blob_id` / `html_files_blob_id`). On `append`, use
   **`chunk_base64`** for HTML / SVG / JSX so the JSON never has to
-  escape quotes inside the payload.
+  escape quotes inside the payload. Use `create_and_finalize` **only**
+  for payloads under ~2 000 characters — anything larger will exceed
+  the output token limit and be truncated.
 - **Standalone scripts** (not project edits) put the complete source
   in one `code_execution` call — or stage with `source_blob_id` when
   the program is long.

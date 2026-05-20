@@ -71,7 +71,7 @@ class LLMSettings(BaseSettings):
     tier1_endpoint: str = "https://api.deepseek.com"
     tier1_model: str = "deepseek-v4-flash"
     tier1_api_key: str = ""
-    tier1_max_tokens: int = 4096
+    tier1_max_tokens: int = 8192
     tier1_temperature: float = 0.1
     tier1_timeout: int = 120
 
@@ -136,7 +136,7 @@ class AgentSettings(BaseSettings):
     browser_pool_size: int = 5
     celery_concurrency: int = 4
     context_window_tokens: int = 128_000
-    max_output_tokens: int = 4096
+    max_output_tokens: int = 8192
 
     conversation_timeout_sec: int = 600
     max_executions_per_session: int = 5
