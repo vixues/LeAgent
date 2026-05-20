@@ -1,6 +1,6 @@
 # V2EX
 
-- GitHub：[github.com/vixues](https://github.com/vixues)
+- GitHub：[github.com/vixues/LeAgent](https://github.com/vixues/LeAgent)
 - Website：[vixues.com.cn](https://vixues.com.cn)
 
 这是一个自己 vibe 出来的项目，前后端代码和网站基本都是自己写的。个人水平有限，大家多多包涵。试玩的时候如果遇到问题，也欢迎多提意见。为了不浪费大家时间，我又测试了一周，基本保证演示里的功能都可以正常体验。
@@ -28,7 +28,19 @@
 
 ## 截图展示
 
-[截图展示](https://imgur.com/)
+![生成式UI-1](https://i.imgur.com/eZrfor2.png)
+
+![生成式UI-2](https://i.imgur.com/496AtMv.png)
+
+![绘图脚本-1](https://i.imgur.com/pRrrtQV.png)
+
+![绘图脚本-2](https://i.imgur.com/dkahhPt.png)
+
+![工具](https://i.imgur.com/vPVL6fI.png)
+
+![模型设置](https://i.imgur.com/rcNFnFd.png)
+
+![关于](https://i.imgur.com/3IBBpXu.png)
 
 ## Q&A
 
@@ -54,3 +66,16 @@
 
 GitHub：github点com/vixues  
 官网：vixues点com点cn
+
+## 36Kr 新闻稿
+
+### LeAgent 开源：一个面向本地办公场景的 AI 工作台
+
+近日，开源项目 LeAgent 正式发布。它面向个人和组织内部办公场景，希望把 AI 助手从简单问答延伸到资料整理、文档处理、数据分析、脚本生成和网页抓取等日常任务中。
+
+项目强调本地优先和可控体验，适合对数据安全、内网使用和个性化改造有需求的用户。除了常见的聊天式交互，LeAgent 还加入了生成式 UI、工作流编排和宠物系统等功能，让 AI 工具更接近一个可长期使用的个人办公工作台。
+
+目前 LeAgent 仍是一个开源学习项目，适合对本地 Agent、办公自动化和 AI 产品交互感兴趣的开发者体验、研究和二次开发。
+
+项目地址：github.com/vixues  
+项目官网：vixues.com.cn
