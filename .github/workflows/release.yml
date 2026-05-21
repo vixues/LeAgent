@@ -190,7 +190,6 @@ jobs:
     name: Publish to PyPI
     runs-on: ubuntu-latest
     needs: create-release
-    if: ${{ vars.PYPI_ENABLED == 'true' }}
     steps:
       - uses: actions/checkout@v4
 
