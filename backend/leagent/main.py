@@ -19,6 +19,7 @@ from leagent.api.middleware import (
     ContentSizeLimitMiddleware,
     RequestIDMiddleware,
 )
+from leagent import __version__ as leagent_version
 from leagent.api.router import api_router
 from leagent.config.settings import get_settings
 from leagent.exceptions.handlers import register_exception_handlers
@@ -244,7 +245,7 @@ def create_app() -> FastAPI:
     app = FastAPI(
         title="LeAgent API",
         description="Intelligent Office Agent Platform (Local)",
-        version="0.1.0",
+        version=leagent_version,
         lifespan=lifespan,
         docs_url="/docs" if settings.debug else None,
         redoc_url="/redoc" if settings.debug else None,
@@ -279,7 +280,7 @@ def create_app() -> FastAPI:
 
     @app.get("/health")
     async def health() -> dict:
-        return {"status": "healthy", "version": "0.1.0"}
+        return {"status": "healthy", "version": leagent_version}
 
     spa_raw = (os.environ.get("LEAGENT_FRONTEND_DIST") or "").strip()
     spa_ready = bool(spa_raw and Path(spa_raw).expanduser().resolve().is_dir())
@@ -289,7 +290,7 @@ def create_app() -> FastAPI:
         async def root(request: Request) -> dict:
             return {
                 "name": "LeAgent",
-                "version": "0.1.0",
+                "version": leagent_version,
                 "docs": str(request.url_for("swagger_ui_html")) if settings.debug else None,
             }
 

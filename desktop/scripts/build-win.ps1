@@ -9,7 +9,7 @@
   electron-builder to produce an NSIS installer.
 
 .PARAMETER Version
-  Semantic version string baked into the installer. Default: "0.1.0".
+  Semantic version string baked into the installer. Default: "1.1.1".
 
 .PARAMETER SkipRuntime
   Skip downloading python-build-standalone and uv.
@@ -27,7 +27,7 @@
   Release channel embedded in the package name: "stable" or "beta".
 #>
 param(
-  [string]$Version = "0.1.0",
+  [string]$Version = "1.1.1",
   [switch]$SkipRuntime,
   [switch]$SkipBackendPayload,
   [switch]$SkipFrontend,

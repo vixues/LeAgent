@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.1] - 2026-05-21
+
+Patch release: **blob ingest** and **canvas capture** improvements, **SQLite task-kill** stability, **output-token truncation** fixes for HTML and large tool args, **Windows NSIS** desktop build fix, README/docs i18n, and unified **1.1.1** versioning across backend, frontend, and desktop installers.
+
 ### Added — Platform technical docs — 2026-05-17
 
 - **`docs/technical/`** — Seven maintainer guides: agent runtime (`QueryEngine`, transitions, subagents), context & compression, file sandbox & attachments, memory (three-store + recall), session management, skill system, and tool registry / execution tiers.
@@ -1215,8 +1219,9 @@ _Subsections below keep `— YYYY-MM-DD` on each heading for maintainers (commit
 - **Minor (0.X.0)**: New features, backward compatible
 - **Patch (0.0.X)**: Bug fixes, security patches
 
-[Unreleased]: https://github.com/your-org/leagent/compare/v1.1.0...HEAD
-[1.1.0]: https://github.com/your-org/leagent/releases/tag/v1.1.0
+[Unreleased]: https://github.com/vixues/LeAgent/compare/v1.1.1...HEAD
+[1.1.1]: https://github.com/vixues/LeAgent/releases/tag/v1.1.1
+[1.1.0]: https://github.com/vixues/LeAgent/releases/tag/v1.1.0
 [1.0.0]: https://github.com/your-org/leagent/releases/tag/v1.0.0
 [0.9.0]: https://github.com/your-org/leagent/releases/tag/v0.9.0
 [0.8.0]: https://github.com/your-org/leagent/releases/tag/v0.8.0

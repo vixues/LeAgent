@@ -31,7 +31,7 @@ from leagent.skills.markdown_loader import parse_skill_markdown
 
 logger = structlog.get_logger(__name__)
 
-USER_AGENT = "LeAgent/0.1.0 (+https://github.com/leagent) skills-hub"
+USER_AGENT = "LeAgent/1.1.1 (+https://github.com/leagent) skills-hub"
 
 # Match frontend skills hub persistence (~24h): avoid hammering GitHub REST / raw on every page load.
 GITHUB_HUB_CACHE_TTL_S = 86400.0

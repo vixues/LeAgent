@@ -5,8 +5,8 @@ set -euo pipefail
 # LeAgent Desktop — macOS build (arm64 + x64)
 #
 # Usage:
-#   ./build-mac.sh                        # default 0.1.0, both arches
-#   ./build-mac.sh --version 0.2.0        # custom version
+#   ./build-mac.sh                        # default 1.1.1, both arches
+#   ./build-mac.sh --version 1.2.0        # custom version
 #   ./build-mac.sh --arch arm64           # single arch
 #   ./build-mac.sh --skip-runtime         # skip python/uv download
 #
@@ -14,7 +14,7 @@ set -euo pipefail
 #   APPLE_ID, APPLE_APP_SPECIFIC_PASSWORD, APPLE_TEAM_ID
 #──────────────────────────────────────────────────────────────────────
 
-VERSION="0.1.0"
+VERSION="1.1.1"
 ARCH="arm64,x64"
 SKIP_RUNTIME=false
 SKIP_BACKEND=false

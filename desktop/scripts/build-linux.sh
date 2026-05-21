@@ -5,8 +5,8 @@ set -euo pipefail
 # LeAgent Desktop — Linux build (x64, AppImage + deb)
 #
 # Usage:
-#   ./build-linux.sh                        # default 0.1.0
-#   ./build-linux.sh --version 0.2.0        # custom version
+#   ./build-linux.sh                        # default 1.1.1
+#   ./build-linux.sh --version 1.2.0        # custom version
 #   ./build-linux.sh --skip-runtime         # skip python/uv download
 #   ./build-linux.sh --target appimage      # AppImage only (default: both)
 #   ./build-linux.sh --target deb           # .deb only
@@ -15,7 +15,7 @@ set -euo pipefail
 #   sudo apt-get install -y dpkg fakeroot rpm libarchive-tools
 #──────────────────────────────────────────────────────────────────────
 
-VERSION="0.1.0"
+VERSION="1.1.1"
 ARCH="x64"
 SKIP_RUNTIME=false
 SKIP_BACKEND=false

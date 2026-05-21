@@ -73,10 +73,10 @@ npm start
 
 ```powershell
 cd desktop/scripts
-.\build-win.ps1 -Version "0.1.0"
+.\build-win.ps1
 ```
 
-Produces `desktop/electron/dist-pack/LeAgent-Setup-0.1.0.exe`.
+Produces `desktop/electron/dist-pack/LeAgent-Setup-1.1.1.exe` (default version; override with `-Version`).
 
 Flags: `-SkipRuntime`, `-SkipBackendPayload`, `-SkipFrontend`, `-SkipCompileall`.
 
@@ -84,10 +84,10 @@ Flags: `-SkipRuntime`, `-SkipBackendPayload`, `-SkipFrontend`, `-SkipCompileall`
 
 ```bash
 cd desktop/scripts
-./build-mac.sh --version 0.1.0
+./build-mac.sh
 ```
 
-Produces `desktop/electron/dist-pack/LeAgent-0.1.0.dmg` (+ `.zip`).
+Produces `desktop/electron/dist-pack/LeAgent-1.1.1.dmg` (+ `.zip`).
 
 Flags: `--arch arm64`, `--skip-runtime`, `--skip-backend`, `--skip-frontend`.
 
@@ -98,10 +98,10 @@ Flags: `--arch arm64`, `--skip-runtime`, `--skip-backend`, `--skip-frontend`.
 sudo apt-get install -y dpkg fakeroot libarchive-tools
 
 cd desktop/scripts
-./build-linux.sh --version 0.1.0
+./build-linux.sh
 ```
 
-Produces `desktop/electron/dist-pack/LeAgent-0.1.0.AppImage` and `leagent-desktop_0.1.0_amd64.deb`.
+Produces `desktop/electron/dist-pack/LeAgent-1.1.1.AppImage` and `leagent-desktop_1.1.1_amd64.deb`.
 
 Flags: `--target appimage`, `--target deb`, `--skip-runtime`, `--skip-backend`, `--skip-frontend`.
 
