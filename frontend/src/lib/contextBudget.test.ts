@@ -2,8 +2,23 @@ import { describe, expect, it } from 'vitest';
 import { FALLBACK_CONTEXT_BUDGET_TOKENS, resolveContextBudgetTokens } from './contextBudget';
 import type { ModelProvider } from '@/types/admin';
 
+function providerFixture(provider: Pick<ModelProvider, 'name' | 'type' | 'enabled' | 'models'>): ModelProvider {
+  return {
+    label: provider.name,
+    base_url: '',
+    api_key_set: false,
+    supports_streaming: true,
+    supports_tools: true,
+    supports_embeddings: false,
+    is_healthy: null,
+    timeout: 60,
+    metadata: {},
+    ...provider,
+  };
+}
+
 const providers: ModelProvider[] = [
-  {
+  providerFixture({
     name: 'deepseek',
     type: 'deepseek',
     enabled: true,
@@ -11,8 +26,8 @@ const providers: ModelProvider[] = [
       { name: 'deepseek-v4-flash', tier: 'tier2', context_window: 1_000_000 },
       { name: 'deepseek-v4-pro', tier: 'tier1', context_window: 1_000_000 },
     ],
-  },
-  {
+  }),
+  providerFixture({
     name: 'qwen',
     type: 'qwen',
     enabled: true,
@@ -20,7 +35,7 @@ const providers: ModelProvider[] = [
       { name: 'qwen-max', tier: 'tier1', context_window: 32_000 },
       { name: 'qwen-long', tier: 'tier1', context_window: 1_000_000 },
     ],
-  },
+  }),
 ];
 
 describe('resolveContextBudgetTokens', () => {

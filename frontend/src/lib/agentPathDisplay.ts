@@ -24,8 +24,9 @@ export function stripStoredUploadPrefix(basename: string): string {
 /** Format a code-exec workspace directory key for display. */
 export function formatWorkspaceDirLabel(basename: string): string {
   const legacy = LEGACY_WORKSPACE_KEY_RE.exec(basename);
-  if (legacy) {
-    return `local__${legacy[1].replace(/-/g, '').slice(0, 8)}`;
+  const legacySessionId = legacy?.[1];
+  if (legacySessionId) {
+    return `local__${legacySessionId.replace(/-/g, '').slice(0, 8)}`;
   }
   const compact = COMPACT_WORKSPACE_KEY_RE.exec(basename);
   if (compact) {
