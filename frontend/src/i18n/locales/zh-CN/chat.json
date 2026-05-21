@@ -30,6 +30,8 @@
     "confirmClear": "确定清空所有消息吗？",
     "contextUsageButtonAria": "上下文占用",
     "contextUsageTitle": "上下文",
+    "contextUsageBudget": "模型上下文长度",
+    "contextUsageEstimated": "预估占用",
     "contextUsageLayers": "系统提示词分层",
     "contextUsageLayersSum": "分层合计",
     "contextUsageLastPrompt": "上次请求 prompt tokens",
@@ -288,6 +290,12 @@
       "rtspBroken": "视频流中断或无法解码。",
       "rtspOpenLink": "打开 RTSP 链接",
       "rtspStreamAlt": "RTSP 视频流"
+    },
+    "canvas": {
+      "screenshotSaved": "截图已保存",
+      "screenshotFailed": "无法截取画面",
+      "screenshotNoToken": "预览链接已过期，请从对话中重新打开画布或刷新页面",
+      "screenshotUnavailable": "当前画布不支持截图"
     },
     "camera": {
       "title": "拍摄照片",

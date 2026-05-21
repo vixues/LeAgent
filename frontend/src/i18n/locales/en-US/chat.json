@@ -30,6 +30,8 @@
     "confirmClear": "Clear all messages in this chat?",
     "contextUsageButtonAria": "Context usage",
     "contextUsageTitle": "Context",
+    "contextUsageBudget": "Model context window",
+    "contextUsageEstimated": "Estimated in context",
     "contextUsageLayers": "System prompt layers",
     "contextUsageLayersSum": "Layers total",
     "contextUsageLastPrompt": "Last turn prompt tokens",
@@ -288,6 +290,12 @@
       "rtspBroken": "Stream stopped or could not be decoded.",
       "rtspOpenLink": "Open RTSP URL",
       "rtspStreamAlt": "RTSP video stream"
+    },
+    "canvas": {
+      "screenshotSaved": "Screenshot saved",
+      "screenshotFailed": "Could not capture screenshot",
+      "screenshotNoToken": "Preview link expired — refresh the canvas or open it again from chat",
+      "screenshotUnavailable": "Screenshot is not available for this canvas"
     },
     "camera": {
       "title": "Take a photo",

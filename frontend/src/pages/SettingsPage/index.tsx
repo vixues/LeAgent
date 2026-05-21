@@ -347,6 +347,19 @@ function AboutTabContent() {
         </a>
       ),
     },
+    {
+      label: t('about.githubLabel'),
+      value: (
+        <a
+          href="https://github.com/vixues/LeAgent"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-primary-600 dark:text-primary-400 hover:underline"
+        >
+          github.com/vixues/LeAgent
+        </a>
+      ),
+    },
   ];
 
   return (

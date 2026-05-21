@@ -131,6 +131,17 @@ export function AboutDialog({ open, onOpenChange }: AboutDialogProps) {
                 {t('about.supportEmail')}
               </a>
             </p>
+            <p>
+              {t('about.githubLabel')}:{' '}
+              <a
+                href="https://github.com/vixues/LeAgent"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-primary hover:underline font-medium text-foreground/90"
+              >
+                github.com/vixues/LeAgent
+              </a>
+            </p>
           </div>
 
           <div className="flex flex-wrap gap-2 pt-0.5">

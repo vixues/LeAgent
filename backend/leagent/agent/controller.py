@@ -548,7 +548,10 @@ class AgentController:
             await context.transition_to(AgentState.THINKING)
             llm_response = await self._call_llm(conversation, context)
 
-            tool_calls = self._extract_tool_calls(llm_response)
+            tool_calls = await self._extract_tool_calls(
+                llm_response,
+                session_id=str(context.session_id),
+            )
 
             if tool_calls:
                 await context.transition_to(AgentState.EXECUTING)
@@ -876,8 +879,21 @@ class AgentController:
             with contextlib.suppress(Exception):
                 await self._hooks.dispatch_post_compact(context)
 
-    def _extract_tool_calls(self, llm_response: dict[str, Any]) -> list[ToolCall]:
+    async def _extract_tool_calls(
+        self,
+        llm_response: dict[str, Any],
+        *,
+        session_id: str | None = None,
+    ) -> list[ToolCall]:
         """Extract tool calls from LLM response (supports both OpenAI and Anthropic formats)."""
+        from leagent.agent.deps import (
+            _ingest_session_id,
+            _try_blob_streaming_ingest,
+            _try_direct_content_ingest,
+            _try_salvage_truncated_ui_tree,
+        )
+
+        ingest_sid = _ingest_session_id(session_id)
         # OpenAI format
         tool_calls_raw = llm_response.get("tool_calls", [])
 
@@ -910,17 +926,39 @@ class AgentController:
                 if parsed is not None:
                     arguments = parsed
                 else:
-                    strict_err = strict_json_loads_error(args_str)
-                    logger.warning(
-                        "tool_call_parse_error",
-                        error=str(strict_err) if strict_err else "unrecoverable_tool_arguments",
-                        args_len=len(args_str),
-                        json_lineno=getattr(strict_err, "lineno", None),
-                        json_colno=getattr(strict_err, "colno", None),
-                        json_pos=getattr(strict_err, "pos", None),
-                        raw=tc,
+                    ingested = await _try_blob_streaming_ingest(
+                        name,
+                        args_str,
+                        session_id=ingest_sid,
                     )
-                    arguments = {"__raw__": args_str}
+                    if ingested is not None:
+                        arguments = ingested
+                    elif (
+                        content_ingested := await _try_direct_content_ingest(
+                            name,
+                            args_str,
+                            session_id=ingest_sid,
+                        )
+                    ) is not None:
+                        arguments = content_ingested
+                    elif (
+                        salvaged := _try_salvage_truncated_ui_tree(name, args_str)
+                    ) is not None:
+                        arguments = salvaged
+                    else:
+                        strict_err = strict_json_loads_error(args_str)
+                        logger.warning(
+                            "tool_call_parse_error",
+                            error=str(strict_err)
+                            if strict_err
+                            else "unrecoverable_tool_arguments",
+                            args_len=len(args_str),
+                            json_lineno=getattr(strict_err, "lineno", None),
+                            json_colno=getattr(strict_err, "colno", None),
+                            json_pos=getattr(strict_err, "pos", None),
+                            raw=tc,
+                        )
+                        arguments = {"__raw__": args_str}
             else:
                 arguments = {}
 

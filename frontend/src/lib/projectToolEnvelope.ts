@@ -3,6 +3,7 @@
  * and argument helpers — used by {@link ProjectToolCallBlock} and the chat
  * workspace agent code tab.
  */
+import { formatAgentPathLabel, isCodeExecWorkspaceDir } from '@/lib/agentPathDisplay';
 import type { Message, ToolCall } from '@/types/chat';
 import { resolveCodingProjectPreviewHref } from '@/lib/previewUrl';
 
@@ -261,6 +262,7 @@ export function collectProjectPathsWithOps(messages: Message[]): PathWithOperati
   }
 
   return [...map.entries()]
+    .filter(([path]) => !isCodeExecWorkspaceDir(path))
     .map(([path, operation]) => ({ path, operation }))
     .sort((a, b) => a.path.localeCompare(b.path));
 }
@@ -279,7 +281,7 @@ export interface AgentActivityEntry {
 
 /** One-line human-readable label for an operation. */
 function describeOp(tool: string, path?: string): string {
-  const base = path ? path.split('/').pop() ?? path : '';
+  const base = path ? formatAgentPathLabel(path) : '';
   switch (tool) {
     case 'project_read': return base ? `Read ${base}` : 'Read file';
     case 'project_write': return base ? `Wrote ${base}` : 'Wrote file';

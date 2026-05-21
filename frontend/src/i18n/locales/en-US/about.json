@@ -23,6 +23,7 @@
     "description": "Local-first intelligent office automation platform",
     "licenseLabel": "License",
     "license": "Apache License 2.0",
-    "websiteLabel": "Website"
+    "websiteLabel": "Website",
+    "githubLabel": "GitHub"
   }
 }

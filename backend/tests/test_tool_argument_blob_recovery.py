@@ -14,9 +14,11 @@ from leagent.tools.executor import (
     _try_parse_raw_tool_args,
     parse_tool_arguments_str,
 )
+from leagent.agent.deps import _try_blob_streaming_ingest, _try_direct_content_ingest
 from leagent.tools.util.tool_argument_blob import (
     ToolArgumentBlobStore,
     ToolArgumentBlobTool,
+    resolve_blob_text,
 )
 
 
@@ -294,3 +296,63 @@ class TestFindSessionForBlob:
     async def test_returns_none_for_unknown_blob(self) -> None:
         found = await ToolArgumentBlobStore.find_session_for_blob("nonexistent")
         assert found is None
+
+
+# ---------------------------------------------------------------------------
+# Session-scoped ingest + resolve
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+class TestIngestSessionResolution:
+    def setup_method(self, method: Any = None) -> None:
+        ToolArgumentBlobStore._blobs.clear()
+
+    async def test_direct_content_ingest_resolves_with_real_session(self) -> None:
+        sid = "real-session-direct-ingest"
+        raw = (
+            '{"title":"Landing","mode":"html",'
+            '"html":"<html><body>Hello</body></html>"'
+        )
+        result = await _try_direct_content_ingest(
+            "canvas_publish",
+            raw,
+            session_id=sid,
+        )
+        assert result is not None
+        assert "html_blob_id" in result
+        assert "html" not in result
+        text = await resolve_blob_text(_ctx(sid), str(result["html_blob_id"]))
+        assert "Hello" in text
+
+    async def test_streaming_create_and_finalize_real_session_consumable(self) -> None:
+        sid = "real-session-stream-caf"
+        html = "<p>Hi</p>"
+        b64 = base64.b64encode(html.encode()).decode()
+        raw = f'{{"action":"create_and_finalize","chunk_base64":"{b64}"}}'
+        result = await _try_blob_streaming_ingest(
+            "tool_argument_blob",
+            raw,
+            session_id=sid,
+        )
+        assert result is not None
+        blob_id = result["blob_id"]
+        text = await resolve_blob_text(_ctx(sid), blob_id)
+        assert text == html
+
+    async def test_resolve_blob_legacy_streaming_ingest_session(self) -> None:
+        legacy_sid = "__streaming_ingest__"
+        real_sid = "user-session-legacy"
+        blob_id = await ToolArgumentBlobStore.create(legacy_sid)
+        await ToolArgumentBlobStore.append(legacy_sid, blob_id, "<p>legacy</p>")
+        await ToolArgumentBlobStore.finalize(legacy_sid, blob_id)
+        text = await resolve_blob_text(_ctx(real_sid), blob_id)
+        assert text == "<p>legacy</p>"
+
+    async def test_find_any_session_for_finalized_blob(self) -> None:
+        sid = "finalized-any-session"
+        blob_id = await ToolArgumentBlobStore.create(sid)
+        await ToolArgumentBlobStore.append(sid, blob_id, "data")
+        await ToolArgumentBlobStore.finalize(sid, blob_id)
+        found = await ToolArgumentBlobStore.find_any_session_for_blob(blob_id)
+        assert found == sid

@@ -280,7 +280,7 @@ class SessionManager:
             filename = upload.filename or f"attachment-{uuid4().hex}"
             safe_name = _safe_filename(filename)
             attachment_id = uuid4()
-            storage_path = upload_root / f"{attachment_id}_{safe_name}"
+            storage_path = upload_root / f"{_attachment_storage_prefix(attachment_id)}_{safe_name}"
 
             sha = hashlib.sha256()
             size = 0
@@ -399,7 +399,7 @@ class SessionManager:
         label = _safe_filename(display_name or src.name)
         attachment_id = uuid4()
         upload_root = self._paths.ensure_uploads_dir(session_id)
-        storage_path = upload_root / f"{attachment_id}_{label}"
+        storage_path = upload_root / f"{_attachment_storage_prefix(attachment_id)}_{label}"
 
         try:
             shutil.copy2(src, storage_path)
@@ -581,6 +581,18 @@ class SessionManager:
                     )
         except Exception as exc:  # noqa: BLE001
             logger.warning("attach_files_row_insert_failed: %s", exc)
+
+
+def _attachment_storage_prefix(attachment_id: UUID) -> str:
+    """Filesystem prefix for stored uploads (short on single-machine installs)."""
+    try:
+        from leagent.config.settings import get_settings
+
+        if get_settings().is_single_machine_profile:
+            return str(attachment_id).replace("-", "")[:8]
+    except Exception:  # noqa: BLE001
+        pass
+    return str(attachment_id)
 
 
 def _safe_filename(filename: str) -> str:

@@ -223,10 +223,22 @@ class ToolArgumentBlobStore:
 
     @classmethod
     async def find_session_for_blob(cls, blob_id: str) -> str | None:
-        """Return the session_id owning *blob_id*, or None."""
+        """Return the session_id owning a non-finalized *blob_id*, or None."""
         async with cls._lock:
             for (sid, bid), rec in cls._blobs.items():
                 if bid == blob_id and not rec.finalized:
+                    return sid
+        return None
+
+    @classmethod
+    async def find_any_session_for_blob(cls, blob_id: str) -> str | None:
+        """Return session_id for *blob_id* (finalized or not), or None."""
+        bid = str(blob_id or "").strip()
+        if not bid:
+            return None
+        async with cls._lock:
+            for (sid, stored_bid), _rec in cls._blobs.items():
+                if stored_bid == bid:
                     return sid
         return None
 
@@ -294,24 +306,18 @@ class ToolArgumentBlobTool(BaseTool):
 
     name = "tool_argument_blob"
     description = (
-        "Stage large UTF-8 text outside tool-call JSON. "
-        "**Recommended flow** for content over ~2 000 characters (HTML pages, "
-        "long code, large diffs): "
-        "1) `action=create` → returns `blob_id`; "
-        "2) one or more `action=append` calls with `chunk_base64` (max ~60k "
-        "base64 chars each) or `chunk` (max 64k chars each); prefer base64 "
-        "for HTML/SVG/JSX; "
-        "3) `action=finalize` → seals the blob. "
-        "`action=create_and_finalize` is a shortcut for **small** payloads "
-        "only (under ~2 000 characters); NEVER use it for full pages or long "
-        "programs — the single tool call will exceed the output token limit "
-        "and be truncated. "
-        "Then pass "
-        "`source_blob_id` / `content_blob_id` / `diff_blob_id` / "
+        "Fallback staging for large UTF-8 when direct tool-call JSON fails or "
+        "payloads exceed ~64k characters. **Do not use for routine HTML pages** — "
+        "prefer `canvas_publish(mode=html, html=\"…\")` inline first (one tool call). "
+        "When blob staging is required and the full body fits in one chunk (under "
+        "64k UTF-8 chars): `action=create_and_finalize` with `chunk` or "
+        "`chunk_base64`, then pass `html_blob_id` / `content_blob_id` / etc. "
+        "Multi-step `create` → `append` → `finalize` is only for payloads that "
+        "must be split across turns (truncation) or exceed one append limit. "
+        "Use `chunk_base64` for HTML only when plain `chunk` would break JSON. "
+        "Pass `source_blob_id` / `content_blob_id` / `diff_blob_id` / "
         "`html_blob_id` / `html_files_blob_id` / `old_string_blob_id` / "
-        "`new_string_blob_id` into `code_execution`, `project_write`, "
-        "`project_apply_patch`, `canvas_publish`, or `project_edit` instead "
-        "of embedding large strings in JSON."
+        "`new_string_blob_id` into consuming tools instead of inlining megabytes."
     )
     category = ToolCategory.UTIL
     version = "1.0.0"
@@ -439,6 +445,25 @@ async def resolve_blob_text(
     if not bid:
         raise ValueError("Empty blob_id.")
     text = await ToolArgumentBlobStore.take_utf8_text(sid, bid)
+    if text is None:
+        alt_sid = await ToolArgumentBlobStore.find_any_session_for_blob(bid)
+        if alt_sid and alt_sid != sid:
+            text = await ToolArgumentBlobStore.take_utf8_text(alt_sid, bid)
+            if text is not None:
+                logger.info(
+                    "tool_argument_blob_consumed_cross_session",
+                    blob_id=bid,
+                    requested_session=sid,
+                    resolved_session=alt_sid,
+                )
+        if text is None and sid != "__streaming_ingest__":
+            text = await ToolArgumentBlobStore.take_utf8_text("__streaming_ingest__", bid)
+            if text is not None:
+                logger.info(
+                    "tool_argument_blob_consumed_legacy_ingest",
+                    blob_id=bid,
+                    requested_session=sid,
+                )
     if text is None:
         raise ValueError(
             f"Unknown, expired, or not-finalized blob_id {bid!r}. "

@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 from datetime import UTC, datetime
 from typing import Annotated, Any, Literal
+from urllib.parse import quote
 from uuid import UUID  # noqa: TC003 — FastAPI/Pydantic resolve route and model hints at runtime.
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -22,6 +23,22 @@ from leagent.services.canvas.service import (
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+
+def _ascii_filename_fallback(name: str, *, default: str = "download") -> str:
+    """Legacy ``filename=`` token must be latin-1; strip non-ASCII to underscores."""
+    out = "".join(
+        c if ord(c) < 128 and (c.isalnum() or c in "._- ") else "_" for c in name
+    )
+    return (out.strip("._ ") or default)[:180]
+
+
+def _content_disposition(disposition: str, filename: str) -> str:
+    """Build a latin-1-safe Content-Disposition with RFC 5987 ``filename*``."""
+    disp = disposition if disposition in ("inline", "attachment") else "inline"
+    ascii_name = _ascii_filename_fallback(filename)
+    utf8_star = quote(filename, safe="")
+    return f'{disp}; filename="{ascii_name}"; filename*=UTF-8\'\'{utf8_star}'
 
 
 def _canvas_dep() -> CanvasService:
@@ -240,23 +257,35 @@ async def screenshot_canvas(
     browser = await _get_pw_browser()
     page = await browser.new_page(viewport={"width": width, "height": height})
     try:
-        await page.set_content(html, wait_until="networkidle", timeout=15_000)
-        await page.wait_for_timeout(500)
+        # Match PDF export: "load" is reliable with Tailwind CDN; networkidle often times out.
+        await page.set_content(html, wait_until="load", timeout=30_000)
+        try:
+            await page.evaluate("() => document.fonts.ready")
+        except Exception:
+            pass
+        await page.wait_for_timeout(300)
         screenshot_bytes = await page.screenshot(
             type=fmt,
             full_page=True,
-            timeout=10_000,
+            timeout=15_000,
         )
+    except Exception as exc:
+        logger.warning("canvas_preview_screenshot_failed: %s", exc, exc_info=True)
+        raise HTTPException(
+            status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Screenshot render failed",
+        ) from exc
     finally:
         await page.close()
 
     media_type = "image/png" if fmt == "png" else "image/jpeg"
-    safe_title = "".join(c for c in (doc.title or "canvas") if c.isalnum() or c in " _-")[:60]
+    title = (doc.title or "canvas").strip()[:120] or "canvas"
+    download_name = f"{title}.{fmt}"
     return Response(
         content=screenshot_bytes,
         media_type=media_type,
         headers={
-            "Content-Disposition": f'inline; filename="{safe_title}.{fmt}"',
+            "Content-Disposition": _content_disposition("inline", download_name),
             "Cache-Control": "private, max-age=300",
         },
     )

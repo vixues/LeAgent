@@ -553,14 +553,14 @@ async def _query_loop(params: QueryParams) -> AsyncIterator[Any]:
                         "content": (
                             "[System: your previous output was truncated because "
                             "the tool call arguments exceeded the output token "
-                            "limit. Do NOT retry the same approach. For large "
-                            "content: use `tool_argument_blob` with "
-                            "`action=create`, then multiple `action=append` "
-                            "calls with `chunk_base64` (each under 60 000 "
-                            "base64 chars), then `action=finalize`. Pass the "
-                            "`blob_id` to the consuming tool. NEVER use "
-                            "`create_and_finalize` for content larger than "
-                            "~2 000 characters.]"
+                            "limit. Do NOT retry the same oversized inline call. "
+                            "If the full payload fits in one chunk (under ~64K "
+                            "UTF-8 chars): use `tool_argument_blob` with "
+                            "`action=create_and_finalize` and `chunk` or "
+                            "`chunk_base64`, then pass `*_blob_id` to the "
+                            "consumer tool. Use multi-step "
+                            "`create` → `append` → `finalize` only when the "
+                            "payload was cut mid-stream and needs more appends.]"
                         ),
                     })
                 state = QueryState(
@@ -613,16 +613,14 @@ async def _query_loop(params: QueryParams) -> AsyncIterator[Any]:
                     "content": (
                         "[System: your previous output was truncated because "
                         "the tool call arguments exceeded the output token "
-                        "limit. Do NOT retry the same approach. For large "
-                        "content (HTML pages, long code): use "
-                        "`tool_argument_blob` with `action=create` first, "
-                        "then multiple `action=append` calls with "
-                        "`chunk_base64` (each chunk under 60 000 base64 "
-                        "characters), then `action=finalize`. Pass the "
-                        "resulting `blob_id` to `canvas_publish` as "
-                        "`html_blob_id` or to `code_execution` as "
-                        "`source_blob_id`. NEVER use `create_and_finalize` "
-                        "for content larger than ~2 000 characters.]"
+                        "limit. Do NOT retry the same oversized inline call. "
+                        "For HTML pages or long code: if the full body fits one "
+                        "chunk (under ~64K UTF-8 chars), use "
+                        "`tool_argument_blob` with `action=create_and_finalize` "
+                        "then `canvas_publish(html_blob_id=…)` or "
+                        "`code_execution(source_blob_id=…)`. Use "
+                        "`create` → `append` → `finalize` only when output was "
+                        "cut mid-payload and needs additional appends.]"
                     ),
                 })
             state = QueryState(

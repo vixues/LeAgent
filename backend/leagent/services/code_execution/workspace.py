@@ -39,6 +39,11 @@ logger = structlog.get_logger(__name__)
 
 
 _SAFE_ID_RE = re.compile(r"[^A-Za-z0-9_.-]")
+_UUID_36_RE = re.compile(
+    r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+    re.IGNORECASE,
+)
+_LOCAL_USER_ID_STR = "00000000-0000-0000-0000-000000000001"
 
 
 class WorkspaceQuotaExceeded(RuntimeError):
@@ -136,8 +141,8 @@ class WorkspaceManager:
         self._root.mkdir(parents=True, exist_ok=True)
 
     def _key(self, user_id: str | None, session_id: str | None) -> str:
-        uid = _safe(user_id or "anon")
-        sid = _safe(session_id or uuid.uuid4().hex)
+        uid = _workspace_user_slug(user_id)
+        sid = _workspace_session_slug(session_id)
         return f"{uid}__{sid}"
 
     def get(
@@ -214,3 +219,36 @@ class WorkspaceManager:
 
 def _safe(token: str) -> str:
     return _SAFE_ID_RE.sub("_", token)[:64] or "_"
+
+
+def _use_compact_workspace_keys() -> bool:
+    try:
+        from leagent.config.settings import get_settings
+
+        return get_settings().is_single_machine_profile
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def _workspace_user_slug(user_id: str | None) -> str:
+    raw = (user_id or "").strip()
+    if _use_compact_workspace_keys():
+        if not raw or raw == _LOCAL_USER_ID_STR:
+            return "local"
+        compact = raw.replace("-", "")
+        if _UUID_36_RE.match(raw):
+            return compact[:8]
+        return _safe(raw)[:8]
+    return _safe(raw or "anon")
+
+
+def _workspace_session_slug(session_id: str | None) -> str:
+    raw = (session_id or "").strip()
+    if not raw:
+        return uuid.uuid4().hex[:8]
+    if _use_compact_workspace_keys():
+        compact = raw.replace("-", "")
+        if _UUID_36_RE.match(raw):
+            return compact[:8]
+        return _safe(raw)[:8]
+    return _safe(raw)

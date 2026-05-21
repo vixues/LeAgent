@@ -34,8 +34,17 @@ def _partial_arguments_dict(raw: str) -> dict[str, Any] | None:
     return parsed if isinstance(parsed, dict) else None
 
 
+def _ingest_session_id(session_id: str | None) -> str:
+    """Normalize session id for blob ingest (matches ``_session_key``)."""
+    sid = str(session_id or "").strip()
+    return sid or "__no_session__"
+
+
 async def _try_blob_streaming_ingest(
-    tool_name: str, raw_args: str,
+    tool_name: str,
+    raw_args: str,
+    *,
+    session_id: str | None = None,
 ) -> dict[str, Any] | None:
     """Salvage a broken ``tool_argument_blob`` append by ingesting directly.
 
@@ -97,7 +106,7 @@ async def _try_blob_streaming_ingest(
 
     from leagent.tools.util.tool_argument_blob import ToolArgumentBlobStore
 
-    ingest_sid = "__streaming_ingest__"
+    ingest_sid = _ingest_session_id(session_id)
     n_bytes = len(chunk_text.encode("utf-8"))
 
     if action == "create_and_finalize":
@@ -174,7 +183,10 @@ _DIRECT_INGEST_TOOLS: dict[str, tuple[str, str]] = {
 
 
 async def _try_direct_content_ingest(
-    tool_name: str, raw_args: str,
+    tool_name: str,
+    raw_args: str,
+    *,
+    session_id: str | None = None,
 ) -> dict[str, Any] | None:
     """Salvage broken tool calls by auto-staging their content field as a blob.
 
@@ -216,7 +228,7 @@ async def _try_direct_content_ingest(
 
     from leagent.tools.util.tool_argument_blob import ToolArgumentBlobStore
 
-    ingest_sid = "__streaming_ingest__"
+    ingest_sid = _ingest_session_id(session_id)
     blob_id = await ToolArgumentBlobStore.create(ingest_sid)
     append_result = await ToolArgumentBlobStore.append(ingest_sid, blob_id, content)
     if not append_result.get("ok"):
@@ -624,6 +636,10 @@ def _make_llm_call_model(llm: "LLMService") -> CallModel:
             )
             _record_tool_delta_emit(idx, len(args_str), last_delta_emit)
 
+        ingest_sid = _ingest_session_id(
+            str(tool_use_context.session_id) if tool_use_context.session_id else None
+        )
+
         for slot in sorted(pending_tool_calls.keys()):
             tc = pending_tool_calls[slot]
             args_str = tc.get("arguments") or "{}"
@@ -635,12 +651,16 @@ def _make_llm_call_model(llm: "LLMService") -> CallModel:
                     args = parsed
                 else:
                     ingested = await _try_blob_streaming_ingest(
-                        tc.get("name", ""), args_str,
+                        tc.get("name", ""),
+                        args_str,
+                        session_id=ingest_sid,
                     )
                     if ingested is not None:
                         args = ingested
                     elif (content_ingested := await _try_direct_content_ingest(
-                        tc.get("name", ""), args_str,
+                        tc.get("name", ""),
+                        args_str,
+                        session_id=ingest_sid,
                     )) is not None:
                         args = content_ingested
                     elif (salvaged := _try_salvage_truncated_ui_tree(

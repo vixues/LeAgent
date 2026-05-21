@@ -1,4 +1,6 @@
-import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
+import { toPng } from 'html-to-image';
 import {
   AlertCircle,
   Camera,
@@ -16,6 +18,22 @@ import {
   pickCanvasPreviewPathFromMetadata,
   resolveCanvasPreviewUrl,
 } from '@/lib/previewUrl';
+import {
+  downloadImageBlob,
+  extractCanvasPreviewToken,
+  fetchCanvasPreviewScreenshot,
+  refreshCanvasPreviewToken,
+} from '@/lib/canvasScreenshot';
+import {
+  deckScreenshotDimensions,
+  documentScreenshotDimensions,
+} from '@/components/canvas/genUi/genUiExportDimensions';
+import {
+  expandScrollContainersForCapture,
+  flushLayout,
+  nextDoubleFrame,
+} from '@/components/canvas/genUi/genUiCaptureDom';
+import { useToast } from '@/components/ui/Toaster';
 import { GenUiTreeView } from './GenUiRegistry';
 import { CameraCaptureModal } from '@/components/chat/CameraCaptureModal';
 
@@ -47,12 +65,15 @@ function CanvasMissingHostedPreview() {
 }
 
 function CanvasPanel({ artifact, className }: CanvasPanelProps) {
+  const { t } = useTranslation();
+  const { toast } = useToast();
   const [tab, setTab] = useState<CanvasTab>('preview');
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [iframeKey, setIframeKey] = useState(0);
   const [screenshotting, setScreenshotting] = useState(false);
   const [previewFrameError, setPreviewFrameError] = useState(false);
   const [cameraOpen, setCameraOpen] = useState(false);
+  const genuiBodyRef = useRef<HTMLDivElement>(null);
   const currentSessionId = useChatStore((s) => s.currentSessionId);
   const sessionId = artifact.sessionId || currentSessionId || '';
   const messageId = artifact.messageId || '';
@@ -92,30 +113,117 @@ function CanvasPanel({ artifact, className }: CanvasPanelProps) {
     }
   }, [hostedSrc]);
 
+  const captureGenUiScreenshot = useCallback(async () => {
+    const el = genuiBodyRef.current;
+    if (!el || screenshotting) return;
+    const isDeck = tree?.root?.kind === 'SlideDeck';
+    setScreenshotting(true);
+    const restoreDom = expandScrollContainersForCapture(el);
+    try {
+      flushLayout(el);
+      await nextDoubleFrame();
+      let bg = window.getComputedStyle(el).backgroundColor;
+      if (!bg || bg === 'rgba(0, 0, 0, 0)' || bg === 'transparent') {
+        bg = window.getComputedStyle(document.documentElement).backgroundColor;
+      }
+      const bgOpt =
+        bg && bg !== 'rgba(0, 0, 0, 0)' && bg !== 'transparent' ? bg : undefined;
+      const dims = isDeck ? deckScreenshotDimensions(el) : documentScreenshotDimensions(el);
+      const dataUrl = await toPng(el, {
+        pixelRatio: 2,
+        cacheBust: true,
+        backgroundColor: bgOpt,
+        width: dims.width,
+        height: dims.height,
+      });
+      const res = await fetch(dataUrl);
+      const blob = await res.blob();
+      downloadImageBlob(blob, `${artifact.title || 'genui'}.png`);
+      toast({
+        variant: 'success',
+        title: t('chat.canvas.screenshotSaved', { defaultValue: 'Screenshot saved' }),
+      });
+    } catch {
+      toast({
+        variant: 'error',
+        title: t('chat.canvas.screenshotFailed', {
+          defaultValue: 'Could not capture screenshot',
+        }),
+      });
+    } finally {
+      restoreDom();
+      setScreenshotting(false);
+    }
+  }, [artifact.title, screenshotting, t, toast, tree?.root?.kind]);
+
   const handleScreenshot = useCallback(async () => {
-    if (!resolvedPreviewPath || !hostedSrc || screenshotting) return;
+    if (screenshotting) return;
+
+    if (showGenTab && effectiveTab === 'genui') {
+      await captureGenUiScreenshot();
+      return;
+    }
+
+    if (!resolvedPreviewPath || !hostedSrc) {
+      toast({
+        variant: 'error',
+        title: t('chat.canvas.screenshotUnavailable', {
+          defaultValue: 'Screenshot is not available for this canvas',
+        }),
+      });
+      return;
+    }
+
     setScreenshotting(true);
     try {
-      const token = new URL(hostedSrc, window.location.origin).searchParams.get('token');
-      if (!token) return;
-      const screenshotUrl = `/api/v1/canvas/preview/screenshot?token=${encodeURIComponent(token)}&format=png&width=1200&height=800`;
-      const res = await fetch(screenshotUrl);
-      if (!res.ok) throw new Error('Screenshot failed');
-      const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `${artifact.title || 'canvas'}.png`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      setTimeout(() => URL.revokeObjectURL(url), 5000);
-    } catch {
-      // Silently fail — screenshot is best-effort
+      const canvasIdRaw = meta?.canvasId ?? meta?.canvas_id;
+      const canvasId = typeof canvasIdRaw === 'string' ? canvasIdRaw : '';
+      let token =
+        extractCanvasPreviewToken(hostedSrc) ??
+        extractCanvasPreviewToken(resolvedPreviewPath);
+      if (!token && sessionId && canvasId) {
+        token = await refreshCanvasPreviewToken(sessionId, canvasId);
+      }
+      if (!token) {
+        toast({
+          variant: 'error',
+          title: t('chat.canvas.screenshotNoToken', {
+            defaultValue: 'Preview link expired — refresh the canvas or open it again from chat',
+          }),
+        });
+        return;
+      }
+      const blob = await fetchCanvasPreviewScreenshot(token);
+      downloadImageBlob(blob, `${artifact.title || 'canvas'}.png`);
+      toast({
+        variant: 'success',
+        title: t('chat.canvas.screenshotSaved', { defaultValue: 'Screenshot saved' }),
+      });
+    } catch (err) {
+      const detail = err instanceof Error ? err.message : '';
+      toast({
+        variant: 'error',
+        title: t('chat.canvas.screenshotFailed', {
+          defaultValue: 'Could not capture screenshot',
+        }),
+        description: detail || undefined,
+      });
     } finally {
       setScreenshotting(false);
     }
-  }, [resolvedPreviewPath, hostedSrc, artifact.title, screenshotting]);
+  }, [
+    captureGenUiScreenshot,
+    effectiveTab,
+    hostedSrc,
+    meta,
+    resolvedPreviewPath,
+    screenshotting,
+    sessionId,
+    showGenTab,
+    artifact.title,
+    t,
+    toast,
+  ]);
 
   const handleToggleFullscreen = useCallback(() => setIsFullscreen((f) => !f), []);
 
@@ -242,7 +350,12 @@ function CanvasPanel({ artifact, className }: CanvasPanelProps) {
           )}
           {showGenTab && effectiveTab === 'genui' && (
             <div className="min-h-0 flex-1 overflow-auto bg-surface scrollbar-gutter-stable">
-              <GenUiTreeView tree={tree} sessionId={sessionId} messageId={messageId || undefined} />
+              <GenUiTreeView
+                tree={tree}
+                contentRef={genuiBodyRef}
+                sessionId={sessionId}
+                messageId={messageId || undefined}
+              />
             </div>
           )}
         </div>

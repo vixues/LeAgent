@@ -21,7 +21,7 @@ export function mapApiUser(_data: any): AuthUser {
     permissions: [],
     roles: ['admin'],
     default_workspace_id: null,
-    displayName: 'Local User',
+    displayName: 'local',
   };
 }
 

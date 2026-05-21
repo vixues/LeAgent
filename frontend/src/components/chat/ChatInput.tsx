@@ -29,6 +29,7 @@ import { useChatDraftStore, buildComposerSendParams } from '@/stores/chatDraft';
 import { useLayoutStore } from '@/stores/layout';
 import { useFoldersStore } from '@/stores/foldersStore';
 import { useArtifactStore } from '@/stores/artifact';
+import { formatAgentPathLabel } from '@/lib/agentPathDisplay';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/Button';
 import { Modal, ModalBody, ModalFooter, ModalHeader } from '@/components/ui/Modal';
@@ -74,9 +75,7 @@ type PickerKind = '/' | '@' | null;
 function getPathDisplayName(path: string, label?: string | null): string {
   const trimmedLabel = label?.trim();
   if (trimmedLabel) return trimmedLabel;
-  const normalized = path.replace(/[\\/]+$/, '');
-  const parts = normalized.split(/[\\/]+/).filter(Boolean);
-  return parts.at(-1) ?? path;
+  return formatAgentPathLabel(path);
 }
 
 export function ChatInput({
@@ -852,7 +851,7 @@ export function ChatInput({
           </div>
 
           <div className="flex items-center gap-1">
-            <ContextUsagePopover />
+            <ContextUsagePopover modelId={modelId} />
             {streamBusyForThisSession ? (
               <Button
                 type="button"

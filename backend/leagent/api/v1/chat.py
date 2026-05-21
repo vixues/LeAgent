@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-import logging
 import re
 import time
 from collections.abc import AsyncIterator  # noqa: TC003
@@ -19,6 +18,7 @@ from pathlib import Path
 from typing import Annotated, Any
 from uuid import UUID, uuid4
 
+import structlog
 from fastapi import (
     APIRouter,
     Depends,
@@ -50,7 +50,7 @@ from leagent.services.database.models.message import (
     chat_session_to_read,
 )
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 
 router = APIRouter()
 

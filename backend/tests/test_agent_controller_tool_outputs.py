@@ -69,11 +69,12 @@ def _controller(session_manager: Any | None = None) -> AgentController:
     )
 
 
-def test_extract_tool_calls_recovers_code_execution_source_from_malformed_json() -> None:
+@pytest.mark.asyncio
+async def test_extract_tool_calls_recovers_code_execution_source_from_malformed_json() -> None:
     controller = _controller()
     raw_args = '{"source": "\nprint("broken json")\n"}'
 
-    calls = controller._extract_tool_calls(
+    calls = await controller._extract_tool_calls(
         {
             "tool_calls": [
                 {
@@ -92,11 +93,12 @@ def test_extract_tool_calls_recovers_code_execution_source_from_malformed_json()
     assert calls[0].arguments.get("source") == '\nprint("broken json")\n'
 
 
-def test_extract_tool_calls_preserves_unrecoverable_arguments_as_raw() -> None:
+@pytest.mark.asyncio
+async def test_extract_tool_calls_preserves_unrecoverable_arguments_as_raw() -> None:
     controller = _controller()
     raw_args = '{"value": "broken"'
 
-    calls = controller._extract_tool_calls(
+    calls = await controller._extract_tool_calls(
         {
             "tool_calls": [
                 {

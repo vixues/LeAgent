@@ -39,6 +39,7 @@ import {
   extractNestedPreviewText,
   languageForNestedPreview,
 } from '@/lib/nestedAgentStreamPreview';
+import { formatAgentPathLabel } from '@/lib/agentPathDisplay';
 import { collectAgentImageArtifacts, type AgentImageArtifact } from '@/lib/agentImageArtifacts';
 import { useChatStore } from '@/stores/chat';
 import { useCodeArtifactStore, type CodeArtifactEntry, type CodeArtifactKind } from '@/stores/codeArtifact';
@@ -616,7 +617,7 @@ function FileListSection({
           <ul className="flex flex-col gap-0.5 p-1">
             {paths.map(({ path, operation }) => {
               const active = path === selectedPath;
-              const fileName = path.split('/').pop() ?? path;
+              const fileName = formatAgentPathLabel(path);
               return (
                 <li key={path}>
                   <button

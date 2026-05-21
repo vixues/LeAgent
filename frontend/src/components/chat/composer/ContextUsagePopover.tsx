@@ -4,14 +4,13 @@ import { useMutation } from '@tanstack/react-query';
 import { queryClient } from '@/lib/queryClient';
 import { useChatStore } from '@/stores/chat';
 import { usePromptPreview } from '@/hooks/usePromptPreview';
+import { useDefaultModel, useProviders } from '@/hooks/useAdmin';
+import { resolveContextBudgetTokens } from '@/lib/contextBudget';
 import { apiClient } from '@/api/client';
 import { cn } from '@/lib/utils';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/Popover';
 import { Button } from '@/components/ui/Button';
 import type { Message } from '@/types/chat';
-
-/** Reference max context for ring fill (aligned with common model windows). */
-const CONTEXT_BUDGET_TOKENS = 128_000;
 
 /** Stable fallback — never use inline ``[]`` in a Zustand selector (new ref every render → infinite loop). */
 const EMPTY_MESSAGES: Message[] = [];
@@ -111,8 +110,21 @@ function approximateThreadTokensFromMessages(messages: Message[]): number {
   return total;
 }
 
-export function ContextUsagePopover({ className }: { className?: string }) {
+export function ContextUsagePopover({
+  className,
+  modelId = 'auto',
+}: {
+  className?: string;
+  /** Composer model selector value (`auto` or `provider/model`). */
+  modelId?: string;
+}) {
   const { t } = useTranslation();
+  const { data: providers } = useProviders();
+  const { data: defaultModel } = useDefaultModel();
+  const contextBudgetTokens = useMemo(
+    () => resolveContextBudgetTokens(modelId, providers, defaultModel),
+    [modelId, providers, defaultModel],
+  );
   const currentSessionId = useChatStore((s) => s.currentSessionId);
   /** Avoid GET …/prompt-preview before GET /chat/sessions reconciles persisted thread ids (404 spam). */
   const sessionsSynced = useChatStore((s) => s.synced);
@@ -187,8 +199,9 @@ export function ContextUsagePopover({ className }: { className?: string }) {
 
   const usagePct = useMemo(() => {
     if (displayMain == null || !Number.isFinite(displayMain)) return 0;
-    return (displayMain / CONTEXT_BUDGET_TOKENS) * 100;
-  }, [displayMain]);
+    if (contextBudgetTokens <= 0) return 0;
+    return (displayMain / contextBudgetTokens) * 100;
+  }, [displayMain, contextBudgetTokens]);
 
   const compactMut = useMutation({
     mutationFn: async () => {
@@ -221,7 +234,7 @@ export function ContextUsagePopover({ className }: { className?: string }) {
         aria-label={t('chat.contextUsageButtonAria', { defaultValue: 'Context usage' })}
         title={
           displayMain != null
-            ? `${formatTok(displayMain)} / ${formatTok(CONTEXT_BUDGET_TOKENS)} · ${Math.round(Math.min(100, usagePct))}%`
+            ? `${formatTok(displayMain)} / ${formatTok(contextBudgetTokens)} · ${Math.round(Math.min(100, usagePct))}%`
             : t('chat.contextUsageButtonAria', { defaultValue: 'Context usage' })
         }
       >
@@ -240,6 +253,30 @@ export function ContextUsagePopover({ className }: { className?: string }) {
         <div className="space-y-3 text-xs">
           <div className="font-semibold text-foreground">
             {t('chat.contextUsageTitle', { defaultValue: 'Context' })}
+          </div>
+
+          <div className="flex justify-between gap-2">
+            <span className="text-muted-foreground-tertiary">
+              {t('chat.contextUsageBudget', { defaultValue: 'Model context window' })}
+            </span>
+            <span className="tabular-nums">{formatTok(contextBudgetTokens)}</span>
+          </div>
+          <div className="flex justify-between gap-2">
+            <span className="text-muted-foreground-tertiary">
+              {t('chat.contextUsageEstimated', { defaultValue: 'Estimated in context' })}
+            </span>
+            <span className="tabular-nums">
+              {displayMain != null ? (
+                <>
+                  {formatTok(displayMain)}
+                  <span className="text-muted-foreground-tertiary ml-1">
+                    ({Math.round(Math.min(100, usagePct))}%)
+                  </span>
+                </>
+              ) : (
+                '—'
+              )}
+            </span>
           </div>
 
           {previewLoading && open ? (

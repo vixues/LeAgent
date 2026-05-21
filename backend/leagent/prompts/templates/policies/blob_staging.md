@@ -32,14 +32,22 @@ Use `tool_argument_blob` only when:
 
 ### Staging flow (fallback only)
 
-1. `tool_argument_blob(action=create)` — returns a `blob_id`.
-2. `tool_argument_blob(action=append, blob_id=…, chunk_base64=…)` — repeat
-   for each ~4 KB chunk. Always use `chunk_base64` for HTML / SVG / JSX.
-3. `tool_argument_blob(action=finalize, blob_id=…)`.
-4. Pass the `blob_id` via the matching `*_blob_id` parameter:
-   `content_blob_id` (project_write), `source_blob_id` (code_execution),
-   `html_blob_id` (canvas_publish), `diff_blob_id` (project_apply_patch),
-   `old_string_blob_id` / `new_string_blob_id` (project_edit).
+**Prefer one blob tool call** when the full body fits in a single append (under
+~64K UTF-8 characters):
+
+1. `tool_argument_blob(action=create_and_finalize, chunk=…)` — or
+   `chunk_base64` only when plain `chunk` would break JSON (many unescaped `"`).
+2. Pass the returned `blob_id` via the matching `*_blob_id` parameter, then call
+   the consumer tool (e.g. `canvas_publish(html_blob_id=…)`).
+
+**Multi-step staging** (`create` → `append` → `finalize`) is only when a prior
+output was **truncated mid-payload** or the body exceeds one append limit. Use
+the largest practical append per turn (up to ~64K decoded chars), not many tiny
+chunks. Use `chunk_base64` for HTML / SVG / JSX only when needed for JSON safety.
+
+`*_blob_id` targets: `content_blob_id` (project_write), `source_blob_id`
+(code_execution), `html_blob_id` (canvas_publish), `diff_blob_id`
+(project_apply_patch), `old_string_blob_id` / `new_string_blob_id` (project_edit).
 
 ### JSON argument safety
 

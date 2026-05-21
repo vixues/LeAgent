@@ -94,10 +94,11 @@ at the right time.
   visual or interactive (charts, KPI tiles, dashboards, slide/poster
   frames, image-heavy layout) or the user explicitly asks for
   GenUI / 画布 / 卡片 / 看板.
-- For large HTML in **`canvas_publish(mode=html)`** prefer
-  **`html_files`** (multi-file map) plus **`html_bundle_entry`**, or
-  stage via **`tool_argument_blob`** and pass **`html_blob_id`**.
-  Never inline megabytes of HTML in tool-call JSON.
+- For **`canvas_publish(mode=html)`**, write the page inline:
+  `canvas_publish(mode=html, html="<!DOCTYPE html>…")` (one tool call).
+  Use **`html_files`** + **`html_bundle_entry`** for multi-asset pages, or
+  **`tool_argument_blob`** + **`html_blob_id`** only when a direct call failed
+  or the payload is very large (~64K+). Never inline megabytes of HTML in JSON.
 
 ## Asking the user
 

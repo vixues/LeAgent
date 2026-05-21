@@ -23,6 +23,7 @@
     "description": "本地优先的智能办公自动化平台",
     "licenseLabel": "许可证",
     "license": "Apache 许可证 2.0",
-    "websiteLabel": "官网"
+    "websiteLabel": "官网",
+    "githubLabel": "GitHub"
   }
 }

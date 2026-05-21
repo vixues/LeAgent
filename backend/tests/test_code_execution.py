@@ -354,6 +354,17 @@ def test_workspace_manager_is_per_session() -> None:
         assert ws_a.path == ws_a2.path
 
 
+def test_workspace_manager_compact_keys_for_local_user() -> None:
+    from leagent.services.auth.service import LOCAL_USER_ID
+    from leagent.services.code_execution.workspace import WorkspaceManager
+
+    session_id = "35f3971b-d115-4db5-8b6a-eca9c717325e"
+    with tempfile.TemporaryDirectory() as root:
+        mgr = WorkspaceManager(root)
+        ws = mgr.get(user_id=str(LOCAL_USER_ID), session_id=session_id)
+        assert ws.path.name == "local__35f3971b"
+
+
 def test_workspace_manager_gc_reaps_unknown_disk_dirs() -> None:
     from pathlib import Path
 
