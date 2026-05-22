@@ -5,7 +5,7 @@
 <h1 align="center">LeAgent</h1>
 
 <p align="center">
-  <strong>本地优先的智能办公自动化平台 — 对话式 AI、可视化工作流、百余项工具，一处部署。</strong>
+  <strong>开源桌面 AI 智能体，集对话聊天、可视化工作流、百余项工具、技能、MCP 及多模型支持于一体。</strong>
 </p>
 
 <p align="center">
@@ -27,7 +27,7 @@
 
 ---
 
-**LeAgent** 是可自托管的 LLM 自动化平台，将对话助手、拖拽式工作流、声明式规则、技能与各类集成整合在同一套栈里，无需再拼凑多款零散产品。
+**LeAgent** 是一款开源桌面 AI 智能体，集多轮对话、可视化工作流编排、百余项内置工具、声明式规则引擎、Agent Skills 与 MCP 于一体，支持一键自部署。
 
 - **Agent 运行时** — 多轮对话、流式输出、工具调用、分层模型路由与提示词，以及情景 / 语义 / 程序性认知记忆
 - **Skills** — 符合 [Agent Skills v1.0](https://agentskills.my/specification) 的 `SKILL.md` 技能包，渐进式披露与按需加载；内置技能、从链接/压缩包安装，以及可插拔 HTTP 技能注册表

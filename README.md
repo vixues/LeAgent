@@ -5,7 +5,7 @@
 <h1 align="center">LeAgent</h1>
 
 <p align="center">
-  <strong>Local-first intelligent office automation — conversational AI, visual workflows, and 100+ tools in one deployable stack.</strong>
+  <strong>Open-source desktop AI agent with conversational chat, visual workflows, 100+ tools, skills, MCP, and multi-model support.</strong>
 </p>
 
 <p align="center">
@@ -27,7 +27,7 @@
 
 ---
 
-**LeAgent** is a self-hostable platform for building LLM-powered automation: chat assistants, drag-and-drop workflows, declarative rules, skills, and integrations — without stitching together separate products.
+**LeAgent** is an open-source desktop AI agent that combines multi-turn chat, a visual workflow builder, 100+ built-in tools, a declarative rule engine, Agent Skills, and MCP — all in a single self-hostable stack.
 
 - **Agent runtime** — multi-turn sessions with streaming, tool execution, tiered model routing, layered prompts, and episodic / semantic / procedural cognitive memory
 - **Skills** — [Agent Skills v1.0](https://agentskills.my/specification) `SKILL.md` bundles with progressive disclosure and on-demand loading; built-in skills, install from links/archives, and a pluggable HTTP skill registry
