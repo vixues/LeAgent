@@ -22,6 +22,7 @@ from leagent.llm.base import (
     ToolCall,
     ToolDefinition,
 )
+from leagent.llm.error_policy import classify_llm_error
 from leagent.llm.registry import ProviderRegistry, create_default_registry
 from leagent.llm.router import ModelRouter, ModelTier, RoutingDecision
 import structlog
@@ -37,23 +38,7 @@ _T = TypeVar("_T")
 
 
 def _is_retryable_llm_error(exc: Exception) -> bool:
-    if isinstance(exc, (LLMRateLimitError, LLMTimeoutError)):
-        return True
-    if not isinstance(exc, LLMServiceError):
-        return False
-    text = str(exc).lower()
-    return any(
-        marker in text
-        for marker in (
-            "server error",
-            "request failed",
-            "max retries exceeded",
-            "502",
-            "503",
-            "504",
-            "temporarily unavailable",
-        )
-    )
+    return classify_llm_error(exc).retryable
 
 
 async def _with_transient_retries(
@@ -146,12 +131,21 @@ class LLMService:
         # Create router
         router = ModelRouter(registry=registry)
 
-        # Configure tiers from settings
+        def _registry_model(provider_name: str, fallback: str) -> str:
+            if registry.has_provider(provider_name):
+                metadata = registry.get_provider_info(provider_name).metadata
+                model = metadata.get("model")
+                if isinstance(model, str) and model.strip():
+                    return model.strip()
+            return fallback
+
+        # Configure tiers from settings, then allow providers.yaml metadata to
+        # supply promoted default models.
         if settings.llm.tier1_endpoint:
             router.configure_tier(
                 tier=ModelTier.TIER1.value,
                 provider="tier1",
-                model=settings.llm.tier1_model,
+                model=_registry_model("tier1", settings.llm.tier1_model),
                 max_tokens=settings.llm.tier1_max_tokens,
                 temperature=settings.llm.tier1_temperature,
                 timeout=settings.llm.tier1_timeout,
@@ -162,11 +156,28 @@ class LLMService:
             router.configure_tier(
                 tier=ModelTier.TIER2.value,
                 provider="tier2",
-                model=settings.llm.tier2_model,
+                model=_registry_model("tier2", settings.llm.tier2_model),
                 max_tokens=settings.llm.tier2_max_tokens,
                 temperature=settings.llm.tier2_temperature,
                 timeout=settings.llm.tier2_timeout,
             )
+
+        try:
+            from leagent.llm.provider_config import ProviderConfigService
+
+            provider_config = ProviderConfigService()
+            routing = provider_config.get_routing_config()
+            chain = routing.get("failover_chain")
+            chains = routing.get("failover_chains")
+            router.configure_failover(
+                enabled=bool(routing.get("failover_enabled", False)),
+                chain=chain if isinstance(chain, list) else None,
+                chains=chains if isinstance(chains, dict) else None,
+                max_retries=int(routing.get("max_retries", 2) or 2),
+            )
+            router.configure_model_aliases(provider_config.get_model_aliases())
+        except Exception:
+            logger.debug("llm_failover_config_unavailable")
 
         return cls(registry=registry, router=router)
 
@@ -215,6 +226,7 @@ class LLMService:
         """
         # Direct provider call if specified
         if provider:
+            await self._enforce_spend_limits(provider)
             started = time.perf_counter()
             response = await _with_transient_retries(
                 lambda: self._complete_direct(
@@ -234,6 +246,13 @@ class LLMService:
                 provider=provider,
                 model=model or response.model,
                 tier="direct",
+                duration=time.perf_counter() - started,
+            )
+            self._record_request_log(
+                response,
+                provider=provider,
+                request_model=model or response.model,
+                model=model or response.model,
                 duration=time.perf_counter() - started,
             )
             return response
@@ -260,6 +279,13 @@ class LLMService:
             provider=decision.provider,
             model=response.model or decision.model,
             tier=decision.tier.value,
+            duration=time.perf_counter() - started,
+        )
+        self._record_request_log(
+            response,
+            provider=decision.provider,
+            request_model=decision.model,
+            model=response.model or decision.model,
             duration=time.perf_counter() - started,
         )
 
@@ -289,6 +315,129 @@ class LLMService:
         except Exception:  # noqa: BLE001
             logger.debug("llm_prometheus_metrics_failed")
 
+    async def _enforce_spend_limits(self, provider: str) -> None:
+        """Block explicit provider calls that exceed configured spend limits."""
+        try:
+            from datetime import datetime
+            from sqlmodel import func, select
+
+            from leagent.llm.provider_config import ProviderConfigService
+            from leagent.services.database import get_database_service
+            from leagent.services.database.models import LLMRequestLog
+
+            pc = ProviderConfigService().get_provider(provider)
+            limits = pc.metadata.get("limits") if pc and isinstance(pc.metadata, dict) else {}
+            if not isinstance(limits, dict) or not limits:
+                return
+            daily_limit = limits.get("daily_usd")
+            monthly_limit = limits.get("monthly_usd")
+            if daily_limit in (None, "") and monthly_limit in (None, ""):
+                return
+
+            now = datetime.utcnow()
+            day_start = datetime(now.year, now.month, now.day)
+            month_start = datetime(now.year, now.month, 1)
+            db = get_database_service()
+            async with db.session() as session:
+                if daily_limit not in (None, ""):
+                    daily = (
+                        await session.exec(
+                            select(func.coalesce(func.sum(LLMRequestLog.total_cost_usd), 0.0))
+                            .where(LLMRequestLog.provider_name == provider)
+                            .where(LLMRequestLog.created_at >= day_start)
+                        )
+                    ).one()
+                    if float(daily or 0.0) >= float(daily_limit):
+                        raise LLMServiceError(f"Provider '{provider}' daily spend limit exceeded")
+                if monthly_limit not in (None, ""):
+                    monthly = (
+                        await session.exec(
+                            select(func.coalesce(func.sum(LLMRequestLog.total_cost_usd), 0.0))
+                            .where(LLMRequestLog.provider_name == provider)
+                            .where(LLMRequestLog.created_at >= month_start)
+                        )
+                    ).one()
+                    if float(monthly or 0.0) >= float(monthly_limit):
+                        raise LLMServiceError(f"Provider '{provider}' monthly spend limit exceeded")
+        except LLMServiceError:
+            raise
+        except Exception:
+            logger.debug("llm_spend_limit_check_failed")
+
+    def _estimate_cost_usd(self, model: str, input_tokens: int, output_tokens: int) -> float:
+        try:
+            from leagent.llm.provider_config import PROVIDER_PRESETS, ProviderConfigService
+
+            pricing = ProviderConfigService().get_pricing_config()
+            entry = pricing.get(model, {}) if isinstance(pricing, dict) else {}
+            input_price = float(entry.get("input_per_1m", 0.0) or entry.get("price_input_per_1m", 0.0) or 0.0)
+            output_price = float(entry.get("output_per_1m", 0.0) or entry.get("price_output_per_1m", 0.0) or 0.0)
+            if input_price == 0.0 and output_price == 0.0:
+                for preset in PROVIDER_PRESETS.values():
+                    for preset_model in preset.get("models", []):
+                        if preset_model.get("name") == model:
+                            input_price = float(preset_model.get("price_input_per_1m", 0.0) or 0.0)
+                            output_price = float(preset_model.get("price_output_per_1m", 0.0) or 0.0)
+                            break
+                    if input_price or output_price:
+                        break
+            return (input_tokens / 1_000_000 * input_price) + (output_tokens / 1_000_000 * output_price)
+        except Exception:
+            return 0.0
+
+    def _record_request_log(
+        self,
+        response: LLMResponse,
+        *,
+        provider: str,
+        request_model: str,
+        model: str,
+        duration: float,
+        is_streaming: bool = False,
+        ttfb_ms: float = 0.0,
+        status_code: int = 200,
+        error: str | None = None,
+    ) -> None:
+        """Best-effort async persistence for request-level usage logs."""
+        try:
+            usage = response.usage
+            input_tokens = int(getattr(usage, "prompt_tokens", 0) or 0)
+            output_tokens = int(getattr(usage, "completion_tokens", 0) or 0)
+            cache_read = int(getattr(usage, "prompt_cache_hit_tokens", 0) or 0)
+            cache_write = int(getattr(usage, "prompt_cache_miss_tokens", 0) or 0)
+            total_cost = self._estimate_cost_usd(model, input_tokens, output_tokens)
+
+            async def _insert() -> None:
+                try:
+                    from leagent.services.database import get_database_service
+                    from leagent.services.database.models import LLMRequestLog
+
+                    db = get_database_service()
+                    async with db.session() as session:
+                        session.add(
+                            LLMRequestLog(
+                                provider_name=provider or "unknown",
+                                model=model or "unknown",
+                                request_model=request_model or model or "unknown",
+                                input_tokens=input_tokens,
+                                output_tokens=output_tokens,
+                                cache_read_tokens=cache_read,
+                                cache_write_tokens=cache_write,
+                                total_cost_usd=total_cost,
+                                latency_ms=duration * 1000,
+                                ttfb_ms=ttfb_ms,
+                                status_code=status_code,
+                                error=error,
+                                is_streaming=is_streaming,
+                            )
+                        )
+                except Exception:
+                    logger.debug("llm_request_log_insert_failed")
+
+            asyncio.create_task(_insert())
+        except Exception:
+            logger.debug("llm_request_log_schedule_failed")
+
     async def _complete_direct(
         self,
         messages: list[ChatMessage],
@@ -303,7 +452,8 @@ class LLMService:
         """Complete using a specific provider directly."""
         provider_instance = self.registry.get_provider(provider)
 
-        completion_model = model or provider_instance._get_default_model()
+        completion_model = self.router.resolve_model_alias(model) if model else None
+        completion_model = completion_model or provider_instance._get_default_model()
         completion_temp = temperature if temperature is not None else 0.1
         completion_max = max_tokens if max_tokens is not None else 4096
 
@@ -349,28 +499,61 @@ class LLMService:
         # Determine provider and model
         if provider:
             provider_instance = self.registry.get_provider(provider)
-            streaming_model = model or provider_instance._get_default_model()
-        else:
-            task_description = self._extract_task_description(messages)
-            decision = self.router.route(task_description, messages, tier)
-            provider_instance = self.registry.get_provider(decision.provider)
-            streaming_model = decision.model
+            streaming_model = self.router.resolve_model_alias(model) if model else None
+            streaming_model = streaming_model or provider_instance._get_default_model()
 
-        # Get tier config for defaults
-        tier_config = self.router.get_tier_config(tier or "tier1")
+            tier_config = self.router.get_tier_config(tier or "tier1")
+            streaming_temp = temperature if temperature is not None else (tier_config.temperature if tier_config else 0.1)
+            streaming_max = max_tokens if max_tokens is not None else (tier_config.max_tokens if tier_config else 4096)
+            async for chunk in provider_instance.stream(
+                messages=messages,
+                model=streaming_model,
+                temperature=streaming_temp,
+                max_tokens=streaming_max,
+                tools=tools,
+                tool_choice=tool_choice,
+                **kwargs,
+            ):
+                yield chunk
+            self.registry.record_success(provider)
+            return
+
+        task_description = self._extract_task_description(messages)
+        decision = self.router.route(task_description, messages, tier)
+        tier_config = self.router.get_tier_config(decision.tier.value)
         streaming_temp = temperature if temperature is not None else (tier_config.temperature if tier_config else 0.1)
         streaming_max = max_tokens if max_tokens is not None else (tier_config.max_tokens if tier_config else 4096)
+        errors: list[str] = []
 
-        async for chunk in provider_instance.stream(
-            messages=messages,
-            model=streaming_model,
-            temperature=streaming_temp,
-            max_tokens=streaming_max,
-            tools=tools,
-            tool_choice=tool_choice,
-            **kwargs,
-        ):
-            yield chunk
+        for provider_name in self.router._candidate_providers(decision):
+            if not self.registry.is_provider_available(provider_name):
+                errors.append(f"{provider_name}: circuit open or provider unavailable")
+                continue
+            yielded = False
+            try:
+                provider_instance = self.registry.get_provider(provider_name)
+                async for chunk in provider_instance.stream(
+                    messages=messages,
+                    model=self.router.resolve_model_alias(decision.model) or decision.model,
+                    temperature=streaming_temp,
+                    max_tokens=streaming_max,
+                    tools=tools,
+                    tool_choice=tool_choice,
+                    **kwargs,
+                ):
+                    yielded = True
+                    yield chunk
+                self.registry.record_success(provider_name)
+                return
+            except Exception as exc:
+                classification = classify_llm_error(exc)
+                if classification.counts_against_provider:
+                    self.registry.record_failure(provider_name, str(exc))
+                errors.append(f"{provider_name}: {classification.category.value}: {exc}")
+                if yielded or not classification.retryable:
+                    raise
+
+        raise LLMServiceError("; ".join(errors) or "No provider available for routed stream")
 
     async def embed(
         self,

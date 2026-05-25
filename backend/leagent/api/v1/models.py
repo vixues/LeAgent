@@ -7,6 +7,7 @@ a default-model endpoint, connection testing, and preset discovery.
 from __future__ import annotations
 
 import logging
+import asyncio
 from datetime import UTC, datetime, timedelta
 from typing import Annotated, Any, Optional
 
@@ -23,7 +24,7 @@ from leagent.llm.provider_config import (
 )
 from leagent.services.auth import CurrentUserId
 from leagent.services.database import DatabaseService, get_database_service
-from leagent.services.database.models import Message
+from leagent.services.database.models import LLMRequestLog, Message
 
 _logger = logging.getLogger(__name__)
 
@@ -126,7 +127,10 @@ class TestResult(BaseModel):
     model: str = ""
     is_healthy: bool
     latency_ms: float = 0.0
+    ttfb_ms: float = 0.0
+    status: str = "unknown"
     error: Optional[str] = None
+    error_category: Optional[str] = None
 
 
 class DeepSeekBalanceInfo(BaseModel):
@@ -140,6 +144,31 @@ class DeepSeekBalanceResponse(BaseModel):
     provider_name: str
     is_available: bool
     balance_infos: list[DeepSeekBalanceInfo] = Field(default_factory=list)
+
+
+class BalanceItem(BaseModel):
+    label: str
+    amount: str = ""
+    currency: str = ""
+    usage_percent: float | None = None
+
+
+class ProviderBalanceResponse(BaseModel):
+    provider_name: str
+    is_available: bool
+    balance_items: list[BalanceItem] = Field(default_factory=list)
+    balance_infos: list[DeepSeekBalanceInfo] = Field(default_factory=list)
+    last_queried: datetime = Field(default_factory=lambda: datetime.now(UTC))
+
+
+class SpendLimitStatus(BaseModel):
+    provider_name: str
+    daily_limit_usd: float | None = None
+    monthly_limit_usd: float | None = None
+    daily_spend_usd: float = 0.0
+    monthly_spend_usd: float = 0.0
+    daily_exceeded: bool = False
+    monthly_exceeded: bool = False
 
 
 class PresetInfo(BaseModel):
@@ -159,7 +188,17 @@ class ModelUsageRow(BaseModel):
     total_output_tokens: int = 0
     total_tokens: int = 0
     avg_latency_ms: float = 0.0
+    total_cost_usd: float = 0.0
     last_used_at: Optional[datetime] = None
+
+
+class DiscoveredModel(BaseModel):
+    id: str
+    name: str
+    owned_by: str = ""
+    created: Any | None = None
+    already_configured: bool = False
+    raw: dict[str, Any] = Field(default_factory=dict)
 
 
 class UsageSummary(BaseModel):
@@ -167,16 +206,79 @@ class UsageSummary(BaseModel):
     since: datetime
     total_requests: int = 0
     total_tokens: int = 0
+    total_cost_usd: float = 0.0
+    cache_hit_rate: float = 0.0
     avg_latency_ms: float = 0.0
     rows: list[ModelUsageRow] = Field(default_factory=list)
+
+
+class ProviderUsageRow(BaseModel):
+    provider_name: str
+    request_count: int = 0
+    total_tokens: int = 0
+    total_cost_usd: float = 0.0
+    avg_latency_ms: float = 0.0
+
+
+class RequestLogRow(BaseModel):
+    id: str
+    provider_name: str
+    model: str
+    request_model: str
+    input_tokens: int = 0
+    output_tokens: int = 0
+    cache_read_tokens: int = 0
+    cache_write_tokens: int = 0
+    total_cost_usd: float = 0.0
+    latency_ms: float = 0.0
+    ttfb_ms: float = 0.0
+    status_code: int = 200
+    error: Optional[str] = None
+    is_streaming: bool = False
+    created_at: datetime
+
+
+class UsageTrendRow(BaseModel):
+    bucket: datetime
+    request_count: int = 0
+    total_tokens: int = 0
+    total_cost_usd: float = 0.0
+
+
+class PricingEntry(BaseModel):
+    model: str
+    input_per_1m: float = 0.0
+    output_per_1m: float = 0.0
+    cache_read_per_1m: float = 0.0
+    cache_write_per_1m: float = 0.0
+
+
+class ConfigImportRequest(BaseModel):
+    config: dict[str, Any]
+    merge: bool = True
+
+
+class SpeedTestRequest(BaseModel):
+    candidates: list[str] = Field(default_factory=list)
+
+
+class SpeedTestResult(BaseModel):
+    url: str
+    ok: bool
+    latency_ms: float = 0.0
+    error: str = ""
 
 
 class ProviderHealthEntry(BaseModel):
     provider_name: str
     is_healthy: bool | None = None
     latency_ms: float = 0.0
+    ttfb_ms: float = 0.0
+    status: str = "unknown"
     error: Optional[str] = None
+    error_category: Optional[str] = None
     last_checked: Optional[float] = None
+    circuit: dict[str, Any] = Field(default_factory=dict)
 
 
 # ---------------------------------------------------------------------------
@@ -249,12 +351,14 @@ def _to_response(pc: ProviderConfig, svc: ProviderConfigService) -> ProviderResp
     supports_streaming = False
     supports_tools = False
     supports_embeddings = False
+    metadata = dict(pc.metadata or {})
     if svc.registry.has_provider(pc.name):
         info = svc.registry.get_provider_info(pc.name)
         is_healthy = info.is_healthy
         supports_streaming = info.provider.supports_streaming
         supports_tools = info.provider.supports_tools
         supports_embeddings = info.provider.supports_embeddings
+        metadata["circuit"] = info.circuit_breaker.snapshot().__dict__
 
     api_key_set = _compute_api_key_set(pc, svc) if requires_api_key else False
 
@@ -285,7 +389,7 @@ def _to_response(pc: ProviderConfig, svc: ProviderConfigService) -> ProviderResp
         supports_embeddings=supports_embeddings,
         is_healthy=is_healthy,
         timeout=pc.timeout,
-        metadata=pc.metadata,
+        metadata=metadata,
     )
 
 
@@ -368,7 +472,10 @@ async def test_provider(
         model=model,
         is_healthy=result.is_healthy,
         latency_ms=result.latency_ms,
+        ttfb_ms=result.ttfb_ms,
+        status=result.status,
         error=result.error,
+        error_category=result.error_category,
     )
 
 
@@ -389,43 +496,142 @@ async def check_provider_health(
         provider_name=result.provider_name,
         is_healthy=result.is_healthy,
         latency_ms=result.latency_ms,
+        ttfb_ms=result.ttfb_ms,
+        status=result.status,
         error=result.error,
+        error_category=result.error_category,
     )
 
 
-@router.get("/providers/{provider_name}/balance", response_model=DeepSeekBalanceResponse)
+@router.post("/health/check-all", response_model=list[TestResult])
+async def check_all_providers_health(
+    user_id: CurrentUserId,
+    svc: Annotated[ProviderConfigService, Depends(_get_service)],
+) -> list[TestResult]:
+    """Actively stream-test all enabled providers in parallel."""
+    providers = [p for p in svc.list_providers() if p.enabled]
+    results = await asyncio.gather(
+        *(svc.test_provider(p.name) for p in providers),
+        return_exceptions=True,
+    )
+    out: list[TestResult] = []
+    for pc, result in zip(providers, results, strict=False):
+        if isinstance(result, Exception):
+            out.append(
+                TestResult(
+                    provider_name=pc.name,
+                    model=pc.models[0]["name"] if pc.models else "",
+                    is_healthy=False,
+                    status="failed",
+                    error=str(result),
+                )
+            )
+            continue
+        out.append(
+            TestResult(
+                provider_name=result.provider_name,
+                model=pc.models[0]["name"] if pc.models else "",
+                is_healthy=result.is_healthy,
+                latency_ms=result.latency_ms,
+                ttfb_ms=result.ttfb_ms,
+                status=result.status,
+                error=result.error,
+                error_category=result.error_category,
+            )
+        )
+    return out
+
+
+@router.get("/providers/{provider_name}/balance", response_model=ProviderBalanceResponse)
 async def get_deepseek_provider_balance(
     provider_name: str,
     user_id: CurrentUserId,
     svc: Annotated[ProviderConfigService, Depends(_get_service)],
-) -> DeepSeekBalanceResponse:
-    """Fetch the current DeepSeek account balance for a configured provider."""
+) -> ProviderBalanceResponse:
+    """Fetch the current account balance for supported providers."""
     pc = svc.get_provider(provider_name)
     if pc is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Provider '{provider_name}' not found",
         )
-    if pc.type != "deepseek":
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Balance is only available for DeepSeek providers",
-        )
-
     api_key = _resolve_provider_api_key(pc, svc)
     if not api_key:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="DeepSeek API key is not configured",
+            detail="Provider API key is not configured",
         )
 
-    from httpx import HTTPError, HTTPStatusError
+    from httpx import AsyncClient, HTTPError, HTTPStatusError
     from leagent.llm.providers.deepseek import DeepSeekProvider
     from leagent.llm.providers.deepseek_utils import check_balance
 
-    base_url = pc.base_url or DeepSeekProvider.DEFAULT_BASE_URL
     try:
-        data = await check_balance(api_key, base_url=base_url, timeout=float(pc.timeout or 15))
+        if pc.type == "deepseek":
+            base_url = pc.base_url or DeepSeekProvider.DEFAULT_BASE_URL
+            data = await check_balance(api_key, base_url=base_url, timeout=float(pc.timeout or 15))
+            infos = [
+                DeepSeekBalanceInfo(
+                    currency=str(item.get("currency", "")),
+                    total_balance=str(item.get("total_balance", "")),
+                    granted_balance=str(item.get("granted_balance", "")),
+                    topped_up_balance=str(item.get("topped_up_balance", "")),
+                )
+                for item in data.get("balance_infos", [])
+                if isinstance(item, dict)
+            ]
+            return ProviderBalanceResponse(
+                provider_name=provider_name,
+                is_available=bool(data.get("is_available", False)),
+                balance_infos=infos,
+                balance_items=[
+                    BalanceItem(
+                        label="balance",
+                        amount=i.total_balance,
+                        currency=i.currency,
+                    )
+                    for i in infos
+                ],
+            )
+
+        base_url = (pc.base_url or "").rstrip("/")
+        headers = {"Authorization": f"Bearer {api_key}"}
+        async with AsyncClient(timeout=float(pc.timeout or 15)) as client:
+            if "openrouter" in base_url:
+                resp = await client.get("https://openrouter.ai/api/v1/credits", headers=headers)
+                resp.raise_for_status()
+                payload = resp.json().get("data", resp.json())
+                return ProviderBalanceResponse(
+                    provider_name=provider_name,
+                    is_available=True,
+                    balance_items=[
+                        BalanceItem(label="credits", amount=str(payload.get("total_credits", "")), currency="USD"),
+                        BalanceItem(label="usage", amount=str(payload.get("total_usage", "")), currency="USD"),
+                    ],
+                )
+            if "siliconflow" in base_url:
+                resp = await client.get(f"{base_url}/user/info", headers=headers)
+                resp.raise_for_status()
+                payload = resp.json()
+                data = payload.get("data", payload)
+                return ProviderBalanceResponse(
+                    provider_name=provider_name,
+                    is_available=True,
+                    balance_items=[
+                        BalanceItem(label="balance", amount=str(data.get("balance", "")), currency=str(data.get("currency", ""))),
+                    ],
+                )
+            if "stepfun" in base_url or "step" in base_url:
+                resp = await client.get(f"{base_url}/accounts", headers=headers)
+                resp.raise_for_status()
+                payload = resp.json()
+                return ProviderBalanceResponse(
+                    provider_name=provider_name,
+                    is_available=True,
+                    balance_items=[
+                        BalanceItem(label="account", amount=str(payload), currency=""),
+                    ],
+                )
     except HTTPStatusError as exc:
         detail = exc.response.text or str(exc)
         raise HTTPException(status_code=exc.response.status_code, detail=detail) from exc
@@ -435,19 +641,9 @@ async def get_deepseek_provider_balance(
             detail=f"DeepSeek balance request failed: {exc}",
         ) from exc
 
-    return DeepSeekBalanceResponse(
-        provider_name=provider_name,
-        is_available=bool(data.get("is_available", False)),
-        balance_infos=[
-            DeepSeekBalanceInfo(
-                currency=str(item.get("currency", "")),
-                total_balance=str(item.get("total_balance", "")),
-                granted_balance=str(item.get("granted_balance", "")),
-                topped_up_balance=str(item.get("topped_up_balance", "")),
-            )
-            for item in data.get("balance_infos", [])
-            if isinstance(item, dict)
-        ],
+    raise HTTPException(
+        status_code=status.HTTP_400_BAD_REQUEST,
+        detail="Balance is not supported for this provider type or base URL",
     )
 
 
@@ -509,6 +705,24 @@ async def get_presets(
     return result
 
 
+@router.get("/providers/{provider_name}/discover", response_model=list[DiscoveredModel])
+async def discover_provider_models(
+    provider_name: str,
+    user_id: CurrentUserId,
+    svc: Annotated[ProviderConfigService, Depends(_get_service)],
+) -> list[DiscoveredModel]:
+    """Fetch available models from provider model-list APIs."""
+    try:
+        return [DiscoveredModel(**item) for item in await svc.discover_models(provider_name)]
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Model discovery failed: {exc}",
+        ) from exc
+
+
 @router.get("/usage/summary", response_model=UsageSummary)
 async def get_usage_summary(
     user_id: CurrentUserId,
@@ -523,6 +737,68 @@ async def get_usage_summary(
     since = datetime.utcnow() - timedelta(days=days)
 
     async with db.session() as session:
+        log_stmt = (
+            select(
+                LLMRequestLog.model,
+                func.count().label("request_count"),
+                func.coalesce(func.sum(LLMRequestLog.input_tokens), 0).label("input_tokens"),
+                func.coalesce(func.sum(LLMRequestLog.output_tokens), 0).label("output_tokens"),
+                func.coalesce(func.sum(LLMRequestLog.input_tokens + LLMRequestLog.output_tokens), 0).label("total_tokens"),
+                func.coalesce(func.sum(LLMRequestLog.total_cost_usd), 0.0).label("total_cost_usd"),
+                func.coalesce(func.sum(LLMRequestLog.cache_read_tokens), 0).label("cache_read_tokens"),
+                func.coalesce(func.sum(LLMRequestLog.cache_write_tokens), 0).label("cache_write_tokens"),
+                func.coalesce(func.avg(LLMRequestLog.latency_ms), 0.0).label("avg_latency_ms"),
+                func.max(LLMRequestLog.created_at).label("last_used_at"),
+            )
+            .where(LLMRequestLog.created_at >= since)
+            .group_by(LLMRequestLog.model)
+        )
+        log_result = await session.exec(log_stmt)
+        log_rows = log_result.all()
+        if log_rows:
+            rows: list[ModelUsageRow] = []
+            total_requests = 0
+            total_tokens = 0
+            total_cost = 0.0
+            cache_read = 0
+            cache_write = 0
+            weighted_latency_sum = 0.0
+            for row in log_rows:
+                request_count = int(row[1] or 0)
+                total_tok = int(row[4] or 0)
+                avg_latency = float(row[8] or 0.0)
+                cost = float(row[5] or 0.0)
+                rows.append(
+                    ModelUsageRow(
+                        model=row[0] or "unknown",
+                        request_count=request_count,
+                        total_input_tokens=int(row[2] or 0),
+                        total_output_tokens=int(row[3] or 0),
+                        total_tokens=total_tok,
+                        total_cost_usd=cost,
+                        avg_latency_ms=avg_latency,
+                        last_used_at=_as_json_utc_opt(row[9]),
+                    )
+                )
+                total_requests += request_count
+                total_tokens += total_tok
+                total_cost += cost
+                cache_read += int(row[6] or 0)
+                cache_write += int(row[7] or 0)
+                weighted_latency_sum += avg_latency * request_count
+            rows.sort(key=lambda r: r.request_count, reverse=True)
+            cache_total = cache_read + cache_write
+            return UsageSummary(
+                days=days,
+                since=_as_json_utc(since),
+                total_requests=total_requests,
+                total_tokens=total_tokens,
+                total_cost_usd=total_cost,
+                cache_hit_rate=(cache_read / cache_total if cache_total else 0.0),
+                avg_latency_ms=(weighted_latency_sum / total_requests if total_requests else 0.0),
+                rows=rows,
+            )
+
         stmt = (
             select(
                 Message.model,
@@ -585,6 +861,259 @@ async def get_usage_summary(
     )
 
 
+@router.get("/usage/providers", response_model=list[ProviderUsageRow])
+async def get_provider_usage(
+    user_id: CurrentUserId,
+    db: Annotated[DatabaseService, Depends(get_database_service)],
+    days: int = Query(default=30, ge=1, le=365),
+) -> list[ProviderUsageRow]:
+    """Aggregate usage metrics by provider."""
+    since = datetime.utcnow() - timedelta(days=days)
+    async with db.session() as session:
+        stmt = (
+            select(
+                LLMRequestLog.provider_name,
+                func.count(),
+                func.coalesce(func.sum(LLMRequestLog.input_tokens + LLMRequestLog.output_tokens), 0),
+                func.coalesce(func.sum(LLMRequestLog.total_cost_usd), 0.0),
+                func.coalesce(func.avg(LLMRequestLog.latency_ms), 0.0),
+            )
+            .where(LLMRequestLog.created_at >= since)
+            .group_by(LLMRequestLog.provider_name)
+        )
+        rows = (await session.exec(stmt)).all()
+    return [
+        ProviderUsageRow(
+            provider_name=row[0] or "unknown",
+            request_count=int(row[1] or 0),
+            total_tokens=int(row[2] or 0),
+            total_cost_usd=float(row[3] or 0.0),
+            avg_latency_ms=float(row[4] or 0.0),
+        )
+        for row in rows
+    ]
+
+
+@router.get("/usage/requests", response_model=list[RequestLogRow])
+async def get_request_logs(
+    user_id: CurrentUserId,
+    db: Annotated[DatabaseService, Depends(get_database_service)],
+    days: int = Query(default=7, ge=1, le=365),
+    limit: int = Query(default=100, ge=1, le=500),
+) -> list[RequestLogRow]:
+    """Return recent request-level model usage logs."""
+    since = datetime.utcnow() - timedelta(days=days)
+    async with db.session() as session:
+        stmt = (
+            select(LLMRequestLog)
+            .where(LLMRequestLog.created_at >= since)
+            .order_by(LLMRequestLog.created_at.desc())
+            .limit(limit)
+        )
+        rows = list((await session.exec(stmt)).all())
+    return [
+        RequestLogRow(
+            id=str(row.id),
+            provider_name=row.provider_name,
+            model=row.model,
+            request_model=row.request_model,
+            input_tokens=row.input_tokens,
+            output_tokens=row.output_tokens,
+            cache_read_tokens=row.cache_read_tokens,
+            cache_write_tokens=row.cache_write_tokens,
+            total_cost_usd=row.total_cost_usd,
+            latency_ms=row.latency_ms,
+            ttfb_ms=row.ttfb_ms,
+            status_code=row.status_code,
+            error=row.error,
+            is_streaming=row.is_streaming,
+            created_at=_as_json_utc(row.created_at),
+        )
+        for row in rows
+    ]
+
+
+@router.get("/usage/trends", response_model=list[UsageTrendRow])
+async def get_usage_trends(
+    user_id: CurrentUserId,
+    db: Annotated[DatabaseService, Depends(get_database_service)],
+    days: int = Query(default=30, ge=1, le=365),
+) -> list[UsageTrendRow]:
+    """Return daily usage trend rows."""
+    since = datetime.utcnow() - timedelta(days=days)
+    async with db.session() as session:
+        stmt = select(LLMRequestLog).where(LLMRequestLog.created_at >= since)
+        logs = list((await session.exec(stmt)).all())
+    buckets: dict[datetime, UsageTrendRow] = {}
+    for log in logs:
+        bucket = datetime(log.created_at.year, log.created_at.month, log.created_at.day)
+        row = buckets.setdefault(bucket, UsageTrendRow(bucket=_as_json_utc(bucket)))
+        row.request_count += 1
+        row.total_tokens += int(log.input_tokens or 0) + int(log.output_tokens or 0)
+        row.total_cost_usd += float(log.total_cost_usd or 0.0)
+    return [buckets[k] for k in sorted(buckets)]
+
+
+@router.get("/providers/{provider_name}/limits", response_model=SpendLimitStatus)
+async def get_provider_spend_limits(
+    provider_name: str,
+    user_id: CurrentUserId,
+    svc: Annotated[ProviderConfigService, Depends(_get_service)],
+    db: Annotated[DatabaseService, Depends(get_database_service)],
+) -> SpendLimitStatus:
+    """Return configured daily/monthly spend limits and current usage."""
+    pc = svc.get_provider(provider_name)
+    if pc is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Provider '{provider_name}' not found")
+    limits = pc.metadata.get("limits") if isinstance(pc.metadata, dict) else {}
+    if not isinstance(limits, dict):
+        limits = {}
+    daily_limit = limits.get("daily_usd")
+    monthly_limit = limits.get("monthly_usd")
+    now = datetime.utcnow()
+    day_start = datetime(now.year, now.month, now.day)
+    month_start = datetime(now.year, now.month, 1)
+    async with db.session() as session:
+        daily = (
+            await session.exec(
+                select(func.coalesce(func.sum(LLMRequestLog.total_cost_usd), 0.0))
+                .where(LLMRequestLog.provider_name == provider_name)
+                .where(LLMRequestLog.created_at >= day_start)
+            )
+        ).one()
+        monthly = (
+            await session.exec(
+                select(func.coalesce(func.sum(LLMRequestLog.total_cost_usd), 0.0))
+                .where(LLMRequestLog.provider_name == provider_name)
+                .where(LLMRequestLog.created_at >= month_start)
+            )
+        ).one()
+    daily_spend = float(daily or 0.0)
+    monthly_spend = float(monthly or 0.0)
+    daily_limit_f = float(daily_limit) if daily_limit not in (None, "") else None
+    monthly_limit_f = float(monthly_limit) if monthly_limit not in (None, "") else None
+    return SpendLimitStatus(
+        provider_name=provider_name,
+        daily_limit_usd=daily_limit_f,
+        monthly_limit_usd=monthly_limit_f,
+        daily_spend_usd=daily_spend,
+        monthly_spend_usd=monthly_spend,
+        daily_exceeded=daily_limit_f is not None and daily_spend >= daily_limit_f,
+        monthly_exceeded=monthly_limit_f is not None and monthly_spend >= monthly_limit_f,
+    )
+
+
+@router.get("/pricing", response_model=list[PricingEntry])
+async def list_pricing(
+    user_id: CurrentUserId,
+    svc: Annotated[ProviderConfigService, Depends(_get_service)],
+) -> list[PricingEntry]:
+    """List editable model pricing entries."""
+    pricing = svc.get_pricing_config()
+    return [
+        PricingEntry(
+            model=model,
+            input_per_1m=float((entry or {}).get("input_per_1m", 0.0) or 0.0),
+            output_per_1m=float((entry or {}).get("output_per_1m", 0.0) or 0.0),
+            cache_read_per_1m=float((entry or {}).get("cache_read_per_1m", 0.0) or 0.0),
+            cache_write_per_1m=float((entry or {}).get("cache_write_per_1m", 0.0) or 0.0),
+        )
+        for model, entry in pricing.items()
+        if isinstance(entry, dict)
+    ]
+
+
+@router.put("/pricing/{model_name}", response_model=PricingEntry)
+async def update_pricing(
+    model_name: str,
+    data: PricingEntry,
+    user_id: CurrentUserId,
+    svc: Annotated[ProviderConfigService, Depends(_get_service)],
+) -> PricingEntry:
+    """Create or update pricing for one model."""
+    pricing = svc.get_pricing_config()
+    pricing[model_name] = {
+        "input_per_1m": data.input_per_1m,
+        "output_per_1m": data.output_per_1m,
+        "cache_read_per_1m": data.cache_read_per_1m,
+        "cache_write_per_1m": data.cache_write_per_1m,
+    }
+    svc.set_pricing_config(pricing)
+    return PricingEntry(model=model_name, **pricing[model_name])
+
+
+@router.get("/config/export", response_model=dict[str, Any])
+async def export_provider_config(
+    user_id: CurrentUserId,
+    svc: Annotated[ProviderConfigService, Depends(_get_service)],
+    include_secrets: bool = Query(default=False),
+) -> dict[str, Any]:
+    """Export provider configuration; API keys are masked by default."""
+    return svc.export_config(include_secrets=include_secrets)
+
+
+@router.post("/config/import", response_model=dict[str, Any])
+async def import_provider_config(
+    data: ConfigImportRequest,
+    user_id: CurrentUserId,
+    svc: Annotated[ProviderConfigService, Depends(_get_service)],
+) -> dict[str, Any]:
+    """Import provider configuration with optional merge behavior."""
+    try:
+        imported = svc.import_config(data.config, merge=data.merge)
+    except ProviderConfigValidationError as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
+    await _trigger_llm_reload()
+    return imported
+
+
+@router.post("/config/backup", response_model=dict[str, str])
+async def backup_provider_config(
+    user_id: CurrentUserId,
+    svc: Annotated[ProviderConfigService, Depends(_get_service)],
+) -> dict[str, str]:
+    """Create a timestamped providers.yaml backup."""
+    return {"backup_id": svc.create_backup()}
+
+
+@router.get("/config/backups", response_model=list[str])
+async def list_provider_config_backups(
+    user_id: CurrentUserId,
+    svc: Annotated[ProviderConfigService, Depends(_get_service)],
+) -> list[str]:
+    """List providers.yaml backups."""
+    return svc.list_backups()
+
+
+@router.post("/config/restore/{backup_id}", response_model=dict[str, Any])
+async def restore_provider_config_backup(
+    backup_id: str,
+    user_id: CurrentUserId,
+    svc: Annotated[ProviderConfigService, Depends(_get_service)],
+) -> dict[str, Any]:
+    """Restore providers.yaml from a backup."""
+    try:
+        restored = svc.restore_backup(backup_id)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Backup not found") from exc
+    await _trigger_llm_reload()
+    return restored
+
+
+@router.post("/providers/{provider_name}/speed-test", response_model=list[SpeedTestResult])
+async def speed_test_provider_endpoints(
+    provider_name: str,
+    data: SpeedTestRequest,
+    user_id: CurrentUserId,
+    svc: Annotated[ProviderConfigService, Depends(_get_service)],
+) -> list[SpeedTestResult]:
+    """Measure latency for candidate provider base URLs."""
+    try:
+        return [SpeedTestResult(**item) for item in await svc.speed_test_endpoints(provider_name, data.candidates)]
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+
+
 @router.get("/health", response_model=list[ProviderHealthEntry])
 async def get_all_providers_health(
     user_id: CurrentUserId,
@@ -606,6 +1135,12 @@ async def get_all_providers_health(
                 provider_name=pc.name,
                 is_healthy=info.is_healthy,
                 last_checked=info.last_health_check or None,
+                status=(
+                    "operational"
+                    if info.is_healthy
+                    else ("failed" if info.is_healthy is False else "unknown")
+                ),
+                circuit=info.circuit_breaker.snapshot().__dict__,
             )
         )
     return out

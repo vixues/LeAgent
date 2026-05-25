@@ -9,6 +9,7 @@ in the other.
 from __future__ import annotations
 
 import asyncio
+import shutil
 import logging
 import os
 import time
@@ -20,6 +21,7 @@ from urllib.parse import urlparse
 import yaml
 
 from leagent.config.constants import PROVIDERS_PATH
+from leagent.llm.error_policy import classify_llm_error
 from leagent.llm.registry import HealthCheckResult, ProviderRegistry
 
 logger = logging.getLogger(__name__)
@@ -298,6 +300,7 @@ class ProviderConfigService:
     ) -> None:
         self._path = providers_path or PROVIDERS_PATH
         self._registry = registry or ProviderRegistry()
+        self._health_monitor_task: asyncio.Task[None] | None = None
         self._load_and_sync()
 
     # -- public properties ---------------------------------------------------
@@ -310,11 +313,13 @@ class ProviderConfigService:
 
     def _load_yaml(self) -> dict[str, Any]:
         if not self._path.exists():
-            return {"default_provider": "", "default_model": "", "providers": []}
+            return {"default_provider": "", "default_model": "", "providers": [], "routing": {}, "pricing": {}}
         with open(self._path, encoding="utf-8") as fh:
             data = yaml.safe_load(fh)
         if not isinstance(data, dict):
             return {"providers": []}
+        data.setdefault("routing", {})
+        data.setdefault("pricing", {})
         if self._migrate_legacy_deepseek_config(data):
             self._save_yaml(data)
         return data
@@ -476,6 +481,165 @@ class ProviderConfigService:
     def list_providers(self) -> list[ProviderConfig]:
         config = self._load_yaml()
         return [ProviderConfig.from_dict(e) for e in config.get("providers", [])]
+
+    def get_routing_config(self) -> dict[str, Any]:
+        """Return model routing metadata from providers.yaml."""
+        config = self._load_yaml()
+        routing = config.get("routing")
+        return routing if isinstance(routing, dict) else {}
+
+    def get_pricing_config(self) -> dict[str, Any]:
+        """Return editable model pricing metadata from providers.yaml."""
+        config = self._load_yaml()
+        pricing = config.get("pricing")
+        return pricing if isinstance(pricing, dict) else {}
+
+    def get_model_aliases(self) -> dict[str, str]:
+        """Build logical model aliases from routing config and model metadata."""
+        config = self._load_yaml()
+        routing = config.get("routing") if isinstance(config.get("routing"), dict) else {}
+        aliases: dict[str, str] = {
+            str(k): str(v)
+            for k, v in (routing.get("model_aliases") or {}).items()
+            if isinstance(k, str) and isinstance(v, str) and v.strip()
+        }
+
+        default_provider = str(config.get("default_provider") or "")
+        providers = [
+            ProviderConfig.from_dict(e)
+            for e in config.get("providers", [])
+            if isinstance(e, dict)
+        ]
+        preferred = next((p for p in providers if p.name == default_provider), None) or (providers[0] if providers else None)
+        if not preferred:
+            return aliases
+
+        tier1 = next((m.get("name") for m in preferred.models if m.get("tier") == "tier1" and _model_entry_enabled(m)), "")
+        tier2 = next((m.get("name") for m in preferred.models if m.get("tier") == "tier2" and _model_entry_enabled(m)), "")
+        vision = next((m.get("name") for m in preferred.models if m.get("supports_vision") and _model_entry_enabled(m)), "")
+
+        if tier2:
+            aliases.setdefault("fast", str(tier2))
+            aliases.setdefault("tier2", str(tier2))
+        if tier1:
+            aliases.setdefault("reasoning", str(tier1))
+            aliases.setdefault("tier1", str(tier1))
+        if vision:
+            aliases.setdefault("vision", str(vision))
+        return aliases
+
+    def set_pricing_config(self, pricing: dict[str, Any]) -> dict[str, Any]:
+        """Persist editable model pricing metadata."""
+        config = self._load_yaml()
+        config["pricing"] = pricing
+        self._save_yaml(config)
+        return pricing
+
+    def export_config(self, *, include_secrets: bool = False) -> dict[str, Any]:
+        """Return providers.yaml content, masking API keys by default."""
+        config = self._load_yaml()
+        if include_secrets:
+            return config
+        masked = dict(config)
+        masked["providers"] = []
+        for entry in config.get("providers", []):
+            if not isinstance(entry, dict):
+                continue
+            item = dict(entry)
+            if item.get("api_key"):
+                item["api_key"] = "***"
+            masked["providers"].append(item)
+        return masked
+
+    def import_config(self, data: dict[str, Any], *, merge: bool = True) -> dict[str, Any]:
+        """Validate and import provider config data."""
+        if not isinstance(data, dict):
+            raise ProviderConfigValidationError("Config payload must be an object")
+        incoming = data.get("providers", [])
+        if not isinstance(incoming, list):
+            raise ProviderConfigValidationError("'providers' must be a list")
+        for entry in incoming:
+            pc = ProviderConfig.from_dict(entry)
+            validate_models_list(pc.models)
+
+        current = self._load_yaml() if merge else {"providers": []}
+        if merge:
+            by_name = {
+                str(entry.get("name")): entry
+                for entry in current.get("providers", [])
+                if isinstance(entry, dict) and entry.get("name")
+            }
+            for entry in incoming:
+                if isinstance(entry, dict) and entry.get("name"):
+                    if entry.get("api_key") == "***" and entry.get("name") in by_name:
+                        entry = {**entry, "api_key": by_name[entry["name"]].get("api_key", "")}
+                    by_name[str(entry["name"])] = entry
+            current["providers"] = list(by_name.values())
+            for key in ("default_provider", "default_model", "routing", "pricing"):
+                if key in data:
+                    current[key] = data[key]
+        else:
+            current = data
+        self._save_yaml(current)
+        self._registry.clear()
+        self._load_and_sync()
+        return current
+
+    def create_backup(self) -> str:
+        """Create a timestamped backup of providers.yaml."""
+        ts = time.strftime("%Y%m%d-%H%M%S")
+        backup_dir = self._path.parent / "backups"
+        backup_dir.mkdir(parents=True, exist_ok=True)
+        backup = backup_dir / f"providers-{ts}.yaml"
+        if self._path.exists():
+            shutil.copy2(self._path, backup)
+        else:
+            self._save_yaml(self._load_yaml())
+            shutil.copy2(self._path, backup)
+        return backup.name
+
+    def list_backups(self) -> list[str]:
+        backup_dir = self._path.parent / "backups"
+        if not backup_dir.exists():
+            return []
+        return sorted(p.name for p in backup_dir.glob("providers-*.yaml"))
+
+    def restore_backup(self, backup_id: str) -> dict[str, Any]:
+        backup = self._path.parent / "backups" / backup_id
+        if not backup.exists() or backup.parent != self._path.parent / "backups":
+            raise FileNotFoundError(backup_id)
+        shutil.copy2(backup, self._path)
+        self._registry.clear()
+        self._load_and_sync()
+        return self._load_yaml()
+
+    def start_health_monitor(self) -> None:
+        """Start optional periodic provider health monitoring if configured."""
+        routing = self.get_routing_config()
+        health = routing.get("health_monitor")
+        if not isinstance(health, dict) or not health.get("enabled"):
+            return
+        if self._health_monitor_task and not self._health_monitor_task.done():
+            return
+        interval = max(float(health.get("interval_seconds") or 300), 30.0)
+        self._health_monitor_task = asyncio.create_task(self._health_monitor_loop(interval))
+
+    def stop_health_monitor(self) -> None:
+        """Stop the optional provider health monitor."""
+        if self._health_monitor_task and not self._health_monitor_task.done():
+            self._health_monitor_task.cancel()
+        self._health_monitor_task = None
+
+    async def _health_monitor_loop(self, interval: float) -> None:
+        while True:
+            try:
+                await asyncio.gather(
+                    *(self.test_provider(p.name) for p in self.list_providers() if p.enabled),
+                    return_exceptions=True,
+                )
+            except Exception:
+                logger.debug("provider_health_monitor_tick_failed", exc_info=True)
+            await asyncio.sleep(interval)
 
     def get_provider(self, name: str) -> ProviderConfig | None:
         for p in self.list_providers():
@@ -701,75 +865,180 @@ class ProviderConfigService:
                 )
 
         info = self._registry.get_provider_info(name)
-        test_model = model or (pc.models[0]["name"] if pc.models else info.provider.default_model)
+        test_config = pc.metadata.get("test_config") if isinstance(pc.metadata, dict) else {}
+        if not isinstance(test_config, dict):
+            test_config = {}
+        test_model = (
+            model
+            or str(test_config.get("test_model") or "").strip()
+            or (pc.models[0]["name"] if pc.models else getattr(info.provider, "default_model", ""))
+            or info.provider._get_default_model()
+        )
+        prompt = str(test_config.get("test_prompt") or "Who are you?")
+        timeout_secs = float(test_config.get("timeout_secs") or min(max(pc.timeout, 1), 90))
+        degraded_threshold_ms = float(test_config.get("degraded_threshold_ms") or 6000)
+        max_retries = int(test_config.get("max_retries") or 0)
 
         start = time.perf_counter()
+        attempt = 0
         try:
             from leagent.llm.base import ChatMessage
 
-            await info.provider.complete(
-                messages=[ChatMessage.user("Say hello in one word.")],
-                model=test_model,
-                max_tokens=20,
-            )
-            latency = (time.perf_counter() - start) * 1000
-
-            # Chat uses the streaming path; SOCKS/proxy/TLS issues sometimes only break SSE.
-            async def _first_stream_chunk() -> object | None:
+            async def _stream_probe() -> tuple[object | None, float]:
+                probe_start = time.perf_counter()
                 async for chunk in info.provider.stream(
-                    messages=[ChatMessage.user("Say hi.")],
+                    messages=[ChatMessage.user(prompt)],
                     model=test_model,
-                    max_tokens=12,
+                    max_tokens=50,
                     temperature=0.1,
                 ):
-                    return chunk
-                return None
+                    return chunk, (time.perf_counter() - probe_start) * 1000
+                return None, (time.perf_counter() - probe_start) * 1000
 
-            try:
-                first = await asyncio.wait_for(_first_stream_chunk(), timeout=90.0)
-            except asyncio.TimeoutError:
-                return HealthCheckResult(
-                    provider_name=name,
-                    is_healthy=False,
-                    latency_ms=latency,
-                    error=(
-                        "Non-stream completion succeeded, but streaming probe timed out after 90s. "
-                        "Check proxy/VPN (SOCKS) and backend logs."
-                    ),
-                )
-            except Exception as stream_exc:
-                detail = str(stream_exc) or repr(stream_exc)
-                return HealthCheckResult(
-                    provider_name=name,
-                    is_healthy=False,
-                    latency_ms=latency,
-                    error=(
-                        f"Non-stream OK; streaming failed ({type(stream_exc).__name__}): {detail}"
-                    ),
-                )
-
-            if first is None:
-                return HealthCheckResult(
-                    provider_name=name,
-                    is_healthy=False,
-                    latency_ms=latency,
-                    error="Non-stream OK; streaming returned no chunks.",
-                )
-
-            return HealthCheckResult(
-                provider_name=name,
-                is_healthy=True,
-                latency_ms=latency,
-            )
+            while True:
+                try:
+                    first, ttfb = await asyncio.wait_for(_stream_probe(), timeout=timeout_secs)
+                    latency = (time.perf_counter() - start) * 1000
+                    if first is None:
+                        raise RuntimeError("Streaming probe returned no chunks")
+                    status = "degraded" if ttfb > degraded_threshold_ms else "operational"
+                    info.is_healthy = True
+                    info.last_health_check = time.time()
+                    info.circuit_breaker.record_success()
+                    return HealthCheckResult(
+                        provider_name=name,
+                        is_healthy=True,
+                        latency_ms=latency,
+                        ttfb_ms=ttfb,
+                        status=status,
+                    )
+                except asyncio.TimeoutError as exc:
+                    attempt += 1
+                    if attempt <= max_retries:
+                        continue
+                    raise TimeoutError(f"Streaming probe timed out after {timeout_secs:.0f}s") from exc
         except Exception as exc:
             latency = (time.perf_counter() - start) * 1000
             detail = str(exc) or repr(exc)
+            classification = classify_llm_error(exc)
+            info.is_healthy = False
+            info.last_health_check = time.time()
+            if classification.counts_against_provider:
+                info.circuit_breaker.record_failure(detail)
             return HealthCheckResult(
                 provider_name=name,
                 is_healthy=False,
                 latency_ms=latency,
                 error=f"{type(exc).__name__}: {detail}",
+                status="failed",
+                error_category=classification.category.value,
             )
+
+    async def discover_models(self, name: str) -> list[dict[str, Any]]:
+        """Fetch available model IDs from provider APIs."""
+        pc = self.get_provider(name)
+        if not pc:
+            raise ValueError(f"Provider '{name}' not found")
+
+        configured = {str(m.get("name") or "") for m in pc.models}
+        timeout = float(min(max(pc.timeout, 1), 60))
+
+        import httpx
+
+        if pc.type == "anthropic":
+            models = PROVIDER_PRESETS.get("anthropic", {}).get("models", [])
+            return [
+                {**m, "id": m.get("name", ""), "already_configured": m.get("name", "") in configured}
+                for m in models
+            ]
+
+        headers: dict[str, str] = {}
+        api_key = self._resolve_api_key(pc.api_key)
+        if api_key:
+            headers["Authorization"] = f"Bearer {api_key}"
+
+        base_url = (pc.base_url or "").rstrip("/")
+        if not base_url:
+            preset = PROVIDER_PRESETS.get(pc.type, {})
+            base_url = str(preset.get("default_base_url") or "").rstrip("/")
+        if not base_url:
+            return []
+
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            if pc.type == "ollama":
+                response = await client.get(f"{base_url}/api/tags")
+                response.raise_for_status()
+                data = response.json()
+                raw_models = data.get("models", []) if isinstance(data, dict) else []
+                return [
+                    {
+                        "id": str(item.get("name") or ""),
+                        "name": str(item.get("name") or ""),
+                        "owned_by": "ollama",
+                        "already_configured": str(item.get("name") or "") in configured,
+                        "raw": item,
+                    }
+                    for item in raw_models
+                    if isinstance(item, dict) and item.get("name")
+                ]
+
+            model_url = f"{base_url}/models" if base_url.endswith("/v1") else f"{base_url}/v1/models"
+            response = await client.get(model_url, headers=headers)
+            response.raise_for_status()
+            data = response.json()
+            raw_models = data.get("data", []) if isinstance(data, dict) else []
+            return [
+                {
+                    "id": str(item.get("id") or ""),
+                    "name": str(item.get("id") or ""),
+                    "owned_by": str(item.get("owned_by") or ""),
+                    "created": item.get("created"),
+                    "already_configured": str(item.get("id") or "") in configured,
+                    "raw": item,
+                }
+                for item in raw_models
+                if isinstance(item, dict) and item.get("id")
+            ]
+
+    async def speed_test_endpoints(self, name: str, candidates: list[str]) -> list[dict[str, Any]]:
+        """Measure latency for candidate provider base URLs."""
+        pc = self.get_provider(name)
+        if not pc:
+            raise ValueError(f"Provider '{name}' not found")
+        import httpx
+
+        api_key = self._resolve_api_key(pc.api_key)
+        headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
+
+        async def _probe(url: str) -> dict[str, Any]:
+            normalized = url.rstrip("/")
+            start = time.perf_counter()
+            try:
+                async with httpx.AsyncClient(timeout=min(max(pc.timeout, 1), 20)) as client:
+                    if pc.type == "ollama":
+                        resp = await client.get(f"{normalized}/api/tags")
+                    else:
+                        model_url = f"{normalized}/models" if normalized.endswith("/v1") else f"{normalized}/v1/models"
+                        resp = await client.get(model_url, headers=headers)
+                    resp.raise_for_status()
+                return {
+                    "url": normalized,
+                    "ok": True,
+                    "latency_ms": (time.perf_counter() - start) * 1000,
+                    "error": "",
+                }
+            except Exception as exc:
+                return {
+                    "url": normalized,
+                    "ok": False,
+                    "latency_ms": (time.perf_counter() - start) * 1000,
+                    "error": str(exc),
+                }
+
+        unique = [u for i, u in enumerate(candidates) if u and u not in candidates[:i]]
+        results = await asyncio.gather(*(_probe(u) for u in unique))
+        results.sort(key=lambda r: (not r["ok"], r["latency_ms"]))
+        return results
 
     # -- presets -------------------------------------------------------------
 

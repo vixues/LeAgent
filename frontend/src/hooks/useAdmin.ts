@@ -14,6 +14,7 @@ const QUERY_KEYS = {
   presets: ['models', 'presets'] as const,
   usage: ['models', 'usage'] as const,
   health: ['models', 'health'] as const,
+  pricing: ['models', 'pricing'] as const,
   tools: ['admin', 'tools'] as const,
   rules: ['admin', 'rules'] as const,
   tasks: ['admin', 'tasks'] as const,
@@ -67,8 +68,37 @@ export function useDeleteProvider() {
 }
 
 export function useTestProvider() {
+  const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (name: string) => adminApi.providers.test(name),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.providers });
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.health });
+    },
+  });
+}
+
+export function useDiscoverProviderModels() {
+  return useMutation({
+    mutationFn: (name: string) => adminApi.providers.discover(name),
+  });
+}
+
+export function useSpeedTestProvider() {
+  return useMutation({
+    mutationFn: ({ name, candidates }: { name: string; candidates: string[] }) =>
+      adminApi.providers.speedTest(name, candidates),
+  });
+}
+
+export function useCheckAllProvidersHealth() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: adminApi.health.checkAll,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.providers });
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.health });
+    },
   });
 }
 
@@ -102,6 +132,38 @@ export function useModelUsageSummary(days = 30) {
     queryKey: [...QUERY_KEYS.usage, days],
     queryFn: () => adminApi.usage.summary(days),
     staleTime: 60 * 1000,
+  });
+}
+
+export function useProviderUsage(days = 30) {
+  return useQuery({
+    queryKey: [...QUERY_KEYS.usage, 'providers', days],
+    queryFn: () => adminApi.usage.providers(days),
+    staleTime: 60 * 1000,
+  });
+}
+
+export function useRequestLogs(days = 7, limit = 100) {
+  return useQuery({
+    queryKey: [...QUERY_KEYS.usage, 'requests', days, limit],
+    queryFn: () => adminApi.usage.requests(days, limit),
+    staleTime: 30 * 1000,
+  });
+}
+
+export function useUsageTrends(days = 30) {
+  return useQuery({
+    queryKey: [...QUERY_KEYS.usage, 'trends', days],
+    queryFn: () => adminApi.usage.trends(days),
+    staleTime: 60 * 1000,
+  });
+}
+
+export function usePricing() {
+  return useQuery({
+    queryKey: QUERY_KEYS.pricing,
+    queryFn: adminApi.pricing.list,
+    staleTime: 5 * 60 * 1000,
   });
 }
 

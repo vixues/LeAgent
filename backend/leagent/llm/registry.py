@@ -7,6 +7,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 from leagent.exceptions.llm import LLMServiceError, ModelNotFoundError
+from leagent.llm.circuit_breaker import CircuitBreaker
 
 if TYPE_CHECKING:
     from leagent.llm.base import LLMProvider
@@ -21,6 +22,7 @@ class ProviderInfo:
     is_healthy: bool = True
     last_health_check: float = 0.0
     metadata: dict = field(default_factory=dict)
+    circuit_breaker: CircuitBreaker = field(default_factory=CircuitBreaker)
 
 
 @dataclass
@@ -31,6 +33,9 @@ class HealthCheckResult:
     is_healthy: bool
     latency_ms: float = 0.0
     error: str | None = None
+    status: str = "unknown"
+    ttfb_ms: float = 0.0
+    error_category: str | None = None
 
 
 class ProviderRegistry:
@@ -99,6 +104,23 @@ class ProviderRegistry:
         info = self._providers.get(name)
         if not info:
             raise ModelNotFoundError(f"Provider '{name}' not found")
+        if not info.circuit_breaker.is_available():
+            snapshot = info.circuit_breaker.snapshot()
+            raise LLMServiceError(
+                f"Provider '{name}' circuit is open",
+                details={
+                    "provider": name,
+                    "circuit_state": snapshot.state,
+                    "last_error": snapshot.last_error,
+                },
+            )
+        return info.provider
+
+    def get_provider_for_probe(self, name: str) -> LLMProvider:
+        """Get a provider for health probes, bypassing circuit availability."""
+        info = self._providers.get(name)
+        if not info:
+            raise ModelNotFoundError(f"Provider '{name}' not found")
         return info.provider
 
     def get_provider_info(self, name: str) -> ProviderInfo:
@@ -134,8 +156,37 @@ class ProviderRegistry:
         """Get names of providers that passed last health check."""
         return [
             name for name, info in self._providers.items()
-            if info.is_healthy
+            if info.is_healthy and info.circuit_breaker.is_available()
         ]
+
+    def is_provider_available(self, name: str) -> bool:
+        """Return whether provider exists and its circuit allows routing."""
+        info = self._providers.get(name)
+        return bool(info and info.circuit_breaker.is_available())
+
+    def record_success(self, name: str) -> None:
+        """Record a successful provider request."""
+        info = self._providers.get(name)
+        if not info:
+            return
+        info.is_healthy = True
+        info.circuit_breaker.record_success()
+
+    def record_failure(self, name: str, error: str | None = None) -> None:
+        """Record a failed provider request."""
+        info = self._providers.get(name)
+        if not info:
+            return
+        info.is_healthy = False
+        info.circuit_breaker.record_failure(error)
+
+    def reset_circuit(self, name: str) -> None:
+        """Close a provider circuit after a manual or scheduled recovery probe."""
+        info = self._providers.get(name)
+        if not info:
+            return
+        info.circuit_breaker.close()
+        info.is_healthy = True
 
     async def test_connection(self, name: str) -> HealthCheckResult:
         """Test connection to a specific provider.
@@ -165,24 +216,31 @@ class ProviderRegistry:
 
             info.is_healthy = is_healthy
             info.last_health_check = time.time()
+            if is_healthy:
+                info.circuit_breaker.record_success()
+            else:
+                info.circuit_breaker.record_failure("Health check returned False")
 
             return HealthCheckResult(
                 provider_name=name,
                 is_healthy=is_healthy,
                 latency_ms=latency_ms,
                 error=None if is_healthy else "Health check returned False",
+                status="operational" if is_healthy else "failed",
             )
 
         except Exception as e:
             latency_ms = (time.perf_counter() - start_time) * 1000
             info.is_healthy = False
             info.last_health_check = time.time()
+            info.circuit_breaker.record_failure(str(e))
 
             return HealthCheckResult(
                 provider_name=name,
                 is_healthy=False,
                 latency_ms=latency_ms,
                 error=str(e),
+                status="failed",
             )
 
     async def test_all_connections(
@@ -253,6 +311,7 @@ class ProviderRegistry:
                 "supports_tools": provider.supports_tools,
                 "supports_embeddings": provider.supports_embeddings,
                 "is_healthy": info.is_healthy,
+                "circuit": info.circuit_breaker.snapshot().__dict__,
                 "metadata": info.metadata,
             }
         return discovery

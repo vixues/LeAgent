@@ -1,12 +1,16 @@
 import { useState, useRef, useEffect, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { ChevronDown, Sparkles, Bot } from 'lucide-react';
+import { ChevronDown, Sparkles, Bot, Wrench, Eye, DollarSign } from 'lucide-react';
 import { useProviders } from '@/hooks/useAdmin';
 import { cn } from '@/lib/utils';
 
 interface ModelOption {
   id: string;
   label: string;
+  provider?: string;
+  priceLevel?: '$' | '$$' | '$$$';
+  supportsTools?: boolean | null;
+  supportsVision?: boolean | null;
   icon: React.ReactNode;
 }
 
@@ -24,6 +28,13 @@ export function ModelSelector({
   const { t } = useTranslation();
   const { data: providers } = useProviders();
   const [open, setOpen] = useState(false);
+  const [recentModels, setRecentModels] = useState<string[]>(() => {
+    try {
+      return JSON.parse(localStorage.getItem('leagent.recentModels') || '[]');
+    } catch {
+      return [];
+    }
+  });
   const containerRef = useRef<HTMLDivElement>(null);
 
   const models = useMemo<ModelOption[]>(() => {
@@ -42,6 +53,10 @@ export function ModelSelector({
             .map((model) => ({
               id: `${provider.name}/${model.name}`,
               label: model.name,
+              provider: provider.label || provider.name,
+              supportsTools: model.supports_tools,
+              supportsVision: model.supports_vision,
+              priceLevel: priceLevel(model.price_input_per_1m, model.price_output_per_1m),
               icon: <Bot className="w-3.5 h-3.5" />,
             })),
         ) ?? [];
@@ -50,6 +65,25 @@ export function ModelSelector({
   }, [providers, t]);
 
   const selected = models.find((m) => m.id === value) ?? models[0]!;
+  const recentOptions = models.filter((m) => recentModels.includes(m.id) && m.id !== 'auto');
+  const providerGroups = useMemo(() => {
+    const groups = new Map<string, ModelOption[]>();
+    for (const option of models.filter((m) => m.id !== 'auto' && !recentModels.includes(m.id))) {
+      const key = option.provider || 'Other';
+      groups.set(key, [...(groups.get(key) ?? []), option]);
+    }
+    return [...groups.entries()];
+  }, [models, recentModels]);
+
+  const selectModel = (modelId: string) => {
+    onChange?.(modelId);
+    if (modelId !== 'auto') {
+      const next = [modelId, ...recentModels.filter((id) => id !== modelId)].slice(0, 5);
+      setRecentModels(next);
+      localStorage.setItem('leagent.recentModels', JSON.stringify(next));
+    }
+    setOpen(false);
+  };
 
   useEffect(() => {
     if (!providers || value === 'auto') return;
@@ -111,7 +145,7 @@ export function ModelSelector({
         <div
           className={cn(
             'absolute bottom-full left-0 mb-1 z-50',
-            'w-52 rounded-xl border border-border-subtle bg-surface shadow-soft',
+            'w-72 rounded-xl border border-border-subtle bg-surface shadow-soft',
             'p-1',
             'chat-palette-dialog',
           )}
@@ -120,29 +154,92 @@ export function ModelSelector({
             defaultValue: 'Select model',
           })}
         >
-          {models.map((model) => (
-            <button
-              key={model.id}
-              type="button"
-              role="option"
-              aria-selected={model.id === value}
-              onClick={() => {
-                onChange?.(model.id);
-                setOpen(false);
-              }}
-              className={cn(
-                'w-full flex items-center gap-2 px-3 py-2 rounded-lg text-left text-xs font-medium transition-colors',
-                model.id === value
-                  ? 'bg-primary-50 dark:bg-primary-900/20 text-foreground'
-                  : 'text-muted-foreground hover:bg-surface-sunken hover:text-foreground',
-              )}
-            >
-              <span className="flex-shrink-0">{model.icon}</span>
-              <span className="min-w-0 truncate">{model.label}</span>
-            </button>
+          <ModelOptionButton
+            model={models[0]!}
+            selected={models[0]!.id === value}
+            onSelect={selectModel}
+          />
+          {recentOptions.length > 0 && (
+            <ModelGroup title={t('chat.modelSelectorRecent', { defaultValue: 'Recent' })}>
+              {recentOptions.map((model) => (
+                <ModelOptionButton
+                  key={model.id}
+                  model={model}
+                  selected={model.id === value}
+                  onSelect={selectModel}
+                />
+              ))}
+            </ModelGroup>
+          )}
+          {providerGroups.map(([provider, options]) => (
+            <ModelGroup key={provider} title={provider}>
+              {options.map((model) => (
+                <ModelOptionButton
+                  key={model.id}
+                  model={model}
+                  selected={model.id === value}
+                  onSelect={selectModel}
+                />
+              ))}
+            </ModelGroup>
           ))}
         </div>
       )}
     </div>
   );
+}
+
+function ModelGroup({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <div className="mt-1 border-t border-border-subtle pt-1">
+      <div className="px-3 py-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+        {title}
+      </div>
+      {children}
+    </div>
+  );
+}
+
+function ModelOptionButton({
+  model,
+  selected,
+  onSelect,
+}: {
+  model: ModelOption;
+  selected: boolean;
+  onSelect: (modelId: string) => void;
+}) {
+  return (
+            <button
+              key={model.id}
+              type="button"
+              role="option"
+      aria-selected={selected}
+      onClick={() => onSelect(model.id)}
+              className={cn(
+        'w-full flex items-center gap-2 px-3 py-2 rounded-lg text-left text-xs font-medium transition-colors',
+        selected
+                  ? 'bg-primary-50 dark:bg-primary-900/20 text-foreground'
+                  : 'text-muted-foreground hover:bg-surface-sunken hover:text-foreground',
+              )}
+            >
+              <span className="flex-shrink-0">{model.icon}</span>
+      <span className="min-w-0 flex-1 truncate">{model.label}</span>
+      {model.supportsTools && <Wrench className="h-3 w-3" />}
+      {model.supportsVision && <Eye className="h-3 w-3" />}
+      {model.priceLevel && (
+        <span className="inline-flex items-center gap-0.5 text-[10px]">
+          <DollarSign className="h-3 w-3" />
+          {model.priceLevel}
+        </span>
+      )}
+            </button>
+  );
+}
+
+function priceLevel(input = 0, output = 0): '$' | '$$' | '$$$' {
+  const blended = Number(input || 0) + Number(output || 0);
+  if (blended >= 30) return '$$$';
+  if (blended >= 5) return '$$';
+  return '$';
 }

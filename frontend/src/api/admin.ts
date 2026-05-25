@@ -20,6 +20,13 @@ import type {
   UsageSummary,
   ProviderHealthEntry,
   DeepSeekBalanceResponse,
+  DiscoveredModel,
+  ProviderUsageRow,
+  RequestLogRow,
+  UsageTrendRow,
+  PricingEntry,
+  SpeedTestResult,
+  SpendLimitStatus,
 } from '@/types/admin';
 
 export const adminApi = {
@@ -33,6 +40,10 @@ export const adminApi = {
     test: (name: string) => apiClient.post<TestResult>(`/models/providers/${name}/test`),
     health: (name: string) => apiClient.get<TestResult>(`/models/providers/${name}/health`),
     balance: (name: string) => apiClient.get<DeepSeekBalanceResponse>(`/models/providers/${name}/balance`),
+    discover: (name: string) => apiClient.get<DiscoveredModel[]>(`/models/providers/${name}/discover`),
+    speedTest: (name: string, candidates: string[]) =>
+      apiClient.post<SpeedTestResult[]>(`/models/providers/${name}/speed-test`, { candidates }),
+    limits: (name: string) => apiClient.get<SpendLimitStatus>(`/models/providers/${name}/limits`),
   },
 
   defaultModel: {
@@ -47,10 +58,34 @@ export const adminApi = {
   usage: {
     summary: (days = 30) =>
       apiClient.get<UsageSummary>('/models/usage/summary', { days }),
+    providers: (days = 30) =>
+      apiClient.get<ProviderUsageRow[]>('/models/usage/providers', { days }),
+    requests: (days = 7, limit = 100) =>
+      apiClient.get<RequestLogRow[]>('/models/usage/requests', { days, limit }),
+    trends: (days = 30) =>
+      apiClient.get<UsageTrendRow[]>('/models/usage/trends', { days }),
+  },
+
+  pricing: {
+    list: () => apiClient.get<PricingEntry[]>('/models/pricing'),
+    update: (model: string, data: PricingEntry) =>
+      apiClient.put<PricingEntry>(`/models/pricing/${encodeURIComponent(model)}`, data),
   },
 
   health: {
     all: () => apiClient.get<ProviderHealthEntry[]>('/models/health'),
+    checkAll: () => apiClient.post<TestResult[]>('/models/health/check-all'),
+  },
+
+  modelConfig: {
+    export: (includeSecrets = false) =>
+      apiClient.get<Record<string, unknown>>('/models/config/export', { include_secrets: includeSecrets }),
+    import: (config: Record<string, unknown>, merge = true) =>
+      apiClient.post<Record<string, unknown>>('/models/config/import', { config, merge }),
+    backup: () => apiClient.post<{ backup_id: string }>('/models/config/backup'),
+    backups: () => apiClient.get<string[]>('/models/config/backups'),
+    restore: (backupId: string) =>
+      apiClient.post<Record<string, unknown>>(`/models/config/restore/${encodeURIComponent(backupId)}`),
   },
 
   tools: {

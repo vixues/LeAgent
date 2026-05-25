@@ -56,7 +56,7 @@
       "apiKeyNotRequired": "No API key required",
       "emptyHint": "Add providers such as OpenAI, Qwen, Anthropic, or DeepSeek",
       "latencyMs": "Latency {{ms}} ms",
-      "selectTypeDescription": "Choose a provider type; defaults will be filled in for you",
+      "selectTypeDescription": "Choose a provider type — defaults will be pre-filled",
       "presetModelCount": "{{count}} preset models",
       "customModelsBadge": "Custom models",
       "providerIdLabel": "Provider name",
@@ -96,6 +96,45 @@
       "hoursAgo": "{{n}}h ago",
       "daysAgo": "{{n}}d ago",
       "neverUsed": "Never used",
+      "recommended": "Recommended",
+      "category": {
+        "OfficialCloud": "Cloud",
+        "ChinaCloud": "Cloud",
+        "Local": "Local",
+        "Custom": "Custom / Compatible"
+      },
+      "searchPlaceholder": "Search providers",
+      "enabledModelRatio": "{{enabled}}/{{total}} enabled",
+      "sort": {
+        "custom": "Custom",
+        "name": "Name",
+        "health": "Health",
+        "usage": "Usage"
+      },
+      "health": {
+        "checkAll": "Check all"
+      },
+      "discovery": {
+        "fetch": "Fetch models",
+        "configured": "configured"
+      },
+      "speedTest": {
+        "run": "Test endpoints",
+        "failed": "failed",
+        "noCandidates": "Add at least one endpoint URL to test."
+      },
+      "advanced": {
+        "title": "Advanced configuration",
+        "testModel": "Probe model",
+        "degradedThreshold": "Degraded threshold ms",
+        "dailyLimit": "Daily USD limit",
+        "monthlyLimit": "Monthly USD limit"
+      },
+      "softValidation": {
+        "missingApiKey": "API key is empty.",
+        "missingBaseUrl": "Base URL is empty.",
+        "saveAnyway": "Save anyway?"
+      },
       "stats": {
         "providers": "Providers",
         "models": "Models",
@@ -142,6 +181,16 @@
         "totalTokens": "Total",
         "avgLatency": "Avg latency",
         "lastUsed": "Last used"
+      },
+      "requestLog": {
+        "title": "Recent requests",
+        "desc": "Request-level model usage, latency, and estimated cost.",
+        "time": "Time",
+        "provider": "Provider",
+        "model": "Model",
+        "tokens": "Tokens",
+        "cost": "Cost",
+        "latency": "Latency"
       }
     },
     "tool": {

@@ -75,6 +75,7 @@ from leagent.services.database.models.message import (
     SessionCreate,
     SessionRead,
 )
+from leagent.services.database.models.llm_request_log import LLMRequestLog
 from leagent.services.database.models.task import (
     Task,
     TaskContext,
@@ -130,6 +131,7 @@ __all__ = [
     "MessageRead",
     "SessionCreate",
     "SessionRead",
+    "LLMRequestLog",
     # Task
     "Task",
     "TaskContext",

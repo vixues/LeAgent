@@ -56,7 +56,7 @@
       "apiKeyNotRequired": "无需 API Key",
       "emptyHint": "添加 OpenAI、Qwen、Anthropic、DeepSeek 等模型提供商",
       "latencyMs": "延迟 {{ms}} ms",
-      "selectTypeDescription": "选择模型提供商类型，将自动预填配置",
+      "selectTypeDescription": "选择提供商类型，配置将自动预填",
       "presetModelCount": "{{count}} 个预设模型",
       "customModelsBadge": "自定义模型",
       "providerIdLabel": "提供商名称",
@@ -96,6 +96,45 @@
       "hoursAgo": "{{n}} 小时前",
       "daysAgo": "{{n}} 天前",
       "neverUsed": "从未使用",
+      "recommended": "推荐",
+      "category": {
+        "OfficialCloud": "云服务",
+        "ChinaCloud": "云服务",
+        "Local": "本地部署",
+        "Custom": "自定义 / 兼容"
+      },
+      "searchPlaceholder": "搜索提供商",
+      "enabledModelRatio": "已启用 {{enabled}}/{{total}}",
+      "sort": {
+        "custom": "自定义",
+        "name": "名称",
+        "health": "健康",
+        "usage": "用量"
+      },
+      "health": {
+        "checkAll": "全部检测"
+      },
+      "discovery": {
+        "fetch": "获取模型",
+        "configured": "已配置"
+      },
+      "speedTest": {
+        "run": "测试端点",
+        "failed": "失败",
+        "noCandidates": "请至少填写一个可测试的端点 URL。"
+      },
+      "advanced": {
+        "title": "高级配置",
+        "testModel": "探测模型",
+        "degradedThreshold": "降级阈值 ms",
+        "dailyLimit": "每日美元上限",
+        "monthlyLimit": "每月美元上限"
+      },
+      "softValidation": {
+        "missingApiKey": "API Key 为空。",
+        "missingBaseUrl": "Base URL 为空。",
+        "saveAnyway": "仍然保存？"
+      },
       "stats": {
         "providers": "提供商",
         "models": "模型",
@@ -142,6 +181,16 @@
         "totalTokens": "合计",
         "avgLatency": "平均延迟",
         "lastUsed": "最近使用"
+      },
+      "requestLog": {
+        "title": "最近请求",
+        "desc": "请求级模型用量、延迟和预估成本。",
+        "time": "时间",
+        "provider": "提供商",
+        "model": "模型",
+        "tokens": "Token",
+        "cost": "成本",
+        "latency": "延迟"
       }
     },
     "tool": {

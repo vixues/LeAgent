@@ -1,4 +1,4 @@
-export type ProviderType = 'openai' | 'anthropic' | 'qwen' | 'ollama' | 'custom' | 'dashscope' | 'azure' | 'deepseek';
+export type ProviderType = 'openai' | 'anthropic' | 'qwen' | 'ollama' | 'custom' | 'dashscope' | 'azure' | 'deepseek' | 'vllm';
 
 export interface ProviderModelInfo {
   name: string;
@@ -19,6 +19,7 @@ export interface ModelUsageRow {
   total_output_tokens: number;
   total_tokens: number;
   avg_latency_ms: number;
+  total_cost_usd?: number;
   last_used_at: string | null;
 }
 
@@ -27,6 +28,8 @@ export interface UsageSummary {
   since: string;
   total_requests: number;
   total_tokens: number;
+  total_cost_usd?: number;
+  cache_hit_rate?: number;
   avg_latency_ms: number;
   rows: ModelUsageRow[];
 }
@@ -35,8 +38,12 @@ export interface ProviderHealthEntry {
   provider_name: string;
   is_healthy: boolean | null;
   latency_ms?: number;
+  ttfb_ms?: number;
+  status?: string;
   error?: string | null;
+  error_category?: string | null;
   last_checked?: number | null;
+  circuit?: Record<string, unknown>;
 }
 
 export interface DeepSeekBalanceInfo {
@@ -50,6 +57,8 @@ export interface DeepSeekBalanceResponse {
   provider_name: string;
   is_available: boolean;
   balance_infos: DeepSeekBalanceInfo[];
+  balance_items?: Array<{ label: string; amount: string; currency?: string; usage_percent?: number | null }>;
+  last_queried?: string;
 }
 
 /** Admin system status (GET /api/v1/health/detailed). */
@@ -107,6 +116,7 @@ export interface ModelProviderFormData {
   enabled: boolean;
   timeout?: number;
   metadata?: Record<string, unknown>;
+  extra?: Record<string, unknown>;
 }
 
 export interface DefaultModelConfig {
@@ -127,7 +137,77 @@ export interface TestResult {
   model: string;
   is_healthy: boolean;
   latency_ms: number;
+  ttfb_ms?: number;
+  status?: string;
+  error_category?: string | null;
   error?: string;
+}
+
+export interface DiscoveredModel {
+  id: string;
+  name: string;
+  owned_by?: string;
+  created?: unknown;
+  already_configured: boolean;
+  raw?: Record<string, unknown>;
+}
+
+export interface ProviderUsageRow {
+  provider_name: string;
+  request_count: number;
+  total_tokens: number;
+  total_cost_usd: number;
+  avg_latency_ms: number;
+}
+
+export interface RequestLogRow {
+  id: string;
+  provider_name: string;
+  model: string;
+  request_model: string;
+  input_tokens: number;
+  output_tokens: number;
+  cache_read_tokens: number;
+  cache_write_tokens: number;
+  total_cost_usd: number;
+  latency_ms: number;
+  ttfb_ms: number;
+  status_code: number;
+  error?: string | null;
+  is_streaming: boolean;
+  created_at: string;
+}
+
+export interface UsageTrendRow {
+  bucket: string;
+  request_count: number;
+  total_tokens: number;
+  total_cost_usd: number;
+}
+
+export interface PricingEntry {
+  model: string;
+  input_per_1m: number;
+  output_per_1m: number;
+  cache_read_per_1m?: number;
+  cache_write_per_1m?: number;
+}
+
+export interface SpeedTestResult {
+  url: string;
+  ok: boolean;
+  latency_ms: number;
+  error?: string;
+}
+
+export interface SpendLimitStatus {
+  provider_name: string;
+  daily_limit_usd?: number | null;
+  monthly_limit_usd?: number | null;
+  daily_spend_usd: number;
+  monthly_spend_usd: number;
+  daily_exceeded: boolean;
+  monthly_exceeded: boolean;
 }
 
 export type ToolCategory =

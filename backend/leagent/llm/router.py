@@ -8,6 +8,7 @@ from enum import Enum
 from typing import TYPE_CHECKING, Any
 
 from leagent.exceptions.llm import LLMServiceError, ModelNotFoundError
+from leagent.llm.error_policy import classify_llm_error
 
 if TYPE_CHECKING:
     from leagent.llm.base import ChatMessage, LLMProvider, LLMResponse, ToolDefinition
@@ -42,6 +43,7 @@ class RoutingDecision:
     model: str
     reason: str
     token_count: int = 0
+    failover_from: str | None = None
 
 
 @dataclass
@@ -60,6 +62,10 @@ class ModelRouter:
 
     registry: ProviderRegistry
     tier_configs: dict[str, TierConfig] = field(default_factory=dict)
+    failover_enabled: bool = False
+    failover_chains: dict[str, list[str]] = field(default_factory=dict)
+    failover_max_retries: int = 2
+    model_aliases: dict[str, str] = field(default_factory=dict)
 
     # Keywords that trigger tier 1 (complex reasoning)
     TIER1_KEYWORDS: list[str] = field(
@@ -138,6 +144,54 @@ class ModelRouter:
             fallback_tier=fallback_tier,
         )
 
+    def configure_failover(
+        self,
+        *,
+        enabled: bool,
+        chain: list[str] | None = None,
+        chains: dict[str, list[str]] | None = None,
+        max_retries: int = 2,
+    ) -> None:
+        """Configure priority failover chains for routed requests."""
+        self.failover_enabled = enabled
+        self.failover_max_retries = max(0, int(max_retries))
+        if chains:
+            self.failover_chains = {
+                str(tier): [str(provider) for provider in providers if provider]
+                for tier, providers in chains.items()
+            }
+        elif chain:
+            normalized = [str(provider) for provider in chain if provider]
+            self.failover_chains = {
+                ModelTier.TIER1.value: normalized,
+                ModelTier.TIER2.value: normalized,
+            }
+
+    def configure_model_aliases(self, aliases: dict[str, str] | None) -> None:
+        """Configure logical model aliases such as fast/reasoning/vision."""
+        self.model_aliases = {
+            str(alias).strip().lower(): str(model).strip()
+            for alias, model in (aliases or {}).items()
+            if str(alias).strip() and str(model).strip()
+        }
+
+    def resolve_model_alias(self, model: str | None) -> str | None:
+        """Resolve a logical model alias to a provider-specific model ID."""
+        if not model:
+            return model
+        key = model.strip().lower()
+        return self.model_aliases.get(key, model)
+
+    def _candidate_providers(self, decision: RoutingDecision) -> list[str]:
+        """Return primary provider followed by available failover candidates."""
+        candidates = [decision.provider]
+        if self.failover_enabled:
+            chain = self.failover_chains.get(decision.tier.value) or self.failover_chains.get("default") or []
+            for provider_name in chain:
+                if provider_name not in candidates:
+                    candidates.append(provider_name)
+        return candidates[: self.failover_max_retries + 1]
+
     def count_tokens(self, text: str) -> int:
         """Count tokens in text using tiktoken."""
         return len(self.tokenizer.encode(text))
@@ -187,7 +241,7 @@ class ModelRouter:
             return RoutingDecision(
                 tier=ModelTier(explicit_tier),
                 provider=config.provider,
-                model=config.model,
+                model=self.resolve_model_alias(config.model) or config.model,
                 reason="explicit_tier",
             )
 
@@ -203,7 +257,7 @@ class ModelRouter:
                 return RoutingDecision(
                     tier=ModelTier.TIER1,
                     provider=config.provider,
-                    model=config.model,
+                    model=self.resolve_model_alias(config.model) or config.model,
                     reason=f"large_context ({token_count} tokens)",
                     token_count=token_count,
                 )
@@ -219,7 +273,7 @@ class ModelRouter:
                     return RoutingDecision(
                         tier=ModelTier.TIER2,
                         provider=config.provider,
-                        model=config.model,
+                        model=self.resolve_model_alias(config.model) or config.model,
                         reason=f"keyword_match: {keyword}",
                         token_count=token_count,
                     )
@@ -233,7 +287,7 @@ class ModelRouter:
                     return RoutingDecision(
                         tier=ModelTier.TIER1,
                         provider=config.provider,
-                        model=config.model,
+                        model=self.resolve_model_alias(config.model) or config.model,
                         reason=f"keyword_match: {keyword}",
                         token_count=token_count,
                     )
@@ -248,7 +302,7 @@ class ModelRouter:
                 return RoutingDecision(
                     tier=ModelTier.TIER2,
                     provider=config.provider,
-                    model=config.model,
+                    model=self.resolve_model_alias(config.model) or config.model,
                     reason="low_complexity_heuristic",
                     token_count=token_count,
                 )
@@ -259,7 +313,7 @@ class ModelRouter:
             return RoutingDecision(
                 tier=ModelTier.TIER1,
                 provider=config.provider,
-                model=config.model,
+                model=self.resolve_model_alias(config.model) or config.model,
                 reason="default_tier",
                 token_count=token_count,
             )
@@ -270,7 +324,7 @@ class ModelRouter:
             return RoutingDecision(
                 tier=ModelTier.TIER2,
                 provider=config.provider,
-                model=config.model,
+                model=self.resolve_model_alias(config.model) or config.model,
                 reason="fallback_only_tier",
                 token_count=token_count,
             )
@@ -350,37 +404,58 @@ class ModelRouter:
         if not config:
             raise LLMServiceError(f"Tier {decision.tier} not configured")
 
-        # Try primary provider
-        try:
-            provider = self.registry.get_provider(decision.provider)
-            temperature, max_tokens, tool_choice, extra = self._split_provider_completion_kwargs(
-                kwargs,
-                default_temperature=config.temperature,
-                default_max_tokens=config.max_tokens,
-            )
-            response = await provider.complete(
-                messages=messages,
-                model=decision.model,
-                temperature=temperature,
-                max_tokens=max_tokens,
-                tools=tools,
-                tool_choice=tool_choice,
-                **extra,
-            )
-            return response, decision
-
-        except (LLMServiceError, ModelNotFoundError) as e:
-            # Try fallback if configured
-            if config.fallback_tier:
-                return await self._fallback_complete(
-                    messages=messages,
-                    original_decision=decision,
-                    fallback_tier=config.fallback_tier,
-                    tools=tools,
-                    original_error=e,
-                    **kwargs,
+        errors: list[str] = []
+        for provider_name in self._candidate_providers(decision):
+            if not self.registry.is_provider_available(provider_name):
+                errors.append(f"{provider_name}: circuit open or provider unavailable")
+                continue
+            attempt_decision = decision
+            if provider_name != decision.provider:
+                attempt_decision = RoutingDecision(
+                    tier=decision.tier,
+                    provider=provider_name,
+                    model=self.resolve_model_alias(decision.model) or decision.model,
+                    reason=f"failover_from_{decision.provider}",
+                    token_count=decision.token_count,
+                    failover_from=decision.provider,
                 )
-            raise
+            try:
+                provider = self.registry.get_provider(provider_name)
+                temperature, max_tokens, tool_choice, extra = self._split_provider_completion_kwargs(
+                    kwargs,
+                    default_temperature=config.temperature,
+                    default_max_tokens=config.max_tokens,
+                )
+                response = await provider.complete(
+                    messages=messages,
+                    model=self.resolve_model_alias(attempt_decision.model) or attempt_decision.model,
+                    temperature=temperature,
+                    max_tokens=max_tokens,
+                    tools=tools,
+                    tool_choice=tool_choice,
+                    **extra,
+                )
+                self.registry.record_success(provider_name)
+                return response, attempt_decision
+            except Exception as e:
+                classification = classify_llm_error(e)
+                errors.append(f"{provider_name}: {classification.category.value}: {e}")
+                if classification.counts_against_provider:
+                    self.registry.record_failure(provider_name, str(e))
+                if not classification.retryable:
+                    raise
+
+        # Try legacy tier fallback if configured and priority chain failed.
+        if config.fallback_tier:
+            return await self._fallback_complete(
+                messages=messages,
+                original_decision=decision,
+                fallback_tier=config.fallback_tier,
+                tools=tools,
+                original_error=LLMServiceError("; ".join(errors) or "primary provider failed"),
+                **kwargs,
+            )
+        raise LLMServiceError("; ".join(errors) or "No provider available for routed completion")
 
     async def _fallback_complete(
         self,
@@ -402,7 +477,7 @@ class ModelRouter:
         fallback_decision = RoutingDecision(
             tier=ModelTier(fallback_tier),
             provider=fallback_config.provider,
-            model=fallback_config.model,
+            model=self.resolve_model_alias(fallback_config.model) or fallback_config.model,
             reason=f"fallback_from_{original_decision.tier.value}",
             token_count=original_decision.token_count,
         )
@@ -416,16 +491,20 @@ class ModelRouter:
             )
             response = await provider.complete(
                 messages=messages,
-                model=fallback_config.model,
+                model=self.resolve_model_alias(fallback_config.model) or fallback_config.model,
                 temperature=temperature,
                 max_tokens=max_tokens,
                 tools=tools,
                 tool_choice=tool_choice,
                 **extra,
             )
+            self.registry.record_success(fallback_config.provider)
             return response, fallback_decision
 
         except Exception as fallback_error:
+            classification = classify_llm_error(fallback_error)
+            if classification.counts_against_provider:
+                self.registry.record_failure(fallback_config.provider, str(fallback_error))
             raise LLMServiceError(
                 f"Both primary and fallback failed. "
                 f"Primary error: {original_error}. "

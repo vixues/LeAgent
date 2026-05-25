@@ -16,6 +16,8 @@ import {
   Wrench,
   Clock,
   Layers,
+  Search,
+  RefreshCw,
 } from 'lucide-react';
 import {
   Card,
@@ -46,6 +48,11 @@ import {
   useDefaultModel,
   useSetDefaultModel,
   useModelUsageSummary,
+  useDiscoverProviderModels,
+  useSpeedTestProvider,
+  useCheckAllProvidersHealth,
+  useProviderUsage,
+  useRequestLogs,
 } from '@/hooks/useAdmin';
 import type {
   DeepSeekBalanceResponse,
@@ -56,6 +63,8 @@ import type {
   TestResult,
   ProviderModelInfo,
   ModelUsageRow,
+  DiscoveredModel,
+  SpeedTestResult,
 } from '@/types/admin';
 import { adminApi } from '@/api/admin';
 import { cn, parseApiDateTime } from '@/lib/utils';
@@ -127,6 +136,42 @@ const DEFAULT_BRAND: { bg: string; text: string; border: string; letter: string 
 
 function getBrand(type: string): (typeof PROVIDER_BRAND)[string] {
   return PROVIDER_BRAND[type] ?? DEFAULT_BRAND;
+}
+
+function ProviderIconMark({
+  type,
+  label,
+  compact,
+}: {
+  type: string;
+  label: string;
+  compact?: boolean;
+}) {
+  const brand = getBrand(type);
+  const common = compact ? 'h-3.5 w-3.5' : 'h-5 w-5';
+  if (type === 'openai') {
+    return <Activity className={common} aria-label={label} />;
+  }
+  if (type === 'anthropic') {
+    return <Box className={common} aria-label={label} />;
+  }
+  if (type === 'ollama') {
+    return <Wrench className={common} aria-label={label} />;
+  }
+  if (type === 'vllm') {
+    return <Layers className={common} aria-label={label} />;
+  }
+  if (type === 'qwen' || type === 'dashscope') {
+    return <Zap className={common} aria-label={label} />;
+  }
+  return <span aria-label={label}>{brand.letter}</span>;
+}
+
+function providerCategory(type: string): string {
+  if (['qwen', 'dashscope', 'deepseek'].includes(type)) return 'China Cloud';
+  if (['ollama', 'vllm'].includes(type)) return 'Local';
+  if (['custom', 'azure'].includes(type)) return 'Custom';
+  return 'Official Cloud';
 }
 
 // ---------------------------------------------------------------------------
@@ -207,10 +252,17 @@ function formatRelativeTime(iso: string | null | undefined, t: (k: string, p?: R
 // Health status dot
 // ---------------------------------------------------------------------------
 
-function HealthDot({ status }: { status: boolean | null }) {
-  if (status === true) return <CheckCircle2 className="w-4 h-4 text-green-500" />;
-  if (status === false) return <XCircle className="w-4 h-4 text-red-500" />;
-  return <Circle className="w-4 h-4 text-gray-300 dark:text-gray-600" />;
+function HealthDot({
+  status,
+  size = 'md',
+}: {
+  status: boolean | null;
+  size?: 'sm' | 'md';
+}) {
+  const cls = size === 'sm' ? 'w-3 h-3' : 'w-4 h-4';
+  if (status === true) return <CheckCircle2 className={cn(cls, 'text-green-500')} />;
+  if (status === false) return <XCircle className={cn(cls, 'text-red-500')} />;
+  return <Circle className={cn(cls, 'text-gray-300 dark:text-gray-600')} />;
 }
 
 // ---------------------------------------------------------------------------
@@ -271,10 +323,15 @@ export function ModelProviderConfig() {
   const { data: presets } = usePresets();
   const { data: defaultModel } = useDefaultModel();
   const { data: usage } = useModelUsageSummary(30);
+  const { data: providerUsage } = useProviderUsage(30);
+  const { data: requestLogs } = useRequestLogs(7, 20);
   const createProvider = useCreateProvider();
   const updateProvider = useUpdateProvider();
   const deleteProvider = useDeleteProvider();
   const testProvider = useTestProvider();
+  const discoverModels = useDiscoverProviderModels();
+  const speedTestProvider = useSpeedTestProvider();
+  const checkAllProviders = useCheckAllProvidersHealth();
   const setDefaultModel = useSetDefaultModel();
 
   const {
@@ -302,6 +359,10 @@ export function ModelProviderConfig() {
   const [modelsInput, setModelsInput] = useState('');
   const [formError, setFormError] = useState('');
   const [testResult, setTestResult] = useState<TestResult | null>(null);
+  const [discoveredModels, setDiscoveredModels] = useState<DiscoveredModel[]>([]);
+  const [speedResults, setSpeedResults] = useState<SpeedTestResult[]>([]);
+  const [providerSearch, setProviderSearch] = useState('');
+  const [providerSort, setProviderSort] = useState<'custom' | 'name' | 'health' | 'usage'>('custom');
   const [step, setStep] = useState<'type' | 'config'>('type');
 
   const presetCatalog = useMemo(() => {
@@ -316,6 +377,28 @@ export function ModelProviderConfig() {
     for (const row of usage?.rows ?? []) map[row.model] = row;
     return map;
   }, [usage]);
+
+  const usageByProvider = useMemo(() => {
+    const map: Record<string, number> = {};
+    for (const row of providerUsage ?? []) map[row.provider_name] = row.request_count;
+    return map;
+  }, [providerUsage]);
+
+  const filteredProviders = useMemo(() => {
+    const q = providerSearch.trim().toLowerCase();
+    const rows = [...(providers ?? [])].filter((p) => {
+      if (!q) return true;
+      return [p.name, p.label, p.type, p.base_url].some((v) => (v || '').toLowerCase().includes(q));
+    });
+    if (providerSort === 'name') rows.sort((a, b) => a.name.localeCompare(b.name));
+    if (providerSort === 'health') {
+      rows.sort((a, b) => Number(b.is_healthy === true) - Number(a.is_healthy === true));
+    }
+    if (providerSort === 'usage') {
+      rows.sort((a, b) => (usageByProvider[b.name] ?? 0) - (usageByProvider[a.name] ?? 0));
+    }
+    return rows;
+  }, [providerSearch, providerSort, providers, usageByProvider]);
 
   // ------------------------------------------------------------------------
   // Summary stats derivations
@@ -353,6 +436,8 @@ export function ModelProviderConfig() {
     setModelsInput('');
     setFormError('');
     setTestResult(null);
+    setDiscoveredModels([]);
+    setSpeedResults([]);
     setStep('type');
     setProviderModalOpen(true);
   };
@@ -368,10 +453,13 @@ export function ModelProviderConfig() {
       // that saving the modal does not accidentally strip those fields.
       models: provider.models.map((m) => ({ ...m })),
       enabled: provider.enabled,
+      metadata: provider.metadata ?? {},
     });
     setModelsInput(provider.models.map((m) => m.name).join('\n'));
     setFormError('');
     setTestResult(null);
+    setDiscoveredModels([]);
+    setSpeedResults([]);
     setStep('config');
     setProviderModalOpen(true);
   };
@@ -383,6 +471,8 @@ export function ModelProviderConfig() {
     setModelsInput('');
     setFormError('');
     setTestResult(null);
+    setDiscoveredModels([]);
+    setSpeedResults([]);
     setStep('type');
   };
 
@@ -468,6 +558,16 @@ export function ModelProviderConfig() {
     }
 
     const payload: ModelProviderFormData = { ...formData, models };
+    const warnings: string[] = [];
+    if (requiresApiKey && !selectedProvider && !payload.api_key?.trim()) {
+      warnings.push(t('admin.provider.softValidation.missingApiKey'));
+    }
+    if (showBaseUrl && !payload.base_url?.trim()) {
+      warnings.push(t('admin.provider.softValidation.missingBaseUrl'));
+    }
+    if (warnings.length > 0 && !window.confirm(warnings.join('\n') + `\n\n${t('admin.provider.softValidation.saveAnyway')}`)) {
+      return;
+    }
 
     try {
       if (selectedProvider) {
@@ -503,6 +603,48 @@ export function ModelProviderConfig() {
         latency_ms: 0,
         error: (error as Error).message,
       });
+    }
+  };
+
+  const handleDiscoverModels = async () => {
+    if (!selectedProvider) return;
+    setFormError('');
+    try {
+      const rows = await discoverModels.mutateAsync(selectedProvider.name);
+      setDiscoveredModels(rows);
+    } catch (error) {
+      setFormError(error instanceof Error ? error.message : String(error));
+    }
+  };
+
+  const handleAddDiscoveredModel = (row: DiscoveredModel) => {
+    const modelName = row.name || row.id;
+    if (!modelName || (formData.models ?? []).some((m) => m.name === modelName)) return;
+    const next = [...(formData.models ?? []), { name: modelName, tier: '', context_window: 0 }];
+    setFormData((prev) => ({ ...prev, models: next }));
+    setModelsInput(next.map((m) => m.name).join('\n'));
+  };
+
+  const handleSpeedTest = async () => {
+    if (!selectedProvider) return;
+    const candidates = [
+      formData.base_url,
+      selectedProvider.base_url,
+      ...(Array.isArray(selectedProvider.metadata?.endpoint_candidates)
+        ? selectedProvider.metadata.endpoint_candidates as string[]
+        : []),
+    ].filter((v): v is string => Boolean(v && v.trim()));
+    if (candidates.length === 0) {
+      setFormError(t('admin.provider.speedTest.noCandidates'));
+      return;
+    }
+    try {
+      const rows = await speedTestProvider.mutateAsync({ name: selectedProvider.name, candidates });
+      setSpeedResults(rows);
+      const fastest = rows.find((r) => r.ok);
+      if (fastest) setFormData((prev) => ({ ...prev, base_url: fastest.url }));
+    } catch (error) {
+      setFormError(error instanceof Error ? error.message : String(error));
     }
   };
 
@@ -548,14 +690,25 @@ export function ModelProviderConfig() {
         description={t('admin.provider.description')}
         titleClassName="text-xl"
         actions={
-          <Button
-            size="sm"
-            leftIcon={<Plus className="w-4 h-4" aria-hidden />}
-            responsive="md"
-            onClick={handleOpenCreate}
-          >
-            {t('admin.provider.add')}
-          </Button>
+          <div className="flex gap-2">
+            <Button
+              size="sm"
+              variant="secondary"
+              leftIcon={<RefreshCw className="w-4 h-4" aria-hidden />}
+              loading={checkAllProviders.isPending}
+              onClick={() => checkAllProviders.mutate()}
+            >
+              {t('admin.provider.health.checkAll')}
+            </Button>
+            <Button
+              size="sm"
+              leftIcon={<Plus className="w-4 h-4" aria-hidden />}
+              responsive="md"
+              onClick={handleOpenCreate}
+            >
+              {t('admin.provider.add')}
+            </Button>
+          </div>
         }
       />
 
@@ -669,58 +822,118 @@ export function ModelProviderConfig() {
 
       {/* Main split layout: provider list + detail panel */}
       {providers && providers.length > 0 && (
-        <div className="grid gap-4 lg:grid-cols-[minmax(260px,320px)_1fr]">
+        <div className="grid gap-4 lg:grid-cols-[240px_1fr]">
           {/* Left pane: provider list */}
-          <Card className="lg:sticky lg:top-4 h-fit">
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm uppercase tracking-wide text-gray-500 dark:text-gray-400">
+          <Card padding="sm" className="h-fit min-w-0 w-full overflow-hidden lg:sticky lg:top-4">
+            <div className="space-y-2">
+              <h3 className="text-[11px] font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
                 {t('admin.provider.listTitle')}
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="pt-0 space-y-1">
-              {providers.map((p) => {
-                const brand = getBrand(p.type);
-                const isSelected = focusedProvider?.name === p.name;
-                return (
-                  <button
-                    key={p.name}
-                    type="button"
-                    onClick={() => setFocusedProviderName(p.name)}
-                    className={cn(
-                      'w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-left transition-colors',
-                      isSelected
-                        ? 'bg-primary-50 dark:bg-primary-900/20 ring-1 ring-primary-300 dark:ring-primary-800'
-                        : 'hover:bg-gray-50 dark:hover:bg-gray-800/60',
-                      !p.enabled && 'opacity-60',
-                    )}
-                  >
-                    <div
+              </h3>
+              <div className="flex gap-1.5">
+                <div className="relative min-w-0 flex-1">
+                  <Search className="absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-gray-400" />
+                  <Input
+                    className="h-8 pl-7 text-xs"
+                    value={providerSearch}
+                    onChange={(e) => setProviderSearch(e.target.value)}
+                    placeholder={t('admin.provider.searchPlaceholder')}
+                  />
+                </div>
+                <Select
+                  value={providerSort}
+                  onChange={(e) => setProviderSort(e.target.value as typeof providerSort)}
+                  className="h-8 w-[4.5rem] shrink-0 px-1.5 text-xs"
+                >
+                  <option value="custom">{t('admin.provider.sort.custom')}</option>
+                  <option value="name">{t('admin.provider.sort.name')}</option>
+                  <option value="health">{t('admin.provider.sort.health')}</option>
+                  <option value="usage">{t('admin.provider.sort.usage')}</option>
+                </Select>
+              </div>
+              <div className="space-y-0.5">
+                {filteredProviders.map((p, idx) => {
+                  const brand = getBrand(p.type);
+                  const isSelected = focusedProvider?.name === p.name;
+                  const circuit = p.metadata?.circuit as { state?: string } | undefined;
+                  const enabledModels = p.models.filter((m) => m.enabled !== false).length;
+                  return (
+                    <button
+                      key={p.name}
+                      type="button"
+                      onClick={() => setFocusedProviderName(p.name)}
                       className={cn(
-                        'w-9 h-9 rounded-lg flex items-center justify-center font-bold text-xs shrink-0',
-                        brand.bg,
-                        brand.text,
+                        'flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left ring-1 ring-inset transition-colors',
+                        isSelected
+                          ? 'bg-primary-50 ring-primary-300 dark:bg-primary-900/20 dark:ring-primary-800'
+                          : 'ring-transparent hover:bg-gray-50 dark:hover:bg-gray-800/60',
+                        !p.enabled && 'opacity-60',
                       )}
                     >
-                      {brand.letter}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm font-medium text-gray-900 dark:text-white truncate">
-                          {p.name}
-                        </span>
-                        <HealthDot status={p.is_healthy} />
+                      <div
+                        className={cn(
+                          'flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-[10px] font-bold',
+                          brand.bg,
+                          brand.text,
+                        )}
+                      >
+                        <ProviderIconMark
+                          type={p.type}
+                          label={p.label || p.name}
+                          compact
+                        />
                       </div>
-                      <p className="text-xs text-gray-500 dark:text-gray-400 truncate">
-                        {p.label} · {t('admin.provider.modelCount', { n: p.models.length })}
-                      </p>
-                    </div>
-                    <Badge variant={p.enabled ? 'success' : 'default'} size="sm">
-                      {p.enabled ? t('admin.provider.enabled') : t('admin.provider.disabled')}
-                    </Badge>
-                  </button>
-                );
-              })}
-            </CardContent>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-1">
+                          <span className="truncate text-xs font-medium text-gray-900 dark:text-white">
+                            {p.name}
+                          </span>
+                          <HealthDot status={p.is_healthy} size="sm" />
+                          {circuit?.state === 'open' && (
+                            <span className="shrink-0 rounded bg-yellow-100 px-1 text-[10px] font-medium text-yellow-800 dark:bg-yellow-900/40 dark:text-yellow-300">
+                              CB
+                            </span>
+                          )}
+                        </div>
+                        <p className="truncate text-[10px] leading-tight text-gray-500 dark:text-gray-400">
+                          {p.label}
+                          {' · '}
+                          {t('admin.provider.modelCount', { n: p.models.length })}
+                          {' · '}
+                          {t('admin.provider.enabledModelRatio', {
+                            enabled: enabledModels,
+                            total: p.models.length,
+                          })}
+                          {providerSort === 'usage' &&
+                            ` · ${formatCompactNumber(usageByProvider[p.name] ?? 0)}`}
+                        </p>
+                      </div>
+                      <div className="flex shrink-0 flex-col items-end gap-0.5">
+                        {idx < 9 && (
+                          <span className="font-mono text-[10px] leading-none text-gray-400 dark:text-gray-500">
+                            P{idx + 1}
+                          </span>
+                        )}
+                        <span
+                          className={cn(
+                            'text-[10px] leading-none',
+                            p.enabled
+                              ? 'text-green-600 dark:text-green-400'
+                              : 'text-gray-400 dark:text-gray-500',
+                          )}
+                          title={
+                            p.enabled
+                              ? t('admin.provider.enabled')
+                              : t('admin.provider.disabled')
+                          }
+                        >
+                          {p.enabled ? '●' : '○'}
+                        </span>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
           </Card>
 
           {/* Right pane: provider details */}
@@ -801,6 +1014,51 @@ export function ModelProviderConfig() {
         </Card>
       )}
 
+      {requestLogs && requestLogs.length > 0 && (
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base">{t('admin.provider.requestLog.title')}</CardTitle>
+            <p className="text-xs text-gray-500 dark:text-gray-400">
+              {t('admin.provider.requestLog.desc')}
+            </p>
+          </CardHeader>
+          <CardContent className="pt-0 overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-gray-200 text-left text-xs uppercase tracking-wide text-gray-500 dark:border-gray-700 dark:text-gray-400">
+                  <th className="py-2 pr-4">{t('admin.provider.requestLog.time')}</th>
+                  <th className="py-2 px-4">{t('admin.provider.requestLog.provider')}</th>
+                  <th className="py-2 px-4">{t('admin.provider.requestLog.model')}</th>
+                  <th className="py-2 px-4 text-right">{t('admin.provider.requestLog.tokens')}</th>
+                  <th className="py-2 px-4 text-right">{t('admin.provider.requestLog.cost')}</th>
+                  <th className="py-2 pl-4 text-right">{t('admin.provider.requestLog.latency')}</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
+                {requestLogs.map((row) => (
+                  <tr key={row.id}>
+                    <td className="py-2 pr-4 text-xs text-gray-500">
+                      {formatRelativeTime(row.created_at, t)}
+                    </td>
+                    <td className="py-2 px-4">{row.provider_name}</td>
+                    <td className="py-2 px-4 font-mono text-xs">{row.model}</td>
+                    <td className="py-2 px-4 text-right tabular-nums">
+                      {formatCompactNumber(row.input_tokens + row.output_tokens)}
+                    </td>
+                    <td className="py-2 px-4 text-right tabular-nums">
+                      ${row.total_cost_usd.toFixed(4)}
+                    </td>
+                    <td className="py-2 pl-4 text-right tabular-nums">
+                      {Math.round(row.latency_ms)} ms
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Test result toast */}
       {testResult && (
         <div
@@ -851,38 +1109,61 @@ export function ModelProviderConfig() {
         <ModalBody className="space-y-5">
           {!selectedProvider && step === 'type' && (
             <div className="space-y-3">
-              <p className="text-sm text-gray-600 dark:text-gray-400">
+              <p className="text-xs text-gray-500 dark:text-gray-400">
                 {t('admin.provider.selectTypeDescription')}
               </p>
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                 {(presets ?? []).map((preset) => {
                   const brand = getBrand(preset.type);
+                  const isRecommended = ['deepseek', 'qwen'].includes(preset.type);
                   return (
                     <button
                       key={preset.type}
                       className={cn(
-                        'flex flex-col items-center gap-2 p-4 rounded-xl border-2 transition-[color,background-color,border-color,box-shadow,opacity,transform] hover:shadow-sm',
-                        'border-gray-200 dark:border-gray-700 hover:border-primary-300 dark:hover:border-primary-700',
+                        'group relative flex items-center gap-3 rounded-lg border px-3 py-2.5',
+                        'transition-all duration-150',
+                        'border-gray-200 dark:border-gray-700',
+                        'hover:border-primary-400 dark:hover:border-primary-600 hover:bg-primary-50/50 dark:hover:bg-primary-900/10',
+                        'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/40',
+                        isRecommended && 'border-primary-200 dark:border-primary-800/60 bg-primary-50/30 dark:bg-primary-900/5',
                       )}
                       onClick={() => applyPreset(preset)}
                     >
                       <div
                         className={cn(
-                          'w-10 h-10 rounded-lg flex items-center justify-center font-bold text-sm',
+                          'flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-sm font-bold',
                           brand.bg,
                           brand.text,
                         )}
                       >
-                        {brand.letter}
+                        <ProviderIconMark type={preset.type} label={preset.label} />
                       </div>
-                      <span className="text-sm font-medium text-gray-900 dark:text-white">
-                        {preset.label}
-                      </span>
-                      <span className="text-xs text-gray-400">
-                        {preset.models.length > 0
-                          ? t('admin.provider.presetModelCount', { count: preset.models.length })
-                          : t('admin.provider.customModelsBadge')}
-                      </span>
+                      <div className="min-w-0 flex-1 text-left">
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-sm font-medium text-gray-900 dark:text-white truncate">
+                            {preset.label}
+                          </span>
+                          {isRecommended && (
+                            <span className="shrink-0 rounded-full bg-primary-100 dark:bg-primary-900/30 px-1.5 py-px text-[10px] font-medium leading-tight text-primary-700 dark:text-primary-300">
+                              {t('admin.provider.recommended')}
+                            </span>
+                          )}
+                        </div>
+                        <span className="text-[11px] leading-tight text-gray-400 dark:text-gray-500">
+                          {preset.models.length > 0
+                            ? t('admin.provider.presetModelCount', { count: preset.models.length })
+                            : t('admin.provider.customModelsBadge')}
+                        </span>
+                      </div>
+                      <svg
+                        className="h-4 w-4 shrink-0 text-gray-300 dark:text-gray-600 transition-transform group-hover:translate-x-0.5 group-hover:text-primary-400"
+                        fill="none"
+                        viewBox="0 0 24 24"
+                        stroke="currentColor"
+                        strokeWidth={2}
+                      >
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+                      </svg>
                     </button>
                   );
                 })}
@@ -985,6 +1266,36 @@ export function ModelProviderConfig() {
                     onChange={(e) => setFormData({ ...formData, base_url: e.target.value })}
                     placeholder={currentPreset?.default_base_url || 'https://api.example.com/v1'}
                   />
+                  {selectedProvider && (
+                    <div className="mt-2 space-y-2">
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="secondary"
+                        onClick={handleSpeedTest}
+                        loading={speedTestProvider.isPending}
+                      >
+                        {t('admin.provider.speedTest.run')}
+                      </Button>
+                      {speedResults.length > 0 && (
+                        <div className="space-y-1 rounded-lg border border-gray-200 p-2 text-xs dark:border-gray-700">
+                          {speedResults.map((r) => (
+                            <button
+                              key={r.url}
+                              type="button"
+                              className="flex w-full items-center justify-between gap-2 rounded px-2 py-1 text-left hover:bg-gray-50 dark:hover:bg-gray-800"
+                              onClick={() => r.ok && setFormData({ ...formData, base_url: r.url })}
+                            >
+                              <span className="truncate font-mono">{r.url}</span>
+                              <span className={r.ok ? 'text-green-600' : 'text-red-600'}>
+                                {r.ok ? `${Math.round(r.latency_ms)} ms` : t('admin.provider.speedTest.failed')}
+                              </span>
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -1034,9 +1345,22 @@ export function ModelProviderConfig() {
               )}
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                  {t('admin.provider.availableModelsLabel')}
-                </label>
+                <div className="mb-1 flex items-center justify-between gap-2">
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                    {t('admin.provider.availableModelsLabel')}
+                  </label>
+                  {selectedProvider && (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="secondary"
+                      onClick={handleDiscoverModels}
+                      loading={discoverModels.isPending}
+                    >
+                      {t('admin.provider.discovery.fetch')}
+                    </Button>
+                  )}
+                </div>
                 {usePresetModelMultiselect ? (
                   <div className="space-y-2 max-h-56 overflow-y-auto rounded-lg border border-gray-200 dark:border-gray-700 p-3">
                     {presetCatalog.map((m) => {
@@ -1084,11 +1408,96 @@ export function ModelProviderConfig() {
                     </p>
                   </>
                 )}
+                {discoveredModels.length > 0 && (
+                  <div className="mt-3 max-h-40 space-y-1 overflow-y-auto rounded-lg border border-gray-200 p-2 dark:border-gray-700">
+                    {discoveredModels.slice(0, 50).map((row) => (
+                      <button
+                        key={row.id}
+                        type="button"
+                        disabled={row.already_configured || (formData.models ?? []).some((m) => m.name === (row.name || row.id))}
+                        className="flex w-full items-center justify-between rounded px-2 py-1 text-left text-xs hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50 dark:hover:bg-gray-800"
+                        onClick={() => handleAddDiscoveredModel(row)}
+                      >
+                        <span className="font-mono">{row.name || row.id}</span>
+                        <span className="text-gray-500">
+                          {row.already_configured ? t('admin.provider.discovery.configured') : row.owned_by}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                )}
                 {formError ? (
                   <p className="mt-2 text-sm text-red-600 dark:text-red-400" role="alert">
                     {formError}
                   </p>
                 ) : null}
+              </div>
+
+              <div className="rounded-lg border border-gray-200 p-3 dark:border-gray-700">
+                <p className="mb-3 text-sm font-medium text-gray-700 dark:text-gray-300">
+                  {t('admin.provider.advanced.title')}
+                </p>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <Input
+                    placeholder={t('admin.provider.advanced.testModel')}
+                    value={String((formData.metadata?.test_config as Record<string, unknown> | undefined)?.test_model ?? '')}
+                    onChange={(e) => setFormData({
+                      ...formData,
+                      metadata: {
+                        ...(formData.metadata ?? {}),
+                        test_config: {
+                          ...((formData.metadata?.test_config as Record<string, unknown> | undefined) ?? {}),
+                          test_model: e.target.value,
+                        },
+                      },
+                    })}
+                  />
+                  <Input
+                    type="number"
+                    placeholder={t('admin.provider.advanced.degradedThreshold')}
+                    value={String((formData.metadata?.test_config as Record<string, unknown> | undefined)?.degraded_threshold_ms ?? '')}
+                    onChange={(e) => setFormData({
+                      ...formData,
+                      metadata: {
+                        ...(formData.metadata ?? {}),
+                        test_config: {
+                          ...((formData.metadata?.test_config as Record<string, unknown> | undefined) ?? {}),
+                          degraded_threshold_ms: Number(e.target.value || 0),
+                        },
+                      },
+                    })}
+                  />
+                  <Input
+                    type="number"
+                    placeholder={t('admin.provider.advanced.dailyLimit')}
+                    value={String((formData.metadata?.limits as Record<string, unknown> | undefined)?.daily_usd ?? '')}
+                    onChange={(e) => setFormData({
+                      ...formData,
+                      metadata: {
+                        ...(formData.metadata ?? {}),
+                        limits: {
+                          ...((formData.metadata?.limits as Record<string, unknown> | undefined) ?? {}),
+                          daily_usd: Number(e.target.value || 0),
+                        },
+                      },
+                    })}
+                  />
+                  <Input
+                    type="number"
+                    placeholder={t('admin.provider.advanced.monthlyLimit')}
+                    value={String((formData.metadata?.limits as Record<string, unknown> | undefined)?.monthly_usd ?? '')}
+                    onChange={(e) => setFormData({
+                      ...formData,
+                      metadata: {
+                        ...(formData.metadata ?? {}),
+                        limits: {
+                          ...((formData.metadata?.limits as Record<string, unknown> | undefined) ?? {}),
+                          monthly_usd: Number(e.target.value || 0),
+                        },
+                      },
+                    })}
+                  />
+                </div>
               </div>
 
               <div className="flex items-center gap-2">
@@ -1232,7 +1641,7 @@ function ProviderDetailPanel({
                 brand.text,
               )}
             >
-              {brand.letter}
+              <ProviderIconMark type={provider.type} label={provider.label || provider.name} />
             </div>
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2 flex-wrap">
