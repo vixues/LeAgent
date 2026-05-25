@@ -51,7 +51,9 @@ class _InMemoryDB:
         os.close(fd)
         self._path = path
         self._engine = create_async_engine(
-            f"sqlite+aiosqlite:///{path}", echo=False
+            f"sqlite+aiosqlite:///{path}",
+            echo=False,
+            connect_args={"timeout": 15},
         )
         self._factory = sessionmaker(
             self._engine, class_=AsyncSession, expire_on_commit=False

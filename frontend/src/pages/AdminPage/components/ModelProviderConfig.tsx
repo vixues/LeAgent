@@ -167,13 +167,6 @@ function ProviderIconMark({
   return <span aria-label={label}>{brand.letter}</span>;
 }
 
-function providerCategory(type: string): string {
-  if (['qwen', 'dashscope', 'deepseek'].includes(type)) return 'China Cloud';
-  if (['ollama', 'vllm'].includes(type)) return 'Local';
-  if (['custom', 'azure'].includes(type)) return 'Custom';
-  return 'Official Cloud';
-}
-
 // ---------------------------------------------------------------------------
 // Formatting helpers
 // ---------------------------------------------------------------------------
@@ -1309,7 +1302,7 @@ export function ModelProviderConfig() {
                       {t('admin.provider.qwenEnableSearch')}
                     </label>
                     <Switch
-                      checked={formData.extra?.enable_search ?? false}
+                      checked={Boolean(formData.extra?.enable_search ?? false)}
                       onCheckedChange={(checked) =>
                         setFormData({
                           ...formData,
@@ -1323,7 +1316,7 @@ export function ModelProviderConfig() {
                       {t('admin.provider.qwenEnableThinking')}
                     </label>
                     <Switch
-                      checked={formData.extra?.enable_thinking ?? true}
+                      checked={Boolean(formData.extra?.enable_thinking ?? true)}
                       onCheckedChange={(checked) =>
                         setFormData({
                           ...formData,
