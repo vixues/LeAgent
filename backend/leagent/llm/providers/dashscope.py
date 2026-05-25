@@ -1,42 +1,65 @@
 """DashScope (Alibaba Cloud) LLM provider.
 
-Supports Qwen models and other models available on DashScope.
+DashScope exposes an OpenAI-compatible ``/chat/completions`` endpoint so
+most of the work is handled by :class:`OpenAIProvider`. This subclass adds:
+
+- Default base URL pinned to DashScope's OpenAI-compatible endpoint.
+- ``enable_thinking`` injection for Qwen3 thinking models, configurable
+  via settings and per-request overrides.
+- ``reasoning_content`` extraction for both streaming and non-streaming
+  responses (Qwen3 thinking mode), surfaced via ``StreamChunk.raw_delta``
+  / ``LLMResponse.reasoning_content``.
+- Settings-driven ``enable_search`` injection.
+- ``thinking_budget``, ``preserve_thinking`` forwarding in request body.
+- Cache metrics logging from ``prompt_tokens_details.cached_tokens``.
+- Diagnostic error handling for DashScope-specific 400 errors.
+
+The ``name`` attribute stays ``"dashscope"`` so the registry can route by
+provider type.
 """
 
 from __future__ import annotations
 
-import json
-from typing import Any, AsyncIterator, Literal
+import logging
+from collections.abc import AsyncIterator
+from typing import Any, Literal
 
-import httpx
-
-from leagent.utils.httpx_proxy import httpx_trust_env
-
-from leagent.exceptions.llm import (
-    LLMRateLimitError,
-    LLMServiceError,
-    LLMTimeoutError,
-    ModelNotFoundError,
-)
 from leagent.llm.base import (
     ChatMessage,
     EmbeddingResponse,
-    LLMProvider,
     LLMResponse,
     StreamChunk,
     TokenUsage,
-    ToolCall,
     ToolDefinition,
 )
+from leagent.llm.providers.openai import OpenAIProvider
+
+logger = logging.getLogger(__name__)
+
+_THINKING_CAPABLE_PREFIXES = (
+    "qwen3",
+    "qwq",
+)
+
+_DASHSCOPE_EXTRA_BODY_KEYS = frozenset({
+    "enable_thinking",
+    "enable_search",
+    "thinking_budget",
+    "preserve_thinking",
+    "search_options",
+    "enable_code_interpreter",
+    "top_k",
+    "repetition_penalty",
+    "skill",
+    "vl_high_resolution_images",
+})
 
 
-class DashScopeProvider(LLMProvider):
-    """DashScope provider for Alibaba Cloud's LLM services.
+class DashScopeProvider(OpenAIProvider):
+    """OpenAI-compatible provider for Alibaba Cloud DashScope (Qwen models).
 
-    Supports:
-    - Qwen series (qwen-turbo, qwen-plus, qwen-max, qwen2.5-72b-instruct, etc.)
-    - Text embedding models
-    - Function calling
+    Uses the OpenAI-compatible endpoint at
+    ``https://dashscope.aliyuncs.com/compatible-mode/v1``.
     """
 
     name = "dashscope"
@@ -44,150 +67,104 @@ class DashScopeProvider(LLMProvider):
     supports_tools = True
     supports_embeddings = True
 
-    BASE_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1"
+    DEFAULT_BASE_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1"
+    DEFAULT_MODEL = "qwen-plus"
 
     def __init__(
         self,
         api_key: str,
-        default_model: str = "qwen-plus",
+        base_url: str = DEFAULT_BASE_URL,
+        default_model: str = DEFAULT_MODEL,
         timeout: float = 120.0,
         max_retries: int = 2,
     ) -> None:
-        self.api_key = api_key
-        self.default_model = default_model
-        self.timeout = timeout
-        self.max_retries = max_retries
-
-    def _get_default_model(self) -> str:
-        return self.default_model
-
-    def _get_headers(self, stream: bool = False) -> dict[str, str]:
-        headers = {
-            "Authorization": f"Bearer {self.api_key}",
-            "Content-Type": "application/json",
-        }
-        if stream:
-            headers["X-DashScope-SSE"] = "enable"
-        return headers
-
-    def _build_messages(self, messages: list[ChatMessage]) -> list[dict[str, Any]]:
-        """Convert to DashScope message format."""
-        result = []
-        for msg in messages:
-            ds_msg: dict[str, Any] = {"role": msg.role.value}
-            if msg.content is not None:
-                ds_msg["content"] = msg.content
-            if msg.name:
-                ds_msg["name"] = msg.name
-            if msg.tool_calls:
-                ds_msg["tool_calls"] = [
-                    {
-                        "id": tc.id,
-                        "type": "function",
-                        "function": {
-                            "name": tc.name,
-                            "arguments": tc.arguments,
-                        },
-                    }
-                    for tc in msg.tool_calls
-                ]
-            if msg.tool_call_id:
-                ds_msg["tool_call_id"] = msg.tool_call_id
-            result.append(ds_msg)
-        return result
-
-    def _build_tools(self, tools: list[ToolDefinition] | None) -> list[dict[str, Any]] | None:
-        """Convert tools to DashScope format."""
-        if not tools:
-            return None
-        return [
-            {
-                "type": "function",
-                "function": {
-                    "name": t.name,
-                    "description": t.description,
-                    "parameters": t.parameters,
-                },
-            }
-            for t in tools
-        ]
-
-    def _parse_response(self, data: dict[str, Any], model: str) -> LLMResponse:
-        """Parse DashScope response."""
-        output = data.get("output", {})
-        choices = output.get("choices", [{}])
-        choice = choices[0] if choices else {}
-        message = choice.get("message", {})
-
-        tool_calls: list[ToolCall] = []
-        if raw_tool_calls := message.get("tool_calls"):
-            for tc in raw_tool_calls:
-                func = tc.get("function", {})
-                tool_calls.append(
-                    ToolCall(
-                        id=tc.get("id", ""),
-                        name=func.get("name", ""),
-                        arguments=func.get("arguments", "{}"),
-                    )
-                )
-
-        usage_data = data.get("usage", {})
-        usage = TokenUsage(
-            prompt_tokens=usage_data.get("input_tokens", 0),
-            completion_tokens=usage_data.get("output_tokens", 0),
-            total_tokens=usage_data.get("total_tokens", 0),
+        super().__init__(
+            api_key=api_key,
+            base_url=base_url or self.DEFAULT_BASE_URL,
+            default_model=default_model or self.DEFAULT_MODEL,
+            timeout=timeout,
+            max_retries=max_retries,
         )
 
-        return LLMResponse(
-            content=message.get("content"),
-            tool_calls=tool_calls,
-            finish_reason=choice.get("finish_reason", "stop"),
-            model=output.get("model", model),
-            usage=usage,
-            raw_response=data,
-        )
+    # ------------------------------------------------------------------
+    # Settings merge
+    # ------------------------------------------------------------------
 
-    def _handle_error(
+    def _merge_dashscope_settings(self, kwargs: dict[str, Any]) -> dict[str, Any]:
+        """Inject ``enable_thinking`` / ``enable_search`` from app settings.
+
+        Explicit kwargs win over settings.
+        """
+        try:
+            from leagent.config.settings import get_settings
+            llm = get_settings().llm
+        except Exception:
+            return kwargs
+
+        merged = dict(kwargs)
+
+        if llm.dashscope_enable_thinking is not None:
+            merged.setdefault("enable_thinking", llm.dashscope_enable_thinking)
+
+        if llm.dashscope_enable_search:
+            merged.setdefault("enable_search", True)
+
+        return merged
+
+    # ------------------------------------------------------------------
+    # Request body construction
+    # ------------------------------------------------------------------
+
+    def _build_request_body(
         self,
-        status_code: int,
-        response_body: dict[str, Any] | str,
+        messages: list[ChatMessage],
         model: str,
-    ) -> None:
-        """Map DashScope errors to exceptions."""
-        error_msg = ""
-        error_code = ""
+        temperature: float,
+        max_tokens: int,
+        tools: list[ToolDefinition] | None,
+        tool_choice: Literal["auto", "none", "required"] | str | None,
+        stop: list[str] | None,
+        stream: bool = False,
+        **kwargs: Any,
+    ) -> dict[str, Any]:
+        enable_thinking = kwargs.pop("enable_thinking", None)
+        if enable_thinking is None and self._is_thinking_model(model):
+            enable_thinking = True
 
-        if isinstance(response_body, dict):
-            error_code = response_body.get("code", "")
-            error_msg = response_body.get("message", str(response_body))
-        else:
-            error_msg = response_body
+        enable_search = kwargs.pop("enable_search", None)
+        thinking_budget = kwargs.pop("thinking_budget", None)
+        preserve_thinking = kwargs.pop("preserve_thinking", None)
+        search_options = kwargs.pop("search_options", None)
 
-        if status_code == 401 or error_code == "InvalidApiKey":
-            raise LLMServiceError(
-                "Invalid DashScope API key",
-                model=model,
-                endpoint=self.BASE_URL,
-            )
-
-        if error_code == "ModelNotFound" or status_code == 404:
-            raise ModelNotFoundError(model)
-
-        if status_code == 429 or error_code in ("RateLimitExceeded", "QuotaExceeded"):
-            raise LLMRateLimitError(model=model)
-
-        if status_code >= 500:
-            raise LLMServiceError(
-                f"DashScope server error: {error_msg}",
-                model=model,
-                endpoint=self.BASE_URL,
-            )
-
-        raise LLMServiceError(
-            f"DashScope API error ({error_code}): {error_msg}",
-            model=model,
-            endpoint=self.BASE_URL,
+        body = super()._build_request_body(
+            messages, model, temperature, max_tokens, tools, tool_choice, stop, stream, **kwargs
         )
+
+        if enable_thinking is not None:
+            body["enable_thinking"] = enable_thinking
+
+        if enable_search is not None:
+            body["enable_search"] = enable_search
+
+        if thinking_budget is not None:
+            body["thinking_budget"] = thinking_budget
+
+        if preserve_thinking is not None:
+            body["preserve_thinking"] = preserve_thinking
+
+        if search_options is not None:
+            body["search_options"] = search_options
+
+        return body
+
+    def _is_thinking_model(self, model: str) -> bool:
+        """Return True if the model supports Qwen3 thinking mode."""
+        model_lower = model.lower()
+        return any(model_lower.startswith(prefix) for prefix in _THINKING_CAPABLE_PREFIXES)
+
+    # ------------------------------------------------------------------
+    # Non-streaming completion
+    # ------------------------------------------------------------------
 
     async def complete(
         self,
@@ -201,90 +178,33 @@ class DashScopeProvider(LLMProvider):
         stop: list[str] | None = None,
         **kwargs: Any,
     ) -> LLMResponse:
-        body: dict[str, Any] = {
-            "model": model,
-            "input": {
-                "messages": self._build_messages(messages),
-            },
-            "parameters": {
-                "temperature": temperature,
-                "max_tokens": max_tokens,
-                "result_format": "message",
-            },
-        }
-
-        if tools:
-            body["input"]["tools"] = self._build_tools(tools)
-            if tool_choice:
-                body["parameters"]["tool_choice"] = tool_choice
-
-        if stop:
-            body["parameters"]["stop"] = stop
-
-        # Add any extra parameters
-        if kwargs.get("top_p"):
-            body["parameters"]["top_p"] = kwargs["top_p"]
-        if kwargs.get("seed"):
-            body["parameters"]["seed"] = kwargs["seed"]
-        if kwargs.get("enable_search"):
-            body["parameters"]["enable_search"] = kwargs["enable_search"]
-
-        url = f"{self.BASE_URL}/services/aigc/text-generation/generation"
-        last_error: Exception | None = None
-
-        for attempt in range(self.max_retries + 1):
-            try:
-                async with httpx.AsyncClient(timeout=self.timeout, trust_env=httpx_trust_env()) as client:
-                    response = await client.post(
-                        url,
-                        headers=self._get_headers(),
-                        json=body,
-                    )
-
-                if response.status_code == 200:
-                    data = response.json()
-                    # DashScope returns errors in JSON body even with 200 status
-                    if data.get("code") and data.get("code") != "200":
-                        self._handle_error(200, data, model)
-                    return self._parse_response(data, model)
-
-                try:
-                    error_body = response.json()
-                except json.JSONDecodeError:
-                    error_body = response.text
-
-                if response.status_code == 429 and attempt < self.max_retries:
-                    import asyncio
-                    await asyncio.sleep(2 ** attempt)
-                    continue
-
-                self._handle_error(response.status_code, error_body, model)
-
-            except httpx.TimeoutException as e:
-                last_error = e
-                if attempt < self.max_retries:
-                    import asyncio
-                    await asyncio.sleep(2 ** attempt)
-                    continue
-                raise LLMTimeoutError(model=model, timeout_sec=int(self.timeout)) from e
-
-            except httpx.RequestError as e:
-                last_error = e
-                if attempt < self.max_retries:
-                    import asyncio
-                    await asyncio.sleep(2 ** attempt)
-                    continue
-                raise LLMServiceError(
-                    f"Request failed: {e}",
-                    model=model,
-                    endpoint=self.BASE_URL,
-                ) from e
-
-        raise LLMServiceError(
-            f"Max retries exceeded: {last_error}",
+        kwargs = self._merge_dashscope_settings(kwargs)
+        return await super().complete(
+            messages,
             model=model,
-            endpoint=self.BASE_URL,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            tools=tools,
+            tool_choice=tool_choice,
+            stop=stop,
+            **kwargs,
         )
+
+    def _parse_response(self, data: dict[str, Any]) -> LLMResponse:
+        response = super()._parse_response(data)
+
+        choice = (data.get("choices") or [{}])[0]
+        message = choice.get("message") or {}
+        rc = message.get("reasoning_content")
+        if isinstance(rc, str) and rc.strip():
+            response.reasoning_content = rc
+
+        self._log_cache_metrics(response.usage, response.model)
+        return response
+
+    # ------------------------------------------------------------------
+    # Streaming completion
+    # ------------------------------------------------------------------
 
     async def stream(
         self,
@@ -298,97 +218,145 @@ class DashScopeProvider(LLMProvider):
         stop: list[str] | None = None,
         **kwargs: Any,
     ) -> AsyncIterator[StreamChunk]:
-        body: dict[str, Any] = {
-            "model": model,
-            "input": {
-                "messages": self._build_messages(messages),
-            },
-            "parameters": {
-                "temperature": temperature,
-                "max_tokens": max_tokens,
-                "result_format": "message",
-                "incremental_output": True,
-            },
-        }
-
-        if tools:
-            body["input"]["tools"] = self._build_tools(tools)
-            if tool_choice:
-                body["parameters"]["tool_choice"] = tool_choice
-
-        if stop:
-            body["parameters"]["stop"] = stop
-
-        if kwargs.get("top_p"):
-            body["parameters"]["top_p"] = kwargs["top_p"]
-
-        url = f"{self.BASE_URL}/services/aigc/text-generation/generation"
-
-        try:
-            async with httpx.AsyncClient(timeout=self.timeout, trust_env=httpx_trust_env()) as client:
-                async with client.stream(
-                    "POST",
-                    url,
-                    headers=self._get_headers(stream=True),
-                    json=body,
-                ) as response:
-                    if response.status_code != 200:
-                        content = await response.aread()
-                        try:
-                            error_body = json.loads(content)
-                        except json.JSONDecodeError:
-                            error_body = content.decode()
-                        self._handle_error(response.status_code, error_body, model)
-
-                    async for line in response.aiter_lines():
-                        if not line or line.startswith(":"):
-                            continue
-
-                        # DashScope uses "data:" prefix for SSE
-                        if line.startswith("data:"):
-                            data_str = line[5:].strip()
-                            if not data_str:
-                                continue
-
-                            try:
-                                data = json.loads(data_str)
-
-                                # Check for errors in stream
-                                if data.get("code") and data.get("code") != "200":
-                                    self._handle_error(200, data, model)
-
-                                chunk = self._parse_stream_chunk(data, model)
-                                yield chunk
-
-                            except json.JSONDecodeError:
-                                continue
-
-        except httpx.TimeoutException as e:
-            raise LLMTimeoutError(model=model, timeout_sec=int(self.timeout)) from e
-        except httpx.RequestError as e:
-            raise LLMServiceError(
-                f"Stream request failed: {e}",
-                model=model,
-                endpoint=self.BASE_URL,
-            ) from e
+        kwargs = self._merge_dashscope_settings(kwargs)
+        async for chunk in super().stream(
+            messages,
+            model=model,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            tools=tools,
+            tool_choice=tool_choice,
+            stop=stop,
+            **kwargs,
+        ):
+            if chunk.usage:
+                self._log_cache_metrics(chunk.usage, chunk.model)
+            yield chunk
 
     def _parse_stream_chunk(self, data: dict[str, Any], model: str) -> StreamChunk:
-        """Parse a streaming chunk from DashScope."""
-        output = data.get("output", {})
-        choices = output.get("choices", [{}])
+        chunk = super()._parse_stream_chunk(data, model)
+        choices = data.get("choices") or []
         choice = choices[0] if choices else {}
-        message = choice.get("message", {})
+        delta = choice.get("delta", {}) or {}
 
-        tool_calls_delta: list[dict[str, Any]] = []
-        if raw_tc := message.get("tool_calls"):
+        content_val = delta.get("content")
+        content = "" if content_val is None else str(content_val)
+
+        raw_delta = chunk.raw_delta
+        if reasoning := delta.get("reasoning_content"):
+            raw_delta = {**(raw_delta or {}), "reasoning_content": reasoning}
+
+        if raw_tc := delta.get("tool_calls"):
             tool_calls_delta = raw_tc
+        else:
+            tool_calls_delta = list(chunk.tool_calls_delta)
+
+        usage = chunk.usage
+        if usage is None:
+            raw_usage = data.get("usage")
+            if isinstance(raw_usage, dict) and raw_usage:
+                completion_detail = raw_usage.get("completion_tokens_details") or {}
+                prompt_detail = raw_usage.get("prompt_tokens_details") or {}
+                cached = int(prompt_detail.get("cached_tokens", 0) or 0)
+                usage = TokenUsage(
+                    prompt_tokens=int(raw_usage.get("prompt_tokens", 0)),
+                    completion_tokens=int(raw_usage.get("completion_tokens", 0)),
+                    total_tokens=int(raw_usage.get("total_tokens", 0)),
+                    reasoning_tokens=int(completion_detail.get("reasoning_tokens", 0)),
+                    prompt_cache_hit_tokens=cached,
+                )
 
         return StreamChunk(
-            content=message.get("content", ""),
+            content=content,
             tool_calls_delta=tool_calls_delta,
-            finish_reason=choice.get("finish_reason"),
-            model=output.get("model", model),
+            finish_reason=chunk.finish_reason,
+            model=chunk.model,
+            raw_delta=raw_delta,
+            usage=usage,
         )
+
+    # ------------------------------------------------------------------
+    # Error handling
+    # ------------------------------------------------------------------
+
+    def _handle_error(
+        self,
+        status_code: int,
+        response_body: dict[str, Any] | str,
+        model: str,
+    ) -> None:
+        if status_code == 400:
+            error_msg = ""
+            if isinstance(response_body, dict):
+                error_msg = response_body.get("error", {}).get("message", "")
+            else:
+                error_msg = str(response_body)
+            error_lower = error_msg.lower()
+
+            if "reasoning_content" in error_lower:
+                logger.error(
+                    "dashscope_reasoning_content_passback_error",
+                    extra={
+                        "model": model,
+                        "hint": (
+                            "Qwen3 tool-call turns require reasoning_content to be "
+                            "passed back in the assistant message. Ensure "
+                            "ChatMessage.reasoning_content is preserved on assistant "
+                            "messages that contain tool_calls."
+                        ),
+                    },
+                )
+            if "enable_thinking" in error_lower:
+                logger.error(
+                    "dashscope_enable_thinking_error",
+                    extra={
+                        "model": model,
+                        "hint": (
+                            "enable_thinking may not be supported by this model. "
+                            "Set DASHSCOPE_ENABLE_THINKING=false or use a Qwen3/QwQ model."
+                        ),
+                    },
+                )
+            if "tool_choice" in error_lower and "thinking" in error_lower:
+                logger.error(
+                    "dashscope_tool_choice_thinking_error",
+                    extra={
+                        "model": model,
+                        "hint": (
+                            "Thinking-mode models do not support forced tool_choice. "
+                            "Use tool_choice='auto' instead."
+                        ),
+                    },
+                )
+
+        super()._handle_error(status_code, response_body, model)
+
+    # ------------------------------------------------------------------
+    # Cache metrics observability
+    # ------------------------------------------------------------------
+
+    def _log_cache_metrics(self, usage: TokenUsage | None, model: str) -> None:
+        """Emit structured log for DashScope context-cache hit ratios."""
+        if usage is None:
+            return
+        cached = usage.prompt_cache_hit_tokens
+        total_prompt = usage.prompt_tokens
+        if cached <= 0 or total_prompt <= 0:
+            return
+        hit_ratio = cached / total_prompt
+        logger.debug(
+            "dashscope_cache_metrics",
+            extra={
+                "model": model,
+                "prompt_cache_hit_tokens": cached,
+                "prompt_tokens": total_prompt,
+                "cache_hit_ratio": round(hit_ratio, 4),
+            },
+        )
+
+    # ------------------------------------------------------------------
+    # Embeddings
+    # ------------------------------------------------------------------
 
     async def embed(
         self,
@@ -397,67 +365,6 @@ class DashScopeProvider(LLMProvider):
         model: str | None = None,
         **kwargs: Any,
     ) -> EmbeddingResponse:
-        """Generate embeddings using DashScope embedding models."""
-        embed_model = model or "text-embedding-v2"
-
-        body: dict[str, Any] = {
-            "model": embed_model,
-            "input": {
-                "texts": texts,
-            },
-            "parameters": {
-                "text_type": kwargs.get("text_type", "document"),
-            },
-        }
-
-        url = f"{self.BASE_URL}/services/embeddings/text-embedding/text-embedding"
-
-        try:
-            async with httpx.AsyncClient(timeout=self.timeout, trust_env=httpx_trust_env()) as client:
-                response = await client.post(
-                    url,
-                    headers=self._get_headers(),
-                    json=body,
-                )
-
-            if response.status_code != 200:
-                try:
-                    error_body = response.json()
-                except json.JSONDecodeError:
-                    error_body = response.text
-                self._handle_error(response.status_code, error_body, embed_model)
-
-            data = response.json()
-
-            # Check for errors in response body
-            if data.get("code") and data.get("code") != "200":
-                self._handle_error(200, data, embed_model)
-
-            output = data.get("output", {})
-            embeddings_data = output.get("embeddings", [])
-
-            # Sort by text_index to maintain order
-            sorted_data = sorted(embeddings_data, key=lambda x: x.get("text_index", 0))
-            embeddings = [item["embedding"] for item in sorted_data]
-
-            usage_data = data.get("usage", {})
-            usage = TokenUsage(
-                prompt_tokens=usage_data.get("total_tokens", 0),
-                completion_tokens=0,
-                total_tokens=usage_data.get("total_tokens", 0),
-            )
-
-            return EmbeddingResponse(
-                embeddings=embeddings,
-                model=embed_model,
-                usage=usage,
-            )
-
-        except httpx.TimeoutException as e:
-            raise LLMTimeoutError(model=embed_model, timeout_sec=int(self.timeout)) from e
-        except httpx.RequestError as e:
-            raise LLMServiceError(
-                f"Embedding request failed: {e}",
-                model=embed_model,
-                endpoint=self.BASE_URL,
-            ) from e
+        """Generate embeddings using DashScope's OpenAI-compatible endpoint."""
+        embed_model = model or "text-embedding-v3"
+        return await super().embed(texts, model=embed_model, **kwargs)

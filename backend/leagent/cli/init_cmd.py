@@ -201,13 +201,15 @@ def _create_providers_config(providers_path: Path, non_interactive: bool) -> Non
                 "type": "qwen",
                 "enabled": False,
                 "api_key": "${DASHSCOPE_API_KEY}",
-                "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+                "base_url": "${DASHSCOPE_BASE_URL:-https://dashscope.aliyuncs.com/compatible-mode/v1}",
                 "models": [
-                    {"name": "qwen-max", "tier": "tier1", "context_window": 32000},
-                    {"name": "qwen-plus", "tier": "tier2", "context_window": 32000},
-                    {"name": "qwen-turbo", "tier": "tier3", "context_window": 8000},
+                    {"name": "qwen3-max", "tier": "tier1", "context_window": 128000},
+                    {"name": "qwen3.5-plus", "tier": "tier1", "context_window": 128000},
+                    {"name": "qwen-plus", "tier": "tier2", "context_window": 128000},
+                    {"name": "qwen3.5-flash", "tier": "tier2", "context_window": 128000},
+                    {"name": "qwq-plus", "tier": "tier1", "context_window": 128000},
                     {"name": "qwen-long", "tier": "tier1", "context_window": 1000000},
-                    {"name": "qwen2.5-72b-instruct", "tier": "tier1", "context_window": 128000},
+                    {"name": "qwen-vl-max", "tier": "tier1", "context_window": 128000},
                 ],
             },
             {
@@ -318,6 +320,9 @@ OPENAI_API_KEY=
 
 # Alibaba DashScope (Qwen)
 DASHSCOPE_API_KEY=
+# DASHSCOPE_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
+# DASHSCOPE_ENABLE_THINKING=true
+# DASHSCOPE_ENABLE_SEARCH=false
 
 # Anthropic (Claude)
 ANTHROPIC_API_KEY=

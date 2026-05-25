@@ -46,12 +46,17 @@ class OpenAIProvider(LLMProvider):
     - vLLM OpenAI-compatible server
     - Together AI
     - Any OpenAI-compatible endpoint
+
+    Supports structured outputs via ``response_format`` (json_schema with
+    strict mode) and reasoning models via ``reasoning_effort``.
     """
 
     name = "openai"
     supports_streaming = True
     supports_tools = True
     supports_embeddings = True
+    supports_structured_output = True
+    supports_vision = True
 
     def __init__(
         self,
@@ -148,6 +153,16 @@ class OpenAIProvider(LLMProvider):
         if stream:
             body["stream"] = True
             body["stream_options"] = {"include_usage": True}
+
+        # Structured outputs via response_format (json_schema with strict mode)
+        response_format = kwargs.pop("response_format", None)
+        if response_format:
+            body["response_format"] = response_format
+
+        # Reasoning effort for o-series and GPT-5.x reasoning models
+        reasoning_effort = kwargs.pop("reasoning_effort", None)
+        if reasoning_effort:
+            body["reasoning_effort"] = reasoning_effort
 
         body.update(kwargs)
         return body

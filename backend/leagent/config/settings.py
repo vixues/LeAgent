@@ -90,8 +90,32 @@ class LLMSettings(BaseSettings):
     anthropic_api_key: str = ""
     anthropic_model: str = "claude-sonnet-4-20250514"
 
-    dashscope_api_key: str = ""
-    dashscope_model: str = "qwen-max"
+    dashscope_api_key: str = Field(
+        default="",
+        validation_alias=AliasChoices("LLM_DASHSCOPE_API_KEY", "DASHSCOPE_API_KEY"),
+    )
+    dashscope_model: str = Field(
+        default="qwen-plus",
+        validation_alias=AliasChoices("LLM_DASHSCOPE_MODEL", "DASHSCOPE_MODEL"),
+    )
+    dashscope_base_url: str = Field(
+        default="https://dashscope.aliyuncs.com/compatible-mode/v1",
+        validation_alias=AliasChoices("LLM_DASHSCOPE_BASE_URL", "DASHSCOPE_BASE_URL"),
+    )
+    dashscope_enable_thinking: bool | None = Field(
+        default=None,
+        validation_alias=AliasChoices(
+            "LLM_DASHSCOPE_ENABLE_THINKING",
+            "DASHSCOPE_ENABLE_THINKING",
+        ),
+    )
+    dashscope_enable_search: bool = Field(
+        default=False,
+        validation_alias=AliasChoices(
+            "LLM_DASHSCOPE_ENABLE_SEARCH",
+            "DASHSCOPE_ENABLE_SEARCH",
+        ),
+    )
 
     deepseek_api_key: str = Field(
         default="",

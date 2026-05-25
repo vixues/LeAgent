@@ -293,6 +293,14 @@ def _endpoint_hostname_is_deepseek(base_url: str) -> bool:
     return "deepseek" in h
 
 
+def _endpoint_hostname_is_dashscope(base_url: str) -> bool:
+    """True when *base_url* points at DashScope's API (OpenAI-compatible)."""
+    from urllib.parse import urlparse
+
+    h = (urlparse(base_url or "").hostname or "").lower()
+    return "dashscope" in h or "maas.aliyuncs.com" in h
+
+
 def create_default_registry() -> ProviderRegistry:
     """Create a registry with default providers from settings.
 
@@ -334,6 +342,21 @@ def create_default_registry() -> ProviderRegistry:
                     "description": "Primary reasoning model (DeepSeek)",
                 },
             )
+        elif _endpoint_hostname_is_dashscope(settings.llm.tier1_endpoint):
+            registry.register(
+                "tier1",
+                DashScopeProvider(
+                    api_key=_tier_key or "not-needed",
+                    base_url=settings.llm.tier1_endpoint.rstrip("/"),
+                    default_model=settings.llm.tier1_model,
+                    timeout=settings.llm.tier1_timeout,
+                ),
+                metadata={
+                    "tier": "tier1",
+                    "model": settings.llm.tier1_model,
+                    "description": "Primary reasoning model (DashScope)",
+                },
+            )
         else:
             registry.register(
                 "tier1",
@@ -372,6 +395,21 @@ def create_default_registry() -> ProviderRegistry:
                     "tier": "tier2",
                     "model": settings.llm.tier2_model,
                     "description": "Fast model for simple tasks (DeepSeek)",
+                },
+            )
+        elif _endpoint_hostname_is_dashscope(settings.llm.tier2_endpoint):
+            registry.register(
+                "tier2",
+                DashScopeProvider(
+                    api_key=_tier2_key or "not-needed",
+                    base_url=settings.llm.tier2_endpoint.rstrip("/"),
+                    default_model=settings.llm.tier2_model,
+                    timeout=settings.llm.tier2_timeout,
+                ),
+                metadata={
+                    "tier": "tier2",
+                    "model": settings.llm.tier2_model,
+                    "description": "Fast model for simple tasks (DashScope)",
                 },
             )
         else:
@@ -440,6 +478,7 @@ def create_default_registry() -> ProviderRegistry:
                 "dashscope",
                 DashScopeProvider(
                     api_key=settings.llm.dashscope_api_key,
+                    base_url=settings.llm.dashscope_base_url,
                     default_model=settings.llm.dashscope_model,
                 ),
                 metadata={
@@ -448,6 +487,42 @@ def create_default_registry() -> ProviderRegistry:
                     "model": settings.llm.dashscope_model,
                 },
             )
+            # Auto-alias DashScope as tier1/tier2 when no explicit tiers
+            # are configured — same pattern as DeepSeek below.
+            # tier1 → qwen3-max (reasoning), tier2 → configured model.
+            if not registry.has_provider("tier1"):
+                tier1_model = settings.llm.dashscope_model
+                if tier1_model == DashScopeProvider.DEFAULT_MODEL:
+                    tier1_model = "qwen3-max"
+                registry.register(
+                    "tier1",
+                    DashScopeProvider(
+                        api_key=settings.llm.dashscope_api_key,
+                        base_url=settings.llm.dashscope_base_url,
+                        default_model=tier1_model,
+                    ),
+                    metadata={
+                        "tier": "tier1",
+                        "vendor": "dashscope",
+                        "model": tier1_model,
+                        "description": "DashScope (auto-aliased as tier1)",
+                    },
+                )
+            if not registry.has_provider("tier2"):
+                registry.register(
+                    "tier2",
+                    DashScopeProvider(
+                        api_key=settings.llm.dashscope_api_key,
+                        base_url=settings.llm.dashscope_base_url,
+                        default_model=settings.llm.dashscope_model,
+                    ),
+                    metadata={
+                        "tier": "tier2",
+                        "vendor": "dashscope",
+                        "model": settings.llm.dashscope_model,
+                        "description": "DashScope (auto-aliased as tier2)",
+                    },
+                )
 
         if settings.llm.deepseek_api_key:
             registry.register(

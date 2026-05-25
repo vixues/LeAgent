@@ -99,20 +99,10 @@ PROVIDER_PRESETS: dict[str, dict[str, Any]] = {
                 "description": "Affordable, intelligent small model for fast, lightweight tasks.",
             },
             {
-                "name": "gpt-4-turbo", "tier": "tier1", "context_window": 128_000,
-                "price_input_per_1m": 10.00, "price_output_per_1m": 30.00,
-                "supports_tools": True, "supports_vision": True,
-            },
-            {
-                "name": "o1-preview", "tier": "tier1", "context_window": 128_000,
-                "price_input_per_1m": 15.00, "price_output_per_1m": 60.00,
-                "supports_tools": False,
-                "description": "Reasoning model — thinks step-by-step before answering.",
-            },
-            {
-                "name": "o1-mini", "tier": "tier2", "context_window": 128_000,
-                "price_input_per_1m": 3.00, "price_output_per_1m": 12.00,
-                "supports_tools": False,
+                "name": "o3-mini", "tier": "tier1", "context_window": 200_000,
+                "price_input_per_1m": 1.10, "price_output_per_1m": 4.40,
+                "supports_tools": True,
+                "description": "Reasoning model — thinks step-by-step. Use reasoning_effort to control depth.",
             },
         ],
     },
@@ -125,18 +115,19 @@ PROVIDER_PRESETS: dict[str, dict[str, Any]] = {
                 "name": "claude-sonnet-4-20250514", "tier": "tier1", "context_window": 200_000,
                 "price_input_per_1m": 3.00, "price_output_per_1m": 15.00,
                 "supports_tools": True, "supports_vision": True,
-                "description": "Flagship Claude model — high intelligence with excellent reasoning.",
+                "description": "High-performance Claude model with extended thinking.",
+            },
+            {
+                "name": "claude-opus-4-7", "tier": "tier1", "context_window": 200_000,
+                "price_input_per_1m": 15.00, "price_output_per_1m": 75.00,
+                "supports_tools": True, "supports_vision": True,
+                "description": "Most capable Claude model — adaptive thinking, task budgets.",
             },
             {
                 "name": "claude-3-5-haiku-20241022", "tier": "tier2", "context_window": 200_000,
                 "price_input_per_1m": 0.80, "price_output_per_1m": 4.00,
                 "supports_tools": True, "supports_vision": True,
                 "description": "Fast, affordable Claude model for lightweight tasks.",
-            },
-            {
-                "name": "claude-3-opus-20240229", "tier": "tier1", "context_window": 200_000,
-                "price_input_per_1m": 15.00, "price_output_per_1m": 75.00,
-                "supports_tools": True, "supports_vision": True,
             },
         ],
     },
@@ -146,30 +137,46 @@ PROVIDER_PRESETS: dict[str, dict[str, Any]] = {
         "requires_api_key": True,
         "models": [
             {
-                "name": "qwen-max", "tier": "tier1", "context_window": 32_000,
+                "name": "qwen3-max", "tier": "tier1", "context_window": 128_000,
                 "price_input_per_1m": 10.00, "price_output_per_1m": 30.00,
-                "supports_tools": True,
-                "description": "Largest Qwen model — best for complex reasoning.",
+                "supports_tools": True, "supports_thinking": True,
+                "description": "Qwen3-Max — strongest reasoning with thinking mode.",
             },
             {
-                "name": "qwen-plus", "tier": "tier2", "context_window": 32_000,
+                "name": "qwen3.5-plus", "tier": "tier1", "context_window": 128_000,
+                "price_input_per_1m": 2.00, "price_output_per_1m": 8.00,
+                "supports_tools": True, "supports_thinking": True,
+                "description": "Qwen3.5-Plus — balanced performance and cost.",
+            },
+            {
+                "name": "qwen-plus", "tier": "tier2", "context_window": 128_000,
                 "price_input_per_1m": 0.80, "price_output_per_1m": 2.00,
                 "supports_tools": True,
+                "description": "Qwen-Plus — cost-effective general-purpose model.",
             },
             {
-                "name": "qwen-turbo", "tier": "tier2", "context_window": 32_000,
+                "name": "qwen3.5-flash", "tier": "tier2", "context_window": 128_000,
                 "price_input_per_1m": 0.30, "price_output_per_1m": 0.60,
-                "supports_tools": True,
+                "supports_tools": True, "supports_thinking": True,
+                "description": "Qwen3.5-Flash — fast and cost-effective.",
+            },
+            {
+                "name": "qwq-plus", "tier": "tier1", "context_window": 128_000,
+                "price_input_per_1m": 3.00, "price_output_per_1m": 12.00,
+                "supports_tools": True, "supports_thinking": True,
+                "description": "QwQ-Plus — specialized reasoning model.",
             },
             {
                 "name": "qwen-long", "tier": "tier1", "context_window": 1_000_000,
                 "price_input_per_1m": 0.50, "price_output_per_1m": 2.00,
                 "supports_tools": True,
-                "description": "Long-context Qwen — up to 1M tokens.",
+                "description": "Long-context Qwen — up to 1M tokens via file API.",
             },
             {
-                "name": "qwen2.5-72b-instruct", "tier": "tier1", "context_window": 128_000,
+                "name": "qwen-vl-max", "tier": "tier1", "context_window": 128_000,
+                "price_input_per_1m": 10.00, "price_output_per_1m": 30.00,
                 "supports_tools": True,
+                "description": "Qwen-VL-Max — multimodal vision-language model.",
             },
         ],
     },
@@ -195,6 +202,12 @@ PROVIDER_PRESETS: dict[str, dict[str, Any]] = {
     "ollama": {
         "label": "Ollama (本地模型)",
         "default_base_url": "http://localhost:11434",
+        "requires_api_key": False,
+        "models": [],
+    },
+    "vllm": {
+        "label": "vLLM (自托管模型)",
+        "default_base_url": "http://localhost:8000/v1",
         "requires_api_key": False,
         "models": [],
     },
@@ -396,6 +409,7 @@ class ProviderConfigService:
         from leagent.llm.providers.dashscope import DashScopeProvider
         from leagent.llm.providers.ollama import OllamaProvider
         from leagent.llm.providers.openai import OpenAIProvider
+        from leagent.llm.providers.vllm import VLLMProvider
 
         api_key = self._resolve_api_key(pc.api_key)
         default_model = pc.models[0]["name"] if pc.models else ""
@@ -417,7 +431,8 @@ class ProviderConfigService:
         if pc.type in ("qwen", "dashscope"):
             return DashScopeProvider(
                 api_key=api_key,
-                default_model=default_model or "qwen-max",
+                base_url=pc.base_url or DashScopeProvider.DEFAULT_BASE_URL,
+                default_model=default_model or "qwen-plus",
                 timeout=pc.timeout,
             )
         if pc.type == "ollama":
@@ -432,6 +447,13 @@ class ProviderConfigService:
                 api_key=api_key,
                 base_url=pc.base_url or DeepSeekProvider.DEFAULT_BASE_URL,
                 default_model=default_model or DeepSeekProvider.DEFAULT_MODEL,
+                timeout=pc.timeout,
+            )
+        if pc.type == "vllm":
+            return VLLMProvider(
+                api_key=api_key or "not-needed",
+                base_url=pc.base_url or VLLMProvider.DEFAULT_BASE_URL,
+                default_model=default_model,
                 timeout=pc.timeout,
             )
         # Fallback: treat as OpenAI-compatible

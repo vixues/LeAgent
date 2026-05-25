@@ -525,7 +525,7 @@ export function ModelProviderConfig() {
   // Determine if type requires api_key in modal
   const currentPreset = presets?.find((p) => p.type === formData.type);
   const requiresApiKey = currentPreset?.requires_api_key ?? !['ollama'].includes(formData.type);
-  const showBaseUrl = ['ollama', 'custom', 'azure', 'deepseek'].includes(formData.type)
+  const showBaseUrl = ['ollama', 'custom', 'azure', 'deepseek', 'qwen'].includes(formData.type)
     || formData.type === 'openai';
 
   if (isLoading) {
@@ -985,6 +985,51 @@ export function ModelProviderConfig() {
                     onChange={(e) => setFormData({ ...formData, base_url: e.target.value })}
                     placeholder={currentPreset?.default_base_url || 'https://api.example.com/v1'}
                   />
+                </div>
+              )}
+
+              {formData.type === 'qwen' && (
+                <div className="space-y-3 rounded-lg border border-sky-200 dark:border-sky-800 bg-sky-50 dark:bg-sky-900/20 p-3">
+                  <p className="text-xs font-medium text-sky-700 dark:text-sky-400">
+                    {t('admin.provider.qwenSettingsTitle')}
+                  </p>
+                  <div className="flex items-center justify-between">
+                    <label className="text-sm text-gray-700 dark:text-gray-300">
+                      {t('admin.provider.qwenEnableSearch')}
+                    </label>
+                    <Switch
+                      checked={formData.extra?.enable_search ?? false}
+                      onCheckedChange={(checked) =>
+                        setFormData({
+                          ...formData,
+                          extra: { ...(formData.extra ?? {}), enable_search: checked },
+                        })
+                      }
+                    />
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <label className="text-sm text-gray-700 dark:text-gray-300">
+                      {t('admin.provider.qwenEnableThinking')}
+                    </label>
+                    <Switch
+                      checked={formData.extra?.enable_thinking ?? true}
+                      onCheckedChange={(checked) =>
+                        setFormData({
+                          ...formData,
+                          extra: { ...(formData.extra ?? {}), enable_thinking: checked },
+                        })
+                      }
+                    />
+                  </div>
+                  <a
+                    href="https://bailian.console.aliyun.com/"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1 text-xs text-sky-600 dark:text-sky-400 hover:underline"
+                  >
+                    <ExternalLink className="h-3 w-3" />
+                    {t('admin.provider.qwenSetupGuide')}
+                  </a>
                 </div>
               )}
 

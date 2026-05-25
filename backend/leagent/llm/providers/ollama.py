@@ -1,4 +1,15 @@
-"""Ollama LLM provider for local model inference."""
+"""Ollama LLM provider for local model inference.
+
+Supports Ollama's native ``/api/chat`` endpoint with:
+
+- Streaming (NDJSON) and non-streaming completions
+- Tool/function calling (Ollama 0.3+)
+- Structured output via ``format`` (JSON schema or ``json``)
+- Thinking models via ``think`` parameter
+- Vision (base64 images in messages)
+- Model management (list, pull)
+- Embeddings
+"""
 
 from __future__ import annotations
 
@@ -35,7 +46,7 @@ class OllamaProvider(LLMProvider):
 
     name = "ollama"
     supports_streaming = True
-    supports_tools = True  # Ollama 0.3+ supports tools
+    supports_tools = True
     supports_embeddings = True
 
     def __init__(
@@ -54,7 +65,11 @@ class OllamaProvider(LLMProvider):
         return self.default_model
 
     def _build_messages(self, messages: list[ChatMessage]) -> list[dict[str, Any]]:
-        """Convert ChatMessage list to Ollama message format."""
+        """Convert ChatMessage list to Ollama message format.
+
+        Handles vision content (images as base64) and tool result messages
+        with the ``tool_name`` field.
+        """
         result = []
         for msg in messages:
             ollama_msg: dict[str, Any] = {"role": msg.role.value}
@@ -70,6 +85,10 @@ class OllamaProvider(LLMProvider):
                     }
                     for tc in msg.tool_calls
                 ]
+            # Pass tool_name for tool-result messages so the model knows
+            # which tool produced the result
+            if msg.role.value == "tool" and msg.tool_call_id:
+                ollama_msg["tool_name"] = msg.tool_call_id
             result.append(ollama_msg)
         return result
 
@@ -105,7 +124,6 @@ class OllamaProvider(LLMProvider):
                     )
                 )
 
-        # Ollama provides eval_count for completion tokens
         usage = TokenUsage(
             prompt_tokens=data.get("prompt_eval_count", 0),
             completion_tokens=data.get("eval_count", 0),
@@ -116,6 +134,12 @@ class OllamaProvider(LLMProvider):
         if data.get("done_reason"):
             finish_reason = data["done_reason"]
 
+        # Extract thinking content from thinking models
+        reasoning_content: str | None = None
+        thinking = message.get("thinking")
+        if isinstance(thinking, str) and thinking.strip():
+            reasoning_content = thinking
+
         return LLMResponse(
             content=message.get("content"),
             tool_calls=tool_calls,
@@ -123,6 +147,7 @@ class OllamaProvider(LLMProvider):
             model=data.get("model", model),
             usage=usage,
             raw_response=data,
+            reasoning_content=reasoning_content,
         )
 
     def _handle_error(
@@ -180,9 +205,24 @@ class OllamaProvider(LLMProvider):
         if stop:
             body["options"]["stop"] = stop
 
+        # Structured output: JSON schema or "json" format
+        fmt = kwargs.pop("format", None)
+        if fmt:
+            body["format"] = fmt
+
+        # Thinking models: enable chain-of-thought reasoning
+        think = kwargs.pop("think", None)
+        if think is not None:
+            body["think"] = think
+
+        # Keep-alive duration for model in memory
+        keep_alive = kwargs.pop("keep_alive", None)
+        if keep_alive is not None:
+            body["keep_alive"] = keep_alive
+
         # Pass through any additional options
         if kwargs.get("options"):
-            body["options"].update(kwargs["options"])
+            body["options"].update(kwargs.pop("options"))
 
         url = f"{self.base_url}/api/chat"
         last_error: Exception | None = None
@@ -256,8 +296,20 @@ class OllamaProvider(LLMProvider):
         if stop:
             body["options"]["stop"] = stop
 
+        fmt = kwargs.pop("format", None)
+        if fmt:
+            body["format"] = fmt
+
+        think = kwargs.pop("think", None)
+        if think is not None:
+            body["think"] = think
+
+        keep_alive = kwargs.pop("keep_alive", None)
+        if keep_alive is not None:
+            body["keep_alive"] = keep_alive
+
         if kwargs.get("options"):
-            body["options"].update(kwargs["options"])
+            body["options"].update(kwargs.pop("options"))
 
         url = f"{self.base_url}/api/chat"
 
@@ -303,11 +355,18 @@ class OllamaProvider(LLMProvider):
         if data.get("done"):
             finish_reason = data.get("done_reason", "stop")
 
+        # Extract thinking content in stream
+        raw_delta: dict[str, Any] | None = None
+        thinking = message.get("thinking")
+        if isinstance(thinking, str) and thinking:
+            raw_delta = {"reasoning_content": thinking}
+
         return StreamChunk(
             content=message.get("content", ""),
             tool_calls_delta=tool_calls_delta,
             finish_reason=finish_reason,
             model=data.get("model", model),
+            raw_delta=raw_delta,
         )
 
     async def embed(
@@ -344,7 +403,6 @@ class OllamaProvider(LLMProvider):
 
                     data = response.json()
 
-                    # Ollama returns embeddings as a list (even for single input)
                     embed_data = data.get("embeddings", [[]])[0]
                     embeddings.append(embed_data)
 
@@ -406,7 +464,6 @@ class OllamaProvider(LLMProvider):
                             model=model,
                             endpoint=self.base_url,
                         )
-                    # Consume the stream to wait for completion
                     async for _ in response.aiter_lines():
                         pass
 
