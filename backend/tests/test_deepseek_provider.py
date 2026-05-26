@@ -7,6 +7,7 @@ constructor defaults, registry wiring, user_id, thinking defaults).
 
 from __future__ import annotations
 
+import contextvars
 from unittest.mock import MagicMock
 
 import pytest
@@ -383,6 +384,13 @@ class TestDeepSeekBuildRequestBody:
         msgs = [ChatMessage.user("hi")]
         body = p._build_request_body(msgs, "deepseek-v4-flash", 0.5, 100, None, None, None)
         assert "user_id" not in body
+
+    def test_user_id_reset_tolerates_different_context(self) -> None:
+        token_holder: list[contextvars.Token[str | None]] = []
+        context = contextvars.copy_context()
+        context.run(lambda: token_holder.append(set_deepseek_user_id("user-123")))
+
+        reset_deepseek_user_id(token_holder[0])
 
 
 # ---------------------------------------------------------------------------

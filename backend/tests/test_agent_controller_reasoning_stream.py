@@ -34,6 +34,41 @@ class _FakeQueryEngine:
         yield SDKMessage(type="stream_delta", data={"reasoning_delta": "lo"})
 
 
+class _AnswerOnlyQueryEngine:
+    def __init__(self, _config: object) -> None:
+        pass
+
+    def abort(self) -> None:
+        pass
+
+    async def submit_message(self, *_a: object, **_kw: object):
+        yield SDKMessage(type="stream_delta", data={"content": "fresh answer"})
+
+
+class _ToolUsingQueryEngine:
+    def __init__(self, _config: object) -> None:
+        pass
+
+    def abort(self) -> None:
+        pass
+
+    async def submit_message(self, *_a: object, **_kw: object):
+        yield SDKMessage(
+            type="assistant_tools",
+            data={
+                "content": "",
+                "tool_calls": [
+                    {
+                        "id": "call_current",
+                        "type": "function",
+                        "function": {"name": "code_execution", "arguments": "{}"},
+                    }
+                ],
+            },
+        )
+        yield SDKMessage(type="stream_delta", data={"content": "tool answer"})
+
+
 @pytest.mark.asyncio
 async def test_reasoning_delta_calls_on_thinking_cumulative(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(qe_mod, "QueryEngine", _FakeQueryEngine)
@@ -89,6 +124,129 @@ async def test_reasoning_delta_calls_on_thinking_cumulative(monkeypatch: pytest.
 
     assert [c.args[0] for c in handler.on_thinking.await_args_list] == ["hel", "hello"]
     handler.on_token.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_query_engine_complete_metadata_excludes_historical_tool_calls(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(qe_mod, "QueryEngine", _AnswerOnlyQueryEngine)
+
+    controller = AgentController(
+        llm=MagicMock(),
+        tools=MagicMock(),
+        planner=MagicMock(),
+        executor=MagicMock(service_manager=None),
+        config=AgentConfig(
+            max_iterations=1,
+            mode=AgentMode.REACT,
+            enable_memory=False,
+            enable_streaming=False,
+            verbose=False,
+            use_query_engine=True,
+        ),
+    )
+    sid = uuid4()
+    uid = uuid4()
+    ctx = AgentContext(
+        task_id=uuid4(),
+        session_id=sid,
+        user_id=uid,
+        config=controller.config,
+        state=AgentState.THINKING,
+    )
+    conv = ConversationContext(session_id=sid)
+    conv.append_assistant_message(
+        "",
+        tool_calls=[
+            {
+                "id": "call_old",
+                "type": "function",
+                "function": {"name": "ask_user", "arguments": "{}"},
+            }
+        ],
+    )
+    conv.append_tool_result("call_old", "ask_user", '{"answers": {}}')
+    conv.append_user_message("next question")
+
+    handler = MagicMock()
+    handler.on_thinking = AsyncMock()
+    handler.on_token = AsyncMock()
+    handler.on_tool_call = AsyncMock()
+    handler.on_tool_result = AsyncMock()
+    handler.on_user_input_request = AsyncMock()
+    handler.on_complete = AsyncMock()
+    handler.on_error = AsyncMock()
+
+    await controller._run_via_query_engine(
+        "next question",
+        conv,
+        ctx,
+        handler,
+        skip_user_append=True,
+    )
+
+    response = handler.on_complete.await_args.args[0]
+    assert "assistant_tool_calls" not in response.metadata
+
+
+@pytest.mark.asyncio
+async def test_query_engine_complete_metadata_keeps_current_turn_tool_calls(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(qe_mod, "QueryEngine", _ToolUsingQueryEngine)
+
+    controller = AgentController(
+        llm=MagicMock(),
+        tools=MagicMock(),
+        planner=MagicMock(),
+        executor=MagicMock(service_manager=None),
+        config=AgentConfig(
+            max_iterations=1,
+            mode=AgentMode.REACT,
+            enable_memory=False,
+            enable_streaming=False,
+            verbose=False,
+            use_query_engine=True,
+        ),
+    )
+    sid = uuid4()
+    uid = uuid4()
+    ctx = AgentContext(
+        task_id=uuid4(),
+        session_id=sid,
+        user_id=uid,
+        config=controller.config,
+        state=AgentState.THINKING,
+    )
+    conv = ConversationContext(session_id=sid)
+    conv.append_user_message("run a tool")
+
+    handler = MagicMock()
+    handler.on_thinking = AsyncMock()
+    handler.on_token = AsyncMock()
+    handler.on_tool_call = AsyncMock()
+    handler.on_tool_result = AsyncMock()
+    handler.on_user_input_request = AsyncMock()
+    handler.on_complete = AsyncMock()
+    handler.on_error = AsyncMock()
+
+    await controller._run_via_query_engine(
+        "run a tool",
+        conv,
+        ctx,
+        handler,
+        skip_user_append=True,
+    )
+
+    response = handler.on_complete.await_args.args[0]
+    assert response.metadata["assistant_tool_calls"] == [
+        {
+            "id": "call_current",
+            "type": "function",
+            "function": {"name": "code_execution", "arguments": "{}"},
+        }
+    ]
 
 
 @pytest.mark.asyncio
