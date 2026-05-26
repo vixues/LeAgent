@@ -54,6 +54,18 @@ _ALWAYS_VISIBLE_TOOL_DESCRIPTIONS: dict[str, str] = {
         "convert pages to images, split/merge/extract pages, metadata. "
         "Always prefer this over code_execution for PDF operations."
     ),
+    "get_genui_guide": (
+        "GenUI guide: for non-trivial component UI, call this first for syntax/layout rules, "
+        "then call list_ui_components before emit_ui_tree."
+    ),
+    "list_ui_components": (
+        "GenUI component catalog: call after get_genui_guide and before non-trivial "
+        "emit_ui_tree payloads to verify exact kind and prop names."
+    ),
+    "emit_ui_tree": (
+        "Emit validated inline GenUI; for non-trivial trees, use get_genui_guide then "
+        "list_ui_components before this tool."
+    ),
 }
 
 

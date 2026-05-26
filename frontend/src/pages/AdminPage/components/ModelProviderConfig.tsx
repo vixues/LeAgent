@@ -664,7 +664,7 @@ export function ModelProviderConfig() {
   // Determine if type requires api_key in modal
   const currentPreset = presets?.find((p) => p.type === formData.type);
   const requiresApiKey = currentPreset?.requires_api_key ?? !['ollama'].includes(formData.type);
-  const showBaseUrl = ['ollama', 'custom', 'azure', 'deepseek', 'qwen'].includes(formData.type)
+  const showBaseUrl = ['ollama', 'custom', 'azure', 'deepseek', 'qwen', 'vllm'].includes(formData.type)
     || formData.type === 'openai';
 
   if (isLoading) {
@@ -1250,6 +1250,16 @@ export function ModelProviderConfig() {
                       {t('admin.provider.deepseekApiKeyHint')}
                     </p>
                   )}
+                  {formData.type === 'custom' && (
+                    <p className="mt-1 text-xs text-gray-500">
+                      {t('admin.provider.customApiKeyHint')}
+                    </p>
+                  )}
+                  {formData.type === 'vllm' && (
+                    <p className="mt-1 text-xs text-gray-500">
+                      {t('admin.provider.vllmApiKeyHint')}
+                    </p>
+                  )}
                 </div>
               )}
 
@@ -1338,6 +1348,33 @@ export function ModelProviderConfig() {
                     <ExternalLink className="h-3 w-3" />
                     {t('admin.provider.qwenSetupGuide')}
                   </a>
+                </div>
+              )}
+
+              {formData.type === 'vllm' && (
+                <div className="space-y-3 rounded-lg border border-sky-200 dark:border-sky-800 bg-sky-50 dark:bg-sky-900/20 p-3">
+                  <p className="text-xs font-medium text-sky-700 dark:text-sky-400">
+                    {t('admin.provider.vllmSettingsTitle')}
+                  </p>
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <label className="text-sm text-gray-700 dark:text-gray-300">
+                        {t('admin.provider.vllmEnableAutoToolChoice')}
+                      </label>
+                      <p className="mt-0.5 text-xs text-gray-500">
+                        {t('admin.provider.vllmEnableAutoToolChoiceHelp')}
+                      </p>
+                    </div>
+                    <Switch
+                      checked={Boolean(formData.metadata?.enable_auto_tool_choice ?? false)}
+                      onCheckedChange={(checked) =>
+                        setFormData({
+                          ...formData,
+                          metadata: { ...(formData.metadata ?? {}), enable_auto_tool_choice: checked },
+                        })
+                      }
+                    />
+                  </div>
                 </div>
               )}
 

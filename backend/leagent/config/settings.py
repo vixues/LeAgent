@@ -158,6 +158,30 @@ class LLMSettings(BaseSettings):
     ollama_endpoint: str = ""
     ollama_model: str = "llama3.2"
 
+    vllm_endpoint: str = Field(
+        default="",
+        validation_alias=AliasChoices("LLM_VLLM_ENDPOINT", "VLLM_ENDPOINT"),
+    )
+    vllm_model: str = Field(
+        default="",
+        validation_alias=AliasChoices("LLM_VLLM_MODEL", "VLLM_MODEL"),
+    )
+    vllm_api_key: str = Field(
+        default="",
+        validation_alias=AliasChoices("LLM_VLLM_API_KEY", "VLLM_API_KEY"),
+    )
+    vllm_timeout: int = Field(
+        default=120,
+        validation_alias=AliasChoices("LLM_VLLM_TIMEOUT", "VLLM_TIMEOUT"),
+    )
+    vllm_enable_auto_tool_choice: bool = Field(
+        default=False,
+        validation_alias=AliasChoices(
+            "LLM_VLLM_ENABLE_AUTO_TOOL_CHOICE",
+            "VLLM_ENABLE_AUTO_TOOL_CHOICE",
+        ),
+    )
+
     local_only: bool = False
 
 

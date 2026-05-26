@@ -24,7 +24,8 @@ _GUIDE_PAYLOAD: dict[str, Any] = {
         "**Node shape:** Allowed top-level keys per node: `kind`, optional `props`, optional `children`, optional `nodeId`. "
         "Component fields must live under **`props`**. The server may **lift** catalog-documented prop keys if you "
         "accidentally placed them beside `kind`; any **other** stray key on the node fails validation.",
-        "**`kind`:** PascalCase string from the shipped enum only — call `list_ui_components` if unsure. "
+        "**`kind`:** PascalCase string from the shipped enum only — call `list_ui_components` before "
+        "authoring non-trivial trees so every planned kind/prop is grounded in the shipped catalog. "
         "Legacy **`type`** is accepted once and coerced to **`kind`** (prefer `kind` in new trees).",
         "**`nodeId`:** Optional; omit or leave empty and the server assigns stable ids. Supply ids only when you need "
         "deterministic `emit_ui_patch` targets.",
@@ -102,7 +103,7 @@ _GUIDE_PAYLOAD: dict[str, Any] = {
     ],
     "workflow_order": [
         "1. Confirm **`canvas_design`** allows GenUI for this turn.",
-        "2. **`list_ui_components`** — verify every `kind` and prop shape you plan to use (fastest way to avoid enum errors).",
+        "2. **Required before non-trivial trees:** call `list_ui_components` to verify every `kind` and prop shape you plan to use.",
         "3. Build **`emit_ui_tree`** args using **`wire_format_and_syntax`** above (valid envelope + nodes first).",
         "4. Re-read **`layout_structure`**/**`typography`**/**`emoji_and_icons`** below if the tree is non-trivial — simplify before emitting.",
         "5. **`emit_ui_tree`** with a minimal valid tree; follow up with **`emit_ui_patch`** only for small deltas.",
@@ -127,7 +128,8 @@ class GetGenuiGuideTool(BaseTool):
         "`emit_ui_patch` pointers), **workflow_order** (valid tree first, then polish), plus layout "
         "(DesignSurface, Stack/Grid, AspectBox), typography, emoji vs Lucide icons, semantic variants, "
         "and anti-patterns. Call before non-trivial **`emit_ui_tree`** (dashboards, decks, posters, "
-        "multi-card UIs). Use with **`list_ui_components`** (catalog). Read-only, no side effects."
+        "multi-card UIs). After this guide, call **`list_ui_components`** before authoring non-trivial "
+        "`emit_ui_tree` payloads. Read-only, no side effects."
     )
     category = ToolCategory.CANVAS
     is_read_only = True

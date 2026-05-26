@@ -15,14 +15,12 @@ provider type.
 from __future__ import annotations
 
 import logging
+from collections.abc import AsyncIterator
 from typing import Any, Literal
 
-import httpx
-
 from leagent.llm.base import ChatMessage, LLMResponse, StreamChunk, ToolDefinition
+
 from leagent.llm.providers.openai import OpenAIProvider
-from leagent.utils.httpx_proxy import httpx_trust_env
-from leagent.exceptions.llm import LLMServiceError
 
 logger = logging.getLogger(__name__)
 
@@ -49,6 +47,8 @@ class VLLMProvider(OpenAIProvider):
         default_model: str = "",
         timeout: float = 120.0,
         max_retries: int = 2,
+        *,
+        enable_auto_tool_choice: bool = False,
     ) -> None:
         super().__init__(
             api_key=api_key,
@@ -57,6 +57,9 @@ class VLLMProvider(OpenAIProvider):
             timeout=timeout,
             max_retries=max_retries,
         )
+        # When True, send tool_choice="auto" (requires vLLM started with
+        # --enable-auto-tool-choice and --tool-call-parser).
+        self.enable_auto_tool_choice = enable_auto_tool_choice
 
     # ------------------------------------------------------------------
     # Request body construction
@@ -77,6 +80,15 @@ class VLLMProvider(OpenAIProvider):
         # Extract vLLM-specific structured_outputs before passing to super
         structured_outputs = kwargs.pop("structured_outputs", None)
 
+        enable_auto = kwargs.pop(
+            "enable_auto_tool_choice",
+            self.enable_auto_tool_choice,
+        )
+        if not enable_auto and tool_choice == "auto":
+            # vLLM returns 400 unless the server was started with
+            # --enable-auto-tool-choice and --tool-call-parser.
+            tool_choice = None
+
         body = super()._build_request_body(
             messages, model, temperature, max_tokens, tools, tool_choice, stop, stream, **kwargs
         )
@@ -91,11 +103,32 @@ class VLLMProvider(OpenAIProvider):
     # Model detection
     # ------------------------------------------------------------------
 
+    def _needs_model_resolution(self, model: str | None) -> bool:
+        """True when the caller-supplied model is blank or a placeholder."""
+        if not model:
+            return True
+        return model == "default" and not self.default_model
+
+    async def _resolve_model_for_request(self, requested_model: str | None) -> str:
+        """Resolve a blank/placeholder model against the running vLLM server."""
+        if not self._needs_model_resolution(requested_model):
+            return requested_model  # type: ignore[return-value]
+
+        detected = await self.detect_model()
+        return detected or requested_model or "default"
+
+    _detected_model: str | None = None
+
     async def detect_model(self) -> str | None:
         """Auto-detect the served model via ``/v1/models``.
 
         Returns the first model ID or None if detection fails.
+        Caches the result in ``_detected_model`` so subsequent calls
+        do not hit the server again.
         """
+        if self._detected_model:
+            return self._detected_model
+
         url = f"{self.base_url}/models"
         try:
             client = self._ensure_complete_client()
@@ -106,11 +139,46 @@ class VLLMProvider(OpenAIProvider):
                 if models:
                     model_id = models[0].get("id", "")
                     if model_id:
-                        self.default_model = model_id
+                        self._detected_model = model_id
+                        if not self.default_model:
+                            self.default_model = model_id
                         return model_id
         except Exception:
             logger.debug("vllm_model_detection_failed", exc_info=True)
         return None
 
+    async def resolve_test_model(
+        self,
+        preferred: str | None = None,
+        configured: list[str] | None = None,
+    ) -> str:
+        """Pick a model for health checks, preferring config then discovery."""
+        for candidate in [preferred, *(configured or [])]:
+            value = (candidate or "").strip()
+            if value:
+                return value
+        return await self._resolve_model_for_request(None)
+
     def _get_default_model(self) -> str:
         return self.default_model or "default"
+
+    async def complete(
+        self,
+        messages: list[ChatMessage],
+        *,
+        model: str,
+        **kwargs: Any,
+    ) -> LLMResponse:
+        resolved = await self._resolve_model_for_request(model)
+        return await super().complete(messages=messages, model=resolved, **kwargs)
+
+    async def stream(
+        self,
+        messages: list[ChatMessage],
+        *,
+        model: str,
+        **kwargs: Any,
+    ) -> AsyncIterator[StreamChunk]:
+        resolved = await self._resolve_model_for_request(model)
+        async for chunk in super().stream(messages=messages, model=resolved, **kwargs):
+            yield chunk

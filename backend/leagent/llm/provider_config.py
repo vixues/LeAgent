@@ -208,15 +208,15 @@ PROVIDER_PRESETS: dict[str, dict[str, Any]] = {
         "models": [],
     },
     "vllm": {
-        "label": "vLLM (自托管模型)",
+        "label": "vLLM (本地/远程自托管模型)",
         "default_base_url": "http://localhost:8000/v1",
-        "requires_api_key": False,
+        "requires_api_key": True,
         "models": [],
     },
     "custom": {
         "label": "自定义 API (OpenAI 兼容)",
         "default_base_url": "",
-        "requires_api_key": False,
+        "requires_api_key": True,
         "models": [],
     },
 }
@@ -455,11 +455,17 @@ class ProviderConfigService:
                 timeout=pc.timeout,
             )
         if pc.type == "vllm":
+            enable_auto_tool_choice = False
+            if isinstance(pc.metadata, dict):
+                enable_auto_tool_choice = bool(
+                    pc.metadata.get("enable_auto_tool_choice", False)
+                )
             return VLLMProvider(
                 api_key=api_key or "not-needed",
                 base_url=pc.base_url or VLLMProvider.DEFAULT_BASE_URL,
                 default_model=default_model,
                 timeout=pc.timeout,
+                enable_auto_tool_choice=enable_auto_tool_choice,
             )
         # Fallback: treat as OpenAI-compatible
         return OpenAIProvider(
@@ -930,6 +936,14 @@ class ProviderConfigService:
                         status="failed",
                         error_category=classification.category.value,
                     )
+        elif pc.type == "vllm":
+            from leagent.llm.providers.vllm import VLLMProvider
+
+            if isinstance(info.provider, VLLMProvider):
+                test_model = await info.provider.resolve_test_model(
+                    preferred=test_model if test_model != "default" else None,
+                    configured=[str(m.get("name") or "") for m in pc.models],
+                )
         prompt = str(test_config.get("test_prompt") or "Who are you?")
         timeout_secs = float(test_config.get("timeout_secs") or min(max(pc.timeout, 1), 90))
         degraded_threshold_ms = float(test_config.get("degraded_threshold_ms") or 6000)

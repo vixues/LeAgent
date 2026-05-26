@@ -104,6 +104,14 @@ class TestRegistration:
         assert reg.unregister("simple_tool") is True
         assert not reg.has("simple_tool")
 
+    def test_unregister_cleans_aliases(self) -> None:
+        reg = ToolRegistry()
+        reg.register(_SimpleTool())
+        assert reg.has("simple")
+        reg.unregister("simple_tool")
+        assert not reg.has("simple")
+        assert not reg.has("st")
+
     def test_unregister_nonexistent(self) -> None:
         reg = ToolRegistry()
         assert reg.unregister("nonexistent") is False
@@ -189,6 +197,13 @@ class TestSchemas:
         assert len(schemas) == 1
         assert schemas[0]["function"]["name"] == "doc_tool"
 
+    def test_schema_resolves_alias(self) -> None:
+        reg = ToolRegistry()
+        reg.register(_SimpleTool())
+        schemas = reg.get_schemas("openai", tool_names=["simple"])
+        assert len(schemas) == 1
+        assert schemas[0]["function"]["name"] == "simple_tool"
+
     def test_schema_unknown_tool_raises(self) -> None:
         reg = ToolRegistry()
         with pytest.raises(ToolNotFoundError):
@@ -209,6 +224,68 @@ class TestSearch:
         reg.register(_SimpleTool())
         assert reg.has("simple")
         assert not reg.has("nonexistent_alias")
+
+
+class TestSelection:
+    class _FillerTool(SyncTool):
+        description = "irrelevant filler"
+        category = ToolCategory.UTIL
+        version = "1.0.0"
+
+        def __init__(self, name: str) -> None:
+            self.name = name
+
+        @property
+        def parameters(self) -> dict[str, Any]:
+            return {"type": "object", "properties": {}}
+
+        def execute_sync(self, params: dict[str, Any], context: ToolContext) -> ToolResult:
+            return ToolResult.ok({})
+
+    def test_genui_selection_keeps_component_catalog_companion(self) -> None:
+        from leagent.tools.canvas.genui_guide import GetGenuiGuideTool
+        from leagent.tools.canvas.ui_components import EmitUiTreeTool, ListUiComponentsTool
+
+        reg = ToolRegistry()
+        reg.register(EmitUiTreeTool())
+        reg.register(GetGenuiGuideTool())
+        reg.register(ListUiComponentsTool())
+
+        schemas = reg.get_tools_for_llm(
+            provider_format="openai",
+            context_hint="dashboard",
+            max_tools=1,
+        )
+        names = {schema["function"]["name"] for schema in schemas}
+
+        assert "emit_ui_tree" in names
+        assert "get_genui_guide" in names
+        assert "list_ui_components" in names
+
+    def test_chinese_genui_hint_forces_component_catalog_tools(self) -> None:
+        from leagent.tools.canvas.genui_guide import GetGenuiGuideTool
+        from leagent.tools.canvas.ui_components import EmitUiTreeTool, ListUiComponentsTool
+
+        reg = ToolRegistry()
+        for idx in range(30):
+            reg.register(self._FillerTool(f"aaa_filler_{idx:02d}"))
+        reg.register(EmitUiTreeTool())
+        reg.register(GetGenuiGuideTool())
+        reg.register(ListUiComponentsTool())
+
+        schemas = reg.get_tools_for_llm(
+            provider_format="openai",
+            context_hint=(
+                "请用 GenUI（聊天里的可视化组件）帮我搭一版中文简历展示稿："
+                "分区块（个人信息、教育/工作经历、项目与技能）。"
+            ),
+            max_tools=5,
+        )
+        names = {schema["function"]["name"] for schema in schemas}
+
+        assert "emit_ui_tree" in names
+        assert "get_genui_guide" in names
+        assert "list_ui_components" in names
 
 
 class TestValidation:

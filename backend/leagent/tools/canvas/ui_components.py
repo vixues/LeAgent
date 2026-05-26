@@ -35,10 +35,9 @@ class ListUiComponentsTool(BaseTool):
 
     name = "list_ui_components"
     description = (
-        "Return the gen UI component catalog (kinds + prop hints). Use only when "
-        "`canvas_design` already warrants GenUI: call `get_genui_guide` first for layout/visual polish, "
-        "then this tool before authoring an `emit_ui_tree` payload so you do not have to "
-        "memorise component names. Read-only, no side effects."
+        "Return the gen UI component catalog (kinds + prop hints). When `canvas_design` warrants "
+        "GenUI, call `get_genui_guide` first for layout/visual polish, then call this tool before "
+        "authoring any non-trivial `emit_ui_tree` payload. Read-only, no side effects."
     )
     category = ToolCategory.CANVAS
     is_read_only = True
@@ -79,8 +78,8 @@ class EmitUiTreeTool(BaseTool):
         "(title, value, padding, variant, headers, events, …) stay inside `props`; `children` holds only "
         "nested nodes. "
         "Before substantial trees (decks, posters, multi-card layouts), call `get_genui_guide` "
-        "(payload **`wire_format_and_syntax`** + **`workflow_order`**), then `list_ui_components` for exact "
-        "`kind`/prop names. "
+        "(payload **`wire_format_and_syntax`** + **`workflow_order`**), then **must call** "
+        "`list_ui_components` for exact `kind`/prop names. "
         "Tool arguments must be strict JSON—escape double quotes as \\\" and newlines as \\n inside string "
         "values. Accepts `{schemaVersion:'1', root:{...}}`, `{root:{...}}`, or a bare root object. "
         "Keep payloads compact; prefer `emit_ui_patch` for incremental updates instead of re-emitting. "

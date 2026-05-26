@@ -1,0 +1,43 @@
+name: leagent
+
+services:
+  leagent:
+    environment:
+      LEAGENT_LLM__VLLM_ENDPOINT: ${VLLM_ENDPOINT:-http://vllm:8000/v1}
+      LEAGENT_LLM__VLLM_MODEL: ${VLLM_MODEL:-}
+      LEAGENT_LLM__VLLM_API_KEY: ${VLLM_API_KEY:-}
+      LEAGENT_LLM__VLLM_TIMEOUT: ${VLLM_TIMEOUT:-120}
+      LEAGENT_LLM__VLLM_ENABLE_AUTO_TOOL_CHOICE: ${VLLM_ENABLE_AUTO_TOOL_CHOICE:-false}
+    depends_on:
+      vllm:
+        condition: service_started
+
+  vllm:
+    image: vllm/vllm-openai:${VLLM_VERSION:-latest}
+    container_name: leagent-vllm
+    restart: unless-stopped
+    ipc: host
+    gpus: all
+    command:
+      - --model
+      - ${VLLM_MODEL:?Set VLLM_MODEL to the Hugging Face model ID or local model path}
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8000"
+      # Required for LeAgent tool calling (tool_choice=auto). Match parser to your model:
+      # https://docs.vllm.ai/en/latest/features/tool_calling/
+      - --enable-auto-tool-choice
+      - --tool-call-parser
+      - ${VLLM_TOOL_CALL_PARSER:-llama3_json}
+    environment:
+      HUGGING_FACE_HUB_TOKEN: ${HUGGING_FACE_HUB_TOKEN:-}
+      HF_HOME: /root/.cache/huggingface
+    ports:
+      - "${VLLM_HOST_PORT:-9000}:8000"
+    volumes:
+      - vllm-cache:/root/.cache/huggingface
+
+volumes:
+  vllm-cache:
+    driver: local

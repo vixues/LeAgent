@@ -6,6 +6,8 @@ retrieval, and schema generation for LLM function calling.
 
 from __future__ import annotations
 
+import fnmatch
+import hashlib
 import importlib
 import importlib.util
 import inspect
@@ -137,8 +139,16 @@ class ToolRegistry:
 
         tool = self._tools.pop(name)
         if tool.category in self._categories:
-            self._categories[tool.category].remove(name)
+            try:
+                self._categories[tool.category].remove(name)
+            except ValueError:
+                pass
 
+        for alias, canonical in list(self._aliases.items()):
+            if canonical == name:
+                del self._aliases[alias]
+
+        self._schema_generation += 1
         logger.info("Tool unregistered", tool=name)
         return True
 
@@ -231,9 +241,10 @@ class ToolRegistry:
         else:
             tools = []
             for name in tool_names:
-                if name not in self._tools:
+                canonical = self._resolve_name(name)
+                if canonical not in self._tools:
                     raise ToolNotFoundError(name)
-                tools.append(self._tools[name])
+                tools.append(self._tools[canonical])
 
         schema_method = {
             "openai": "to_openai_schema",
@@ -269,8 +280,6 @@ class ToolRegistry:
 
     def filter_by_deny_rules(self, deny_patterns: list[str]) -> list[BaseTool]:
         """Return tools not matched by any deny pattern (mirrors filterToolsByDenyRules)."""
-        import fnmatch
-
         result: list[BaseTool] = []
         for tool in self._tools.values():
             denied = any(fnmatch.fnmatch(tool.name, p) for p in deny_patterns)
@@ -280,8 +289,6 @@ class ToolRegistry:
 
     def _schema_cache_key(self, deny_patterns: list[str] | None, provider_format: str) -> str:
         """Content-addressed cache key based on actual tool state."""
-        import hashlib
-
         parts = [
             str(self._schema_generation),
             provider_format,
@@ -297,8 +304,6 @@ class ToolRegistry:
         max_tools: int,
     ) -> str:
         """Cache key for context-filtered schema pools."""
-        import hashlib
-
         normalized_hint = " ".join((context_hint or "").lower().split())
         parts = [
             str(self._schema_generation),
@@ -319,6 +324,33 @@ class ToolRegistry:
         "ask_user", "code_execution", "web_search", "file_manager",
         "project_write", "project_tree", "project_grep",
     })
+    _COMPANION_TOOL_NAMES: dict[str, tuple[str, ...]] = {
+        "emit_ui_tree": ("get_genui_guide", "list_ui_components"),
+        "emit_ui_patch": ("emit_ui_tree", "get_genui_guide", "list_ui_components"),
+        "get_genui_guide": ("list_ui_components",),
+        "canvas_publish": ("get_html_canvas_guide",),
+    }
+    _GENUI_HINT_TERMS: frozenset[str] = frozenset({
+        "genui",
+        "gen ui",
+        "generative ui",
+        "visual component",
+        "visual components",
+        "dashboard",
+        "cards",
+        "可视化组件",
+        "聊天里的可视化组件",
+        "画布",
+        "卡片",
+        "看板",
+        "仪表盘",
+        "展示稿",
+    })
+    _GENUI_TOOL_NAMES: tuple[str, ...] = (
+        "emit_ui_tree",
+        "get_genui_guide",
+        "list_ui_components",
+    )
 
     def get_tools_for_llm(
         self,
@@ -372,7 +404,6 @@ class ToolRegistry:
 
         tools = sorted(self.get_enabled_tools(), key=lambda t: t.name)
         if deny_patterns:
-            import fnmatch
             tools = [
                 t for t in tools
                 if not any(fnmatch.fnmatch(t.name, p) for p in deny_patterns)
@@ -386,12 +417,23 @@ class ToolRegistry:
         self._remember_schema_cache(cache_key, out)
         return out
 
+    _PER_TOOL_SCHEMA_CACHE_MAX_GENERATIONS = 3
+
     def _get_cached_tool_schema(self, tool: "BaseTool", provider_format: str) -> dict[str, Any]:
         """Return a cached per-tool schema dict, rebuilding only on generation change."""
-        key = (tool.name, provider_format, self._schema_generation)
+        gen = self._schema_generation
+        key = (tool.name, provider_format, gen)
         cached = self._per_tool_schema_cache.get(key)
         if cached is not None:
             return cached
+
+        cutoff = gen - self._PER_TOOL_SCHEMA_CACHE_MAX_GENERATIONS
+        if cutoff > 0:
+            self._per_tool_schema_cache = {
+                k: v for k, v in self._per_tool_schema_cache.items()
+                if k[2] > cutoff
+            }
+
         schema_method = {
             "openai": "to_openai_schema",
             "anthropic": "to_anthropic_schema",
@@ -441,10 +483,37 @@ class ToolRegistry:
             scored.append((score, tool.name, tool))
 
         scored.sort(key=lambda x: (-x[0], x[1]))
-        remaining_slots = max(0, max_tools - len(core))
-        selected = core + [t for _, _, t in scored[:remaining_slots]]
+        all_by_name = {tool.name: tool for tool in tools}
+
+        forced_names = self._forced_tool_names_for_hint(hint_lower)
+        selected_by_name = {tool.name: tool for tool in core}
+        for name in forced_names:
+            tool = all_by_name.get(name)
+            if tool is not None:
+                selected_by_name[name] = tool
+
+        remaining_slots = max(0, max_tools - len(selected_by_name))
+        for _, _, tool in scored:
+            if remaining_slots <= 0:
+                break
+            if tool.name in selected_by_name:
+                continue
+            selected_by_name[tool.name] = tool
+            remaining_slots -= 1
+
+        for tool in list(selected_by_name.values()):
+            for companion_name in self._COMPANION_TOOL_NAMES.get(tool.name, ()):
+                companion = all_by_name.get(companion_name)
+                if companion is not None:
+                    selected_by_name[companion_name] = companion
+        selected = list(selected_by_name.values())
         selected.sort(key=lambda t: t.name)
         return selected
+
+    def _forced_tool_names_for_hint(self, hint_lower: str) -> tuple[str, ...]:
+        if any(term in hint_lower for term in self._GENUI_HINT_TERMS):
+            return self._GENUI_TOOL_NAMES
+        return ()
 
     def search_tools(self, query: str) -> list[BaseTool]:
         """Keyword search across tool names, descriptions, and search_hints."""

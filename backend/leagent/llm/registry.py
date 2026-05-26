@@ -391,6 +391,7 @@ def create_default_registry() -> ProviderRegistry:
     from leagent.llm.providers.deepseek import DeepSeekProvider
     from leagent.llm.providers.ollama import OllamaProvider
     from leagent.llm.providers.openai import OpenAIProvider
+    from leagent.llm.providers.vllm import VLLMProvider
 
     settings = get_settings()
     registry = ProviderRegistry()
@@ -505,6 +506,56 @@ def create_default_registry() -> ProviderRegistry:
                     "description": "Fast model for simple tasks",
                 },
             )
+
+    # vLLM can be a remote GPU gateway or a local OpenAI-compatible server.
+    # When explicitly configured, make it the active tier provider so local
+    # deployments do not accidentally keep the default DeepSeek endpoints.
+    if settings.llm.vllm_endpoint:
+        vllm_model_label = settings.llm.vllm_model or "auto-detect"
+        vllm_provider = VLLMProvider(
+            api_key=settings.llm.vllm_api_key or "not-needed",
+            base_url=settings.llm.vllm_endpoint.rstrip("/"),
+            default_model=settings.llm.vllm_model,
+            timeout=settings.llm.vllm_timeout,
+            enable_auto_tool_choice=settings.llm.vllm_enable_auto_tool_choice,
+        )
+
+        _ep = settings.llm.vllm_endpoint
+        _is_local = (
+            "localhost" in _ep
+            or "127.0.0.1" in _ep
+            or "host.docker.internal" in _ep
+        )
+
+        registry.replace(
+            "vllm",
+            vllm_provider,
+            metadata={
+                "type": "local" if _is_local else "remote",
+                "vendor": "vllm",
+                "model": vllm_model_label,
+            },
+        )
+        registry.replace(
+            "tier1",
+            vllm_provider,
+            metadata={
+                "tier": "tier1",
+                "vendor": "vllm",
+                "model": vllm_model_label,
+                "description": "vLLM (configured via LLM_VLLM_ENDPOINT)",
+            },
+        )
+        registry.replace(
+            "tier2",
+            vllm_provider,
+            metadata={
+                "tier": "tier2",
+                "vendor": "vllm",
+                "model": vllm_model_label,
+                "description": "vLLM (configured via LLM_VLLM_ENDPOINT)",
+            },
+        )
 
     # Register embedding provider (typically local embedding service)
     if settings.llm.embedding_endpoint:

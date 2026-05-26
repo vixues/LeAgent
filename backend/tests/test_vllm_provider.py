@@ -101,6 +101,21 @@ class TestVLLMBuildRequestBody:
         assert body["tool_choice"] == "required"
         assert body["tools"][0]["function"]["name"] == "echo"
 
+    def test_tools_omit_auto_tool_choice_by_default(self) -> None:
+        p = VLLMProvider(default_model="llama3")
+        tools = [ToolDefinition(name="echo", description="Echo", parameters={"type": "object"})]
+        msgs = [ChatMessage.user("hi")]
+        body = p._build_request_body(msgs, "llama3", 0.5, 100, tools, "auto", None)
+        assert "tool_choice" not in body
+        assert body["tools"][0]["function"]["name"] == "echo"
+
+    def test_tools_keep_auto_when_enabled(self) -> None:
+        p = VLLMProvider(default_model="llama3", enable_auto_tool_choice=True)
+        tools = [ToolDefinition(name="echo", description="Echo", parameters={"type": "object"})]
+        msgs = [ChatMessage.user("hi")]
+        body = p._build_request_body(msgs, "llama3", 0.5, 100, tools, "auto", None)
+        assert body["tool_choice"] == "auto"
+
     def test_structured_outputs_not_duplicated_in_kwargs(self) -> None:
         """structured_outputs is popped from kwargs, not passed through."""
         p = VLLMProvider(default_model="llama3")
@@ -126,6 +141,39 @@ class TestVLLMModelDetection:
     def test_get_default_model_set(self) -> None:
         p = VLLMProvider(default_model="my-model")
         assert p._get_default_model() == "my-model"
+
+    @pytest.mark.asyncio
+    async def test_resolve_request_model_detects_when_blank(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        p = VLLMProvider(default_model="")
+
+        async def fake_detect_model() -> str:
+            return "served-local-model"
+
+        monkeypatch.setattr(p, "detect_model", fake_detect_model)
+        assert await p._resolve_model_for_request("default") == "served-local-model"
+
+    @pytest.mark.asyncio
+    async def test_resolve_request_model_keeps_explicit_model(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        p = VLLMProvider(default_model="")
+
+        async def fail_detect_model() -> str:
+            raise AssertionError("should not detect when caller supplied a model")
+
+        monkeypatch.setattr(p, "detect_model", fail_detect_model)
+        assert await p._resolve_model_for_request("explicit-model") == "explicit-model"
+
+    @pytest.mark.asyncio
+    async def test_detect_model_returns_cached_without_network(self) -> None:
+        p = VLLMProvider(default_model="")
+        p._detected_model = "cached-model"
+        result = await p.detect_model()
+        assert result == "cached-model"
 
 
 # ---------------------------------------------------------------------------
@@ -154,8 +202,56 @@ class TestVLLMRegistryWiring:
         assert isinstance(provider, VLLMProvider)
         assert provider.base_url == "http://gpu:8000/v1"
         assert provider.default_model == "llama3-70b"
+        assert provider.api_key == "not-needed"
+
+    def test_provider_config_constructs_remote_vllm_with_api_key(self) -> None:
+        from leagent.llm.provider_config import ProviderConfig, ProviderConfigService
+
+        pc = ProviderConfig(
+            name="deepseek-vllm",
+            type="vllm",
+            enabled=True,
+            api_key="remote-key",
+            base_url="http://192.168.232.22:8001/v1",
+            models=[
+                {
+                    "name": "deepseek",
+                    "tier": "tier1",
+                    "context_window": 16384,
+                    "supports_tools": False,
+                }
+            ],
+            timeout=120,
+            metadata={"enable_auto_tool_choice": False},
+        )
+        svc = ProviderConfigService.__new__(ProviderConfigService)
+        provider = svc._create_llm_provider(pc)
+        assert isinstance(provider, VLLMProvider)
+        assert provider.base_url == "http://192.168.232.22:8001/v1"
+        assert provider.default_model == "deepseek"
+        assert provider.api_key == "remote-key"
+        assert provider.enable_auto_tool_choice is False
 
     def test_provider_preset_exists(self) -> None:
         from leagent.llm.provider_config import PROVIDER_PRESETS
         assert "vllm" in PROVIDER_PRESETS
         assert PROVIDER_PRESETS["vllm"]["default_base_url"] == "http://localhost:8000/v1"
+        assert PROVIDER_PRESETS["vllm"]["requires_api_key"] is True
+
+    def test_vllm_env_registers_tiers(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from leagent.config.settings import get_settings
+        from leagent.llm.registry import create_default_registry
+
+        monkeypatch.setenv("LLM_VLLM_ENDPOINT", "http://localhost:9000/v1")
+        monkeypatch.setenv("LLM_VLLM_MODEL", "meta-llama/Llama-3.1-8B-Instruct")
+        monkeypatch.setenv("LLM_VLLM_ENABLE_AUTO_TOOL_CHOICE", "true")
+        get_settings.cache_clear()
+        try:
+            registry = create_default_registry()
+        finally:
+            get_settings.cache_clear()
+
+        assert isinstance(registry.get_provider("vllm"), VLLMProvider)
+        assert registry.get_provider("tier1") is registry.get_provider("vllm")
+        assert registry.get_provider_info("tier1").metadata["vendor"] == "vllm"
+        assert registry.get_provider("vllm").enable_auto_tool_choice is True

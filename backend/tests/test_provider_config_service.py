@@ -7,7 +7,11 @@ from pathlib import Path
 
 import pytest
 
-from leagent.llm.provider_config import ProviderConfigService, ProviderConfigValidationError
+from leagent.llm.provider_config import (
+    PROVIDER_PRESETS,
+    ProviderConfigService,
+    ProviderConfigValidationError,
+)
 
 
 def _svc(yaml_text: str, tmp_path: Path) -> ProviderConfigService:
@@ -101,6 +105,10 @@ def test_create_provider_rejects_duplicate_model_names(tmp_path: Path) -> None:
                 "models": [{"name": "a"}, {"name": "a"}],
             }
         )
+
+
+def test_custom_api_preset_exposes_api_key_field() -> None:
+    assert PROVIDER_PRESETS["custom"]["requires_api_key"] is True
 
 
 def test_update_provider_clears_stale_default(tmp_path: Path) -> None:

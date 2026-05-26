@@ -186,7 +186,7 @@ export default function ChatView() {
   }, [currentSessionId, clearMessages, t]);
 
   const sendMessage = useCallback(
-    async ({ content, attachments, folderId, fileIds, projectFolderId }: SendMessageParams) => {
+    async ({ content, attachments, folderId, fileIds, projectFolderId, modelMode }: SendMessageParams) => {
       const store = useChatStore.getState();
       const sessionId: string =
         store.currentSessionId ?? (await store.createSession());
@@ -237,6 +237,7 @@ export default function ChatView() {
           folderId,
           fileIds,
           projectFolderId,
+          modelMode,
           signal: controller.signal,
           t,
         });
@@ -321,6 +322,7 @@ export default function ChatView() {
       folderId?: string | null,
       fileIds?: string[],
       projectFolderId?: string | null,
+      modelMode?: string,
     ) => {
       const trimmed = content.trim();
       const commandMatch = trimmed.match(DOWNLOAD_COMMAND_RE);
@@ -358,7 +360,7 @@ export default function ChatView() {
         });
         return;
       }
-      await sendMessage({ content, attachments: files, folderId, fileIds, projectFolderId });
+      await sendMessage({ content, attachments: files, folderId, fileIds, projectFolderId, modelMode });
     },
     [resolveDownloadCandidate, sendMessage, triggerBrowserDownload],
   );
