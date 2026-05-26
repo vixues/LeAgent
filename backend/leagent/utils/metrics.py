@@ -42,6 +42,7 @@ DURATION_BUCKETS = (0.005, 0.01, 0.025, 0.05, 0.075, 0.1, 0.25, 0.5, 0.75, 1.0, 
 LLM_DURATION_BUCKETS = (0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0, 30.0, 60.0, 120.0, 300.0)
 TOOL_DURATION_BUCKETS = (0.01, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0, 30.0, 60.0, 120.0)
 TASK_DURATION_BUCKETS = (1.0, 5.0, 10.0, 30.0, 60.0, 120.0, 300.0, 600.0, 1800.0, 3600.0)
+QUEUE_DEPTH_BUCKETS = (0, 1, 2, 5, 10, 25, 50, 100, 250, 500, 1000)
 
 
 class LeAgentMetrics:
@@ -160,6 +161,14 @@ class LeAgentMetrics:
             labelnames=["provider", "model"],
             registry=self._registry,
         )
+
+        self.llm_stream_ttfb_seconds = Histogram(
+            "leagent_llm_stream_ttfb_seconds",
+            "Time to first streamed LLM chunk in seconds",
+            labelnames=["provider", "model", "tier"],
+            buckets=LLM_DURATION_BUCKETS,
+            registry=self._registry,
+        )
         
         self.llm_errors_total = Counter(
             "leagent_llm_errors_total",
@@ -188,6 +197,29 @@ class LeAgentMetrics:
             "leagent_agent_task_steps_total",
             "Total steps taken in agent tasks",
             labelnames=["task_type", "step_type"],
+            registry=self._registry,
+        )
+
+        self.agent_turn_phase_duration_seconds = Histogram(
+            "leagent_agent_turn_phase_duration_seconds",
+            "Agent chat turn phase duration in seconds",
+            labelnames=["phase", "status"],
+            buckets=DURATION_BUCKETS + (30.0, 60.0),
+            registry=self._registry,
+        )
+
+        self.agent_stream_queue_depth = Gauge(
+            "leagent_agent_stream_queue_depth",
+            "Current queued stream events waiting to be consumed",
+            labelnames=["queue"],
+            registry=self._registry,
+        )
+
+        self.agent_stream_queue_depth_observed = Histogram(
+            "leagent_agent_stream_queue_depth_observed",
+            "Observed stream queue depth when events are enqueued",
+            labelnames=["queue"],
+            buckets=QUEUE_DEPTH_BUCKETS,
             registry=self._registry,
         )
 
@@ -300,6 +332,13 @@ class LeAgentMetrics:
         self.cache_size_bytes = Gauge(
             "leagent_cache_size_bytes",
             "Cache size in bytes",
+            labelnames=["cache_name"],
+            registry=self._registry,
+        )
+
+        self.cache_entries = Gauge(
+            "leagent_cache_entries",
+            "Number of entries in logical caches",
             labelnames=["cache_name"],
             registry=self._registry,
         )
@@ -423,6 +462,20 @@ class LeAgentMetrics:
         
         self.record_llm_tokens(provider, model, tier, prompt_tokens, completion_tokens)
 
+    def record_llm_stream_ttfb(
+        self,
+        provider: str,
+        model: str,
+        tier: str,
+        ttfb_seconds: float,
+    ) -> None:
+        """Record time to first streamed model chunk."""
+        self.llm_stream_ttfb_seconds.labels(
+            provider=provider,
+            model=model,
+            tier=tier,
+        ).observe(max(0.0, ttfb_seconds))
+
     def record_tool_execution(
         self,
         tool_name: str,
@@ -457,6 +510,52 @@ class LeAgentMetrics:
         """Record agent task/turn duration and status."""
         self.agent_task_duration_seconds.labels(task_type=task_type).observe(duration)
         self.agent_task_total.labels(task_type=task_type, status=status).inc()
+
+    def record_agent_turn_phase(
+        self,
+        phase: str,
+        duration: float,
+        *,
+        status: str = "success",
+    ) -> None:
+        """Record latency for a phase in the chat/agent hot path."""
+        self.agent_turn_phase_duration_seconds.labels(
+            phase=phase,
+            status=status,
+        ).observe(max(0.0, duration))
+
+    def record_stream_queue_depth(self, queue: str, depth: int) -> None:
+        """Record the current depth of a stream event queue."""
+        depth = max(0, int(depth))
+        self.agent_stream_queue_depth.labels(queue=queue).set(depth)
+        self.agent_stream_queue_depth_observed.labels(queue=queue).observe(depth)
+
+    def record_db_query(
+        self,
+        operation: str,
+        table: str,
+        duration: float,
+    ) -> None:
+        """Record DB operation latency."""
+        self.db_query_duration_seconds.labels(
+            operation=operation,
+            table=table,
+        ).observe(max(0.0, duration))
+
+    def record_cache_event(
+        self,
+        cache_name: str,
+        *,
+        hit: bool,
+        entries: int | None = None,
+    ) -> None:
+        """Record cache hit/miss and optional entry count."""
+        if hit:
+            self.cache_hits_total.labels(cache_name=cache_name).inc()
+        else:
+            self.cache_misses_total.labels(cache_name=cache_name).inc()
+        if entries is not None:
+            self.cache_entries.labels(cache_name=cache_name).set(max(0, int(entries)))
 
     def record_sandbox_execution(
         self,

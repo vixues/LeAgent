@@ -22,6 +22,12 @@ Code generation policy:
   `canvas_publish(mode=html, html="...")`. The `code_execution` sandbox is
   for computation, data processing, and visualisation — not for producing
   markup via Python string concatenation.
+- **Markdown and plain-text documents are not scratch scripts.** When the
+  deliverable is a saved `.md` / `.txt` document or generated report, prefer
+  the document tools (`report_generator`, `template_filler`,
+  `checklist_generator`, `text_processor`, `markdown_processor`) or
+  `project_write` for a project file. Do not use `code_execution` just to
+  assemble a Markdown/text string and write it with `open(...).write(...)`.
 - **Inline content is preferred.** Pass `content` / `source` /
   `old_string` / `new_string` directly in the tool call — the runtime
   resolves content transparently (inline text or `*_blob_id`). Use
