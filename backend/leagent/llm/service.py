@@ -37,6 +37,9 @@ _TRANSIENT_RETRY_ATTEMPTS = 3
 _TRANSIENT_RETRY_BASE_DELAY_SEC = 0.5
 _T = TypeVar("_T")
 
+_SPEND_LIMIT_CACHE_TTL_SEC = 30.0
+_spend_limit_cache: dict[tuple[str, str], tuple[float, float]] = {}  # (provider, scope) → (value, monotonic_ts)
+
 
 def _is_retryable_llm_error(exc: Exception) -> bool:
     return classify_llm_error(exc).retryable
@@ -180,6 +183,18 @@ class LLMService:
         except Exception:
             logger.debug("llm_failover_config_unavailable")
 
+        # Log final tier assignments for observability.
+        tier1_cfg = router.tier_configs.get("tier1")
+        tier2_cfg = router.tier_configs.get("tier2")
+        logger.info(
+            "llm_service_tiers_configured",
+            tier1_provider=tier1_cfg.provider if tier1_cfg else None,
+            tier1_model=tier1_cfg.model if tier1_cfg else None,
+            tier2_provider=tier2_cfg.provider if tier2_cfg else None,
+            tier2_model=tier2_cfg.model if tier2_cfg else None,
+            registered_providers=registry.list_providers(),
+        )
+
         return cls(registry=registry, router=router)
 
     def reload(self) -> None:
@@ -188,13 +203,23 @@ class LLMService:
         Called after the Admin UI changes provider config so that the
         running service picks up the new default_provider without restart.
         """
+        old_registry = self.registry
         fresh = self.from_settings()
         self.registry = fresh.registry
         self.router = fresh.router
+        try:
+            loop = asyncio.get_running_loop()
+            loop.create_task(old_registry.aclose())
+        except RuntimeError:
+            pass
 
     def get_provider(self, name: str) -> LLMProvider:
         """Get a specific provider by name."""
         return self.registry.get_provider(name)
+
+    async def aclose(self) -> None:
+        """Release provider-level resources such as pooled HTTP clients."""
+        await self.registry.aclose()
 
     async def complete(
         self,
@@ -317,7 +342,11 @@ class LLMService:
             logger.debug("llm_prometheus_metrics_failed")
 
     async def _enforce_spend_limits(self, provider: str) -> None:
-        """Block explicit provider calls that exceed configured spend limits."""
+        """Block explicit provider calls that exceed configured spend limits.
+
+        Results are cached in-memory for ``_SPEND_LIMIT_CACHE_TTL_SEC`` to
+        avoid running aggregate DB queries on every LLM call.
+        """
         try:
             from datetime import datetime
             from sqlmodel import func, select
@@ -335,31 +364,43 @@ class LLMService:
             if daily_limit in (None, "") and monthly_limit in (None, ""):
                 return
 
-            now = datetime.utcnow()
-            day_start = datetime(now.year, now.month, now.day)
-            month_start = datetime(now.year, now.month, 1)
-            db = get_database_service()
-            async with db.session() as session:
-                if daily_limit not in (None, ""):
-                    daily = (
+            now_mono = time.monotonic()
+
+            async def _cached_spend(scope: str) -> float:
+                key = (provider, scope)
+                cached = _spend_limit_cache.get(key)
+                if cached is not None:
+                    value, ts = cached
+                    if now_mono - ts < _SPEND_LIMIT_CACHE_TTL_SEC:
+                        return value
+
+                now = datetime.utcnow()
+                if scope == "daily":
+                    cutoff = datetime(now.year, now.month, now.day)
+                else:
+                    cutoff = datetime(now.year, now.month, 1)
+
+                db = get_database_service()
+                async with db.session() as session:
+                    total = (
                         await session.exec(
                             select(func.coalesce(func.sum(LLMRequestLog.total_cost_usd), 0.0))
                             .where(LLMRequestLog.provider_name == provider)
-                            .where(LLMRequestLog.created_at >= day_start)
+                            .where(LLMRequestLog.created_at >= cutoff)
                         )
                     ).one()
-                    if float(daily or 0.0) >= float(daily_limit):
-                        raise LLMServiceError(f"Provider '{provider}' daily spend limit exceeded")
-                if monthly_limit not in (None, ""):
-                    monthly = (
-                        await session.exec(
-                            select(func.coalesce(func.sum(LLMRequestLog.total_cost_usd), 0.0))
-                            .where(LLMRequestLog.provider_name == provider)
-                            .where(LLMRequestLog.created_at >= month_start)
-                        )
-                    ).one()
-                    if float(monthly or 0.0) >= float(monthly_limit):
-                        raise LLMServiceError(f"Provider '{provider}' monthly spend limit exceeded")
+                result = float(total or 0.0)
+                _spend_limit_cache[key] = (result, now_mono)
+                return result
+
+            if daily_limit not in (None, ""):
+                daily = await _cached_spend("daily")
+                if daily >= float(daily_limit):
+                    raise LLMServiceError(f"Provider '{provider}' daily spend limit exceeded")
+            if monthly_limit not in (None, ""):
+                monthly = await _cached_spend("monthly")
+                if monthly >= float(monthly_limit):
+                    raise LLMServiceError(f"Provider '{provider}' monthly spend limit exceeded")
         except LLMServiceError:
             raise
         except Exception:
@@ -521,6 +562,26 @@ class LLMService:
             ):
                 if first_chunk_at is None:
                     first_chunk_at = time.perf_counter()
+                    try:
+                        from leagent.utils.metrics import get_metrics
+
+                        get_metrics().record_llm_stream_ttfb(
+                            provider,
+                            streaming_model,
+                            tier or "tier1",
+                            first_chunk_at - started,
+                        )
+                    except Exception:
+                        logger.debug("llm_stream_ttfb_metrics_failed")
+                try:
+                    from leagent.utils.metrics import get_metrics
+
+                    get_metrics().llm_streaming_chunks_total.labels(
+                        provider=provider,
+                        model=streaming_model,
+                    ).inc()
+                except Exception:
+                    logger.debug("llm_stream_chunk_metrics_failed")
                 if chunk.model:
                     final_model = chunk.model
                 if chunk.usage is not None:
@@ -569,6 +630,26 @@ class LLMService:
                     yielded = True
                     if first_chunk_at is None:
                         first_chunk_at = time.perf_counter()
+                        try:
+                            from leagent.utils.metrics import get_metrics
+
+                            get_metrics().record_llm_stream_ttfb(
+                                provider_name,
+                                request_model,
+                                decision.tier.value,
+                                first_chunk_at - started,
+                            )
+                        except Exception:
+                            logger.debug("llm_stream_ttfb_metrics_failed")
+                    try:
+                        from leagent.utils.metrics import get_metrics
+
+                        get_metrics().llm_streaming_chunks_total.labels(
+                            provider=provider_name,
+                            model=request_model,
+                        ).inc()
+                    except Exception:
+                        logger.debug("llm_stream_chunk_metrics_failed")
                     if chunk.model:
                         final_model = chunk.model
                     if chunk.usage is not None:

@@ -153,6 +153,13 @@ class ProviderRegistry:
         """List all provider info objects."""
         return list(self._providers.values())
 
+    async def aclose(self) -> None:
+        """Close provider resources that expose an async close hook."""
+        for info in list(self._providers.values()):
+            close = getattr(info.provider, "aclose", None)
+            if close is not None:
+                await close()
+
     def get_healthy_providers(self) -> list[str]:
         """Get names of providers that passed last health check."""
         return [
@@ -359,6 +366,17 @@ def _endpoint_hostname_is_dashscope(base_url: str) -> bool:
 
     h = (urlparse(base_url or "").hostname or "").lower()
     return "dashscope" in h or "maas.aliyuncs.com" in h
+
+
+def _first_yaml_enabled_model(models: list[dict]) -> str:
+    """Return the first enabled non-empty model name from a YAML model list."""
+    for model in models:
+        if model.get("enabled", True) is False:
+            continue
+        name = str(model.get("name") or "").strip()
+        if name:
+            return name
+    return ""
 
 
 def create_default_registry() -> ProviderRegistry:
@@ -668,15 +686,21 @@ def _merge_yaml_providers(registry: ProviderRegistry) -> None:
 
     YAML providers whose name isn't already registered are added.
     If ``default_provider`` / ``default_model`` are set in the YAML, the
-    corresponding provider is promoted to ``tier1`` (and ``tier2`` if
-    tier2 isn't already set), **replacing** any env-sourced tier.
+    corresponding provider is promoted to ``tier1`` and ``tier2``,
+    **replacing** any env-sourced tier. Tier assignment is determined by
+    inspecting per-model ``tier`` annotations in the provider's model list
+    so that tier1 and tier2 can route to different models within the same
+    provider.
     """
     import logging
 
     _log = logging.getLogger(__name__)
 
     try:
-        from leagent.llm.provider_config import ProviderConfigService
+        from leagent.llm.provider_config import (
+            ProviderConfigService,
+            enabled_model_names,
+        )
         svc = ProviderConfigService()
     except Exception:
         _log.debug("providers.yaml not available; skipping YAML merge")
@@ -702,8 +726,45 @@ def _merge_yaml_providers(registry: ProviderRegistry) -> None:
             _log.warning("YAML provider %s failed to register", pc.name, exc_info=True)
 
     default_cfg = svc.get_default()
-    if not default_cfg.provider:
-        return
+    default_pc = svc.get_provider(default_cfg.provider) if default_cfg.provider else None
+    allowed_default_models = enabled_model_names(default_pc.models) if default_pc else []
+    default_is_valid = bool(
+        default_pc
+        and default_pc.enabled
+        and allowed_default_models
+        and (
+            not default_cfg.model
+            or default_cfg.model in allowed_default_models
+        )
+    )
+
+    if not default_is_valid:
+        fallback_pc = next(
+            (
+                pc
+                for pc in svc.list_providers()
+                if pc.enabled and enabled_model_names(pc.models)
+            ),
+            None,
+        )
+        if fallback_pc is None:
+            if default_cfg.provider:
+                _log.warning(
+                    "YAML default_provider '%s' is invalid and no enabled YAML provider is available",
+                    default_cfg.provider,
+                )
+            return
+        fallback_model = _first_yaml_enabled_model(fallback_pc.models)
+        _log.warning(
+            "YAML default_provider '%s' model '%s' is invalid; using enabled provider '%s' model '%s'",
+            default_cfg.provider,
+            default_cfg.model,
+            fallback_pc.name,
+            fallback_model,
+        )
+        default_cfg.provider = fallback_pc.name
+        default_cfg.model = fallback_model
+        default_pc = fallback_pc
 
     if not registry.has_provider(default_cfg.provider):
         _log.warning(
@@ -715,10 +776,35 @@ def _merge_yaml_providers(registry: ProviderRegistry) -> None:
     default_provider_instance = registry.get_provider(default_cfg.provider)
     default_model = default_cfg.model or default_provider_instance._get_default_model()
 
+    # Determine tier-specific models from the provider's model list annotations.
+    tier1_model = ""
+    tier2_model = ""
+    if default_pc:
+        from leagent.llm.provider_config import _model_entry_enabled
+
+        for m in default_pc.models:
+            if not _model_entry_enabled(m):
+                continue
+            model_tier = (m.get("tier") or "").strip().lower()
+            model_name = (m.get("name") or "").strip()
+            if not model_name:
+                continue
+            if model_tier == "tier1" and not tier1_model:
+                tier1_model = model_name
+            elif model_tier == "tier2" and not tier2_model:
+                tier2_model = model_name
+
+    # Fall back to the explicit default_model when no tier annotation exists.
+    if not tier1_model:
+        tier1_model = default_model
+    if not tier2_model:
+        tier2_model = tier1_model
+
     _log.info(
-        "YAML default_provider=%s model=%s overriding tier1/tier2",
+        "YAML default_provider=%s tier1_model=%s tier2_model=%s",
         default_cfg.provider,
-        default_model,
+        tier1_model,
+        tier2_model,
     )
 
     registry.replace(
@@ -727,18 +813,19 @@ def _merge_yaml_providers(registry: ProviderRegistry) -> None:
         metadata={
             "tier": "tier1",
             "vendor": default_cfg.provider,
-            "model": default_model,
+            "model": tier1_model,
             "description": f"{default_cfg.provider} (promoted from providers.yaml)",
         },
     )
-    if not registry.has_provider("tier2") or True:
-        registry.replace(
-            "tier2",
-            default_provider_instance,
-            metadata={
-                "tier": "tier2",
-                "vendor": default_cfg.provider,
-                "model": default_model,
-                "description": f"{default_cfg.provider} (promoted from providers.yaml)",
-            },
-        )
+    # Always promote tier2 so that both tiers are served by the configured
+    # default provider — but with a potentially different model.
+    registry.replace(
+        "tier2",
+        default_provider_instance,
+        metadata={
+            "tier": "tier2",
+            "vendor": default_cfg.provider,
+            "model": tier2_model,
+            "description": f"{default_cfg.provider} (promoted from providers.yaml)",
+        },
+    )

@@ -788,15 +788,35 @@ class ProviderConfigService:
 
     def get_default(self) -> DefaultModelConfig:
         config = self._load_yaml()
+        provider = str(config.get("default_provider") or "")
+        model = str(config.get("default_model") or "")
+        current = self.get_provider(provider) if provider else None
+        if current and current.enabled:
+            allowed = enabled_model_names(current.models)
+            if allowed and (not model or model in allowed):
+                return DefaultModelConfig(
+                    provider=provider,
+                    model=model or allowed[0],
+                )
+        for pc in self.list_providers():
+            if not pc.enabled:
+                continue
+            fallback_model = _first_enabled_model(pc.models)
+            if fallback_model:
+                return DefaultModelConfig(provider=pc.name, model=fallback_model)
         return DefaultModelConfig(
-            provider=config.get("default_provider", ""),
-            model=config.get("default_model", ""),
+            provider=provider,
+            model=model,
         )
 
     def set_default(self, provider: str, model: str) -> DefaultModelConfig:
         pc = self.get_provider(provider)
         if not pc:
             raise ProviderConfigValidationError(f"Provider '{provider}' not found")
+        if not pc.enabled:
+            raise ProviderConfigValidationError(
+                f"Provider '{provider}' is disabled; enable it before setting it as default."
+            )
         allowed = enabled_model_names(pc.models)
         if not allowed:
             raise ProviderConfigValidationError(
@@ -821,7 +841,7 @@ class ProviderConfigService:
             return
         dm = (config.get("default_model") or "").strip()
         allowed = set(enabled_model_names(pc.models))
-        if not dm or dm not in allowed:
+        if not pc.enabled or not dm or dm not in allowed:
             logger.warning(
                 "Clearing default_provider/default_model: default %r/%r is not valid for provider %r.",
                 config.get("default_provider"),
@@ -1096,3 +1116,9 @@ def get_provider_config_service() -> ProviderConfigService:
     if _service is None:
         _service = ProviderConfigService()
     return _service
+
+
+def reset_provider_config_service() -> None:
+    """Invalidate the module-level singleton so next access re-reads YAML."""
+    global _service  # noqa: PLW0603
+    _service = None

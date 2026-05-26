@@ -74,7 +74,13 @@ def set_deepseek_user_id(user_id: str | None) -> contextvars.Token[str | None]:
 
 def reset_deepseek_user_id(token: contextvars.Token[str | None]) -> None:
     """Reset the user_id override using the token from :func:`set_deepseek_user_id`."""
-    _deepseek_user_id.reset(token)
+    try:
+        _deepseek_user_id.reset(token)
+    except ValueError:
+        # Async generator finalization can run cleanup in a copied context.
+        # Clear the local value so shutdown stays quiet without leaking state.
+        logger.debug("deepseek_user_id_reset_context_mismatch")
+        _deepseek_user_id.set(None)
 
 
 def _sanitize_user_id(raw: str) -> str:

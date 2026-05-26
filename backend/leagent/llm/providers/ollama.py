@@ -60,9 +60,60 @@ class OllamaProvider(LLMProvider):
         self.default_model = default_model
         self.timeout = timeout
         self.max_retries = max_retries
+        self._http_complete_client: httpx.AsyncClient | None = None
+        self._http_stream_client: httpx.AsyncClient | None = None
+        self._http_management_client: httpx.AsyncClient | None = None
+        self._http_pull_client: httpx.AsyncClient | None = None
 
     def _get_default_model(self) -> str:
         return self.default_model
+
+    def _ensure_complete_client(self) -> httpx.AsyncClient:
+        if self._http_complete_client is None:
+            self._http_complete_client = httpx.AsyncClient(
+                timeout=self.timeout,
+                trust_env=httpx_trust_env(),
+            )
+        return self._http_complete_client
+
+    def _ensure_stream_client(self) -> httpx.AsyncClient:
+        if self._http_stream_client is None:
+            self._http_stream_client = httpx.AsyncClient(
+                timeout=self.timeout,
+                trust_env=httpx_trust_env(),
+            )
+        return self._http_stream_client
+
+    def _ensure_management_client(self) -> httpx.AsyncClient:
+        if self._http_management_client is None:
+            self._http_management_client = httpx.AsyncClient(
+                timeout=30.0,
+                trust_env=httpx_trust_env(),
+            )
+        return self._http_management_client
+
+    def _ensure_pull_client(self) -> httpx.AsyncClient:
+        if self._http_pull_client is None:
+            self._http_pull_client = httpx.AsyncClient(
+                timeout=3600.0,
+                trust_env=httpx_trust_env(),
+            )
+        return self._http_pull_client
+
+    async def aclose(self) -> None:
+        """Release pooled HTTP connections."""
+        for client in (
+            self._http_complete_client,
+            self._http_stream_client,
+            self._http_management_client,
+            self._http_pull_client,
+        ):
+            if client is not None:
+                await client.aclose()
+        self._http_complete_client = None
+        self._http_stream_client = None
+        self._http_management_client = None
+        self._http_pull_client = None
 
     @staticmethod
     def _is_embedding_model(name: str) -> bool:
@@ -322,8 +373,8 @@ class OllamaProvider(LLMProvider):
 
         for attempt in range(self.max_retries + 1):
             try:
-                async with httpx.AsyncClient(timeout=self.timeout, trust_env=httpx_trust_env()) as client:
-                    response = await client.post(url, json=body)
+                client = self._ensure_complete_client()
+                response = await client.post(url, json=body)
 
                 if response.status_code == 200:
                     return self._parse_response(response.json(), model)
@@ -407,25 +458,25 @@ class OllamaProvider(LLMProvider):
         url = f"{self.base_url}/api/chat"
 
         try:
-            async with httpx.AsyncClient(timeout=self.timeout, trust_env=httpx_trust_env()) as client:
-                async with client.stream("POST", url, json=body) as response:
-                    if response.status_code != 200:
-                        content = await response.aread()
-                        self._handle_error(response.status_code, content.decode(), model)
+            client = self._ensure_stream_client()
+            async with client.stream("POST", url, json=body) as response:
+                if response.status_code != 200:
+                    content = await response.aread()
+                    self._handle_error(response.status_code, content.decode(), model)
 
-                    async for line in response.aiter_lines():
-                        if not line:
-                            continue
+                async for line in response.aiter_lines():
+                    if not line:
+                        continue
 
-                        try:
-                            data = json.loads(line)
-                            chunk = self._parse_stream_chunk(data, model)
-                            yield chunk
+                    try:
+                        data = json.loads(line)
+                        chunk = self._parse_stream_chunk(data, model)
+                        yield chunk
 
-                            if data.get("done"):
-                                break
-                        except json.JSONDecodeError:
-                            continue
+                        if data.get("done"):
+                            break
+                    except json.JSONDecodeError:
+                        continue
 
         except httpx.TimeoutException as e:
             raise LLMTimeoutError(model=model, timeout_sec=int(self.timeout)) from e
@@ -487,31 +538,35 @@ class OllamaProvider(LLMProvider):
         so we batch internally.
         """
         embed_model = model or "nomic-embed-text"
-
-        embeddings: list[list[float]] = []
-        total_prompt_tokens = 0
+        if not texts:
+            return EmbeddingResponse(
+                embeddings=[],
+                model=embed_model,
+                usage=TokenUsage(prompt_tokens=0, completion_tokens=0, total_tokens=0),
+            )
 
         url = f"{self.base_url}/api/embed"
 
         try:
-            async with httpx.AsyncClient(timeout=self.timeout, trust_env=httpx_trust_env()) as client:
-                for text in texts:
-                    body = {
-                        "model": embed_model,
-                        "input": text,
-                    }
+            client = self._ensure_complete_client()
+            response = await client.post(
+                url,
+                json={
+                    "model": embed_model,
+                    "input": texts,
+                },
+            )
 
-                    response = await client.post(url, json=body)
+            if response.status_code != 200:
+                self._handle_error(response.status_code, response.text, embed_model)
 
-                    if response.status_code != 200:
-                        self._handle_error(response.status_code, response.text, embed_model)
-
-                    data = response.json()
-
-                    embed_data = data.get("embeddings", [[]])[0]
-                    embeddings.append(embed_data)
-
-                    total_prompt_tokens += data.get("prompt_eval_count", 0)
+            data = response.json()
+            raw_embeddings = data.get("embeddings", [])
+            embeddings = [
+                emb if isinstance(emb, list) else []
+                for emb in raw_embeddings
+            ]
+            total_prompt_tokens = int(data.get("prompt_eval_count", 0) or 0)
 
         except httpx.TimeoutException as e:
             raise LLMTimeoutError(model=embed_model, timeout_sec=int(self.timeout)) from e
@@ -537,8 +592,8 @@ class OllamaProvider(LLMProvider):
         url = f"{self.base_url}/api/tags"
 
         try:
-            async with httpx.AsyncClient(timeout=30.0, trust_env=httpx_trust_env()) as client:
-                response = await client.get(url)
+            client = self._ensure_management_client()
+            response = await client.get(url)
 
             if response.status_code != 200:
                 raise LLMServiceError(
@@ -560,17 +615,17 @@ class OllamaProvider(LLMProvider):
         url = f"{self.base_url}/api/pull"
 
         try:
-            async with httpx.AsyncClient(timeout=3600.0, trust_env=httpx_trust_env()) as client:
-                async with client.stream("POST", url, json={"name": model}) as response:
-                    if response.status_code != 200:
-                        content = await response.aread()
-                        raise LLMServiceError(
-                            f"Failed to pull model: {content.decode()}",
-                            model=model,
-                            endpoint=self.base_url,
-                        )
-                    async for _ in response.aiter_lines():
-                        pass
+            client = self._ensure_pull_client()
+            async with client.stream("POST", url, json={"name": model}) as response:
+                if response.status_code != 200:
+                    content = await response.aread()
+                    raise LLMServiceError(
+                        f"Failed to pull model: {content.decode()}",
+                        model=model,
+                        endpoint=self.base_url,
+                    )
+                async for _ in response.aiter_lines():
+                    pass
 
         except httpx.RequestError as e:
             raise LLMServiceError(
