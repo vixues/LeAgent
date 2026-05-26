@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import time
 from typing import Annotated
 
 from fastapi import Depends
@@ -20,6 +21,8 @@ def build_agent_controller():  # type: ignore[return]
     Returns ``None`` when the LLM service is unavailable so callers can
     gracefully degrade.
     """
+    started = time.perf_counter()
+    status_label = "success"
     try:
         from leagent.agent.controller import AgentController, AgentConfig
         from leagent.agent.hooks import HookManager, create_default_hooks
@@ -72,18 +75,19 @@ def build_agent_controller():  # type: ignore[return]
             config=config,
             permission_context=permission_context,
         )
-        try:
-            from leagent.bootstrap import (
-                register_coding_agent_tool,
-                register_script_agent_tool,
-                register_subagent_tool,
-            )
-            register_script_agent_tool(registry, controller)
-            register_coding_agent_tool(registry, controller)
-            register_subagent_tool(registry, controller)
-        except Exception:
-            logger.debug("agent_subtools_unavailable", exc_info=True)
         return controller
     except Exception as exc:
+        status_label = "error"
         logger.debug("agent_controller_unavailable: %s", exc)
         return None
+    finally:
+        try:
+            from leagent.utils.metrics import get_metrics
+
+            get_metrics().record_agent_turn_phase(
+                "build_agent_controller",
+                time.perf_counter() - started,
+                status=status_label,
+            )
+        except Exception:
+            logger.debug("agent_controller_metrics_failed", exc_info=True)

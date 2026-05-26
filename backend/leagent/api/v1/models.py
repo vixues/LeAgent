@@ -432,7 +432,12 @@ async def update_provider(
 ) -> ProviderResponse:
     """Update an existing provider."""
     try:
-        pc = svc.update_provider(provider_name, data.model_dump(exclude_none=True))
+        raw = data.model_dump(exclude_none=True)
+        # Treat empty api_key as "keep existing" — the frontend sends "" when
+        # the user leaves the password field blank during edit.
+        if "api_key" in raw and not str(raw["api_key"]).strip():
+            del raw["api_key"]
+        pc = svc.update_provider(provider_name, raw)
     except ProviderConfigValidationError as exc:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc))
     except ValueError as exc:

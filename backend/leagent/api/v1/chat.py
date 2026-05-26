@@ -1285,6 +1285,9 @@ async def chat_stream_endpoint(
 
     async def frontend_sse_generator() -> AsyncIterator[dict[str, Any]]:
         nonlocal partial_assistant_tool_calls
+        yield _format_frontend_event("stream_start", {
+            "session_id": str(parsed_session_id),
+        })
         if had_upload_attempt:
             yield _format_frontend_event("attachments", {
                 "session_id": str(parsed_session_id),
