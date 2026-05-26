@@ -95,6 +95,24 @@ class TestPDFReaderTool:
         assert result.success
         assert "metadata" in result.data or "pages" in result.data
 
+    async def test_legacy_full_mode(self, sample_pdf: Path) -> None:
+        result = await run("pdf_reader", {
+            "file_path": str(sample_pdf),
+            "mode": "full",
+        })
+        assert result.success
+        assert isinstance(result.data, dict)
+        assert "text" in result.data
+
+    async def test_extract_text_operation_alias(self, sample_pdf: Path) -> None:
+        result = await run("pdf_reader", {
+            "file_path": str(sample_pdf),
+            "operation": "extract_text",
+        })
+        assert result.success
+        assert isinstance(result.data, dict)
+        assert "text" in result.data
+
     async def test_missing_file(self) -> None:
         result = await run("pdf_reader", {"file_path": "/nonexistent/path/to.pdf"})
         assert not result.success
