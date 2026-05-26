@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.2] - 2026-05-26
+
+Patch release: task manager lifecycle stability for SQLite-backed tests and local deployments.
+
+### Fixed — Task lifecycle kill stability — 2026-05-26
+
+- **TaskManager kill flow** (`backend/leagent/services/task_manager.py`) — Wait for cancelled background task runners to unwind before persisting the `KILLED` state, preventing overlapping SQLite sessions from racing during kill commits.
+
 ## [1.1.1] - 2026-05-21
 
 Patch release: **blob ingest** and **canvas capture** improvements, **SQLite task-kill** stability, **output-token truncation** fixes for HTML and large tool args, **Windows NSIS** desktop build fix, README/docs i18n, and unified **1.1.1** versioning across backend, frontend, and desktop installers.
@@ -1219,7 +1227,8 @@ _Subsections below keep `— YYYY-MM-DD` on each heading for maintainers (commit
 - **Minor (0.X.0)**: New features, backward compatible
 - **Patch (0.0.X)**: Bug fixes, security patches
 
-[Unreleased]: https://github.com/vixues/LeAgent/compare/v1.1.1...HEAD
+[Unreleased]: https://github.com/vixues/LeAgent/compare/v1.1.2...HEAD
+[1.1.2]: https://github.com/vixues/LeAgent/releases/tag/v1.1.2
 [1.1.1]: https://github.com/vixues/LeAgent/releases/tag/v1.1.1
 [1.1.0]: https://github.com/vixues/LeAgent/releases/tag/v1.1.0
 [1.0.0]: https://github.com/your-org/leagent/releases/tag/v1.0.0
