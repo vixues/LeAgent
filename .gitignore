@@ -37,6 +37,7 @@ MANIFEST
 # IDE
 .idea/
 .vscode/
+.cursor/
 *.swp
 *.swo
 *~
@@ -45,6 +46,9 @@ MANIFEST
 .settings/
 *.sublime-workspace
 *.sublime-project
+
+# Local locks
+.leagent.lock
 
 # Testing
 .tox/
