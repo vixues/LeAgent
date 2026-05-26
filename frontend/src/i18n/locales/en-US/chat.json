@@ -506,6 +506,7 @@
         "folderLabel": "Source folder",
         "pickFolder": "Pick a folder…",
         "sessionWorkspace": "Session Workspace",
+        "docStreamTitle": "Generating document (live)",
         "systemKnowledgeBase": "System Knowledge Base",
         "searchPlaceholder": "Search files in this folder",
         "emptyNoFolder": "Pick a folder above to browse its files.",

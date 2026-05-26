@@ -506,6 +506,7 @@
         "folderLabel": "来源文件夹",
         "pickFolder": "选择文件夹…",
         "sessionWorkspace": "会话工作区",
+        "docStreamTitle": "正在生成文档（实时）",
         "systemKnowledgeBase": "系统知识库",
         "searchPlaceholder": "在该文件夹中搜索文件",
         "emptyNoFolder": "请先选择上方的文件夹以浏览其中的文件。",
