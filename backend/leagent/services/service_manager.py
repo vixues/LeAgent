@@ -134,6 +134,9 @@ class ServiceManager:
         if self._llm_service is None:
             return
         try:
+            from leagent.llm.provider_config import reset_provider_config_service
+
+            reset_provider_config_service()
             self._llm_service.reload()
             logger.info(
                 "LLMService reloaded with %d provider(s): %s",
@@ -243,6 +246,12 @@ class ServiceManager:
                 await self._chat.stop()
             except Exception:
                 logger.warning("Chat service shutdown error", exc_info=True)
+
+        if self._llm_service:
+            try:
+                await self._llm_service.aclose()
+            except Exception:
+                logger.warning("LLM service shutdown error", exc_info=True)
 
         if self._event:
             try:

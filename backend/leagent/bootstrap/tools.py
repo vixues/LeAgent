@@ -200,8 +200,9 @@ def register_default_tools(
 
 def register_script_agent_tool(
     registry: ToolRegistry,
-    parent: "AgentController",
+    parent: "AgentController | None" = None,
     *,
+    parent_provider: Any = None,
     name_override: str | None = None,
 ) -> bool:
     """Register the :class:`ScriptAgentTool` against ``parent``.
@@ -215,7 +216,10 @@ def register_script_agent_tool(
     try:
         from leagent.agent.script_agent import ScriptAgentTool
 
-        tool = ScriptAgentTool(parent_controller=parent)
+        tool = ScriptAgentTool(
+            parent_controller=parent,
+            parent_provider=parent_provider,
+        )
         if name_override:
             tool.name = name_override  # type: ignore[misc]
         registry.register(tool, replace=True)
@@ -231,6 +235,7 @@ def register_coding_agent_tool(
     parent: "AgentController | None" = None,
     *,
     parent_engine: Any = None,
+    parent_provider: Any = None,
     name_override: str | None = None,
 ) -> bool:
     """Register the :class:`CodingAgentTool` against ``parent``.
@@ -241,14 +246,16 @@ def register_coding_agent_tool(
     available from the first turn should call this once their main
     agent is constructed.
     """
-    if parent is None and parent_engine is None:
+    if parent is None and parent_engine is None and parent_provider is None:
         logger.warning("bootstrap_coding_agent_tool_missing_parent")
         return False
     try:
         from leagent.agent.coding_agent import CodingAgentTool
 
         tool = CodingAgentTool(
-            parent_controller=parent, parent_engine=parent_engine,
+            parent_controller=parent,
+            parent_engine=parent_engine,
+            parent_provider=parent_provider,
         )
         if name_override:
             tool.name = name_override  # type: ignore[misc]
@@ -265,6 +272,7 @@ def register_subagent_tool(
     parent: "AgentController | None" = None,
     *,
     parent_engine: Any = None,
+    parent_provider: Any = None,
     name_override: str | None = None,
 ) -> bool:
     """Register the generic :class:`AgentTool` sub-agent delegator.
@@ -278,13 +286,17 @@ def register_subagent_tool(
 
     Returns ``True`` on successful registration.
     """
-    if parent is None and parent_engine is None:
+    if parent is None and parent_engine is None and parent_provider is None:
         logger.warning("bootstrap_subagent_tool_missing_parent")
         return False
     try:
         from leagent.agent.subagent import AgentTool
 
-        tool = AgentTool(parent_controller=parent, parent_engine=parent_engine)
+        tool = AgentTool(
+            parent_controller=parent,
+            parent_engine=parent_engine,
+            parent_provider=parent_provider,
+        )
         if name_override:
             tool.name = name_override  # type: ignore[misc]
         registry.register(tool, replace=True)

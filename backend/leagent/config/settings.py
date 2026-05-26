@@ -39,6 +39,13 @@ class DatabaseSettings(BaseSettings):
     driver: str = "sqlite+aiosqlite"
     sqlite_path: str = ""
     echo: bool = False
+    database_url: str = ""
+    pool_size: int = 5
+    max_overflow: int = 10
+
+    @property
+    def is_postgresql(self) -> bool:
+        return bool(self.database_url and "postgresql" in self.database_url)
 
     def _sqlite_file_path(self) -> str:
         from leagent.config.constants import LEAGENT_HOME
@@ -56,11 +63,15 @@ class DatabaseSettings(BaseSettings):
 
     @property
     def url(self) -> str:
+        if self.database_url:
+            return self.database_url
         path = self._resolved_sqlite_path().as_posix()
         return f"{self.driver}:///{path}"
 
     @property
     def sync_url(self) -> str:
+        if self.database_url:
+            return self.database_url.replace("+asyncpg", "").replace("+aiopg", "")
         path = self._resolved_sqlite_path().as_posix()
         return f"sqlite:///{path}"
 
@@ -165,6 +176,7 @@ class AgentSettings(BaseSettings):
     conversation_timeout_sec: int = 600
     max_executions_per_session: int = 5
     stream_drain_timeout_sec: int = 300
+    stream_queue_maxsize: int = 512
     long_task_timeout_sec: int = 3600
     long_stream_drain_timeout_sec: int = 3600
     long_max_turns: int = 60

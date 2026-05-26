@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING, AsyncIterator
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 
 from leagent.api.middleware import (
     APIVersionMiddleware,
@@ -186,11 +187,32 @@ async def _run_db_migrations() -> None:
 
 async def _bootstrap_tool_system() -> None:
     try:
-        from leagent.bootstrap import bootstrap_tools
+        from leagent.agent.current import get_current_agent_controller
+        from leagent.bootstrap import (
+            bootstrap_tools,
+            register_coding_agent_tool,
+            register_script_agent_tool,
+            register_subagent_tool,
+        )
+        from leagent.tools.registry import get_registry
+
         summary = await bootstrap_tools()
+        registry = get_registry()
+        register_script_agent_tool(
+            registry,
+            parent_provider=get_current_agent_controller,
+        )
+        register_coding_agent_tool(
+            registry,
+            parent_provider=get_current_agent_controller,
+        )
+        register_subagent_tool(
+            registry,
+            parent_provider=get_current_agent_controller,
+        )
         logger.info(
             "Tool system ready: %d tools, %d workflow nodes",
-            summary["tools"],
+            len(registry.list_tools()),
             len(summary["nodes"]),
         )
     except Exception:
@@ -273,6 +295,7 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
     app.add_middleware(MetricsMiddleware)
+    app.add_middleware(GZipMiddleware, minimum_size=500)
 
     app.include_router(api_router, prefix="/api")
 
