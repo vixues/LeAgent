@@ -28,6 +28,7 @@ Public API:
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import TYPE_CHECKING, Any, Iterable
 from uuid import UUID, uuid4
 
@@ -215,10 +216,12 @@ class ScriptAgentTool(BaseTool):
         self,
         parent_controller: "AgentController | None" = None,
         *,
+        parent_provider: Callable[[], "AgentController | None"] | None = None,
         allowed_tools: Iterable[str] = DEFAULT_SCRIPT_AGENT_TOOLS,
         max_iterations: int = 15,
     ) -> None:
         self._parent = parent_controller
+        self._parent_provider = parent_provider
         self._allowed_tools = tuple(allowed_tools)
         self._max_iterations = max_iterations
 
@@ -247,7 +250,8 @@ class ScriptAgentTool(BaseTool):
         }
 
     async def execute(self, params: dict[str, Any], context: ToolContext) -> dict[str, Any]:
-        if self._parent is None:
+        parent = self._parent or (self._parent_provider() if self._parent_provider else None)
+        if parent is None:
             return {"error": "ScriptAgentTool has no parent controller configured"}
 
         prompt = params.get("prompt")
@@ -258,13 +262,13 @@ class ScriptAgentTool(BaseTool):
         sub_session = uuid4()
         logger.info(
             "script_agent_invoke",
-            parent_session=str(getattr(self._parent, "_current_session_id", "unknown")),
+            parent_session=str(getattr(parent, "_current_session_id", "unknown")),
             sub_session=str(sub_session),
             prompt_preview=prompt[:120],
         )
 
         return await fork_subagent(
-            self._parent,
+            parent,
             prompt,
             allowed_tools=list(self._allowed_tools),
             prompt_variant="script_agent",

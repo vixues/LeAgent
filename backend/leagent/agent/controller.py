@@ -288,51 +288,54 @@ class AgentController:
         conversation = ConversationContext(session_id=session_id)
 
         try:
-            self._persisted_user_message_id = persisted_user_message_id
-            self._last_appended_user_index = None
-            if self._hooks:
-                await self._hooks.dispatch_start(context, user_input)
+            from leagent.agent.current import bind_current_agent_controller
 
-            await context.transition_to(AgentState.THINKING)
-
-            conversation = await self._load_conversation(session_id)
-            context.conversation = conversation
-            if not skip_append_user:
-                conversation.append_user_message(
-                    self._format_user_message(
-                        user_input,
-                        attachments,
-                        authorized_roots=authorized_roots,
-                    )
-                )
-                self._last_appended_user_index = len(conversation.messages) - 1
-
-            workflow_match = await self._match_workflow(user_input)
-            if workflow_match:
-                wf_response = await self._run_workflow(workflow_match, context, handler)
+            with bind_current_agent_controller(self):
+                self._persisted_user_message_id = persisted_user_message_id
+                self._last_appended_user_index = None
                 if self._hooks:
-                    await self._hooks.dispatch_complete(context, wf_response)
-                return wf_response
+                    await self._hooks.dispatch_start(context, user_input)
 
-            if not self.config.use_query_engine:
-                logger.warning(
-                    "legacy_agent_modes_deprecated",
-                    mode=str(self.config.mode),
+                await context.transition_to(AgentState.THINKING)
+
+                conversation = await self._load_conversation(session_id)
+                context.conversation = conversation
+                if not skip_append_user:
+                    conversation.append_user_message(
+                        self._format_user_message(
+                            user_input,
+                            attachments,
+                            authorized_roots=authorized_roots,
+                        )
+                    )
+                    self._last_appended_user_index = len(conversation.messages) - 1
+
+                workflow_match = await self._match_workflow(user_input)
+                if workflow_match:
+                    wf_response = await self._run_workflow(workflow_match, context, handler)
+                    if self._hooks:
+                        await self._hooks.dispatch_complete(context, wf_response)
+                    return wf_response
+
+                if not self.config.use_query_engine:
+                    logger.warning(
+                        "legacy_agent_modes_deprecated",
+                        mode=str(self.config.mode),
+                    )
+                result = await self._run_via_query_engine(
+                    user_input,
+                    conversation,
+                    context,
+                    handler,
+                    attachments=attachments,
+                    project_roots=project_roots,
+                    authorized_roots=authorized_roots,
+                    skip_user_append=skip_append_user,
                 )
-            result = await self._run_via_query_engine(
-                user_input,
-                conversation,
-                context,
-                handler,
-                attachments=attachments,
-                project_roots=project_roots,
-                authorized_roots=authorized_roots,
-                skip_user_append=skip_append_user,
-            )
 
-            if self._hooks:
-                await self._hooks.dispatch_complete(context, result)
-            return result
+                if self._hooks:
+                    await self._hooks.dispatch_complete(context, result)
+                return result
 
         except asyncio.CancelledError:
             logger.warning("agent_cancelled", task_id=str(context.task_id))
@@ -380,15 +383,31 @@ class AgentController:
         agent_task_id: UUID | None = None,
     ) -> AsyncIterator[StreamEvent]:
         """Execute agent with streaming events."""
-        queue: asyncio.Queue[StreamEvent | None] = asyncio.Queue()
+        queue_maxsize = 512
+        try:
+            from leagent.config.settings import get_settings as _gs
+
+            queue_maxsize = max(1, int(_gs().agent.stream_queue_maxsize))
+        except Exception:  # noqa: BLE001
+            pass
+        queue: asyncio.Queue[StreamEvent | None] = asyncio.Queue(maxsize=queue_maxsize)
         stream_session_id = session_id
+
+        async def _put_stream_event(event: StreamEvent | None) -> None:
+            await queue.put(event)
+            try:
+                from leagent.utils.metrics import get_metrics
+
+                get_metrics().record_stream_queue_depth("agent_stream", queue.qsize())
+            except Exception:
+                logger.debug("stream_queue_metrics_failed", exc_info=True)
 
         class QueueHandler:
             async def on_thinking(self, thought: str) -> None:
-                await queue.put(StreamEvent(type="thinking", data={"thought": thought}))
+                await _put_stream_event(StreamEvent(type="thinking", data={"thought": thought}))
 
             async def on_tool_call(self, tool_call: ToolCall) -> None:
-                await queue.put(
+                await _put_stream_event(
                     StreamEvent(
                         type="tool_call",
                         data={
@@ -400,13 +419,13 @@ class AgentController:
                 )
 
             async def on_tool_call_delta(self, payload: dict[str, Any]) -> None:
-                await queue.put(StreamEvent(type="tool_call_delta", data=dict(payload)))
+                await _put_stream_event(StreamEvent(type="tool_call_delta", data=dict(payload)))
 
             async def on_nested_agent_preview(self, payload: dict[str, Any]) -> None:
-                await queue.put(StreamEvent(type="nested_agent_preview", data=dict(payload)))
+                await _put_stream_event(StreamEvent(type="nested_agent_preview", data=dict(payload)))
 
             async def on_tool_result(self, result: ToolResult) -> None:
-                await queue.put(
+                await _put_stream_event(
                     StreamEvent(
                         type="tool_result",
                         data={
@@ -425,7 +444,7 @@ class AgentController:
             async def on_workspace_attachments(self, items: list[dict[str, Any]]) -> None:
                 if not items:
                     return
-                await queue.put(
+                await _put_stream_event(
                     StreamEvent(
                         type="workspace_attachments",
                         data={
@@ -436,13 +455,13 @@ class AgentController:
                 )
 
             async def on_token(self, token: str) -> None:
-                await queue.put(StreamEvent(type="token", data={"token": token}))
+                await _put_stream_event(StreamEvent(type="token", data={"token": token}))
 
             async def on_user_input_request(self, payload: dict[str, Any]) -> None:
-                await queue.put(StreamEvent(type="user_input_request", data=payload))
+                await _put_stream_event(StreamEvent(type="user_input_request", data=payload))
 
             async def on_complete(self, response: AgentResponse) -> None:
-                await queue.put(
+                await _put_stream_event(
                     StreamEvent(
                         type="complete",
                         data={
@@ -455,13 +474,13 @@ class AgentController:
                         },
                     )
                 )
-                await queue.put(None)
+                await _put_stream_event(None)
 
             async def on_error(self, error: Exception) -> None:
-                await queue.put(
+                await _put_stream_event(
                     StreamEvent(type="error", data={"error": str(error)})
                 )
-                await queue.put(None)
+                await _put_stream_event(None)
 
         async def run_agent() -> None:
             try:
@@ -509,6 +528,12 @@ class AgentController:
                 if event is None:
                     saw_terminal_sentinel = True
                     break
+                try:
+                    from leagent.utils.metrics import get_metrics
+
+                    get_metrics().record_stream_queue_depth("agent_stream", queue.qsize())
+                except Exception:
+                    logger.debug("stream_queue_metrics_failed", exc_info=True)
                 yield event
         finally:
             if saw_terminal_sentinel and not task.done():
@@ -1375,6 +1400,7 @@ class AgentController:
         )
         resume_hint = "Continue after the tool results above."
         submit_kw: dict[str, Any] = {"append_user_turn": not skip_user_append}
+        turn_message_start = len(conversation.messages)
         async for sdk_msg in engine.submit_message(
             resume_hint if skip_user_append else query_input,
             **submit_kw,
@@ -1532,7 +1558,7 @@ class AgentController:
         meta = dict(response.metadata or {})
         merged_tc_by_id: dict[str, dict[str, Any]] = {}
         last_reasoning: str | None = None
-        for msg in conversation.messages:
+        for msg in conversation.messages[turn_message_start:]:
             if msg.role != "assistant":
                 continue
             if msg.tool_calls:

@@ -40,6 +40,7 @@ Public surface
 from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
+from collections.abc import Callable
 from typing import TYPE_CHECKING, Any, Iterable
 from uuid import UUID
 
@@ -90,6 +91,12 @@ DEFAULT_CODING_AGENT_TOOLS: tuple[str, ...] = (
     "word_reader",
     "excel_reader",
     "csv_processor",
+    "text_processor",
+    "markdown_processor",
+    # Document/text generation helpers
+    "report_generator",
+    "template_filler",
+    "checklist_generator",
     # Light parsing utilities the agent occasionally needs
     "json_parser",
     "text_splitter",
@@ -249,15 +256,17 @@ class CodingAgentTool(BaseTool):
         parent_controller: "AgentController | None" = None,
         *,
         parent_engine: "QueryEngine | None" = None,
+        parent_provider: Callable[[], "AgentController | None"] | None = None,
         allowed_tools: Iterable[str] = DEFAULT_CODING_AGENT_TOOLS,
         max_turns: int = 40,
     ) -> None:
-        if parent_controller is None and parent_engine is None:
+        if parent_controller is None and parent_engine is None and parent_provider is None:
             raise ValueError(
-                "CodingAgentTool requires either parent_controller or parent_engine"
+                "CodingAgentTool requires a parent_controller, parent_engine, or parent_provider"
             )
         self._parent_controller = parent_controller
         self._parent_engine = parent_engine
+        self._parent_provider = parent_provider
         self._allowed_tools = tuple(allowed_tools)
         self._max_turns = max_turns
 
@@ -377,7 +386,9 @@ class CodingAgentTool(BaseTool):
         parent_tc_str = str(parent_tc).strip() if parent_tc is not None else None
 
         return await _run_coding_agent(
-            parent_controller=self._parent_controller,
+            parent_controller=self._parent_controller or (
+                self._parent_provider() if self._parent_provider else None
+            ),
             parent_engine=self._parent_engine,
             prompt=prompt,
             project_path=str(path),

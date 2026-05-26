@@ -23,6 +23,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import time
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, AsyncIterator
 
@@ -31,6 +32,7 @@ from leagent.agent.state import AutoCompactTrackingState, QueryState
 from leagent.agent.transitions import Continue, ContinueReason, Terminal, TerminalReason
 from leagent.config.settings import get_settings
 from leagent.context.session_compression import apply_progressive_transcript_compress
+from leagent.memory.compact import _approximate_tokens
 
 if TYPE_CHECKING:
     from leagent.agent.tool_use_context import ToolUseContext
@@ -406,15 +408,39 @@ async def _query_loop(params: QueryParams) -> AsyncIterator[Any]:
         # ------------------------------------------------------------------
         messages_for_query = list(state.messages)
 
+        _stage_started = time.perf_counter()
         messages_for_query = await params.deps.microcompact(
             messages_for_query, state.tool_use_context
         )
+        try:
+            from leagent.utils.metrics import get_metrics
+
+            get_metrics().record_agent_turn_phase(
+                "microcompact",
+                time.perf_counter() - _stage_started,
+            )
+        except Exception:
+            logger.debug("microcompact_metrics_failed", exc_info=True)
 
         try:
-            messages_for_query = apply_progressive_transcript_compress(
-                messages_for_query,
-                settings=get_settings(),
-            )
+            settings = get_settings()
+            approx_tokens = _approximate_tokens(messages_for_query)
+            compress_threshold = settings.session.autocompact_token_threshold * 0.6
+            if approx_tokens > compress_threshold:
+                _stage_started = time.perf_counter()
+                messages_for_query = apply_progressive_transcript_compress(
+                    messages_for_query,
+                    settings=settings,
+                )
+                try:
+                    from leagent.utils.metrics import get_metrics
+
+                    get_metrics().record_agent_turn_phase(
+                        "progressive_transcript_compress",
+                        time.perf_counter() - _stage_started,
+                    )
+                except Exception:
+                    logger.debug("progressive_transcript_compress_metrics_failed", exc_info=True)
         except Exception:
             logger.exception("progressive_transcript_compress_failed")
 
@@ -423,9 +449,19 @@ async def _query_loop(params: QueryParams) -> AsyncIterator[Any]:
         # but we no longer fold environment / recall into it here —
         # recall is rendered into the system prompt at L5.
         full_system_prompt = params.system_prompt
+        _stage_started = time.perf_counter()
         messages_for_query = await params.deps.autocompact(
             messages_for_query, state.tool_use_context, full_system_prompt
         )
+        try:
+            from leagent.utils.metrics import get_metrics
+
+            get_metrics().record_agent_turn_phase(
+                "autocompact",
+                time.perf_counter() - _stage_started,
+            )
+        except Exception:
+            logger.debug("autocompact_metrics_failed", exc_info=True)
 
         # Drop orphan tool rows at the head (e.g. corrupted session or a prior
         # compaction bug). OpenAI rejects ``tool`` without a preceding assistant

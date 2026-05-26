@@ -8,8 +8,11 @@ inject a fake model without monkey-patching ``LLMService``.
 from __future__ import annotations
 
 import asyncio
+import base64 as _b64
+import binascii as _binascii
+import json
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, AsyncIterator, Protocol
 
 import structlog
@@ -26,12 +29,34 @@ logger = structlog.get_logger(__name__)
 # Throttle streamed tool JSON fragments (large canvas_publish HTML arguments).
 _TOOL_CALL_DELTA_MIN_INTERVAL_MS = 48
 _TOOL_CALL_DELTA_MIN_BYTE_STEP = 512
+_STREAM_FIRST_EVENT_TIMEOUT_SEC = 12.0
 
 
 def _partial_arguments_dict(raw: str) -> dict[str, Any] | None:
     """Return parsed tool args when ``raw`` is complete JSON; else None."""
     parsed = parse_tool_arguments_str(raw)
     return parsed if isinstance(parsed, dict) else None
+
+
+def _decode_b64_tolerant(raw: str) -> str | None:
+    """Decode base64, trimming trailing incomplete groups if truncated."""
+    stripped = raw.strip()
+    if not stripped:
+        return None
+    try:
+        return _b64.b64decode(stripped, validate=True).decode("utf-8")
+    except (_binascii.Error, ValueError, UnicodeDecodeError):
+        pass
+    trimmed = stripped[: len(stripped) - (len(stripped) % 4)]
+    if len(trimmed) < 4:
+        return None
+    try:
+        return _b64.b64decode(trimmed, validate=True).decode("utf-8")
+    except (_binascii.Error, ValueError, UnicodeDecodeError):
+        try:
+            return _b64.b64decode(trimmed).decode("utf-8", errors="ignore")
+        except Exception:  # noqa: BLE001
+            return None
 
 
 def _ingest_session_id(session_id: str | None) -> str:
@@ -68,34 +93,9 @@ async def _try_blob_streaming_ingest(
     if recovered is None:
         return None
 
-    import base64 as _b64
-    import binascii as _binascii
-
     b64_str = recovered.get("chunk_base64", "")
     if not b64_str:
         return None
-
-    def _decode_b64_tolerant(raw: str) -> str | None:
-        """Decode base64, trimming trailing incomplete groups if truncated."""
-        stripped = raw.strip()
-        if not stripped:
-            return None
-        try:
-            return _b64.b64decode(stripped, validate=True).decode("utf-8")
-        except (_binascii.Error, ValueError, UnicodeDecodeError):
-            pass
-        # Truncated output: trim to the nearest multiple-of-4 boundary
-        trimmed = stripped[: len(stripped) - (len(stripped) % 4)]
-        if len(trimmed) < 4:
-            return None
-        try:
-            return _b64.b64decode(trimmed, validate=True).decode("utf-8")
-        except (_binascii.Error, ValueError, UnicodeDecodeError):
-            # Last resort: non-strict decode (ignores whitespace / bad chars)
-            try:
-                return _b64.b64decode(trimmed).decode("utf-8", errors="ignore")
-            except Exception:  # noqa: BLE001
-                return None
 
     chunk_text = _decode_b64_tolerant(b64_str)
     if chunk_text is None:
@@ -182,6 +182,27 @@ _DIRECT_INGEST_TOOLS: dict[str, tuple[str, str]] = {
 }
 
 
+_DIRECT_INGEST_RECOVER_FNS: dict[str, Any] | None = None
+
+
+def _get_direct_ingest_recover_fn(tool_name: str) -> Any:
+    """Return the recovery function for a direct-ingest tool (cached)."""
+    global _DIRECT_INGEST_RECOVER_FNS  # noqa: PLW0603
+    if _DIRECT_INGEST_RECOVER_FNS is None:
+        from leagent.tools.executor import (
+            _recover_canvas_publish_args,
+            _recover_code_execution_args,
+            _recover_project_write_args,
+        )
+
+        _DIRECT_INGEST_RECOVER_FNS = {
+            "project_write": _recover_project_write_args,
+            "code_execution": _recover_code_execution_args,
+            "canvas_publish": _recover_canvas_publish_args,
+        }
+    return _DIRECT_INGEST_RECOVER_FNS.get(tool_name)
+
+
 async def _try_direct_content_ingest(
     tool_name: str,
     raw_args: str,
@@ -204,19 +225,7 @@ async def _try_direct_content_ingest(
         return None
     content_key, blob_key = spec
 
-    from leagent.tools.executor import (
-        _recover_canvas_publish_args,
-        _recover_code_execution_args,
-        _recover_project_write_args,
-    )
-
-    _RECOVER = {
-        "project_write": _recover_project_write_args,
-        "code_execution": _recover_code_execution_args,
-        "canvas_publish": _recover_canvas_publish_args,
-    }
-
-    recover_fn = _RECOVER.get(tool_name)
+    recover_fn = _get_direct_ingest_recover_fn(tool_name)
     if recover_fn is None:
         return None
     recovered = recover_fn(raw_args)
@@ -319,6 +328,20 @@ def _record_tool_delta_emit(
 
 
 def _is_retryable_stream_error(exc: Exception) -> bool:
+    if isinstance(exc, TimeoutError):
+        return True
+    if isinstance(exc, asyncio.TimeoutError):
+        return True
+    try:
+        import httpx
+        import httpcore
+
+        if isinstance(exc, (httpx.RemoteProtocolError, httpcore.RemoteProtocolError)):
+            return True
+        if isinstance(exc, (httpx.ReadError, httpcore.ReadError)):
+            return True
+    except ImportError:
+        pass
     text = str(exc).lower()
     return any(
         marker in text
@@ -334,6 +357,42 @@ def _is_retryable_stream_error(exc: Exception) -> bool:
 # ---------------------------------------------------------------------------
 # Stream event produced by ``deps.call_model``
 # ---------------------------------------------------------------------------
+
+
+@dataclass
+class MessageStopInfo:
+    """Typed builder for the ``message_stop`` payload in ``ModelStreamEvent``.
+
+    Centralises key names so construction sites cannot introduce typos.
+    Call ``to_dict()`` to produce the plain dict that consumers expect.
+    """
+
+    finish_reason: str = "stop"
+    usage: dict[str, Any] = field(default_factory=dict)
+    model: str = ""
+    error: str | None = None
+    warning: str | None = None
+    fallback: str | None = None
+    partial: bool = False
+    resource_exhausted: bool = False
+
+    def to_dict(self) -> dict[str, Any]:
+        d: dict[str, Any] = {
+            "finish_reason": self.finish_reason,
+            "usage": self.usage,
+            "model": self.model,
+        }
+        if self.error is not None:
+            d["error"] = self.error
+        if self.warning is not None:
+            d["warning"] = self.warning
+        if self.fallback is not None:
+            d["fallback"] = self.fallback
+        if self.partial:
+            d["partial"] = True
+        if self.resource_exhausted:
+            d["resource_exhausted"] = True
+        return d
 
 
 @dataclass
@@ -418,19 +477,98 @@ class QueryDeps:
 # ---------------------------------------------------------------------------
 
 
-async def _identity_microcompact(
-    messages: list[dict[str, Any]],
-    tool_use_context: "ToolUseContext",
-) -> list[dict[str, Any]]:
-    return messages
+def _normalize_fallback_tool_call(tc: dict[str, Any]) -> dict[str, Any]:
+    """Unwrap an OpenAI-shaped tool-call dict to flat ``{id, name, arguments}``."""
+    fn = tc.get("function") or {}
+    raw_args = fn.get("arguments", tc.get("arguments", "{}"))
+    if isinstance(raw_args, str):
+        parsed = parse_tool_arguments_str(raw_args)
+        args: dict[str, Any] = parsed if parsed is not None else {"__raw__": raw_args}
+    elif isinstance(raw_args, dict):
+        args = raw_args
+    else:
+        args = {}
+    return {
+        "id": tc.get("id", ""),
+        "name": fn.get("name", tc.get("name", "")),
+        "arguments": args,
+    }
 
 
-async def _identity_autocompact(
-    messages: list[dict[str, Any]],
-    tool_use_context: "ToolUseContext",
-    system_prompt: str,
-) -> list[dict[str, Any]]:
-    return messages
+async def _finalize_pending_tool_calls(
+    pending_tool_calls: dict[int, dict[str, Any]],
+    last_delta_emit: dict[int, dict[str, Any]],
+    session_id: str | None,
+) -> list[ModelStreamEvent]:
+    """Emit final deltas and parsed ``tool_call`` events for coalesced calls."""
+    events: list[ModelStreamEvent] = []
+
+    for idx in sorted(pending_tool_calls.keys()):
+        slot = pending_tool_calls[idx]
+        args_str = slot.get("arguments")
+        if not isinstance(args_str, str) or not args_str:
+            continue
+        rec = last_delta_emit.get(idx)
+        if rec is not None and int(rec.get("sent_len", 0)) >= len(args_str):
+            continue
+        events.append(ModelStreamEvent(
+            tool_call_delta=_tool_call_delta_payload(idx, slot),
+        ))
+        _record_tool_delta_emit(idx, len(args_str), last_delta_emit)
+
+    ingest_sid = _ingest_session_id(session_id)
+
+    for tc_idx in sorted(pending_tool_calls.keys()):
+        tc = pending_tool_calls[tc_idx]
+        args_str = tc.get("arguments") or "{}"
+        if isinstance(args_str, dict):
+            args: dict[str, Any] = args_str
+        elif isinstance(args_str, str):
+            parsed = parse_tool_arguments_str(args_str)
+            if parsed is not None:
+                args = parsed
+            else:
+                ingested = await _try_blob_streaming_ingest(
+                    tc.get("name", ""),
+                    args_str,
+                    session_id=ingest_sid,
+                )
+                if ingested is not None:
+                    args = ingested
+                elif (content_ingested := await _try_direct_content_ingest(
+                    tc.get("name", ""),
+                    args_str,
+                    session_id=ingest_sid,
+                )) is not None:
+                    args = content_ingested
+                elif (salvaged := _try_salvage_truncated_ui_tree(
+                    tc.get("name", ""), args_str,
+                )) is not None:
+                    args = salvaged
+                else:
+                    strict_err = strict_json_loads_error(args_str)
+                    logger.warning(
+                        "tool_call_parse_error",
+                        error=str(strict_err) if strict_err else "unrecoverable_tool_arguments",
+                        args_len=len(args_str),
+                        json_lineno=getattr(strict_err, "lineno", None),
+                        json_colno=getattr(strict_err, "colno", None),
+                        json_pos=getattr(strict_err, "pos", None),
+                        tool_name=tc.get("name"),
+                        tool_call_index=tc_idx,
+                    )
+                    args = {"__raw__": args_str}
+        else:
+            args = {}
+        events.append(ModelStreamEvent(
+            tool_call={
+                "id": tc["id"] or f"call_{tc_idx}",
+                "name": tc["name"],
+                "arguments": args,
+            },
+        ))
+
+    return events
 
 
 def _make_llm_call_model(llm: "LLMService") -> CallModel:
@@ -459,6 +597,14 @@ def _make_llm_call_model(llm: "LLMService") -> CallModel:
             full_messages.append({"role": "system", "content": system_prompt})
         full_messages.extend(messages)
 
+        stream_kw: dict[str, Any] = {}
+        if max_output_tokens is not None:
+            stream_kw["max_tokens"] = max_output_tokens
+        if model_provider:
+            stream_kw["provider"] = model_provider
+        if model_name:
+            stream_kw["model"] = model_name
+
         max_attempts = 3
         attempt = 0
         emitted_visible_content = False
@@ -471,24 +617,37 @@ def _make_llm_call_model(llm: "LLMService") -> CallModel:
             final_model: str = ""
 
             try:
-                stream_kw: dict[str, Any] = {}
-                if max_output_tokens is not None:
-                    stream_kw["max_tokens"] = max_output_tokens
-                if model_provider:
-                    stream_kw["provider"] = model_provider
-                if model_name:
-                    stream_kw["model"] = model_name
-                async for chunk in llm.chat_stream(
+                stream_iter = llm.chat_stream(
                     messages=full_messages,
                     tools=tools,
                     tool_choice="auto" if tools else None,
                     temperature=temperature,
                     model_tier=model_tier,
                     **stream_kw,
-                ):
-                    reasoning_piece: str | None = None
-                    if chunk.raw_delta and isinstance(chunk.raw_delta.get("reasoning_content"), str):
-                        reasoning_piece = chunk.raw_delta["reasoning_content"]
+                ).__aiter__()
+                saw_stream_event = False
+                while True:
+                    try:
+                        if saw_stream_event:
+                            chunk = await stream_iter.__anext__()
+                        else:
+                            chunk = await asyncio.wait_for(
+                                stream_iter.__anext__(),
+                                timeout=_STREAM_FIRST_EVENT_TIMEOUT_SEC,
+                            )
+                            saw_stream_event = True
+                    except StopAsyncIteration:
+                        break
+                    except (asyncio.TimeoutError, TimeoutError):
+                        await stream_iter.aclose()
+                        raise TimeoutError(
+                            f"Model stream produced no events within "
+                            f"{_STREAM_FIRST_EVENT_TIMEOUT_SEC:.0f}s"
+                        ) from None
+
+                    reasoning_piece = (chunk.raw_delta or {}).get("reasoning_content")
+                    if not isinstance(reasoning_piece, str):
+                        reasoning_piece = None
                     if chunk.content or reasoning_piece:
                         if chunk.content:
                             emitted_visible_content = True
@@ -555,7 +714,7 @@ def _make_llm_call_model(llm: "LLMService") -> CallModel:
                         attempt=attempt,
                         max_attempts=max_attempts,
                     )
-                    await asyncio.sleep(0.5)
+                    await asyncio.sleep(0.5 * (2 ** (attempt - 1)))
                     continue
                 if not emitted_visible_content and _is_retryable_stream_error(exc):
                     logger.warning(
@@ -583,17 +742,21 @@ def _make_llm_call_model(llm: "LLMService") -> CallModel:
                             yield ModelStreamEvent(content_delta=str(content))
                         for tc in response.get("tool_calls") or []:
                             if isinstance(tc, dict):
-                                yield ModelStreamEvent(tool_call=tc)
+                                yield ModelStreamEvent(
+                                    tool_call=_normalize_fallback_tool_call(tc),
+                                )
                         yield ModelStreamEvent(
-                            message_stop={
-                                "finish_reason": response.get("finish_reason")
-                                or response.get("stop_reason")
-                                or "stop",
-                                "usage": response.get("usage", {}) or {},
-                                "model": response.get("model", "") or final_model,
-                                "fallback": "completion",
-                                "warning": str(exc),
-                            },
+                            message_stop=MessageStopInfo(
+                                finish_reason=(
+                                    response.get("finish_reason")
+                                    or response.get("stop_reason")
+                                    or "stop"
+                                ),
+                                usage=response.get("usage", {}) or {},
+                                model=response.get("model", "") or final_model,
+                                fallback="completion",
+                                warning=str(exc),
+                            ).to_dict(),
                         )
                         return
                 if emitted_visible_content and _is_retryable_stream_error(exc):
@@ -602,19 +765,19 @@ def _make_llm_call_model(llm: "LLMService") -> CallModel:
                         error=str(exc),
                         attempt=attempt,
                     )
-                    _partial_stop: dict[str, Any] = {
-                        "finish_reason": final_finish or "stop",
-                        "usage": final_usage,
-                        "model": final_model,
-                        "partial": True,
-                        "warning": str(exc),
-                    }
-                    if final_finish == "insufficient_system_resource":
-                        _partial_stop["resource_exhausted"] = True
-                    yield ModelStreamEvent(message_stop=_partial_stop)
+                    yield ModelStreamEvent(
+                        message_stop=MessageStopInfo(
+                            finish_reason=final_finish or "stop",
+                            usage=final_usage,
+                            model=final_model,
+                            partial=True,
+                            warning=str(exc),
+                            resource_exhausted=(
+                                final_finish == "insufficient_system_resource"
+                            ),
+                        ).to_dict(),
+                    )
                     return
-                # Some transport/TLS errors can have an empty str(); include the type and repr
-                # so operators can diagnose proxy/DNS/TLS issues from logs.
                 logger.warning(
                     "call_model_stream_error",
                     error=str(exc),
@@ -626,106 +789,65 @@ def _make_llm_call_model(llm: "LLMService") -> CallModel:
                     context_repr=repr(exc.__context__) if exc.__context__ else None,
                 )
                 yield ModelStreamEvent(
-                    message_stop={
-                        "finish_reason": "error",
-                        "usage": final_usage,
-                        "model": final_model,
-                        "error": str(exc) or repr(exc),
-                    },
+                    message_stop=MessageStopInfo(
+                        finish_reason="error",
+                        usage=final_usage,
+                        model=final_model,
+                        error=str(exc) or repr(exc),
+                    ).to_dict(),
                 )
                 return
             break
 
-        for idx in sorted(pending_tool_calls.keys()):
-            slot = pending_tool_calls[idx]
-            args_str = slot.get("arguments")
-            if not isinstance(args_str, str) or not args_str:
-                continue
-            rec = last_delta_emit.get(idx)
-            if rec is not None and int(rec.get("sent_len", 0)) >= len(args_str):
-                continue
-            yield ModelStreamEvent(
-                tool_call_delta=_tool_call_delta_payload(idx, slot),
-            )
-            _record_tool_delta_emit(idx, len(args_str), last_delta_emit)
+        sid = str(tool_use_context.session_id) if tool_use_context.session_id else None
+        for ev in await _finalize_pending_tool_calls(
+            pending_tool_calls, last_delta_emit, sid,
+        ):
+            yield ev
 
-        ingest_sid = _ingest_session_id(
-            str(tool_use_context.session_id) if tool_use_context.session_id else None
+        yield ModelStreamEvent(
+            message_stop=MessageStopInfo(
+                finish_reason=final_finish or "stop",
+                usage=final_usage,
+                model=final_model,
+                resource_exhausted=(final_finish == "insufficient_system_resource"),
+            ).to_dict(),
         )
-
-        for slot in sorted(pending_tool_calls.keys()):
-            tc = pending_tool_calls[slot]
-            args_str = tc.get("arguments") or "{}"
-            if isinstance(args_str, dict):
-                args = args_str
-            elif isinstance(args_str, str):
-                parsed = parse_tool_arguments_str(args_str)
-                if parsed is not None:
-                    args = parsed
-                else:
-                    ingested = await _try_blob_streaming_ingest(
-                        tc.get("name", ""),
-                        args_str,
-                        session_id=ingest_sid,
-                    )
-                    if ingested is not None:
-                        args = ingested
-                    elif (content_ingested := await _try_direct_content_ingest(
-                        tc.get("name", ""),
-                        args_str,
-                        session_id=ingest_sid,
-                    )) is not None:
-                        args = content_ingested
-                    elif (salvaged := _try_salvage_truncated_ui_tree(
-                        tc.get("name", ""), args_str,
-                    )) is not None:
-                        args = salvaged
-                    else:
-                        strict_err = strict_json_loads_error(args_str)
-                        logger.warning(
-                            "tool_call_parse_error",
-                            error=str(strict_err) if strict_err else "unrecoverable_tool_arguments",
-                            args_len=len(args_str),
-                            json_lineno=getattr(strict_err, "lineno", None),
-                            json_colno=getattr(strict_err, "colno", None),
-                            json_pos=getattr(strict_err, "pos", None),
-                            tool_name=tc.get("name"),
-                            tool_call_index=slot,
-                        )
-                        args = {"__raw__": args_str}
-            else:
-                args = {}
-            yield ModelStreamEvent(
-                tool_call={
-                    "id": tc["id"] or f"call_{slot}",
-                    "name": tc["name"],
-                    "arguments": args,
-                },
-            )
-
-        _final_stop: dict[str, Any] = {
-            "finish_reason": final_finish or "stop",
-            "usage": final_usage,
-            "model": final_model,
-        }
-        if final_finish == "insufficient_system_resource":
-            _final_stop["resource_exhausted"] = True
-        yield ModelStreamEvent(message_stop=_final_stop)
 
     return _call
 
 
-def production_deps(llm: "LLMService") -> QueryDeps:
+def production_deps(
+    llm: "LLMService",
+    *,
+    autocompact_token_threshold: int = 0,
+    autocompact_keep_recent: int = 0,
+    tool_result_budget_chars: int = 0,
+) -> QueryDeps:
     """Build the default ``QueryDeps`` bundle.
 
-    ``microcompact``/``autocompact`` fall back to identity so the loop runs
-    even before ``memory.compact`` is configured; the memory module replaces
-    these when compaction is requested.
+    Uses ``build_microcompact`` / ``build_autocompact`` from
+    :mod:`leagent.memory.compact`` which handle their own internal
+    fallback-to-identity when LLM calls fail.
+
+    Callers may pass model-aware overrides for the autocompact threshold,
+    keep-recent window, and microcompact budget. Zero values fall back to
+    the module defaults.
     """
-    from leagent.memory.compact import build_autocompact, build_microcompact
+    from leagent.memory.compact import (
+        AUTOCOMPACT_KEEP_RECENT,
+        AUTOCOMPACT_TOKEN_THRESHOLD,
+        DEFAULT_TOOL_RESULT_BUDGET_CHARS,
+        build_autocompact,
+        build_microcompact,
+    )
+
+    mc_budget = tool_result_budget_chars or DEFAULT_TOOL_RESULT_BUDGET_CHARS
+    ac_threshold = autocompact_token_threshold or AUTOCOMPACT_TOKEN_THRESHOLD
+    ac_keep = autocompact_keep_recent or AUTOCOMPACT_KEEP_RECENT
 
     return QueryDeps(
         call_model=_make_llm_call_model(llm),
-        microcompact=build_microcompact(llm),
-        autocompact=build_autocompact(llm),
+        microcompact=build_microcompact(llm, budget_chars=mc_budget),
+        autocompact=build_autocompact(llm, token_threshold=ac_threshold, keep_recent=ac_keep),
     )

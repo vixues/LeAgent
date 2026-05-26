@@ -117,6 +117,50 @@ class QueryEngineConfig:
 
 
 # ---------------------------------------------------------------------------
+# Model-aware compaction parameters
+# ---------------------------------------------------------------------------
+
+_MODEL_CONTEXT_WINDOWS: dict[str, int] = {
+    "deepseek-v4-flash": 128_000,
+    "deepseek-v4-pro": 128_000,
+    "deepseek-chat": 128_000,
+    "deepseek-reasoner": 128_000,
+    "gpt-4o": 128_000,
+    "gpt-4o-mini": 128_000,
+    "gpt-4-turbo": 128_000,
+    "claude-3-5-sonnet-20241022": 200_000,
+    "claude-3-5-haiku-20241022": 200_000,
+    "claude-sonnet-4-20250514": 200_000,
+    "qwen-max": 128_000,
+    "qwen-plus": 128_000,
+}
+
+
+def _model_aware_compact_params(config: "QueryEngineConfig") -> dict[str, int]:
+    """Derive autocompact / microcompact parameters from the active model."""
+    model_name = config.model_name or ""
+    ctx_window = 0
+    for pattern, size in _MODEL_CONTEXT_WINDOWS.items():
+        if pattern in model_name.lower():
+            ctx_window = size
+            break
+
+    if ctx_window >= 100_000:
+        return {
+            "autocompact_token_threshold": min(int(ctx_window * 0.6), 80_000),
+            "autocompact_keep_recent": 8,
+            "tool_result_budget_chars": 16_000,
+        }
+    if ctx_window >= 32_000:
+        return {
+            "autocompact_token_threshold": min(int(ctx_window * 0.5), 40_000),
+            "autocompact_keep_recent": 6,
+            "tool_result_budget_chars": 12_000,
+        }
+    return {}
+
+
+# ---------------------------------------------------------------------------
 # QueryEngine
 # ---------------------------------------------------------------------------
 
@@ -136,7 +180,10 @@ class QueryEngine:
         self.permission_denials: list[dict[str, Any]] = []
         self.discovered_skill_names: set[str] = set()
         self.session_id: UUID = config.session_id or uuid4()
-        self._deps: QueryDeps = config.deps or production_deps(config.llm)
+        self._deps: QueryDeps = config.deps or production_deps(
+            config.llm,
+            **_model_aware_compact_params(config),
+        )
         self._prompt_builder: PromptBuilder = (
             config.prompt_builder or get_prompt_builder()
         )
@@ -177,6 +224,30 @@ class QueryEngine:
         self.mutable_messages.clear()
 
     async def submit_message(
+        self,
+        prompt: str | dict[str, Any],
+        *,
+        uuid: UUID | None = None,
+        is_meta: bool = False,
+        append_user_turn: bool = True,
+    ) -> AsyncIterator[SDKMessage]:
+        # Provide user_id to the DeepSeek provider for KV cache isolation.
+        # This is a no-op for other providers (they never read this contextvar).
+        _ds_token: Any = None
+        if self.config.user_id:
+            from leagent.llm.providers.deepseek import set_deepseek_user_id
+            _ds_token = set_deepseek_user_id(str(self.config.user_id))
+        try:
+            async for msg in self._do_submit(
+                prompt, uuid=uuid, is_meta=is_meta, append_user_turn=append_user_turn
+            ):
+                yield msg
+        finally:
+            if _ds_token is not None:
+                from leagent.llm.providers.deepseek import reset_deepseek_user_id
+                reset_deepseek_user_id(_ds_token)
+
+    async def _do_submit(
         self,
         prompt: str | dict[str, Any],
         *,
@@ -267,14 +338,45 @@ class QueryEngine:
                 else cjk_generation_extra
             )
 
-        turn = await self._context.prepare_turn(
-            query_text or "",
-            task_id=turn_uuid,
-            persona_override=self.config.system_prompt or "",
-            append_extra=append_extra_turn,
-            template_vars={},
-            recall_handle=recall_handle,
-            project_roots=_project_roots_for_turn,
+        async def _get_tools_schema() -> list[dict[str, Any]]:
+            if self.config.tools is None:
+                return []
+            started = time.perf_counter()
+            status = "success"
+            try:
+                return await asyncio.to_thread(
+                    self.config.tools.get_tools_for_llm,
+                    deny_patterns=self.config.tools_deny_patterns or None,
+                    provider_format="openai",
+                    context_hint=query_text or None,
+                    max_tools=25,
+                )
+            except Exception:
+                status = "error"
+                raise
+            finally:
+                try:
+                    from leagent.utils.metrics import get_metrics
+
+                    get_metrics().record_agent_turn_phase(
+                        "tool_schema_select",
+                        time.perf_counter() - started,
+                        status=status,
+                    )
+                except Exception:
+                    logger.debug("tool_schema_metrics_failed", exc_info=True)
+
+        turn, tools_schema = await asyncio.gather(
+            self._context.prepare_turn(
+                query_text or "",
+                task_id=turn_uuid,
+                persona_override=self.config.system_prompt or "",
+                append_extra=append_extra_turn,
+                template_vars={},
+                recall_handle=recall_handle,
+                project_roots=_project_roots_for_turn,
+            ),
+            _get_tools_schema(),
         )
 
         self._last_built_prompt = turn.built_prompt
@@ -304,15 +406,6 @@ class QueryEngine:
             task_id=turn_uuid,
             agent_id=self.config.agent_id,
             extra=_tool_extra,
-        )
-
-        tools_schema = (
-            self.config.tools.get_tools_for_llm(
-                deny_patterns=self.config.tools_deny_patterns or None,
-                provider_format="openai",
-            )
-            if self.config.tools is not None
-            else []
         )
 
         yield SDKMessage(

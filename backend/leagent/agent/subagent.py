@@ -661,13 +661,15 @@ class AgentTool(BaseTool):
         parent_controller: "AgentController | None" = None,
         *,
         parent_engine: "QueryEngine | None" = None,
+        parent_provider: Callable[[], "AgentController | None"] | None = None,
     ) -> None:
-        if parent_controller is None and parent_engine is None:
+        if parent_controller is None and parent_engine is None and parent_provider is None:
             raise ValueError(
-                "AgentTool requires either parent_controller or parent_engine"
+                "AgentTool requires a parent_controller, parent_engine, or parent_provider"
             )
         self._parent_controller = parent_controller
         self._parent_engine = parent_engine
+        self._parent_provider = parent_provider
 
     @property
     def parameters(self) -> dict[str, Any]:
@@ -723,6 +725,11 @@ class AgentTool(BaseTool):
             parent = self._parent_engine
         elif self._parent_controller is not None:
             parent = self._parent_controller
+        elif self._parent_provider is not None:
+            provided_parent = self._parent_provider()
+            if provided_parent is None:
+                return {"error": "AgentTool has no parent configured"}
+            parent = provided_parent
         else:  # unreachable given the constructor guard
             return {"error": "AgentTool has no parent configured"}
 
