@@ -207,40 +207,41 @@ def build_autocompact(
 
     Behaviour:
       1. Estimate token count.
-      2. If under threshold, return ``messages`` unchanged.
-      3. Otherwise split into ``(older, recent)`` at ``-keep_recent`` and ask
-         the tier2 LLM to summarise ``older``; concatenate
-         ``[summary, *recent]``.
+      2. If under 80% of threshold, return ``messages`` unchanged.
+      3. Between 80-100% of threshold: return unchanged but start a
+         background summarisation so the cache is warm by the time the
+         threshold is actually exceeded (preemptive compaction).
+      4. Over threshold: use cached summary if available, otherwise drop
+         oldest and fire background summarisation for subsequent turns.
     """
+    import asyncio
 
-    async def _autocompact(
-        messages: list[dict[str, Any]],
-        tool_use_context: "ToolUseContext",
-        system_prompt: str,
-    ) -> list[dict[str, Any]]:
-        if not messages:
-            return messages
-        if _approximate_tokens(messages) < token_threshold:
-            return messages
-        if llm is None or len(messages) <= keep_recent:
-            return messages
+    _bg_summary_cache: dict[str, str] = {}
+    _bg_tasks: set[asyncio.Task[None]] = set()
+    _prefetch_keys: set[str] = set()
 
-        split = snap_autocompact_split(messages, len(messages) - keep_recent)
-        older = messages[:split]
-        recent = messages[split:]
+    def _transcript_key(older: list[dict[str, Any]]) -> str:
+        import hashlib
+        parts = []
+        for m in older:
+            c = m.get("content", "")
+            if isinstance(c, str):
+                parts.append(c[:200])
+        return hashlib.sha256("|".join(parts).encode()).hexdigest()[:24]
 
+    async def _bg_summarize(key: str, older: list[dict[str, Any]]) -> None:
+        if llm is None:
+            return
         transcript = "\n\n".join(
             f"[{m.get('role','?')}] {m.get('content','')}"
             for m in older
             if isinstance(m.get("content"), str)
         )
-
         summariser_prompt = _load_summariser_prompt()
         summarise_prompt = [
             {"role": "system", "content": summariser_prompt},
             {"role": "user", "content": transcript[:20_000]},
         ]
-
         try:
             response = await llm.chat(
                 messages=summarise_prompt,
@@ -249,22 +250,76 @@ def build_autocompact(
                 model_tier="tier2",
             )
             summary = (response or {}).get("content") or ""
+            if summary.strip():
+                _bg_summary_cache[key] = summary.strip()
+                while len(_bg_summary_cache) > 8:
+                    _bg_summary_cache.pop(next(iter(_bg_summary_cache)))
         except Exception as exc:  # noqa: BLE001
-            logger.warning("autocompact_llm_failed", error=str(exc))
+            logger.warning("bg_autocompact_llm_failed", error=str(exc))
+
+    def _maybe_prefetch(messages: list[dict[str, Any]]) -> None:
+        """Start background summarisation before threshold is hit."""
+        if llm is None or len(messages) <= keep_recent:
+            return
+        split = snap_autocompact_split(messages, len(messages) - keep_recent)
+        older = messages[:split]
+        if not older:
+            return
+        key = _transcript_key(older)
+        if key in _bg_summary_cache or key in _prefetch_keys:
+            return
+        _prefetch_keys.add(key)
+        while len(_prefetch_keys) > 16:
+            _prefetch_keys.pop()
+        task = asyncio.create_task(_bg_summarize(key, older))
+        _bg_tasks.discard(task)
+        _bg_tasks.add(task)
+        task.add_done_callback(_bg_tasks.discard)
+
+    async def _autocompact(
+        messages: list[dict[str, Any]],
+        tool_use_context: "ToolUseContext",
+        system_prompt: str,
+    ) -> list[dict[str, Any]]:
+        if not messages:
+            return messages
+        approx = _approximate_tokens(messages)
+        prefetch_threshold = int(token_threshold * 0.8)
+
+        if approx < prefetch_threshold:
             return messages
 
-        if not summary.strip():
+        if approx < token_threshold:
+            _maybe_prefetch(messages)
             return messages
 
-        return [
-            {
-                "role": "system",
-                "content": (
-                    "<compacted_history>\n" + summary.strip() + "\n</compacted_history>"
-                ),
-            },
-            *recent,
-        ]
+        if llm is None or len(messages) <= keep_recent:
+            return messages
+
+        split = snap_autocompact_split(messages, len(messages) - keep_recent)
+        older = messages[:split]
+        recent = messages[split:]
+
+        key = _transcript_key(older)
+
+        cached_summary = _bg_summary_cache.get(key)
+        if cached_summary:
+            return [
+                {
+                    "role": "system",
+                    "content": (
+                        "<compacted_history>\n" + cached_summary + "\n</compacted_history>"
+                    ),
+                },
+                *recent,
+            ]
+
+        task = asyncio.create_task(_bg_summarize(key, older))
+        _bg_tasks.discard(task)
+        _bg_tasks.add(task)
+        task.add_done_callback(_bg_tasks.discard)
+
+        return recent
 
     return _autocompact
 

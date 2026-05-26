@@ -1,8 +1,15 @@
-"""Database service for managing SQLite connections and sessions."""
+"""Database service for managing database connections and sessions.
+
+Supports SQLite (default, zero-config) and PostgreSQL (opt-in via
+``DB_DATABASE_URL``).  SQLite uses WAL mode with ``NullPool`` so every
+async session gets its own connection — concurrent reads no longer
+serialize behind a single ``StaticPool`` connection.
+"""
 
 from __future__ import annotations
 
 import logging
+import time
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, AsyncIterator, TypeVar
@@ -10,7 +17,7 @@ from typing import TYPE_CHECKING, Any, AsyncIterator, TypeVar
 from fastapi import HTTPException, status
 from sqlalchemy import event
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
-from sqlalchemy.pool import StaticPool
+from sqlalchemy.pool import NullPool
 from sqlmodel import SQLModel, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
@@ -28,42 +35,74 @@ def _sqlite_connect_pragma(dbapi_conn: object, _: object) -> None:
     cursor.execute("PRAGMA journal_mode=WAL")
     cursor.execute("PRAGMA synchronous=NORMAL")
     cursor.execute("PRAGMA foreign_keys=ON")
+    cursor.execute("PRAGMA busy_timeout=5000")
     cursor.close()
 
 
 class DatabaseService:
-    """Service for managing SQLite database connections and operations."""
+    """Service for managing database connections and operations."""
 
     def __init__(self, settings: "Settings") -> None:
         self.settings = settings
-        url = settings.database.url
+        db_cfg = settings.database
+        url = db_cfg.url
 
-        Path(settings.database._sqlite_file_path()).parent.mkdir(parents=True, exist_ok=True)
-
-        self._engine = create_async_engine(
-            url,
-            echo=settings.database.echo,
-            poolclass=StaticPool,
-            connect_args={"check_same_thread": False},
-        )
-        event.listen(self._engine.sync_engine, "connect", _sqlite_connect_pragma)
+        if db_cfg.is_postgresql:
+            self._engine = create_async_engine(
+                url,
+                echo=db_cfg.echo,
+                pool_size=db_cfg.pool_size,
+                max_overflow=db_cfg.max_overflow,
+                pool_pre_ping=True,
+            )
+            logger.info("DatabaseService initialized (PostgreSQL)")
+        else:
+            Path(db_cfg._sqlite_file_path()).parent.mkdir(parents=True, exist_ok=True)
+            self._engine = create_async_engine(
+                url,
+                echo=db_cfg.echo,
+                poolclass=NullPool,
+                connect_args={"check_same_thread": False},
+            )
+            event.listen(self._engine.sync_engine, "connect", _sqlite_connect_pragma)
+            logger.info("DatabaseService initialized (SQLite WAL: %s)", db_cfg._sqlite_file_path())
 
         self._session_factory = async_sessionmaker(
             self._engine,
             class_=AsyncSession,
             expire_on_commit=False,
         )
-        logger.info("DatabaseService initialized (%s)", settings.database._sqlite_file_path())
 
     @asynccontextmanager
     async def session(self) -> AsyncIterator[AsyncSession]:
+        started = time.perf_counter()
+        status_label = "success"
         async with self._session_factory() as session:
             try:
                 yield session
                 await session.commit()
             except Exception:
+                status_label = "error"
                 await session.rollback()
                 raise
+            finally:
+                try:
+                    from leagent.utils.metrics import get_metrics
+
+                    get_metrics().record_db_query(
+                        f"session_{status_label}",
+                        "*",
+                        time.perf_counter() - started,
+                    )
+                    pool = self._engine.sync_engine.pool
+                    checked_in = getattr(pool, "checkedin", None)
+                    checked_out = getattr(pool, "checkedout", None)
+                    if callable(checked_in):
+                        get_metrics().db_connection_pool_size.labels(state="checked_in").set(checked_in())
+                    if callable(checked_out):
+                        get_metrics().db_connection_pool_size.labels(state="checked_out").set(checked_out())
+                except Exception:
+                    logger.debug("database_metrics_failed", exc_info=True)
 
     async def create_tables(self) -> None:
         # Ensure all SQLModel classes are imported before create_all() so

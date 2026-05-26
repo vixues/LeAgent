@@ -114,6 +114,7 @@ class ContextManager:
 
         self._cache = SourceCache()
         self._seen_signatures: OrderedDict[tuple[str, str], None] = OrderedDict()
+        self._last_prefix_hash: str = ""
 
     @property
     def prompt_builder(self):
@@ -169,12 +170,51 @@ class ContextManager:
         system_blocks = [b for b in budget_result.kept if b.render_target == RenderTarget.SYSTEM]
         attachment_blocks = [b for b in budget_result.kept if b.render_target == RenderTarget.ATTACHMENT_USER]
 
+        # Three-tier ordering for KV cache stability:
+        # Tier 0 — pinned sources that rarely change (fixed order for maximum
+        #          prompt-prefix overlap across turns).
+        # Tier 1 — normal (session-scoped) sources, ordered by priority.
+        # Tier 2 — volatile (per-turn) sources at the tail.
+        _PINNED_ORDER = {
+            "identity": 0,
+            "capabilities": 1,
+            "policies": 2,
+            "project_memory": 3,
+            "active_project": 4,
+            "user_instructions": 5,
+        }
+        _VOLATILE_SOURCES = frozenset({
+            "environment", "session_attachments", "session_artifacts",
+            "recall", "working_set", "tool_history", "recent_reads",
+            "artifact_regeneration",
+        })
+
+        def _block_sort_key(b: ContextBlock) -> tuple[int, int, str]:
+            if b.source_id in _PINNED_ORDER:
+                return (0, _PINNED_ORDER[b.source_id], b.source_id)
+            if b.source_id in _VOLATILE_SOURCES:
+                return (2, -b.priority, b.source_id)
+            return (1, -b.priority, b.source_id)
+
+        system_blocks.sort(key=_block_sort_key)
+
         system_text = "\n\n".join(b.body.rstrip() for b in system_blocks if b.body.strip())
 
         attachment_messages = self._render_attachments(attachment_blocks)
 
         stable_hash = self._compute_hash(system_blocks)
         pm_hash = self._compute_project_memory_hash(system_blocks)
+
+        # Log prefix hash drift to surface cache-busting changes between turns.
+        pinned_blocks = [b for b in system_blocks if b.source_id in _PINNED_ORDER]
+        prefix_hash = self._compute_hash(pinned_blocks) if pinned_blocks else ""
+        if hasattr(self, "_last_prefix_hash") and self._last_prefix_hash and prefix_hash != self._last_prefix_hash:
+            logger.debug(
+                "context_prefix_hash_changed",
+                prev=self._last_prefix_hash[:12],
+                curr=prefix_hash[:12],
+            )
+        self._last_prefix_hash = prefix_hash
         full_hash = self._compute_hash(budget_result.kept)
 
         from leagent.prompts.types import BuiltPrompt, LayerResult
@@ -203,6 +243,17 @@ class ContextManager:
         pm_sources = self._extract_project_memory_sources(budget_result.kept)
 
         duration_ms = int((time.perf_counter() - start) * 1000)
+        try:
+            from leagent.utils.metrics import get_metrics
+
+            get_metrics().record_agent_turn_phase(
+                "context_prepare",
+                duration_ms / 1000,
+            )
+            stats = self._cache.stats
+            get_metrics().cache_entries.labels(cache_name="context_source").set(stats["size"])
+        except Exception:
+            logger.debug("context_prepare_metrics_failed", exc_info=True)
 
         ledger_rows: list[LedgerRow] = []
         for row in budget_result.rows:
@@ -360,6 +411,7 @@ class ContextManager:
         ledger_extras: list[LedgerRow] = []
 
         async def _resolve_one(entry: Any) -> None:
+            source_started = time.perf_counter()
             source_cls = source_classes.get(entry.source_id)
             if source_cls is None:
                 ledger_extras.append(LedgerRow(
@@ -385,6 +437,20 @@ class ContextManager:
 
             cached = self._cache.get(inv_key, source.scope)
             if cached is not None:
+                try:
+                    from leagent.utils.metrics import get_metrics
+
+                    get_metrics().record_cache_event(
+                        "context_source",
+                        hit=True,
+                        entries=self._cache.stats["size"],
+                    )
+                    get_metrics().record_agent_turn_phase(
+                        f"context_source:{entry.source_id}",
+                        time.perf_counter() - source_started,
+                    )
+                except Exception:
+                    logger.debug("context_source_metrics_failed", exc_info=True)
                 block = cached
                 if entry.priority_override is not None:
                     block = ContextBlock(
@@ -411,6 +477,16 @@ class ContextManager:
                     priority=block.priority,
                 ))
                 return
+            try:
+                from leagent.utils.metrics import get_metrics
+
+                get_metrics().record_cache_event(
+                    "context_source",
+                    hit=False,
+                    entries=self._cache.stats["size"],
+                )
+            except Exception:
+                logger.debug("context_cache_metrics_failed", exc_info=True)
 
             try:
                 block = await source.resolve(ctx)
@@ -444,6 +520,15 @@ class ContextManager:
 
             self._cache.put(inv_key, block)
             blocks.append(block)
+            try:
+                from leagent.utils.metrics import get_metrics
+
+                get_metrics().record_agent_turn_phase(
+                    f"context_source:{entry.source_id}",
+                    time.perf_counter() - source_started,
+                )
+            except Exception:
+                logger.debug("context_source_metrics_failed", exc_info=True)
 
         await asyncio.gather(*(_resolve_one(e) for e in recipe.entries))
         return blocks, ledger_extras
