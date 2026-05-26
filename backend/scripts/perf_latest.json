@@ -1,0 +1,73 @@
+{
+  "config": {
+    "base_url": "http://localhost:7860/api/v1",
+    "requests": 5,
+    "concurrency": 3,
+    "slow_consumer_ms": 0,
+    "new_session_per_request": true
+  },
+  "elapsed_ms": 7306.262925994815,
+  "summary": {
+    "requests": 5,
+    "success": 5,
+    "error": 0,
+    "success_rate": 1.0,
+    "first_event_ms": {
+      "p50": 155.80761199817061,
+      "p95": 416.1015959980432,
+      "p99": 416.1015959980432
+    },
+    "total_ms": {
+      "p50": 3583.8308819947997,
+      "p95": 4044.6393129968783,
+      "p99": 4044.6393129968783
+    }
+  },
+  "samples": [
+    {
+      "scenario": "chat_stream",
+      "ok": true,
+      "status": 200,
+      "first_event_ms": 155.80761199817061,
+      "total_ms": 3583.8308819947997,
+      "bytes_read": 4086,
+      "error": ""
+    },
+    {
+      "scenario": "chat_stream",
+      "ok": true,
+      "status": 200,
+      "first_event_ms": 416.1015959980432,
+      "total_ms": 3753.8142259872984,
+      "bytes_read": 4298,
+      "error": ""
+    },
+    {
+      "scenario": "chat_stream",
+      "ok": true,
+      "status": 200,
+      "first_event_ms": 158.83582599053625,
+      "total_ms": 4044.6393129968783,
+      "bytes_read": 3558,
+      "error": ""
+    },
+    {
+      "scenario": "chat_stream",
+      "ok": true,
+      "status": 200,
+      "first_event_ms": 39.772732998244464,
+      "total_ms": 2667.1635910024634,
+      "bytes_read": 3715,
+      "error": ""
+    },
+    {
+      "scenario": "chat_stream",
+      "ok": true,
+      "status": 200,
+      "first_event_ms": 42.45672599063255,
+      "total_ms": 3549.9288009887096,
+      "bytes_read": 4285,
+      "error": ""
+    }
+  ]
+}
