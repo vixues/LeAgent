@@ -19,6 +19,8 @@ class WorkflowListTool(BaseTool):
         "Returns name, id, status, description and last run time."
     )
     category = ToolCategory.WORKFLOW
+    is_concurrency_safe = True
+    is_read_only = True
     parameters_schema = {
         "type": "object",
         "properties": {
@@ -84,6 +86,7 @@ class WorkflowRunTool(BaseTool):
         "Trigger a workflow execution by flow ID or name. "
         "Returns an execution ID that can be used to track progress."
     )
+    is_concurrency_safe = False
     category = ToolCategory.WORKFLOW
     parameters_schema = {
         "type": "object",
@@ -138,6 +141,8 @@ class WorkflowStatusTool(BaseTool):
     name = "workflow_status"
     description = "Get the current status and details of a workflow execution by execution ID."
     category = ToolCategory.WORKFLOW
+    is_concurrency_safe = True
+    is_read_only = True
     parameters_schema = {
         "type": "object",
         "properties": {
@@ -166,6 +171,7 @@ class WorkflowCancelTool(BaseTool):
     name = "workflow_cancel"
     description = "Cancel a running or paused workflow execution."
     category = ToolCategory.WORKFLOW
+    is_concurrency_safe = False
     parameters_schema = {
         "type": "object",
         "properties": {
@@ -191,6 +197,7 @@ class WorkflowPauseTool(BaseTool):
     name = "workflow_pause"
     description = "Pause a currently running workflow execution."
     category = ToolCategory.WORKFLOW
+    is_concurrency_safe = False
     parameters_schema = {
         "type": "object",
         "properties": {
@@ -216,6 +223,7 @@ class WorkflowResumeTool(BaseTool):
     name = "workflow_resume"
     description = "Resume a paused workflow execution."
     category = ToolCategory.WORKFLOW
+    is_concurrency_safe = False
     parameters_schema = {
         "type": "object",
         "properties": {

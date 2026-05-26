@@ -1481,6 +1481,16 @@ class ToolExecutor:
             all_results.append(result)
 
         finished_at = time.monotonic()
+        try:
+            from leagent.utils.metrics import get_metrics
+
+            get_metrics().record_agent_turn_phase(
+                "tool_execute_partitioned",
+                finished_at - started_at,
+                status="success" if all(r.result.success for r in all_results) else "failure",
+            )
+        except Exception:
+            logger.debug("tool_partition_metrics_failed", exc_info=True)
         return AggregatedResult(
             results=all_results,
             total_duration_ms=int((finished_at - started_at) * 1000),
@@ -1537,6 +1547,16 @@ class ToolExecutor:
             successful=aggregated.successful_count,
             failed=aggregated.failed_count,
         )
+        try:
+            from leagent.utils.metrics import get_metrics
+
+            get_metrics().record_agent_turn_phase(
+                "tool_execute_parallel",
+                finished_at - started_at,
+                status="success" if aggregated.failed_count == 0 else "failure",
+            )
+        except Exception:
+            logger.debug("tool_parallel_metrics_failed", exc_info=True)
         return aggregated
 
     async def _execute_wait_all(

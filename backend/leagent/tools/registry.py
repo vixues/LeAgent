@@ -59,6 +59,8 @@ class ToolRegistry:
         self._categories: dict[ToolCategory, list[str]] = {cat: [] for cat in ToolCategory}
         self._schema_generation: int = 0
         self._llm_tool_schema_cache: dict[str, list[dict[str, Any]]] = {}
+        self._per_tool_schema_cache: dict[tuple[str, str, int], dict[str, Any]] = {}
+        self._llm_tool_schema_cache_max_entries = 128
 
     def register(self, tool: BaseTool, *, replace: bool = False) -> None:
         """Register a tool instance."""
@@ -287,32 +289,162 @@ class ToolRegistry:
         ]
         return hashlib.sha256("|".join(parts).encode()).hexdigest()[:16]
 
+    def _schema_cache_key_for_context(
+        self,
+        deny_patterns: list[str] | None,
+        provider_format: str,
+        context_hint: str | None,
+        max_tools: int,
+    ) -> str:
+        """Cache key for context-filtered schema pools."""
+        import hashlib
+
+        normalized_hint = " ".join((context_hint or "").lower().split())
+        parts = [
+            str(self._schema_generation),
+            provider_format,
+            ",".join(sorted(deny_patterns or [])),
+            str(max_tools),
+            hashlib.sha256(normalized_hint.encode()).hexdigest()[:16],
+        ]
+        return hashlib.sha256("|".join(parts).encode()).hexdigest()[:16]
+
+    def _remember_schema_cache(self, key: str, value: list[dict[str, Any]]) -> None:
+        self._llm_tool_schema_cache[key] = value
+        while len(self._llm_tool_schema_cache) > self._llm_tool_schema_cache_max_entries:
+            self._llm_tool_schema_cache.pop(next(iter(self._llm_tool_schema_cache)))
+
+    # Core tools that are always included regardless of context filtering
+    _CORE_TOOL_NAMES: frozenset[str] = frozenset({
+        "ask_user", "code_execution", "web_search", "file_manager",
+        "project_write", "project_tree", "project_grep",
+    })
+
     def get_tools_for_llm(
         self,
         deny_patterns: list[str] | None = None,
         provider_format: str = "openai",
+        context_hint: str | None = None,
+        max_tools: int = 0,
     ) -> list[dict[str, Any]]:
-        """Assemble the tool pool for an LLM call: enabled + not-denied."""
-        cache_key = self._schema_cache_key(deny_patterns, provider_format)
+        """Assemble the tool pool for an LLM call: enabled + not-denied.
+
+        When *context_hint* is provided and *max_tools* > 0, performs lightweight
+        keyword scoring to select the top-N most relevant tools (plus core tools
+        that are always included). This reduces prompt token usage significantly.
+
+        Results are cached: static pools by deny+format key, context-filtered
+        pools by a hash of context keywords so repeated similar queries hit cache.
+        """
+        if context_hint and max_tools > 0:
+            cache_key = self._schema_cache_key_for_context(
+                deny_patterns,
+                provider_format,
+                context_hint,
+                max_tools,
+            )
+        else:
+            cache_key = self._schema_cache_key(deny_patterns, provider_format)
+
         hit = self._llm_tool_schema_cache.get(cache_key)
         if hit is not None:
-            return hit
+            try:
+                from leagent.utils.metrics import get_metrics
 
-        tools = self.get_enabled_tools()
+                get_metrics().record_cache_event(
+                    "tool_schema",
+                    hit=True,
+                    entries=len(self._llm_tool_schema_cache),
+                )
+            except Exception:
+                logger.debug("tool_schema_cache_metrics_failed")
+            return hit
+        try:
+            from leagent.utils.metrics import get_metrics
+
+            get_metrics().record_cache_event(
+                "tool_schema",
+                hit=False,
+                entries=len(self._llm_tool_schema_cache),
+            )
+        except Exception:
+            logger.debug("tool_schema_cache_metrics_failed")
+
+        tools = sorted(self.get_enabled_tools(), key=lambda t: t.name)
         if deny_patterns:
             import fnmatch
             tools = [
                 t for t in tools
                 if not any(fnmatch.fnmatch(t.name, p) for p in deny_patterns)
             ]
+
+        if context_hint and max_tools > 0 and len(tools) > max_tools:
+            tools = self._select_relevant_tools(tools, context_hint, max_tools)
+
+        out = [self._get_cached_tool_schema(t, provider_format) for t in tools]
+
+        self._remember_schema_cache(cache_key, out)
+        return out
+
+    def _get_cached_tool_schema(self, tool: "BaseTool", provider_format: str) -> dict[str, Any]:
+        """Return a cached per-tool schema dict, rebuilding only on generation change."""
+        key = (tool.name, provider_format, self._schema_generation)
+        cached = self._per_tool_schema_cache.get(key)
+        if cached is not None:
+            return cached
         schema_method = {
             "openai": "to_openai_schema",
             "anthropic": "to_anthropic_schema",
             "generic": "to_generic_schema",
         }.get(provider_format, "to_openai_schema")
-        out = [getattr(t, schema_method)() for t in tools]
-        self._llm_tool_schema_cache[cache_key] = out
-        return out
+        schema = getattr(tool, schema_method)()
+        self._per_tool_schema_cache[key] = schema
+        return schema
+
+    def _select_relevant_tools(
+        self,
+        tools: list["BaseTool"],
+        context_hint: str,
+        max_tools: int,
+    ) -> list["BaseTool"]:
+        """Score tools by relevance to the query and return top-N + core tools."""
+        hint_lower = context_hint.lower()
+        keywords = set(hint_lower.split())
+
+        core: list["BaseTool"] = []
+        scored: list[tuple[float, str, "BaseTool"]] = []
+
+        for tool in tools:
+            if tool.name in self._CORE_TOOL_NAMES:
+                core.append(tool)
+                continue
+
+            score = 0.0
+            name_lower = tool.name.lower()
+            desc_lower = tool.description.lower()
+            search_hint = (getattr(tool, "search_hint", "") or "").lower()
+
+            for kw in keywords:
+                if len(kw) < 3:
+                    continue
+                if kw in name_lower:
+                    score += 3.0
+                if kw in desc_lower:
+                    score += 1.5
+                if search_hint and kw in search_hint:
+                    score += 2.0
+
+            category_name = getattr(tool.category, "value", str(tool.category))
+            if category_name in hint_lower:
+                score += 1.0
+
+            scored.append((score, tool.name, tool))
+
+        scored.sort(key=lambda x: (-x[0], x[1]))
+        remaining_slots = max(0, max_tools - len(core))
+        selected = core + [t for _, _, t in scored[:remaining_slots]]
+        selected.sort(key=lambda t: t.name)
+        return selected
 
     def search_tools(self, query: str) -> list[BaseTool]:
         """Keyword search across tool names, descriptions, and search_hints."""
