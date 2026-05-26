@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+from contextlib import suppress
 from datetime import datetime
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 from uuid import UUID
@@ -327,6 +328,8 @@ class TaskManager:
         if bg and not bg.done():
             self._kill_owned_cancellations.add(task_id)
             bg.cancel()
+            with suppress(asyncio.CancelledError):
+                await bg
         elif self._distributed is not None:
             try:
                 routed = await self._distributed.request_cancel(task_id)
