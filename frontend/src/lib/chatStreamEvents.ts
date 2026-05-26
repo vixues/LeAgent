@@ -21,6 +21,7 @@ import type {
 } from '@/types/chat';
 import { normalizeAttachmentList } from '@/types/chat';
 import type { GenUiTreeV1, UiPatchStreamPayload, UiTreeStreamPayload } from '@/types/genUi';
+import { isDocProcessorWriteStream } from '@/lib/docProcessorStreamPreview';
 
 export type ChatStreamTranslate = (
   key: string,
@@ -247,6 +248,12 @@ export function applyChatStreamEvent(
       });
       if (nameGuess === 'canvas_publish' || nameGuess === 'code_execution') {
         useLayoutStore.setState({ workspaceOpen: true, workspaceTab: 'agent' });
+      }
+      if (
+        (nameGuess === 'text_processor' || nameGuess === 'markdown_processor') &&
+        isDocProcessorWriteStream(nameGuess, raw, partialArgs)
+      ) {
+        useLayoutStore.setState({ workspaceOpen: true, workspaceTab: 'files' });
       }
       break;
     }

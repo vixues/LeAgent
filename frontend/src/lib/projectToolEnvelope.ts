@@ -4,6 +4,11 @@
  * workspace agent code tab.
  */
 import { formatAgentPathLabel, isCodeExecWorkspaceDir } from '@/lib/agentPathDisplay';
+import {
+  extractDocProcessorPreviewText,
+  extractDocProcessorPath,
+  isDocProcessorTool,
+} from '@/lib/docProcessorStreamPreview';
 import type { Message, ToolCall } from '@/types/chat';
 import { resolveCodingProjectPreviewHref } from '@/lib/previewUrl';
 
@@ -119,6 +124,42 @@ export function findLatestProjectWriteContent(
   return null;
 }
 
+/** Latest doc-processor write body for ``file_path`` (includes streaming args). */
+export function findLatestDocProcessorWriteContent(
+  messages: Message[],
+  selectedPath: string,
+): string | null {
+  const want = normalizeProjectPath(selectedPath);
+  if (!want) return null;
+
+  for (let i = messages.length - 1; i >= 0; i -= 1) {
+    const m = messages[i];
+    if (m?.role !== 'assistant' || !m.toolCalls?.length) continue;
+    for (let j = m.toolCalls.length - 1; j >= 0; j -= 1) {
+      const tc = m.toolCalls[j];
+      if (!tc || !isDocProcessorTool(tc.name)) continue;
+      const args = tc.arguments ?? {};
+      const p =
+        strArg(args, 'file_path') ||
+        extractDocProcessorPath(tc.argumentsRaw ?? '', args);
+      if (!pathsMatch(p, selectedPath)) continue;
+      if (tc.status !== 'success' && tc.status !== 'error' && tc.status !== 'running' && tc.status !== 'pending') {
+        continue;
+      }
+      const fromArgs =
+        tc.name === 'text_processor' ? strArg(args, 'data') : strArg(args, 'content');
+      const fromStream = extractDocProcessorPreviewText(
+        tc.name,
+        tc.argumentsRaw ?? '',
+        args,
+      );
+      const body = fromStream.length >= fromArgs.length ? fromStream : fromArgs;
+      if (body) return body;
+    }
+  }
+  return null;
+}
+
 /** Latest ``project_edit`` ``new_string`` for ``path`` (snapshot after edit). */
 export function findLatestProjectEditNewString(
   messages: Message[],
@@ -152,6 +193,8 @@ export function resolvePathPreview(
   if (read) return { kind: 'read', text: read };
   const write = findLatestProjectWriteContent(messages, selectedPath);
   if (write) return { kind: 'write', text: write };
+  const docWrite = findLatestDocProcessorWriteContent(messages, selectedPath);
+  if (docWrite) return { kind: 'write', text: docWrite };
   const edit = findLatestProjectEditNewString(messages, selectedPath);
   if (edit) return { kind: 'edit', text: edit };
   return { kind: 'none', text: '' };
@@ -241,6 +284,14 @@ export function collectProjectPathsWithOps(messages: Message[]): PathWithOperati
     for (const tc of m.toolCalls ?? []) {
       if (tc.name === 'code_execution') {
         collectPathsFromCodeExecution(tc, upsert);
+        continue;
+      }
+      if (isDocProcessorTool(tc.name)) {
+        const args = tc.arguments ?? {};
+        const p =
+          strArg(args, 'file_path') ||
+          extractDocProcessorPath(tc.argumentsRaw ?? '', args);
+        if (p) upsert(p, 'write');
         continue;
       }
       if (!isProjectFamilyTool(tc.name)) continue;

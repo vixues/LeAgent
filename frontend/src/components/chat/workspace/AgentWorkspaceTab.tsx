@@ -47,6 +47,7 @@ import { extToLanguage } from '@/pages/FolderPage/project/extToLanguage';
 import type { ToolCall } from '@/types/chat';
 import { AgentWorkspaceCodeExecutionPanel } from './AgentWorkspaceCodeExecutionPanel';
 import { AgentWorkspaceTerminal } from './AgentWorkspaceTerminal';
+import { DocGenerationLivePreview } from './DocGenerationLivePreview';
 
 const EMPTY_CODE_ARTIFACT_IDS: string[] = [];
 
@@ -283,6 +284,9 @@ export function AgentWorkspaceTab() {
           onSelect={setSelectedPath}
         />
       )}
+
+      {/* Doc processor live preview (text_processor / markdown_processor) */}
+      <DocGenerationLivePreview />
 
       {/* Canvas HTML Live Preview */}
       {canvasToolCall && (

@@ -53,6 +53,9 @@ export function collectSessionEditPaths(messages: Message[]): SessionEditPath[] 
       if (name === 'project_edit' || name === 'project_write') {
         const p = typeof args.path === 'string' ? args.path : '';
         pushPath(out, dedupe, p, name, mid);
+      } else if (name === 'text_processor' || name === 'markdown_processor') {
+        const p = typeof args.file_path === 'string' ? args.file_path : '';
+        pushPath(out, dedupe, p, name, mid);
       } else if (name === 'project_apply_patch') {
         const diff = typeof args.diff === 'string' ? args.diff : '';
         for (const p of pathsFromUnifiedDiff(diff)) {

@@ -25,6 +25,7 @@ import { UniversalFilePreview } from '@/components/files/UniversalFilePreview';
 import type { Attachment, Message } from '@/types/chat';
 import { normalizeAttachmentList } from '@/types/chat';
 import { collectSessionEditPaths } from '@/lib/sessionProjectEdits';
+import { DocGenerationLivePreview } from './DocGenerationLivePreview';
 
 const EMPTY_SESSION_MESSAGES: Message[] = [];
 
@@ -637,6 +638,9 @@ export function FilesTab() {
 
         {/* Preview panel */}
         <div className="hidden md:flex h-full min-h-0 flex-col rounded-xl bg-surface-sunken/40 border border-border-subtle/50 overflow-hidden">
+          <div className="flex-shrink-0 p-2">
+            <DocGenerationLivePreview />
+          </div>
           {selectedFile ? (
             <FilePreview
               file={selectedFile}

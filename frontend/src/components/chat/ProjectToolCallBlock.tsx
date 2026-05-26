@@ -12,6 +12,11 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import {
+  extractDocProcessorPreviewText,
+  extractDocProcessorPath,
+  isDocProcessorTool,
+} from '@/lib/docProcessorStreamPreview';
+import {
   changedFilesList,
   extractCodingProjectId,
   fmtJson,
@@ -293,9 +298,77 @@ export function ProjectToolCallBlock({ toolCall, sessionId }: ProjectToolCallBlo
   const headerPath =
     name === 'coding_agent'
       ? ''
-      : strArg(args, 'path') || strArg(args, 'project_path') || '';
+      : strArg(args, 'path') ||
+        strArg(args, 'project_path') ||
+        strArg(args, 'file_path') ||
+        '';
 
   const body = useMemo(() => {
+    if (isDocProcessorTool(name)) {
+      const filePath =
+        strArg(args, 'file_path') ||
+        extractDocProcessorPath(toolCall.argumentsRaw ?? '', args);
+      const op = strArg(args, 'operation');
+      const partial = args;
+      const streamBody =
+        toolCall.status === 'running' || toolCall.status === 'pending'
+          ? extractDocProcessorPreviewText(
+              name,
+              toolCall.argumentsRaw ?? '',
+              partial,
+            )
+          : '';
+      const bodyText =
+        name === 'text_processor'
+          ? strArg(args, 'data') || streamBody
+          : strArg(args, 'content') || streamBody;
+      const n = lineCount(bodyText);
+      return (
+        <div className="space-y-2">
+          {filePath ? (
+            <div className="text-[11px] font-mono text-foreground truncate" title={filePath}>
+              {filePath}
+              {op ? (
+                <span className="ml-1.5 text-muted-foreground-tertiary">({op})</span>
+              ) : null}
+              {n > 0 ? (
+                <span className="ml-1 text-muted-foreground-tertiary">
+                  ({t('chat.projectTool.lines', { defaultValue: '{{count}} lines', count: n })})
+                </span>
+              ) : null}
+            </div>
+          ) : null}
+          {(toolCall.status === 'running' || toolCall.status === 'pending') &&
+          streamBody &&
+          streamBody !== bodyText ? (
+            <p className="text-[10px] text-primary/80">
+              {t('chat.projectTool.streaming', { defaultValue: 'Streaming content…' })}
+            </p>
+          ) : null}
+          <pre
+            className={cn(
+              'max-h-56 overflow-auto rounded-md p-2 font-mono text-[10px] whitespace-pre-wrap break-words',
+              toolCall.status === 'running' || toolCall.status === 'pending'
+                ? 'bg-primary-50/40 dark:bg-primary-950/20 border border-primary/20'
+                : 'bg-surface-sunken',
+            )}
+          >
+            {bodyText || (toolCall.status === 'running' ? '…' : '—')}
+          </pre>
+          {toolCall.result !== undefined ? (
+            <details className="rounded-md border border-border-subtle/60">
+              <summary className="cursor-pointer px-2 py-1 text-[10px] text-muted-foreground">
+                {t('chat.projectTool.rawResult', { defaultValue: 'Raw result' })}
+              </summary>
+              <pre className="max-h-40 overflow-auto border-t border-border-subtle/60 p-2 font-mono text-[10px] whitespace-pre-wrap break-words">
+                {fmtJson(toolCall.result)}
+              </pre>
+            </details>
+          ) : null}
+        </div>
+      );
+    }
+
     if (name === 'project_edit') {
       const path = strArg(args, 'path');
       const oldS = strArg(args, 'old_string');
