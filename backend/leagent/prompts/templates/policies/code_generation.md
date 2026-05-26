@@ -22,12 +22,50 @@ Code generation policy:
   `canvas_publish(mode=html, html="...")`. The `code_execution` sandbox is
   for computation, data processing, and visualisation — not for producing
   markup via Python string concatenation.
-- **Markdown and plain-text documents are not scratch scripts.** When the
-  deliverable is a saved `.md` / `.txt` document or generated report, prefer
-  the document tools (`report_generator`, `template_filler`,
-  `checklist_generator`, `text_processor`, `markdown_processor`) or
-  `project_write` for a project file. Do not use `code_execution` just to
-  assemble a Markdown/text string and write it with `open(...).write(...)`.
+- **Markdown documents → `markdown_processor` (ALWAYS).** When the
+  deliverable is a `.md` file (story, report, notes, article, meeting
+  minutes, README, changelog, or any saved markdown), use
+  **`markdown_processor`** directly — *never* `code_execution`.
+  Key operations:
+  - `write` — save arbitrary markdown content to a file in one call.
+  - `create` — build structured document from title + sections + metadata.
+  - `template` — generate from templates: `story`, `report`, `notes`,
+    `article`, `meeting`, `readme`, `changelog`.
+  - `append` / `prepend` — add content to an existing file.
+  - `insert_section` / `replace_section` / `delete_section` — surgical
+    editing by heading name.
+  - `build_table` — construct markdown tables from headers + rows.
+  - `build_list` — construct nested ordered/unordered lists.
+  - `merge` — combine multiple markdown files.
+  - `format` — prettify/normalize markdown.
+  - `generate_toc` — produce a linked table of contents.
+- **Plain-text documents → `text_processor` (ALWAYS).** When the
+  deliverable is a `.txt` or any plain-text file, use
+  **`text_processor`** directly — *never* `code_execution`.
+  Key operations:
+  - `write` — save text content directly.
+  - `append` / `prepend` — add content to existing files.
+  - `replace` — regex find-and-replace (single or all occurrences,
+    supports backreferences).
+  - `insert` — insert text at a specific line number.
+  - `transform` — uppercase, lowercase, title_case, wrap, indent,
+    dedent, sort_lines, unique_lines, number_lines, remove_blank_lines,
+    tabs_to_spaces, etc.
+  - `extract` — pull content by line range, regex pattern, or markers.
+  - `split` — break a file into parts by delimiter or line count.
+  - `join` — concatenate multiple files.
+- **PDF operations → `pdf_reader` (ALWAYS).** For any PDF task, use
+  **`pdf_reader`** directly — *never* `code_execution` with PyMuPDF.
+  Key operations:
+  - `read` — extract text (full or by page range/specific pages).
+  - `extract_tables` — detect and pull tabular data.
+  - `extract_images` — save embedded images to disk.
+  - `extract_links` — get all hyperlinks and annotations.
+  - `search` — find text across pages with context.
+  - `outline` — extract bookmarks/table of contents.
+  - `convert_to_images` — render pages as PNG/JPEG.
+  - `split` / `merge` / `extract_pages` — PDF manipulation.
+  - `metadata` / `page_info` — document properties and dimensions.
 - **Inline content is preferred.** Pass `content` / `source` /
   `old_string` / `new_string` directly in the tool call — the runtime
   resolves content transparently (inline text or `*_blob_id`). Use

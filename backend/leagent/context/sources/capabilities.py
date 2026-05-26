@@ -17,7 +17,7 @@ _CATEGORY_BUDGET_CHARS: dict[str, int] = {
     "image": 200,
     "chart": 200,
     "code": 300,
-    "doc": 300,
+    "doc": 600,
     "web": 300,
     "data": 200,
     "integration": 300,
@@ -33,6 +33,26 @@ _ALWAYS_VISIBLE_TOOL_DESCRIPTIONS: dict[str, str] = {
         "Read/query JSON, YAML, and TOML configs directly, including "
         "`~/.openclaw/openclaw.json` for installed skill API keys; prefer this "
         "over code_execution for config reads."
+    ),
+    "markdown_processor": (
+        "Markdown authoring toolkit: write/create/append markdown files, "
+        "build from templates (story/report/article/meeting/readme/changelog), "
+        "insert/replace/delete sections by heading, build tables and lists, "
+        "merge files, generate TOC, format, convert to HTML/text. "
+        "Always prefer this over code_execution for any .md file output."
+    ),
+    "text_processor": (
+        "Text-file toolkit: write/append/prepend, regex find-and-replace, "
+        "insert at line, transforms (uppercase/lowercase/wrap/indent/sort/"
+        "unique/number_lines/dedent), extract by pattern/range/markers, "
+        "split/join files, encoding detection. "
+        "Always prefer this over code_execution for .txt file operations."
+    ),
+    "pdf_reader": (
+        "PDF processor: extract text (full/by page), detect & extract tables, "
+        "save embedded images, search text across pages, extract outline/bookmarks, "
+        "convert pages to images, split/merge/extract pages, metadata. "
+        "Always prefer this over code_execution for PDF operations."
     ),
 }
 

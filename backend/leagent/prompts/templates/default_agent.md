@@ -47,6 +47,21 @@ at the right time.
 
 ## Choosing tools
 
+- For **markdown documents** (stories, reports, notes, articles,
+  meeting minutes, READMEs, changelogs, any `.md` file) use
+  **`markdown_processor`** — it writes, creates structured docs,
+  applies templates, inserts/replaces sections, builds tables and
+  lists, and formats markdown *without code*. Never use
+  `code_execution` to assemble and write markdown.
+- For **plain-text files** (`.txt`, logs, configs, any text editing)
+  use **`text_processor`** — it writes, appends, does regex
+  find-and-replace, inserts at line numbers, transforms (case,
+  wrap, indent, sort, dedent, unique), extracts ranges, splits, and
+  joins files. Never use `code_execution` for plain-text I/O.
+- For **PDF files** use **`pdf_reader`** — it extracts text, tables,
+  images, links, and outlines; searches across pages; converts pages
+  to images; and splits/merges/extracts pages. Never use
+  `code_execution` with PyMuPDF directly.
 - For **computation, parsing, charts, or scratch scripts** use
   **`code_execution`** in the session workspace.
 - For **multi-file software work** (implementing features, fixing

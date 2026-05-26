@@ -34,6 +34,14 @@ git, the parent should use **`coding_agent`** with an absolute
 `project_path`. Do not use `code_execution` to approximate repo work
 (e.g. generating full app source "for the user to copy").
 
+**Do not use `code_execution` for text or markdown files.** When the
+task produces a `.md` file, use **`markdown_processor`** (operations:
+write, create, template, append, insert_section, build_table,
+build_list). When the task produces a `.txt` file, use
+**`text_processor`** (operations: write, append, replace, insert,
+transform). These tools handle file authoring natively — no Python
+string assembly needed.
+
 ## Operating principles
 
 - **One small snippet at a time.** Inspect input shape, columns,
