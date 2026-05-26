@@ -1,6 +1,6 @@
 import type { TFunction } from 'i18next';
 import { getAccessToken } from '@/api/client';
-import { applyChatStreamEvent } from '@/lib/chatStreamEvents';
+import { applyChatStreamEvent, flushPendingContentBatch } from '@/lib/chatStreamEvents';
 import { queryClient } from '@/lib/queryClient';
 import { useChatStore } from '@/stores/chat';
 
@@ -92,9 +92,6 @@ export async function runChatStream({
     }
   }
 
-  const currentMessages = useChatStore.getState().messages[sessionId] ?? [];
-  formData.append('history', JSON.stringify(currentMessages.slice(0, -1)));
-
   const headers: Record<string, string> = {};
   const token = getAccessToken();
   if (token) headers['Authorization'] = `Bearer ${token}`;
@@ -146,9 +143,10 @@ export async function runChatStream({
     timer = globalThis.setTimeout(tick, TITLE_POLL_INTERVAL_MS);
     return stop;
   };
-  // The title is generated independently from the long-running assistant stream.
-  // Keep polling briefly so slow title calls do not leave the sidebar on "New chat".
-  const stopTitlePolling = startTitlePolling();
+  // Defer title polling until first content arrives to avoid network contention
+  // during the critical TTFB window.
+  let stopTitlePolling: (() => void) | null = null;
+  let titlePollingStarted = false;
 
   const decoder = new TextDecoder();
   let buffer = '';
@@ -176,12 +174,18 @@ export async function runChatStream({
             userMessageId,
             t,
           });
+          if (!titlePollingStarted && event.type === 'content_delta') {
+            titlePollingStarted = true;
+            stopTitlePolling = startTitlePolling();
+          }
         } catch {
           // skip invalid JSON
         }
       }
     }
   } finally {
+    flushPendingContentBatch();
+
     const msgs = useChatStore.getState().messages[sessionId] ?? [];
     const effectiveAssistantId = msgs.some((m) => m.id === assistantMsgId)
       ? assistantMsgId
@@ -195,7 +199,7 @@ export async function runChatStream({
     void queryClient.invalidateQueries({ queryKey: ['prompt-preview', sessionId] });
     void refreshSession();
     // Auto-title can also run after SSE closes; leave a fresh polling window for that path.
-    stopTitlePolling();
+    if (stopTitlePolling) stopTitlePolling();
     startTitlePolling();
   }
 }

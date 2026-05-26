@@ -551,6 +551,10 @@ export function ModelProviderConfig() {
     }
 
     const payload: ModelProviderFormData = { ...formData, models };
+    // When editing, strip empty api_key so the backend preserves the existing key.
+    if (selectedProvider && !payload.api_key?.trim()) {
+      delete payload.api_key;
+    }
     const warnings: string[] = [];
     if (requiresApiKey && !selectedProvider && !payload.api_key?.trim()) {
       warnings.push(t('admin.provider.softValidation.missingApiKey'));

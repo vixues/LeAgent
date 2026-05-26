@@ -85,6 +85,10 @@ export default defineConfig(({ mode }) => {
           output: {
             manualChunks(id: string) {
               if (!id.includes('node_modules')) return undefined;
+              if (id.includes('/mermaid/') || id.includes('/mermaid-')) return 'mermaid';
+              if (id.includes('/katex/')) return 'katex';
+              if (id.includes('/highlight.js/') || id.includes('/highlightjs/'))
+                return 'highlightjs';
               if (id.includes('/@xyflow/')) return 'flow';
               if (id.includes('/react-router') || id.includes('/@remix-run/router'))
                 return 'router';
@@ -97,6 +101,9 @@ export default defineConfig(({ mode }) => {
                 id.includes('/scheduler/')
               )
                 return 'react-vendor';
+              if (id.includes('/mammoth/')) return 'mammoth';
+              if (id.includes('/recharts/') || id.includes('/d3-'))
+                return 'recharts';
               return undefined;
             },
           },

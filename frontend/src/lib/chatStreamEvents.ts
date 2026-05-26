@@ -34,6 +34,137 @@ export interface ApplyChatStreamEventParams {
   t: ChatStreamTranslate;
 }
 
+// ---------------------------------------------------------------------------
+// Content delta batching: accumulate text chunks and flush once per animation
+// frame to reduce DOM update frequency and eliminate frame drops during fast
+// token streams.
+// ---------------------------------------------------------------------------
+const _contentBatchBuffers = new Map<string, string>();
+let _contentBatchRafId: number | null = null;
+
+function _flushContentBatch(): void {
+  _contentBatchRafId = null;
+  const s = useChatStore.getState();
+  for (const [key, text] of _contentBatchBuffers) {
+    const [sessionId, msgId] = key.split('\0', 2);
+    if (sessionId && msgId) {
+      s.appendToMessage(sessionId, msgId, text);
+    }
+  }
+  _contentBatchBuffers.clear();
+}
+
+function _batchContentDelta(sessionId: string, msgId: string, text: string): void {
+  const key = `${sessionId}\0${msgId}`;
+  const existing = _contentBatchBuffers.get(key);
+  _contentBatchBuffers.set(key, existing ? existing + text : text);
+  if (_contentBatchRafId === null) {
+    _contentBatchRafId = requestAnimationFrame(_flushContentBatch);
+  }
+}
+
+export function flushPendingContentBatch(): void {
+  if (_contentBatchRafId !== null) {
+    cancelAnimationFrame(_contentBatchRafId);
+    _flushContentBatch();
+  }
+  if (_thinkingBatchRafId !== null) {
+    cancelAnimationFrame(_thinkingBatchRafId);
+    _flushThinkingBatch();
+  }
+  if (_toolDeltaBatchRafId !== null) {
+    cancelAnimationFrame(_toolDeltaBatchRafId);
+    _flushToolDeltaBatch();
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Thinking delta batching: same rAF pattern as content to avoid per-event
+// re-renders during DeepSeek's often long reasoning phase.
+// ---------------------------------------------------------------------------
+const _thinkingBatchBuffers = new Map<string, string>();
+let _thinkingBatchRafId: number | null = null;
+
+function _flushThinkingBatch(): void {
+  _thinkingBatchRafId = null;
+  const s = useChatStore.getState();
+  for (const [key, text] of _thinkingBatchBuffers) {
+    const [sessionId, msgId] = key.split('\0', 2);
+    if (sessionId && msgId) {
+      s.updateMessage(sessionId, msgId, { thinking: text });
+    }
+  }
+  _thinkingBatchBuffers.clear();
+}
+
+function _batchThinkingDelta(sessionId: string, msgId: string, text: string): void {
+  const key = `${sessionId}\0${msgId}`;
+  _thinkingBatchBuffers.set(key, text);
+  if (_thinkingBatchRafId === null) {
+    _thinkingBatchRafId = requestAnimationFrame(_flushThinkingBatch);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Tool-call delta batching: coding/canvas tools can emit many partial JSON
+// frames. Keep only the latest snapshot per tool call and flush once per frame.
+// ---------------------------------------------------------------------------
+interface ToolDeltaSnapshot {
+  sessionId: string;
+  msgId: string;
+  toolCallId: string;
+  name: string;
+  index: number;
+  argumentsRaw: string;
+  argumentsPartial: Record<string, unknown>;
+}
+
+const _toolDeltaBatchBuffers = new Map<string, ToolDeltaSnapshot>();
+let _toolDeltaBatchRafId: number | null = null;
+
+function _flushToolDeltaBatch(): void {
+  _toolDeltaBatchRafId = null;
+  const s = useChatStore.getState();
+  for (const snapshot of _toolDeltaBatchBuffers.values()) {
+    const prev =
+      s.messages[snapshot.sessionId]?.find((m) => m.id === snapshot.msgId)?.toolCalls ?? [];
+    const existingIdx = prev.findIndex((tc) => tc.id === snapshot.toolCallId);
+    if (existingIdx === -1) {
+      s.updateMessage(snapshot.sessionId, snapshot.msgId, {
+        toolCalls: [
+          ...prev,
+          {
+            id: snapshot.toolCallId,
+            name: snapshot.name,
+            arguments: snapshot.argumentsPartial,
+            argumentsRaw: snapshot.argumentsRaw,
+            toolCallIndex: snapshot.index,
+            status: 'running',
+          },
+        ],
+      });
+    } else {
+      s.updateToolCall(snapshot.sessionId, snapshot.msgId, snapshot.toolCallId, {
+        argumentsRaw: snapshot.argumentsRaw,
+        ...(Object.keys(snapshot.argumentsPartial).length > 0
+          ? { arguments: snapshot.argumentsPartial }
+          : {}),
+        ...(snapshot.name !== 'unknown_tool' ? { name: snapshot.name } : {}),
+        toolCallIndex: snapshot.index,
+      });
+    }
+  }
+  _toolDeltaBatchBuffers.clear();
+}
+
+function _batchToolCallDelta(snapshot: ToolDeltaSnapshot): void {
+  const key = `${snapshot.sessionId}\0${snapshot.msgId}\0${snapshot.toolCallId}`;
+  _toolDeltaBatchBuffers.set(key, snapshot);
+  if (_toolDeltaBatchRafId === null) {
+    _toolDeltaBatchRafId = requestAnimationFrame(_flushToolDeltaBatch);
+  }
+}
+
 export const PET_DAILY_FALLBACK_GREETING_KEYS = [
   'chat.petBubble.dailyGreeting1',
   'chat.petBubble.dailyGreeting2',
@@ -83,7 +214,7 @@ export function applyChatStreamEvent(
 
   switch (type) {
     case 'content':
-      s.appendToMessage(sessionId, assistantMsgId, String(event.data ?? ''));
+      _batchContentDelta(sessionId, assistantMsgId, String(event.data ?? ''));
       break;
 
     case 'tool_call_delta': {
@@ -105,31 +236,15 @@ export function applyChatStreamEvent(
       const nameGuess =
         typeof d.name === 'string' && d.name.trim().length > 0 ? d.name.trim() : 'unknown_tool';
 
-      const prev =
-        s.messages[sessionId]?.find((m) => m.id === assistantMsgId)?.toolCalls ?? [];
-      const existingIdx = prev.findIndex((tc) => tc.id === tid);
-      if (existingIdx === -1) {
-        s.updateMessage(sessionId, assistantMsgId, {
-          toolCalls: [
-            ...prev,
-            {
-              id: tid,
-              name: nameGuess,
-              arguments: partialArgs,
-              argumentsRaw: raw,
-              toolCallIndex: idx,
-              status: 'running',
-            },
-          ],
-        });
-      } else {
-        s.updateToolCall(sessionId, assistantMsgId, tid, {
-          argumentsRaw: raw,
-          ...(Object.keys(partialArgs).length > 0 ? { arguments: partialArgs } : {}),
-          ...(nameGuess !== 'unknown_tool' ? { name: nameGuess } : {}),
-          toolCallIndex: idx,
-        });
-      }
+      _batchToolCallDelta({
+        sessionId,
+        msgId: assistantMsgId,
+        toolCallId: tid,
+        name: nameGuess,
+        index: idx,
+        argumentsRaw: raw,
+        argumentsPartial: partialArgs,
+      });
       if (nameGuess === 'canvas_publish' || nameGuess === 'code_execution') {
         useLayoutStore.setState({ workspaceOpen: true, workspaceTab: 'agent' });
       }
@@ -160,6 +275,10 @@ export function applyChatStreamEvent(
     }
 
     case 'tool_call': {
+      if (_toolDeltaBatchRafId !== null) {
+        cancelAnimationFrame(_toolDeltaBatchRafId);
+        _flushToolDeltaBatch();
+      }
       const d = event.data as Record<string, unknown>;
       const toolName = String(d.name ?? '');
       const realId = (d.id as string) || generateId();
@@ -248,7 +367,7 @@ export function applyChatStreamEvent(
           ? event.data
           : (event.data as { content?: string })?.content ?? '';
       if (thought) {
-        s.updateMessage(sessionId, assistantMsgId, { thinking: thought });
+        _batchThinkingDelta(sessionId, assistantMsgId, thought);
       }
       break;
     }
