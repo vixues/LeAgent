@@ -64,6 +64,99 @@ class OllamaProvider(LLMProvider):
     def _get_default_model(self) -> str:
         return self.default_model
 
+    @staticmethod
+    def _is_embedding_model(name: str) -> bool:
+        lowered = name.lower()
+        return "embed" in lowered
+
+    @staticmethod
+    def _model_matches(requested: str, installed: str) -> bool:
+        """Return True when *installed* satisfies a configured *requested* id."""
+        req = requested.strip()
+        ins = installed.strip()
+        if not req or not ins:
+            return False
+        if req == ins:
+            return True
+        if ins.startswith(req + ":"):
+            return True
+        req_base = req.split(":", 1)[0]
+        ins_base = ins.split(":", 1)[0]
+        return req_base == ins_base
+
+    @classmethod
+    def pick_test_model(
+        cls,
+        installed: list[str],
+        *,
+        preferred: str | None = None,
+        configured: list[str] | None = None,
+        default_model: str | None = None,
+    ) -> str | None:
+        """Choose a locally installed model for connectivity probes."""
+        chat_models = [m for m in installed if m and not cls._is_embedding_model(m)]
+        pool = chat_models or [m for m in installed if m]
+        if not pool:
+            return None
+
+        def find_match(name: str) -> str | None:
+            for available in pool:
+                if cls._model_matches(name, available):
+                    return available
+            return None
+
+        for candidate in (preferred, *(configured or []), default_model):
+            if not candidate:
+                continue
+            hit = find_match(candidate)
+            if hit:
+                return hit
+        return sorted(pool)[0]
+
+    async def get_installed_model_names(self) -> list[str]:
+        """Return model names reported by Ollama ``/api/tags``."""
+        raw = await self.list_models()
+        return [
+            str(item.get("name") or "")
+            for item in raw
+            if isinstance(item, dict) and item.get("name")
+        ]
+
+    async def resolve_test_model(
+        self,
+        *,
+        preferred: str | None = None,
+        configured: list[str] | None = None,
+    ) -> str:
+        """Resolve a model id that exists locally for health / connection tests."""
+        installed = await self.get_installed_model_names()
+        picked = self.pick_test_model(
+            installed,
+            preferred=preferred,
+            configured=configured,
+            default_model=self.default_model,
+        )
+        if not picked:
+            missing = preferred or self.default_model or "ollama"
+            raise ModelNotFoundError(missing)
+        return picked
+
+    async def health_check(self) -> bool:
+        """Verify Ollama is reachable and at least one chat model can respond."""
+        try:
+            test_model = await self.resolve_test_model()
+        except Exception:
+            return False
+        try:
+            response = await self.complete(
+                messages=[ChatMessage.user("ping")],
+                model=test_model,
+                max_tokens=5,
+            )
+            return response.content is not None
+        except Exception:
+            return False
+
     def _build_messages(self, messages: list[ChatMessage]) -> list[dict[str, Any]]:
         """Convert ChatMessage list to Ollama message format.
 
@@ -349,7 +442,19 @@ class OllamaProvider(LLMProvider):
 
         tool_calls_delta: list[dict[str, Any]] = []
         if raw_tc := message.get("tool_calls"):
-            tool_calls_delta = raw_tc
+            for i, tc in enumerate(raw_tc):
+                if not isinstance(tc, dict):
+                    continue
+                normalized = dict(tc)
+                normalized.setdefault("index", i)
+                fn = normalized.get("function")
+                if isinstance(fn, dict):
+                    normalized_fn = dict(fn)
+                    args = normalized_fn.get("arguments")
+                    if isinstance(args, dict):
+                        normalized_fn["arguments"] = json.dumps(args, ensure_ascii=False)
+                    normalized["function"] = normalized_fn
+                tool_calls_delta.append(normalized)
 
         finish_reason = None
         if data.get("done"):

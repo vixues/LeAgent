@@ -36,6 +36,7 @@ class HealthCheckResult:
     status: str = "unknown"
     ttfb_ms: float = 0.0
     error_category: str | None = None
+    tested_model: str | None = None
 
 
 class ProviderRegistry:

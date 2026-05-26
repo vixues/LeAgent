@@ -115,6 +115,7 @@ export function useSetDefaultModel() {
     mutationFn: (data: DefaultModelConfig) => adminApi.defaultModel.set(data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: QUERY_KEYS.defaultModel });
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.usage });
     },
   });
 }
@@ -132,6 +133,7 @@ export function useModelUsageSummary(days = 30) {
     queryKey: [...QUERY_KEYS.usage, days],
     queryFn: () => adminApi.usage.summary(days),
     staleTime: 60 * 1000,
+    refetchInterval: 15 * 1000,
   });
 }
 
@@ -140,6 +142,7 @@ export function useProviderUsage(days = 30) {
     queryKey: [...QUERY_KEYS.usage, 'providers', days],
     queryFn: () => adminApi.usage.providers(days),
     staleTime: 60 * 1000,
+    refetchInterval: 15 * 1000,
   });
 }
 
@@ -148,6 +151,7 @@ export function useRequestLogs(days = 7, limit = 100) {
     queryKey: [...QUERY_KEYS.usage, 'requests', days, limit],
     queryFn: () => adminApi.usage.requests(days, limit),
     staleTime: 30 * 1000,
+    refetchInterval: 15 * 1000,
   });
 }
 

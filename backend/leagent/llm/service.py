@@ -19,6 +19,7 @@ from leagent.llm.base import (
     LLMResponse,
     MessageRole,
     StreamChunk,
+    TokenUsage,
     ToolCall,
     ToolDefinition,
 )
@@ -505,6 +506,10 @@ class LLMService:
             tier_config = self.router.get_tier_config(tier or "tier1")
             streaming_temp = temperature if temperature is not None else (tier_config.temperature if tier_config else 0.1)
             streaming_max = max_tokens if max_tokens is not None else (tier_config.max_tokens if tier_config else 4096)
+            started = time.perf_counter()
+            first_chunk_at: float | None = None
+            final_model = streaming_model
+            final_usage: TokenUsage | None = None
             async for chunk in provider_instance.stream(
                 messages=messages,
                 model=streaming_model,
@@ -514,8 +519,23 @@ class LLMService:
                 tool_choice=tool_choice,
                 **kwargs,
             ):
+                if first_chunk_at is None:
+                    first_chunk_at = time.perf_counter()
+                if chunk.model:
+                    final_model = chunk.model
+                if chunk.usage is not None:
+                    final_usage = chunk.usage
                 yield chunk
             self.registry.record_success(provider)
+            self._record_request_log(
+                LLMResponse(model=final_model, usage=final_usage or TokenUsage()),
+                provider=provider,
+                request_model=streaming_model,
+                model=final_model,
+                duration=time.perf_counter() - started,
+                is_streaming=True,
+                ttfb_ms=((first_chunk_at - started) * 1000) if first_chunk_at is not None else 0.0,
+            )
             return
 
         task_description = self._extract_task_description(messages)
@@ -532,9 +552,14 @@ class LLMService:
             yielded = False
             try:
                 provider_instance = self.registry.get_provider(provider_name)
+                request_model = self.router.resolve_model_alias(decision.model) or decision.model
+                started = time.perf_counter()
+                first_chunk_at = None
+                final_model = request_model
+                final_usage = None
                 async for chunk in provider_instance.stream(
                     messages=messages,
-                    model=self.router.resolve_model_alias(decision.model) or decision.model,
+                    model=request_model,
                     temperature=streaming_temp,
                     max_tokens=streaming_max,
                     tools=tools,
@@ -542,8 +567,23 @@ class LLMService:
                     **kwargs,
                 ):
                     yielded = True
+                    if first_chunk_at is None:
+                        first_chunk_at = time.perf_counter()
+                    if chunk.model:
+                        final_model = chunk.model
+                    if chunk.usage is not None:
+                        final_usage = chunk.usage
                     yield chunk
                 self.registry.record_success(provider_name)
+                self._record_request_log(
+                    LLMResponse(model=final_model, usage=final_usage or TokenUsage()),
+                    provider=provider_name,
+                    request_model=decision.model,
+                    model=final_model,
+                    duration=time.perf_counter() - started,
+                    is_streaming=True,
+                    ttfb_ms=((first_chunk_at - started) * 1000) if first_chunk_at is not None else 0.0,
+                )
                 return
             except Exception as exc:
                 classification = classify_llm_error(exc)

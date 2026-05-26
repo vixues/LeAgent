@@ -230,9 +230,9 @@ def _create_providers_config(providers_path: Path, non_interactive: bool) -> Non
                 "enabled": False,
                 "base_url": "http://localhost:11434",
                 "models": [
-                    {"name": "llama3.1:70b", "tier": "tier1", "context_window": 128000},
-                    {"name": "llama3.1:8b", "tier": "tier2", "context_window": 128000},
-                    {"name": "qwen2.5:7b", "tier": "tier3", "context_window": 32000},
+                    {"name": "llama3.2", "tier": "tier1", "context_window": 128000},
+                    {"name": "qwen2.5:7b", "tier": "tier2", "context_window": 32000},
+                    {"name": "llama3.1:8b", "tier": "tier3", "context_window": 128000},
                 ],
             },
         ],

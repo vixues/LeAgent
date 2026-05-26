@@ -509,8 +509,20 @@ def _make_llm_call_model(llm: "LLMService") -> CallModel:
                         fn = delta.get("function") or {}
                         if fname := fn.get("name"):
                             slot["name"] = fname
-                        if fargs := fn.get("arguments"):
-                            slot["arguments"] += fargs
+                        if "arguments" in fn:
+                            fargs = fn.get("arguments")
+                            if isinstance(fargs, str):
+                                current = slot.get("arguments")
+                                if isinstance(current, str):
+                                    slot["arguments"] = current + fargs
+                                elif isinstance(current, dict):
+                                    slot["arguments"] = json.dumps(current, ensure_ascii=False) + fargs
+                                else:
+                                    slot["arguments"] = fargs
+                            elif isinstance(fargs, dict):
+                                slot["arguments"] = fargs
+                            elif fargs is not None:
+                                slot["arguments"] = json.dumps(fargs, ensure_ascii=False)
 
                     for idx in sorted(pending_tool_calls.keys()):
                         slot = pending_tool_calls[idx]
@@ -558,6 +570,7 @@ def _make_llm_call_model(llm: "LLMService") -> CallModel:
                             tool_choice="auto" if tools else None,
                             temperature=temperature,
                             model_tier=model_tier,
+                            **stream_kw,
                         )
                     except Exception as fallback_exc:  # noqa: BLE001
                         logger.warning(

@@ -466,7 +466,7 @@ async def test_provider(
     """Test connectivity to a provider by sending a simple prompt."""
     result = await svc.test_provider(provider_name)
     pc = svc.get_provider(provider_name)
-    model = pc.models[0]["name"] if pc and pc.models else ""
+    model = result.tested_model or (pc.models[0]["name"] if pc and pc.models else "")
     return TestResult(
         provider_name=result.provider_name,
         model=model,

@@ -225,13 +225,61 @@ class TestOllamaStreamParsing:
             "message": {"role": "assistant", "content": "", "tool_calls": tc},
             "done": False,
         })
-        assert chunk.tool_calls_delta == tc
+        assert chunk.tool_calls_delta[0]["index"] == 0
+        assert chunk.tool_calls_delta[0]["function"]["name"] == "echo"
+        assert json.loads(chunk.tool_calls_delta[0]["function"]["arguments"]) == {"text": "hi"}
+
+    def test_tool_calls_delta_indexes_multiple_calls(self) -> None:
+        p = OllamaProvider()
+        chunk = self._parse(p, {
+            "model": "llama3.2",
+            "message": {
+                "role": "assistant",
+                "content": "",
+                "tool_calls": [
+                    {"function": {"name": "first", "arguments": {"a": 1}}},
+                    {"function": {"name": "second", "arguments": {"b": 2}}},
+                ],
+            },
+            "done": False,
+        })
+        assert [tc["index"] for tc in chunk.tool_calls_delta] == [0, 1]
 
     def test_empty_message(self) -> None:
         p = OllamaProvider()
         chunk = self._parse(p, {"model": "llama3.2", "message": {}, "done": False})
         assert chunk.content == ""
         assert chunk.tool_calls_delta == []
+
+
+# ---------------------------------------------------------------------------
+# Model resolution for connectivity tests
+# ---------------------------------------------------------------------------
+
+class TestOllamaModelResolution:
+    def test_pick_prefers_installed_match_over_missing_preferred(self) -> None:
+        installed = ["llama3.2:latest", "qwen2.5:7b", "nomic-embed-text"]
+        picked = OllamaProvider.pick_test_model(
+            installed,
+            preferred="llama3.1:70b",
+            configured=["llama3.1:70b", "llama3.2"],
+            default_model="llama3.1:70b",
+        )
+        assert picked == "llama3.2:latest"
+
+    def test_pick_matches_tagless_config_to_tagged_install(self) -> None:
+        installed = ["qwen2.5:7b"]
+        assert (
+            OllamaProvider.pick_test_model(installed, preferred="qwen2.5:7b")
+            == "qwen2.5:7b"
+        )
+
+    def test_pick_skips_embedding_models_when_chat_available(self) -> None:
+        installed = ["nomic-embed-text", "llama3.2"]
+        assert OllamaProvider.pick_test_model(installed) == "llama3.2"
+
+    def test_pick_returns_none_when_no_models(self) -> None:
+        assert OllamaProvider.pick_test_model([]) is None
 
 
 # ---------------------------------------------------------------------------

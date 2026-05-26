@@ -874,12 +874,47 @@ class ProviderConfigService:
             or (pc.models[0]["name"] if pc.models else getattr(info.provider, "default_model", ""))
             or info.provider._get_default_model()
         )
+        start = time.perf_counter()
+        if pc.type == "ollama":
+            from leagent.llm.providers.ollama import OllamaProvider
+
+            if isinstance(info.provider, OllamaProvider):
+                try:
+                    test_model = await info.provider.resolve_test_model(
+                        preferred=test_model or None,
+                        configured=[str(m.get("name") or "") for m in pc.models],
+                    )
+                except Exception as exc:
+                    latency = (time.perf_counter() - start) * 1000
+                    detail = str(exc) or repr(exc)
+                    classification = classify_llm_error(exc)
+                    info.is_healthy = False
+                    info.last_health_check = time.time()
+                    if classification.counts_against_provider:
+                        info.circuit_breaker.record_failure(detail)
+                    installed = []
+                    try:
+                        installed = await info.provider.get_installed_model_names()
+                    except Exception:
+                        pass
+                    if installed:
+                        detail = (
+                            f"{detail}. Locally installed: {', '.join(sorted(installed)[:8])}"
+                            + (" …" if len(installed) > 8 else "")
+                        )
+                    return HealthCheckResult(
+                        provider_name=name,
+                        is_healthy=False,
+                        latency_ms=latency,
+                        error=f"{type(exc).__name__}: {detail}",
+                        status="failed",
+                        error_category=classification.category.value,
+                    )
         prompt = str(test_config.get("test_prompt") or "Who are you?")
         timeout_secs = float(test_config.get("timeout_secs") or min(max(pc.timeout, 1), 90))
         degraded_threshold_ms = float(test_config.get("degraded_threshold_ms") or 6000)
         max_retries = int(test_config.get("max_retries") or 0)
 
-        start = time.perf_counter()
         attempt = 0
         try:
             from leagent.llm.base import ChatMessage
@@ -911,6 +946,7 @@ class ProviderConfigService:
                         latency_ms=latency,
                         ttfb_ms=ttfb,
                         status=status,
+                        tested_model=test_model,
                     )
                 except asyncio.TimeoutError as exc:
                     attempt += 1
