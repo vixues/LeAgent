@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.3] - 2026-05-27
+
+Patch release: tolerant **custom / vLLM** OpenAI-compatible providers, YAML-first model routing, and fixes for tool calls emitted as JSON in assistant content.
+
+### Added
+
+- **`CustomOpenAIProvider`** (`backend/leagent/llm/providers/custom.py`) — Normalizes dict `function.arguments`, converts `{"name","arguments"}` content payloads into structured tool calls, and rewrites synthetic `call_content_*` history for loose gateways.
+- **Model catalog & provider YAML** — Centralized model metadata, tier routing from `providers.yaml`, and admin UI improvements for provider/model selection.
+
+### Fixed
+
+- **Custom model tool loop** — Suppress duplicate JSON tool output when structured `tool_calls` and content JSON arrive together; avoid re-emitting tool-call JSON in assistant history that caused repeated invocations.
+- **Custom gateway 400** — Prevent `can only concatenate str (not "dict") to str` on follow-up turns after tool results by stringifying message fields and normalizing tool history.
+- **vLLM** — Inherits custom tolerant parsing; optional `tool_choice=auto` gated behind `enable_auto_tool_choice`.
+
 ## [1.1.2] - 2026-05-26
 
 Patch release: task manager lifecycle stability for SQLite-backed tests and local deployments.
@@ -1227,7 +1242,8 @@ _Subsections below keep `— YYYY-MM-DD` on each heading for maintainers (commit
 - **Minor (0.X.0)**: New features, backward compatible
 - **Patch (0.0.X)**: Bug fixes, security patches
 
-[Unreleased]: https://github.com/vixues/LeAgent/compare/v1.1.2...HEAD
+[Unreleased]: https://github.com/vixues/LeAgent/compare/v1.1.3...HEAD
+[1.1.3]: https://github.com/vixues/LeAgent/releases/tag/v1.1.3
 [1.1.2]: https://github.com/vixues/LeAgent/releases/tag/v1.1.2
 [1.1.1]: https://github.com/vixues/LeAgent/releases/tag/v1.1.1
 [1.1.0]: https://github.com/vixues/LeAgent/releases/tag/v1.1.0

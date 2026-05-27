@@ -76,7 +76,7 @@ cd desktop/scripts
 .\build-win.ps1
 ```
 
-Produces `desktop/electron/dist-pack/LeAgent-Setup-1.1.2.exe` (default version; override with `-Version`).
+Produces `desktop/electron/dist-pack/LeAgent-Setup-1.1.3.exe` (default version; override with `-Version`).
 
 Flags: `-SkipRuntime`, `-SkipBackendPayload`, `-SkipFrontend`, `-SkipCompileall`.
 
@@ -87,7 +87,7 @@ cd desktop/scripts
 ./build-mac.sh
 ```
 
-Produces `desktop/electron/dist-pack/LeAgent-1.1.2.dmg` (+ `.zip`).
+Produces `desktop/electron/dist-pack/LeAgent-1.1.3.dmg` (+ `.zip`).
 
 Flags: `--arch arm64`, `--skip-runtime`, `--skip-backend`, `--skip-frontend`.
 
@@ -101,7 +101,7 @@ cd desktop/scripts
 ./build-linux.sh
 ```
 
-Produces `desktop/electron/dist-pack/LeAgent-1.1.2.AppImage` and `leagent-desktop_1.1.2_amd64.deb`.
+Produces `desktop/electron/dist-pack/LeAgent-1.1.3.AppImage` and `leagent-desktop_1.1.3_amd64.deb`.
 
 Flags: `--target appimage`, `--target deb`, `--skip-runtime`, `--skip-backend`, `--skip-frontend`.
 

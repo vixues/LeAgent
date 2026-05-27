@@ -457,7 +457,7 @@ class Settings(BaseSettings):
     )
 
     app_name: str = "LeAgent"
-    version: str = "1.1.2"
+    version: str = "1.1.3"
     environment: Literal["development", "staging", "production"] = "development"
     debug: bool = True
     log_level: str = "INFO"
