@@ -395,6 +395,27 @@ check_prerequisites() {
     fi
 }
 
+# ── Dependency fingerprint helpers (avoid mtime false positives) ─
+_file_sha256() {
+    local f="$1"
+    if command -v sha256sum >/dev/null 2>&1; then
+        sha256sum "$f" | awk '{print $1}'
+    elif command -v shasum >/dev/null 2>&1; then
+        shasum -a 256 "$f" | awk '{print $1}'
+    else
+        fail "sha256sum or shasum required for dependency fingerprinting"
+    fi
+}
+
+_read_marker() {
+    local marker="$1"
+    [ -f "$marker" ] && tr -d '\n\r' < "$marker" || true
+}
+
+_write_marker() {
+    printf '%s' "$2" > "$1"
+}
+
 # ── Python environment ──────────────────────────────────────────
 run_backend_uv_sync() {
     local args=() e
@@ -409,18 +430,19 @@ ensure_backend_sync() {
         || fail "backend/uv.lock is missing ── run 'uv lock' in backend/"
 
     local marker="$BACKEND_DIR/.uv_sync_marker"
-    local pyproject="$BACKEND_DIR/pyproject.toml"
     local lockfile="$BACKEND_DIR/uv.lock"
+    local lock_hash venv_python
+    lock_hash="$(_file_sha256 "$lockfile")"
+    venv_python="$UV_PROJECT_ENVIRONMENT/bin/python"
 
     if [ "${FORCE_UV_SYNC:-0}" = "1" ] \
-        || [ ! -f "$marker" ] \
-        || [ "$pyproject" -nt "$marker" ] \
-        || [ "$lockfile" -nt "$marker" ]; then
+        || [ ! -x "$venv_python" ] \
+        || [ "$(_read_marker "$marker")" != "$lock_hash" ]; then
         step "Syncing Python environment"
         info "extras: ${UV_SYNC_EXTRAS}"
         local t; t="$(date +%s)"
         run_backend_uv_sync
-        touch "$marker"
+        _write_marker "$marker" "$lock_hash"
         success "Python environment ready ($(_elapsed "$t"))"
     fi
 }
@@ -466,11 +488,26 @@ run_database_migrations() {
 # ── Frontend dependencies + build ──────────────────────────────
 install_frontend_deps() {
     local frontend_dir="$SCRIPT_DIR/frontend"
-    if [ ! -d "$frontend_dir/node_modules" ] \
-        || [ "$frontend_dir/package.json" -nt "$frontend_dir/node_modules" ]; then
+    local lockfile="$frontend_dir/package-lock.json"
+    local marker="$frontend_dir/.npm_install_marker"
+    [ -f "$lockfile" ] \
+        || fail "frontend/package-lock.json is missing ── run 'npm install' in frontend/"
+
+    local lock_hash need_install=0
+    lock_hash="$(_file_sha256 "$lockfile")"
+    if [ ! -d "$frontend_dir/node_modules" ]; then
+        need_install=1
+    elif [ "$(_read_marker "$marker")" != "$lock_hash" ]; then
+        need_install=1
+    fi
+
+    if [ "$need_install" = "1" ]; then
         step "Installing frontend dependencies"
         local t; t="$(date +%s)"
-        (cd "$frontend_dir" && PATH="$(dirname "$NODE_BIN"):$PATH" "$NPM_BIN" install --silent)
+        if ! (cd "$frontend_dir" && PATH="$(dirname "$NODE_BIN"):$PATH" "$NPM_BIN" ci --silent 2>/dev/null); then
+            (cd "$frontend_dir" && PATH="$(dirname "$NODE_BIN"):$PATH" "$NPM_BIN" install --silent)
+        fi
+        _write_marker "$marker" "$lock_hash"
         success "Frontend dependencies ready ($(_elapsed "$t"))"
     fi
 }
@@ -696,7 +733,7 @@ case "$COMMAND" in
         step "Locking and syncing Python environment"
         uv lock --directory "$BACKEND_DIR"
         run_backend_uv_sync
-        touch "$BACKEND_DIR/.uv_sync_marker"
+        _write_marker "$BACKEND_DIR/.uv_sync_marker" "$(_file_sha256 "$BACKEND_DIR/uv.lock")"
         ensure_playwright_browsers
         success "Python environment ready"
         ;;

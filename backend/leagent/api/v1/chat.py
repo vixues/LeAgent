@@ -1353,6 +1353,14 @@ async def chat_stream_endpoint(
                 uid = user_id
                 utext = message
                 atext = response_content or ""
+                title_model_provider = selected_model_provider
+                title_model_name = selected_model_name
+                logger.debug(
+                    "chat auto-title scheduled session=%s provider=%s model=%s",
+                    sid,
+                    title_model_provider,
+                    title_model_name,
+                )
 
                 async def _auto_title_background() -> None:
                     try:
@@ -1365,6 +1373,8 @@ async def chat_stream_endpoint(
                                 user_text=utext,
                                 assistant_text=atext,
                                 require_assistant_message=require_assistant_message,
+                                model_provider=title_model_provider,
+                                model_name=title_model_name,
                             ),
                             timeout=20.0,
                         )
@@ -1376,9 +1386,6 @@ async def chat_stream_endpoint(
                 asyncio.create_task(_auto_title_background())
             except Exception:
                 logger.debug("chat auto-title schedule skipped", exc_info=True)
-
-        if not has_tool_replies and stream_user_message_id is not None:
-            schedule_auto_title(require_assistant_message=False)
 
         # Per-request reasoning effort from frontend ModelSelector.
         _effort_token = None

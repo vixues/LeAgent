@@ -21,6 +21,9 @@ Patch release: tolerant **custom / vLLM** OpenAI-compatible providers, YAML-firs
 - **Custom model tool loop** — Suppress duplicate JSON tool output when structured `tool_calls` and content JSON arrive together; avoid re-emitting tool-call JSON in assistant history that caused repeated invocations.
 - **Custom gateway 400** — Prevent `can only concatenate str (not "dict") to str` on follow-up turns after tool results by stringifying message fields and normalizing tool history.
 - **vLLM** — Inherits custom tolerant parsing; optional `tool_choice=auto` gated behind `enable_auto_tool_choice`.
+- **Chat auto-title** — Title generation uses the same provider/model as the chat stream, disables DeepSeek thinking/reasoning overrides for title calls, retries after empty or retryable failures (no permanent `attempted` gate), and schedules only after the assistant message is persisted.
+- **Agent tool calls** — Restore `known_tool_names` filtering when extracting tool calls from assistant content JSON.
+- **Dev startup** — `start.sh` / `start.ps1` sync/install only when `uv.lock` / `package-lock.json` SHA256 changes (not on every file mtime touch); prefer `npm ci` with `npm install` fallback.
 
 ## [1.1.2] - 2026-05-26
 

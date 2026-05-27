@@ -27,6 +27,7 @@ MANIFEST
 .env
 .venv
 .uv_sync_marker
+.npm_install_marker
 # Anchor — unanchored `env/` ignores e.g. frontend/src/env
 /env/
 /venv/

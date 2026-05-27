@@ -378,6 +378,20 @@ function Test-Prerequisites {
     }
 }
 
+function Get-FileSha256([string] $Path) {
+    if (-not (Test-Path $Path)) { return '' }
+    return (Get-FileHash -Path $Path -Algorithm SHA256).Hash.ToLowerInvariant()
+}
+
+function Read-DepMarker([string] $MarkerPath) {
+    if (-not (Test-Path $MarkerPath)) { return '' }
+    return (Get-Content -Path $MarkerPath -Raw -ErrorAction SilentlyContinue).Trim()
+}
+
+function Write-DepMarker([string] $MarkerPath, [string] $Value) {
+    Set-Content -Path $MarkerPath -Value $Value -NoNewline -Encoding UTF8
+}
+
 function Invoke-BackendUvSync {
     $uv = Get-UvExe
     if (-not $uv) { Fail 'uv not found' }
@@ -396,18 +410,18 @@ function Ensure-BackendSync {
         Fail "backend/uv.lock is missing — run 'uv lock' in backend/"
     }
     $marker = Join-Path $BackendDir '.uv_sync_marker'
-    $pyproject = Join-Path $BackendDir 'pyproject.toml'
-    $need = $ForceUvSync -or -not (Test-Path $marker)
-    if (-not $need -and (Test-Path $marker)) {
-        if ((Get-Item $pyproject).LastWriteTimeUtc -gt (Get-Item $marker).LastWriteTimeUtc) { $need = $true }
-        if ((Get-Item $lock).LastWriteTimeUtc -gt (Get-Item $marker).LastWriteTimeUtc) { $need = $true }
+    $lockHash = Get-FileSha256 $lock
+    $venvPy = Join-Path $env:UV_PROJECT_ENVIRONMENT 'Scripts\python.exe'
+    if (-not (Test-Path $venvPy)) {
+        $venvPy = Join-Path $env:UV_PROJECT_ENVIRONMENT 'bin\python'
     }
+    $need = $ForceUvSync -or -not (Test-Path $venvPy) -or ((Read-DepMarker $marker) -ne $lockHash)
     if ($need) {
         Step 'Syncing Python environment'
         Info "extras: $UvSyncExtras"
         $t0 = Get-Date
         Invoke-BackendUvSync
-        New-Item -ItemType File -Path $marker -Force | Out-Null
+        Write-DepMarker $marker $lockHash
         Success "Python environment ready ($(Get-ElapsedSeconds $t0))"
     }
 }
@@ -454,20 +468,27 @@ function Invoke-DatabaseMigrations {
 function Install-FrontendDeps {
     $frontendDir = Join-Path $ScriptDir 'frontend'
     $nm = Join-Path $frontendDir 'node_modules'
-    $pj = Join-Path $frontendDir 'package.json'
-    $run = $false
-    if (-not (Test-Path $nm)) { $run = $true }
-    elseif ((Get-Item $pj).LastWriteTimeUtc -gt (Get-Item $nm).LastWriteTimeUtc) { $run = $true }
+    $lock = Join-Path $frontendDir 'package-lock.json'
+    $marker = Join-Path $frontendDir '.npm_install_marker'
+    if (-not (Test-Path $lock)) {
+        Fail 'frontend/package-lock.json is missing — run npm install in frontend/'
+    }
+    $lockHash = Get-FileSha256 $lock
+    $run = (-not (Test-Path $nm)) -or ((Read-DepMarker $marker) -ne $lockHash)
     if ($run) {
         Step 'Installing frontend dependencies'
         $t0 = Get-Date
         Push-Location $frontendDir
         try {
             $env:PATH = "$(Split-Path $script:NODE_BIN -Parent);$env:PATH"
-            & $script:NPM_BIN install --silent
-            if ($LASTEXITCODE -ne 0) { Fail 'npm install failed' }
+            & $script:NPM_BIN ci --silent 2>$null
+            if ($LASTEXITCODE -ne 0) {
+                & $script:NPM_BIN install --silent
+                if ($LASTEXITCODE -ne 0) { Fail 'npm install failed' }
+            }
         }
         finally { Pop-Location }
+        Write-DepMarker $marker $lockHash
         Success "Frontend dependencies ready ($(Get-ElapsedSeconds $t0))"
     }
 }
@@ -789,7 +810,7 @@ switch ($Command) {
         & $uv lock --directory $BackendDir
         if ($LASTEXITCODE -ne 0) { Fail 'uv lock failed' }
         Invoke-BackendUvSync
-        New-Item -ItemType File -Path (Join-Path $BackendDir '.uv_sync_marker') -Force | Out-Null
+        Write-DepMarker (Join-Path $BackendDir '.uv_sync_marker') (Get-FileSha256 (Join-Path $BackendDir 'uv.lock'))
         Ensure-PlaywrightBrowsers
         Success 'Python environment ready'
     }
