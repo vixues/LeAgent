@@ -552,7 +552,8 @@ def _try_extract_content_tool_calls(
         if not isinstance(name_raw, str) or not name_raw.strip():
             continue
         name = name_raw.strip()
-        if known_tool_names and name not in known_tool_names:
+        extra_keys = set(obj.keys()) - {"name", "arguments"}
+        if extra_keys or "arguments" not in obj:
             continue
         args_raw = obj.get("arguments", {})
         if isinstance(args_raw, str):

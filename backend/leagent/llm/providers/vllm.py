@@ -1,15 +1,14 @@
 """vLLM LLM provider.
 
-vLLM exposes an OpenAI-compatible server, so most of the work is handled by
-:class:`OpenAIProvider`. This subclass adds:
+vLLM exposes an OpenAI-compatible server. This subclass extends
+:class:`CustomOpenAIProvider` (tolerant tool-call parsing) and adds:
 
-- ``structured_outputs`` extra body parameter for vLLM's constrained decoding
-  (``choice``, ``regex``, ``json``, ``grammar``, ``structural_tag``).
+- ``structured_outputs`` extra body parameter for vLLM constrained decoding.
 - Model auto-detection via ``/v1/models``.
-- Default base URL and model handling for self-hosted deployments.
+- Optional ``tool_choice="auto"`` gated behind ``enable_auto_tool_choice``.
+- Diagnostic logging for common vLLM 400 errors (tool-choice, message shape).
 
-The ``name`` attribute stays ``"vllm"`` so the registry can route by
-provider type.
+The ``name`` attribute stays ``"vllm"`` so the registry can route by provider type.
 """
 
 from __future__ import annotations
@@ -19,18 +18,13 @@ from collections.abc import AsyncIterator
 from typing import Any, Literal
 
 from leagent.llm.base import ChatMessage, LLMResponse, StreamChunk, ToolDefinition
-
 from leagent.llm.providers.custom import CustomOpenAIProvider
 
 logger = logging.getLogger(__name__)
 
 
 class VLLMProvider(CustomOpenAIProvider):
-    """OpenAI-compatible provider for vLLM self-hosted model serving.
-
-    Supports all OpenAI-compatible features plus vLLM-specific structured
-    output via the ``structured_outputs`` extra body parameter.
-    """
+    """OpenAI-compatible provider for vLLM self-hosted model serving."""
 
     name = "vllm"
     supports_streaming = True
@@ -49,6 +43,7 @@ class VLLMProvider(CustomOpenAIProvider):
         max_retries: int = 2,
         *,
         enable_auto_tool_choice: bool = False,
+        parse_think_tags: bool = True,
     ) -> None:
         super().__init__(
             api_key=api_key,
@@ -56,10 +51,39 @@ class VLLMProvider(CustomOpenAIProvider):
             default_model=default_model,
             timeout=timeout,
             max_retries=max_retries,
+            parse_think_tags=parse_think_tags,
         )
-        # When True, send tool_choice="auto" (requires vLLM started with
-        # --enable-auto-tool-choice and --tool-call-parser).
         self.enable_auto_tool_choice = enable_auto_tool_choice
+        self._detected_model: str | None = None
+
+    # ------------------------------------------------------------------
+    # Request options
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _split_vllm_request_options(
+        kwargs: dict[str, Any],
+        *,
+        default_enable_auto_tool_choice: bool,
+    ) -> tuple[dict[str, Any], Any | None, bool]:
+        """Pop vLLM-only kwargs before delegating to :class:`CustomOpenAIProvider`."""
+        merged = dict(kwargs)
+        structured_outputs = merged.pop("structured_outputs", None)
+        enable_auto = merged.pop(
+            "enable_auto_tool_choice",
+            default_enable_auto_tool_choice,
+        )
+        return merged, structured_outputs, bool(enable_auto)
+
+    def _resolve_tool_choice(
+        self,
+        tool_choice: Literal["auto", "none", "required"] | str | None,
+        *,
+        enable_auto_tool_choice: bool,
+    ) -> Literal["auto", "none", "required"] | str | None:
+        if not enable_auto_tool_choice and tool_choice == "auto":
+            return None
+        return tool_choice
 
     # ------------------------------------------------------------------
     # Request body construction
@@ -77,23 +101,27 @@ class VLLMProvider(CustomOpenAIProvider):
         stream: bool = False,
         **kwargs: Any,
     ) -> dict[str, Any]:
-        # Extract vLLM-specific structured_outputs before passing to super
-        structured_outputs = kwargs.pop("structured_outputs", None)
-
-        enable_auto = kwargs.pop(
-            "enable_auto_tool_choice",
-            self.enable_auto_tool_choice,
+        merged, structured_outputs, enable_auto = self._split_vllm_request_options(
+            kwargs,
+            default_enable_auto_tool_choice=self.enable_auto_tool_choice,
         )
-        if not enable_auto and tool_choice == "auto":
-            # vLLM returns 400 unless the server was started with
-            # --enable-auto-tool-choice and --tool-call-parser.
-            tool_choice = None
+        resolved_tool_choice = self._resolve_tool_choice(
+            tool_choice,
+            enable_auto_tool_choice=enable_auto,
+        )
 
         body = super()._build_request_body(
-            messages, model, temperature, max_tokens, tools, tool_choice, stop, stream, **kwargs
+            messages,
+            model,
+            temperature,
+            max_tokens,
+            tools,
+            resolved_tool_choice,
+            stop,
+            stream,
+            **merged,
         )
 
-        # Inject vLLM structured outputs as extra body parameter
         if structured_outputs:
             body["structured_outputs"] = structured_outputs
 
@@ -104,28 +132,19 @@ class VLLMProvider(CustomOpenAIProvider):
     # ------------------------------------------------------------------
 
     def _needs_model_resolution(self, model: str | None) -> bool:
-        """True when the caller-supplied model is blank or a placeholder."""
         if not model:
             return True
         return model == "default" and not self.default_model
 
     async def _resolve_model_for_request(self, requested_model: str | None) -> str:
-        """Resolve a blank/placeholder model against the running vLLM server."""
         if not self._needs_model_resolution(requested_model):
             return requested_model  # type: ignore[return-value]
 
         detected = await self.detect_model()
         return detected or requested_model or "default"
 
-    _detected_model: str | None = None
-
     async def detect_model(self) -> str | None:
-        """Auto-detect the served model via ``/v1/models``.
-
-        Returns the first model ID or None if detection fails.
-        Caches the result in ``_detected_model`` so subsequent calls
-        do not hit the server again.
-        """
+        """Auto-detect the served model via ``/v1/models`` (cached)."""
         if self._detected_model:
             return self._detected_model
 
@@ -152,7 +171,6 @@ class VLLMProvider(CustomOpenAIProvider):
         preferred: str | None = None,
         configured: list[str] | None = None,
     ) -> str:
-        """Pick a model for health checks, preferring config then discovery."""
         for candidate in [preferred, *(configured or [])]:
             value = (candidate or "").strip()
             if value:
@@ -162,23 +180,92 @@ class VLLMProvider(CustomOpenAIProvider):
     def _get_default_model(self) -> str:
         return self.default_model or "default"
 
+    # ------------------------------------------------------------------
+    # Completion entry points
+    # ------------------------------------------------------------------
+
     async def complete(
         self,
         messages: list[ChatMessage],
         *,
         model: str,
+        temperature: float = 0.1,
+        max_tokens: int = 4096,
+        tools: list[ToolDefinition] | None = None,
+        tool_choice: Literal["auto", "none", "required"] | str | None = None,
+        stop: list[str] | None = None,
         **kwargs: Any,
     ) -> LLMResponse:
         resolved = await self._resolve_model_for_request(model)
-        return await super().complete(messages=messages, model=resolved, **kwargs)
+        return await super().complete(
+            messages,
+            model=resolved,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            tools=tools,
+            tool_choice=tool_choice,
+            stop=stop,
+            **kwargs,
+        )
 
     async def stream(
         self,
         messages: list[ChatMessage],
         *,
         model: str,
+        temperature: float = 0.1,
+        max_tokens: int = 4096,
+        tools: list[ToolDefinition] | None = None,
+        tool_choice: Literal["auto", "none", "required"] | str | None = None,
+        stop: list[str] | None = None,
         **kwargs: Any,
     ) -> AsyncIterator[StreamChunk]:
         resolved = await self._resolve_model_for_request(model)
-        async for chunk in super().stream(messages=messages, model=resolved, **kwargs):
+        async for chunk in super().stream(
+            messages=messages,
+            model=resolved,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            tools=tools,
+            tool_choice=tool_choice,
+            stop=stop,
+            **kwargs,
+        ):
             yield chunk
+
+    # ------------------------------------------------------------------
+    # Error handling
+    # ------------------------------------------------------------------
+
+    def _handle_error(
+        self,
+        status_code: int,
+        response_body: dict[str, Any] | str,
+        model: str,
+    ) -> None:
+        if status_code == 400:
+            error_msg = ""
+            if isinstance(response_body, dict):
+                error_obj = response_body.get("error", {})
+                if isinstance(error_obj, dict):
+                    error_msg = str(error_obj.get("message", ""))
+                else:
+                    error_msg = str(response_body)
+            else:
+                error_msg = str(response_body)
+            lowered = error_msg.lower()
+            if "tool" in lowered and ("choice" in lowered or "auto" in lowered):
+                logger.error(
+                    "vllm_tool_choice_error",
+                    extra={
+                        "model": model,
+                        "enable_auto_tool_choice": self.enable_auto_tool_choice,
+                        "hint": (
+                            "vLLM rejected tool_choice. Start the server with "
+                            "--enable-auto-tool-choice and --tool-call-parser, "
+                            "or set metadata.enable_auto_tool_choice=false and omit "
+                            "tool_choice='auto'."
+                        ),
+                    },
+                )
+        super()._handle_error(status_code, response_body, model)

@@ -7,10 +7,15 @@ registry wiring).
 
 from __future__ import annotations
 
+import json
+import logging
+
 import pytest
 
-from leagent.llm.base import ChatMessage, ToolDefinition
+from leagent.exceptions.llm import LLMServiceError
+from leagent.llm.base import ChatMessage, StreamChunk, ToolCall, ToolDefinition
 from leagent.llm.providers.custom import CustomOpenAIProvider
+from leagent.llm.providers.openai import OpenAIProvider
 from leagent.llm.providers.vllm import VLLMProvider
 
 
@@ -42,6 +47,118 @@ class TestVLLMProviderDefaults:
         assert p.default_model == "meta-llama/Meta-Llama-3-8B-Instruct"
         assert p.api_key == "custom-key"
         assert p.timeout == 60.0
+
+
+# ---------------------------------------------------------------------------
+# Stream parsing (inherited from CustomOpenAIProvider)
+# ---------------------------------------------------------------------------
+
+class TestVLLMStreamParsing:
+    def test_stream_chunk_normalizes_dict_tool_arguments(self) -> None:
+        p = VLLMProvider(default_model="llama3")
+        chunk = p._parse_stream_chunk(
+            {
+                "model": "llama3",
+                "choices": [{
+                    "delta": {
+                        "tool_calls": [{
+                            "index": 0,
+                            "id": "call_1",
+                            "type": "function",
+                            "function": {
+                                "name": "echo",
+                                "arguments": {"text": "ping"},
+                            },
+                        }],
+                    },
+                    "finish_reason": None,
+                }],
+            },
+            "llama3",
+        )
+        args = chunk.tool_calls_delta[0]["function"]["arguments"]
+        assert isinstance(args, str)
+        assert json.loads(args) == {"text": "ping"}
+
+    @pytest.mark.asyncio
+    async def test_content_json_tool_call_via_custom_buffer(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        p = VLLMProvider(default_model="llama3")
+        payload = json.dumps(
+            {"name": "echo", "arguments": {"text": "hi"}},
+            ensure_ascii=False,
+        )
+
+        async def fake_openai_stream(*_args, **_kwargs):
+            yield StreamChunk(content=payload, finish_reason="stop", model="llama3")
+
+        monkeypatch.setattr(OpenAIProvider, "stream", fake_openai_stream)
+
+        chunks = [
+            chunk
+            async for chunk in p.stream(
+                messages=[ChatMessage.user("say hi")],
+                model="llama3",
+            )
+        ]
+        assert [c for c in chunks if c.tool_calls_delta]
+        assert chunks[0].tool_calls_delta[0]["function"]["name"] == "echo"
+
+    def test_call_content_history_rewritten_for_vllm(self) -> None:
+        p = VLLMProvider(default_model="llama3")
+        body = p._build_request_body(
+            messages=[
+                ChatMessage.user("run"),
+                ChatMessage.assistant(
+                    tool_calls=[
+                        ToolCall(
+                            id="call_content_0",
+                            name="echo",
+                            arguments=json.dumps({"text": "x"}),
+                        )
+                    ],
+                ),
+                ChatMessage.tool('{"ok": true}', "call_content_0"),
+            ],
+            model="llama3",
+            temperature=0.1,
+            max_tokens=512,
+            tools=None,
+            tool_choice=None,
+            stop=None,
+        )
+        assert "tool_calls" not in body["messages"][1]
+        assert body["messages"][2]["role"] == "user"
+
+
+class TestVLLMErrorHandling:
+    def test_handle_error_logs_tool_choice_hint(self, caplog: pytest.LogCaptureFixture) -> None:
+        p = VLLMProvider(default_model="llama3", enable_auto_tool_choice=False)
+        with caplog.at_level(logging.ERROR):
+            with pytest.raises(LLMServiceError, match="tool_choice"):
+                p._handle_error(
+                    400,
+                    {"error": {"message": "tool_choice auto is not supported"}},
+                    "llama3",
+                )
+        assert "vllm_tool_choice_error" in caplog.text
+
+
+class TestVLLMRequestOptions:
+    def test_split_vllm_request_options(self) -> None:
+        merged, structured, enable_auto = VLLMProvider._split_vllm_request_options(
+            {
+                "structured_outputs": {"choice": ["a"]},
+                "enable_auto_tool_choice": True,
+                "extra": 1,
+            },
+            default_enable_auto_tool_choice=False,
+        )
+        assert merged == {"extra": 1}
+        assert structured == {"choice": ["a"]}
+        assert enable_auto is True
 
 
 # ---------------------------------------------------------------------------
