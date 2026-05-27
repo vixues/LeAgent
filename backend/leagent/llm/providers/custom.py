@@ -91,6 +91,13 @@ def _looks_like_content_tool_call_prefix(
     return len(text) < 80
 
 
+def _is_embedded_tool_call_content(content: str) -> bool:
+    """True when *content* is only a ``{name, arguments}`` tool-call payload."""
+    if not (content or "").strip():
+        return False
+    return _content_tool_call_delta_from_text(content, known_tool_names=set()) is not None
+
+
 def _content_tool_call_delta_from_text(
     content: str,
     *,
@@ -155,6 +162,23 @@ def _flush_pending_content_tool_call(
     )
 
 
+def _sanitize_stream_chunk(chunk: StreamChunk) -> StreamChunk:
+    """Drop duplicate tool-call JSON from ``content`` when structured deltas exist."""
+    content = chunk.content or ""
+    if not content:
+        return chunk
+    if chunk.tool_calls_delta and _is_embedded_tool_call_content(content):
+        return StreamChunk(
+            content="",
+            tool_calls_delta=chunk.tool_calls_delta,
+            finish_reason=chunk.finish_reason,
+            model=chunk.model,
+            raw_delta=chunk.raw_delta,
+            usage=chunk.usage,
+        )
+    return chunk
+
+
 def _tool_call_from_content_delta(delta: dict[str, Any]) -> ToolCall:
     fn = delta.get("function") or {}
     return ToolCall(
@@ -214,10 +238,10 @@ def _normalize_custom_request_messages(
                     next_tool_calls.append(tc)
 
             if synthetic_payloads:
-                prior = item.get("content")
-                item["content"] = "\n\n".join(
-                    part for part in [prior, *synthetic_payloads] if part
-                )
+                # Do not echo tool-call JSON into assistant content — gateways that
+                # cannot consume tool_calls still get the following tool-result row.
+                if not (item.get("content") or "").strip():
+                    item["content"] = None
                 item.pop("tool_calls", None)
             elif next_tool_calls:
                 item["tool_calls"] = next_tool_calls
@@ -248,10 +272,60 @@ class _ContentToolCallBuffer:
     def __init__(self, known_tool_names: set[str]) -> None:
         self._known_tool_names = known_tool_names
         self._pending = ""
+        self._content_tool_call_emitted = False
+
+    def _mark_tool_call_emitted(self) -> None:
+        self._content_tool_call_emitted = True
+
+    def _append_tool_delta(
+        self,
+        out: list[StreamChunk],
+        delta: dict[str, Any],
+        *,
+        chunk: StreamChunk,
+        default_model: str,
+    ) -> None:
+        self._mark_tool_call_emitted()
+        out.append(StreamChunk(
+            tool_calls_delta=[delta],
+            finish_reason=chunk.finish_reason,
+            model=chunk.model or default_model,
+            usage=chunk.usage,
+        ))
 
     def ingest(self, chunk: StreamChunk, *, default_model: str) -> list[StreamChunk]:
+        chunk = _sanitize_stream_chunk(chunk)
+        if chunk.tool_calls_delta:
+            self._mark_tool_call_emitted()
+
         out: list[StreamChunk] = []
         content = chunk.content or ""
+
+        if content and _is_embedded_tool_call_content(content):
+            if self._content_tool_call_emitted or chunk.tool_calls_delta:
+                if (
+                    chunk.tool_calls_delta
+                    or chunk.finish_reason
+                    or chunk.usage
+                    or chunk.raw_delta
+                ):
+                    out.append(StreamChunk(
+                        content="",
+                        tool_calls_delta=list(chunk.tool_calls_delta or []),
+                        finish_reason=chunk.finish_reason,
+                        model=chunk.model or default_model,
+                        usage=chunk.usage,
+                        raw_delta=chunk.raw_delta,
+                    ))
+                return out
+            delta = _content_tool_call_delta_from_text(
+                content,
+                known_tool_names=self._known_tool_names,
+            )
+            if delta is not None:
+                self._append_tool_delta(out, delta, chunk=chunk, default_model=default_model)
+                return out
+
         should_buffer = bool(
             content
             and (
@@ -270,9 +344,14 @@ class _ContentToolCallBuffer:
                     model=chunk.model or default_model,
                 )
                 if flushed is not None:
+                    if flushed.tool_calls_delta:
+                        self._mark_tool_call_emitted()
                     out.append(flushed)
                 self._pending = ""
-            out.append(chunk)
+            if chunk.content or chunk.tool_calls_delta or chunk.finish_reason:
+                out.append(chunk)
+            elif chunk.raw_delta or chunk.usage:
+                out.append(chunk)
             return out
 
         self._pending += content
@@ -293,16 +372,13 @@ class _ContentToolCallBuffer:
                     usage=chunk.usage,
                 )
                 if flushed is not None:
+                    if flushed.tool_calls_delta:
+                        self._mark_tool_call_emitted()
                     out.append(flushed)
                 self._pending = ""
             return out
 
-        out.append(StreamChunk(
-            tool_calls_delta=[delta],
-            finish_reason=chunk.finish_reason,
-            model=chunk.model or default_model,
-            usage=chunk.usage,
-        ))
+        self._append_tool_delta(out, delta, chunk=chunk, default_model=default_model)
         self._pending = ""
         return out
 
@@ -315,6 +391,8 @@ class _ContentToolCallBuffer:
             model=model,
         )
         self._pending = ""
+        if flushed is not None and flushed.tool_calls_delta:
+            self._mark_tool_call_emitted()
         return flushed
 
 

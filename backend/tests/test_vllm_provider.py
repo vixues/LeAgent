@@ -130,6 +130,7 @@ class TestVLLMStreamParsing:
             stop=None,
         )
         assert "tool_calls" not in body["messages"][1]
+        assert body["messages"][1].get("content") in (None, "")
         assert body["messages"][2]["role"] == "user"
 
 

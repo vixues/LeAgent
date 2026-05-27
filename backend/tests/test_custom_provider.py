@@ -11,6 +11,73 @@ from leagent.llm.providers.custom import CustomOpenAIProvider
 from leagent.llm.providers.openai import OpenAIProvider
 
 
+class TestCustomProviderStreamSanitization:
+    @pytest.mark.asyncio
+    async def test_structured_tool_call_strips_duplicate_json_content(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        p = CustomOpenAIProvider(api_key="k", base_url="https://custom.example/v1")
+        payload = json.dumps(
+            {"name": "markdown_processor", "arguments": {"operation": "read"}},
+            ensure_ascii=False,
+        )
+
+        async def fake_openai_stream(*_args, **_kwargs):
+            yield StreamChunk(
+                content=payload,
+                tool_calls_delta=[{
+                    "index": 0,
+                    "id": "call_real_1",
+                    "type": "function",
+                    "function": {
+                        "name": "markdown_processor",
+                        "arguments": json.dumps({"operation": "read"}),
+                    },
+                }],
+                finish_reason="tool_calls",
+                model="custom",
+            )
+
+        monkeypatch.setattr(OpenAIProvider, "stream", fake_openai_stream)
+
+        chunks = [
+            chunk
+            async for chunk in p.stream(
+                messages=[ChatMessage.user("read md")],
+                model="custom",
+            )
+        ]
+
+        assert [c.content for c in chunks if c.content] == []
+        assert len([c for c in chunks if c.tool_calls_delta]) == 1
+
+    @pytest.mark.asyncio
+    async def test_second_content_json_not_emitted_after_first_tool_call(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        p = CustomOpenAIProvider(api_key="k", base_url="https://custom.example/v1")
+        payload = json.dumps(
+            {"name": "echo", "arguments": {"text": "hi"}},
+            ensure_ascii=False,
+        )
+
+        async def fake_openai_stream(*_args, **_kwargs):
+            yield StreamChunk(content=payload, model="custom")
+            yield StreamChunk(content=payload, finish_reason="stop", model="custom")
+
+        monkeypatch.setattr(OpenAIProvider, "stream", fake_openai_stream)
+
+        chunks = [
+            chunk
+            async for chunk in p.stream(messages=[ChatMessage.user("hi")], model="custom")
+        ]
+
+        assert [c.content for c in chunks if c.content] == []
+        assert len([c for c in chunks if c.tool_calls_delta]) == 1
+
+
 class TestCustomProviderStreamParsing:
     def _parse(self, provider: CustomOpenAIProvider, payload: dict) -> StreamChunk:
         return provider._parse_stream_chunk(payload, "custom-model")
@@ -273,7 +340,7 @@ class TestCustomProviderParsing:
 
         assert "tool_calls" not in body["messages"][1]
         assert body["messages"][1]["role"] == "assistant"
-        assert "markdown_processor" in body["messages"][1]["content"]
+        assert body["messages"][1].get("content") in (None, "")
         assert body["messages"][2] == {
             "role": "user",
             "content": 'Tool result for call_content_0:\n{"success": true}',
