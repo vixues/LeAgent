@@ -555,6 +555,8 @@ def _try_extract_content_tool_calls(
         extra_keys = set(obj.keys()) - {"name", "arguments"}
         if extra_keys or "arguments" not in obj:
             continue
+        if known_tool_names and name not in known_tool_names:
+            continue
         args_raw = obj.get("arguments", {})
         if isinstance(args_raw, str):
             parsed_args = parse_tool_arguments_str(args_raw)
