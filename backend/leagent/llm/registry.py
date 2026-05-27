@@ -462,9 +462,9 @@ def _register_from_env(
     """Register providers from env vars when providers.yaml is empty."""
     from leagent.config.settings import get_settings
     from leagent.llm.providers.anthropic import AnthropicProvider
+    from leagent.llm.providers.openai import OpenAIProvider
     from leagent.llm.providers.dashscope import DashScopeProvider
     from leagent.llm.providers.deepseek import DeepSeekProvider
-    from leagent.llm.providers.openai import OpenAIProvider
 
     settings = get_settings()
 
@@ -603,7 +603,7 @@ def _register_tier_from_env(
     """Register a tier provider from env vars, detecting the correct provider class."""
     from leagent.llm.providers.dashscope import DashScopeProvider
     from leagent.llm.providers.deepseek import DeepSeekProvider
-    from leagent.llm.providers.openai import OpenAIProvider
+    from leagent.llm.providers.custom import CustomOpenAIProvider
 
     if _endpoint_hostname_is_deepseek(endpoint):
         provider = DeepSeekProvider(
@@ -616,7 +616,7 @@ def _register_tier_from_env(
             default_model=model, timeout=timeout,
         )
     else:
-        provider = OpenAIProvider(
+        provider = CustomOpenAIProvider(
             api_key=api_key, base_url=endpoint,
             default_model=model, timeout=timeout,
         )

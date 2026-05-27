@@ -37,6 +37,38 @@ from leagent.llm.base import (
 )
 
 
+def _arguments_to_ollama_object(raw: str) -> dict[str, Any]:
+    if not raw:
+        return {}
+    try:
+        parsed = json.loads(raw)
+    except json.JSONDecodeError:
+        return {"__raw__": raw}
+    return parsed if isinstance(parsed, dict) else {}
+
+
+def _arguments_to_json_string(value: Any) -> str:
+    if isinstance(value, str):
+        return value
+    if value is None:
+        return "{}"
+    return json.dumps(value, ensure_ascii=False)
+
+
+def _normalize_tool_call_delta(tc: dict[str, Any], index: int) -> dict[str, Any]:
+    normalized = dict(tc)
+    normalized.setdefault("index", index)
+    fn = normalized.get("function")
+    if isinstance(fn, dict):
+        normalized_fn = dict(fn)
+        if "arguments" in normalized_fn:
+            normalized_fn["arguments"] = _arguments_to_json_string(
+                normalized_fn.get("arguments"),
+            )
+        normalized["function"] = normalized_fn
+    return normalized
+
+
 class OllamaProvider(LLMProvider):
     """Ollama provider for local model inference.
 
@@ -224,7 +256,7 @@ class OllamaProvider(LLMProvider):
                     {
                         "function": {
                             "name": tc.name,
-                            "arguments": json.loads(tc.arguments) if tc.arguments else {},
+                            "arguments": _arguments_to_ollama_object(tc.arguments),
                         }
                     }
                     for tc in msg.tool_calls
@@ -264,7 +296,7 @@ class OllamaProvider(LLMProvider):
                     ToolCall(
                         id=f"call_{i}",
                         name=func.get("name", ""),
-                        arguments=json.dumps(func.get("arguments", {})),
+                        arguments=_arguments_to_json_string(func.get("arguments")),
                     )
                 )
 
@@ -496,16 +528,7 @@ class OllamaProvider(LLMProvider):
             for i, tc in enumerate(raw_tc):
                 if not isinstance(tc, dict):
                     continue
-                normalized = dict(tc)
-                normalized.setdefault("index", i)
-                fn = normalized.get("function")
-                if isinstance(fn, dict):
-                    normalized_fn = dict(fn)
-                    args = normalized_fn.get("arguments")
-                    if isinstance(args, dict):
-                        normalized_fn["arguments"] = json.dumps(args, ensure_ascii=False)
-                    normalized["function"] = normalized_fn
-                tool_calls_delta.append(normalized)
+                tool_calls_delta.append(_normalize_tool_call_delta(tc, i))
 
         finish_reason = None
         if data.get("done"):

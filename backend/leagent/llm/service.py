@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import time
 from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING, Any, AsyncIterator, Literal, TypeVar  # noqa: F401
@@ -39,6 +40,14 @@ _T = TypeVar("_T")
 
 _SPEND_LIMIT_CACHE_TTL_SEC = 30.0
 _spend_limit_cache: dict[tuple[str, str], tuple[float, float]] = {}  # (provider, scope) → (value, monotonic_ts)
+
+
+def _tool_arguments_to_json_string(value: Any) -> str:
+    if isinstance(value, str):
+        return value
+    if value is None:
+        return "{}"
+    return json.dumps(value, ensure_ascii=False)
 
 
 def _configure_router_tiers_from_registry(
@@ -858,7 +867,9 @@ class LLMService:
                         ToolCall(
                             id=tc.get("id", ""),
                             name=tc.get("function", {}).get("name", ""),
-                            arguments=tc.get("function", {}).get("arguments", "{}"),
+                            arguments=_tool_arguments_to_json_string(
+                                tc.get("function", {}).get("arguments", "{}"),
+                            ),
                         )
                         for tc in tool_calls_raw
                     ]
@@ -946,7 +957,9 @@ class LLMService:
                             ToolCall(
                                 id=tc.get("id", ""),
                                 name=fn.get("name", tc.get("name", "")),
-                                arguments=fn.get("arguments", tc.get("arguments", "")) or "",
+                                arguments=_tool_arguments_to_json_string(
+                                    fn.get("arguments", tc.get("arguments", "")),
+                                ),
                             )
                         )
                     if not parsed_tc:

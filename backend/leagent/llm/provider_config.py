@@ -331,6 +331,7 @@ class ProviderConfigService:
     def _create_llm_provider(self, pc: ProviderConfig):
         """Instantiate the correct LLMProvider subclass for a config."""
         from leagent.llm.providers.anthropic import AnthropicProvider
+        from leagent.llm.providers.custom import CustomOpenAIProvider
         from leagent.llm.providers.dashscope import DashScopeProvider
         from leagent.llm.providers.ollama import OllamaProvider
         from leagent.llm.providers.openai import OpenAIProvider
@@ -343,14 +344,21 @@ class ProviderConfigService:
         meta = pc.metadata if isinstance(pc.metadata, dict) else {}
         meta_parse_think = meta.get("parse_think_tags")
 
-        if pc.type in ("openai", "azure", "custom"):
-            default_parse = pc.type == "custom"
+        if pc.type == "custom":
+            return CustomOpenAIProvider(
+                api_key=api_key or "not-needed",
+                base_url=pc.base_url,
+                default_model=default_model,
+                timeout=pc.timeout,
+                parse_think_tags=bool(meta_parse_think) if meta_parse_think is not None else True,
+            )
+        if pc.type in ("openai", "azure"):
             return OpenAIProvider(
                 api_key=api_key or "not-needed",
                 base_url=pc.base_url or "https://api.openai.com/v1",
                 default_model=default_model or "gpt-4o",
                 timeout=pc.timeout,
-                parse_think_tags=bool(meta_parse_think) if meta_parse_think is not None else default_parse,
+                parse_think_tags=bool(meta_parse_think) if meta_parse_think is not None else False,
             )
         if pc.type == "anthropic":
             return AnthropicProvider(
@@ -389,8 +397,8 @@ class ProviderConfigService:
                 timeout=pc.timeout,
                 enable_auto_tool_choice=enable_auto_tool_choice,
             )
-        # Fallback: treat as OpenAI-compatible; enable think-tag parsing by default.
-        return OpenAIProvider(
+        # Fallback: treat unknown types as tolerant OpenAI-compatible custom gateways.
+        return CustomOpenAIProvider(
             api_key=api_key or "not-needed",
             base_url=pc.base_url,
             default_model=default_model,

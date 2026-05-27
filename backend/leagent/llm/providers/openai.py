@@ -50,7 +50,7 @@ def _extract_reasoning_text(payload: dict[str, Any]) -> str | None:
     """Return the first non-empty reasoning/thinking string from *payload*."""
     for key in _REASONING_DELTA_KEYS:
         val = payload.get(key)
-        if isinstance(val, str) and val:
+        if isinstance(val, str) and val.strip():
             return val
     return None
 

@@ -20,12 +20,12 @@ from typing import Any, Literal
 
 from leagent.llm.base import ChatMessage, LLMResponse, StreamChunk, ToolDefinition
 
-from leagent.llm.providers.openai import OpenAIProvider
+from leagent.llm.providers.custom import CustomOpenAIProvider
 
 logger = logging.getLogger(__name__)
 
 
-class VLLMProvider(OpenAIProvider):
+class VLLMProvider(CustomOpenAIProvider):
     """OpenAI-compatible provider for vLLM self-hosted model serving.
 
     Supports all OpenAI-compatible features plus vLLM-specific structured

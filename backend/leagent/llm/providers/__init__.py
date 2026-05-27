@@ -2,6 +2,7 @@
 
 Available providers:
 - OpenAIProvider: OpenAI API and compatible endpoints
+- CustomOpenAIProvider: tolerant OpenAI-compatible custom gateways
 - AnthropicProvider: Anthropic Claude models (Messages API)
 - DashScopeProvider: Alibaba Cloud DashScope (Qwen models, OpenAI-compatible)
 - DeepSeekProvider: DeepSeek models (OpenAI-compatible with thinking)
@@ -10,6 +11,7 @@ Available providers:
 """
 
 from leagent.llm.providers.anthropic import AnthropicProvider
+from leagent.llm.providers.custom import CustomOpenAIProvider
 from leagent.llm.providers.dashscope import DashScopeProvider
 from leagent.llm.providers.deepseek import DeepSeekProvider
 from leagent.llm.providers.ollama import OllamaProvider
@@ -18,6 +20,7 @@ from leagent.llm.providers.vllm import VLLMProvider
 
 __all__ = [
     "AnthropicProvider",
+    "CustomOpenAIProvider",
     "DashScopeProvider",
     "DeepSeekProvider",
     "OllamaProvider",

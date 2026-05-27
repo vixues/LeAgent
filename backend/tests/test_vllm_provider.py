@@ -10,6 +10,7 @@ from __future__ import annotations
 import pytest
 
 from leagent.llm.base import ChatMessage, ToolDefinition
+from leagent.llm.providers.custom import CustomOpenAIProvider
 from leagent.llm.providers.vllm import VLLMProvider
 
 
@@ -28,6 +29,7 @@ class TestVLLMProviderDefaults:
         assert p.base_url == "http://localhost:8000/v1"
         assert p.default_model == ""
         assert p.api_key == "not-needed"
+        assert isinstance(p, CustomOpenAIProvider)
 
     def test_accepts_overrides(self) -> None:
         p = VLLMProvider(

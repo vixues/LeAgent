@@ -118,20 +118,20 @@ class TestLLMSettings:
 
     def test_tier1_fields(self) -> None:
         llm = get_settings().llm
-        assert llm.tier1_endpoint
-        assert llm.tier1_model
+        assert isinstance(llm.tier1_endpoint, str)
+        assert isinstance(llm.tier1_model, str)
         assert llm.tier1_max_tokens > 0
         assert 0.0 <= llm.tier1_temperature <= 2.0
 
     def test_tier2_fields(self) -> None:
         llm = get_settings().llm
-        assert llm.tier2_endpoint
-        assert llm.tier2_model
+        assert isinstance(llm.tier2_endpoint, str)
+        assert isinstance(llm.tier2_model, str)
         assert llm.tier2_max_tokens > 0
 
     def test_embedding_fields(self) -> None:
         llm = get_settings().llm
-        assert llm.embedding_endpoint
+        assert isinstance(llm.embedding_endpoint, str)
         assert llm.embedding_model
         assert llm.embedding_dim > 0
 
