@@ -79,7 +79,7 @@ class _InMemoryDB:
             try:
                 yield session
                 await session.commit()
-            except Exception:
+            except (Exception, asyncio.CancelledError):
                 await session.rollback()
                 raise
 

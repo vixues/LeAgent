@@ -309,9 +309,16 @@ export function applyChatStreamEvent(
 
       let nextToolCalls: ToolCall[];
       if (bySameId !== -1) {
-        nextToolCalls = prevArr.map((tc, i) =>
-          i === bySameId ? { ...tc, ...toolCall, argumentsRaw: undefined } : tc,
-        );
+        // Update by real ID and also remove any orphaned placeholder for same tool name.
+        nextToolCalls = prevArr
+          .filter((tc, i) => {
+            if (i === bySameId) return true;
+            if (tc.id.startsWith('__delta_') && tc.name === toolName && tc.status === 'running') return false;
+            return true;
+          })
+          .map((tc) =>
+            tc.id === realId ? { ...tc, ...toolCall, argumentsRaw: undefined } : tc,
+          );
       } else if (placeholderIdx !== -1) {
         const ph = prevArr[placeholderIdx];
         nextToolCalls = prevArr.map((tc, i) =>
@@ -369,10 +376,18 @@ export function applyChatStreamEvent(
     }
 
     case 'thinking': {
-      const thought =
-        typeof event.data === 'string'
-          ? event.data
-          : (event.data as { content?: string })?.content ?? '';
+      const raw = event.data;
+      let thought = '';
+      if (typeof raw === 'string') {
+        thought = raw;
+      } else if (raw && typeof raw === 'object') {
+        const rec = raw as { thought?: unknown; content?: unknown };
+        if (typeof rec.thought === 'string') {
+          thought = rec.thought;
+        } else if (typeof rec.content === 'string') {
+          thought = rec.content;
+        }
+      }
       if (thought) {
         _batchThinkingDelta(sessionId, assistantMsgId, thought);
       }

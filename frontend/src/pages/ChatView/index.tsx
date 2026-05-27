@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Panel, Group, Separator } from 'react-resizable-panels';
 import { isChatStreamBusyForSession, useChatStore } from '@/stores/chat';
-import { buildComposerSendParams, resetComposerAfterSend } from '@/stores/chatDraft';
+import { buildComposerSendParams, getComposerModelMode, resetComposerAfterSend } from '@/stores/chatDraft';
 import { useArtifactStore } from '@/stores/artifact';
 import { useLayoutStore } from '@/stores/layout';
 import { generateId } from '@/lib/utils';
@@ -298,6 +298,7 @@ export default function ChatView() {
           userMessageId,
           assistantMsgId,
           content: trimmed,
+          modelMode: getComposerModelMode(),
           signal: controller.signal,
           t,
         });
@@ -369,10 +370,10 @@ export default function ChatView() {
     async (suggestionPrompt: string) => {
       const store = useChatStore.getState();
       if (isChatStreamBusyForSession(store.currentSessionId, store)) return;
-      const { content, attachments, folderId, fileIds, projectFolderId } =
+      const { content, attachments, folderId, fileIds, projectFolderId, modelMode } =
         buildComposerSendParams(suggestionPrompt);
       if (!content.trim() && !attachments?.length) return;
-      await handleSend(content, attachments, folderId, fileIds, projectFolderId);
+      await handleSend(content, attachments, folderId, fileIds, projectFolderId, modelMode);
     },
     [handleSend],
   );

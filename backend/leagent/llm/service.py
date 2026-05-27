@@ -41,6 +41,51 @@ _SPEND_LIMIT_CACHE_TTL_SEC = 30.0
 _spend_limit_cache: dict[tuple[str, str], tuple[float, float]] = {}  # (provider, scope) → (value, monotonic_ts)
 
 
+def _configure_router_tiers_from_registry(
+    registry: ProviderRegistry,
+    router: ModelRouter,
+    *,
+    settings: Any,
+) -> None:
+    """Wire router tier_configs from registry tier1/tier2 aliases (providers.yaml path).
+
+    After the YAML-first refactor, ``LLM_*_ENDPOINT`` env vars are often empty while
+    :func:`create_default_registry` still registers ``tier1``/``tier2`` provider names
+    with model metadata. Without this step, routed chat calls raise
+    ``ModelNotFoundError: Tier 'tier1' not configured``.
+    """
+    llm = settings.llm
+
+    def _apply(tier_name: str, *, fallback_tier: str | None = None) -> None:
+        if tier_name in router.tier_configs or not registry.has_provider(tier_name):
+            return
+        info = registry.get_provider_info(tier_name)
+        meta = info.metadata if isinstance(info.metadata, dict) else {}
+        model = str(meta.get("model") or "").strip()
+        if not model:
+            model = registry.get_provider(tier_name)._get_default_model()
+        max_tokens = int(llm.tier1_max_tokens if tier_name == ModelTier.TIER1.value else llm.tier2_max_tokens)
+        temperature = float(
+            llm.tier1_temperature if tier_name == ModelTier.TIER1.value else llm.tier2_temperature
+        )
+        timeout = float(
+            llm.tier1_timeout if tier_name == ModelTier.TIER1.value else llm.tier2_timeout
+        )
+        routing_provider = registry.resolve_provider_name(tier_name)
+        router.configure_tier(
+            tier=tier_name,
+            provider=routing_provider,
+            model=model,
+            max_tokens=max_tokens,
+            temperature=temperature,
+            timeout=timeout,
+            fallback_tier=fallback_tier,
+        )
+
+    _apply(ModelTier.TIER1.value, fallback_tier=ModelTier.TIER2.value)
+    _apply(ModelTier.TIER2.value)
+
+
 def _is_retryable_llm_error(exc: Exception) -> bool:
     return classify_llm_error(exc).retryable
 
@@ -165,6 +210,10 @@ class LLMService:
                 temperature=settings.llm.tier2_temperature,
                 timeout=settings.llm.tier2_timeout,
             )
+
+        # YAML default provider promotes tier1/tier2 in the registry; sync router when
+        # legacy env tier endpoints are unset.
+        _configure_router_tiers_from_registry(registry, router, settings=settings)
 
         try:
             from leagent.llm.provider_config import ProviderConfigService
@@ -408,21 +457,18 @@ class LLMService:
 
     def _estimate_cost_usd(self, model: str, input_tokens: int, output_tokens: int) -> float:
         try:
-            from leagent.llm.provider_config import PROVIDER_PRESETS, ProviderConfigService
+            from leagent.llm.model_catalog import get_default_pricing
+            from leagent.llm.provider_config import ProviderConfigService
 
             pricing = ProviderConfigService().get_pricing_config()
             entry = pricing.get(model, {}) if isinstance(pricing, dict) else {}
             input_price = float(entry.get("input_per_1m", 0.0) or entry.get("price_input_per_1m", 0.0) or 0.0)
             output_price = float(entry.get("output_per_1m", 0.0) or entry.get("price_output_per_1m", 0.0) or 0.0)
             if input_price == 0.0 and output_price == 0.0:
-                for preset in PROVIDER_PRESETS.values():
-                    for preset_model in preset.get("models", []):
-                        if preset_model.get("name") == model:
-                            input_price = float(preset_model.get("price_input_per_1m", 0.0) or 0.0)
-                            output_price = float(preset_model.get("price_output_per_1m", 0.0) or 0.0)
-                            break
-                    if input_price or output_price:
-                        break
+                catalog_pricing = get_default_pricing()
+                catalog_entry = catalog_pricing.get(model, {})
+                input_price = float(catalog_entry.get("input_per_1m", 0.0))
+                output_price = float(catalog_entry.get("output_per_1m", 0.0))
             return (input_tokens / 1_000_000 * input_price) + (output_tokens / 1_000_000 * output_price)
         except Exception:
             return 0.0
@@ -442,6 +488,7 @@ class LLMService:
     ) -> None:
         """Best-effort async persistence for request-level usage logs."""
         try:
+            provider = self.registry.resolve_provider_name(provider or "")
             usage = response.usage
             input_tokens = int(getattr(usage, "prompt_tokens", 0) or 0)
             output_tokens = int(getattr(usage, "completion_tokens", 0) or 0)
@@ -492,12 +539,20 @@ class LLMService:
         **kwargs: Any,
     ) -> LLMResponse:
         """Complete using a specific provider directly."""
+        provider = self.registry.resolve_provider_name(provider)
         provider_instance = self.registry.get_provider(provider)
 
         completion_model = self.router.resolve_model_alias(model) if model else None
         completion_model = completion_model or provider_instance._get_default_model()
         completion_temp = temperature if temperature is not None else 0.1
         completion_max = max_tokens if max_tokens is not None else 4096
+        resolved_provider = self.registry.resolve_provider_name(provider)
+        completion_max = self.router.clamp_max_tokens(
+            messages,
+            provider=resolved_provider,
+            model=completion_model,
+            requested=completion_max,
+        )
 
         return await provider_instance.complete(
             messages=messages,
@@ -540,13 +595,32 @@ class LLMService:
         """
         # Determine provider and model
         if provider:
-            provider_instance = self.registry.get_provider(provider)
+            resolved_provider = self.registry.resolve_provider_name(provider)
+            provider_instance = self.registry.get_provider(resolved_provider)
             streaming_model = self.router.resolve_model_alias(model) if model else None
             streaming_model = streaming_model or provider_instance._get_default_model()
 
             tier_config = self.router.get_tier_config(tier or "tier1")
             streaming_temp = temperature if temperature is not None else (tier_config.temperature if tier_config else 0.1)
             streaming_max = max_tokens if max_tokens is not None else (tier_config.max_tokens if tier_config else 4096)
+            streaming_max = self.router.clamp_max_tokens(
+                messages,
+                provider=resolved_provider,
+                model=streaming_model,
+                requested=streaming_max,
+            )
+            stream_kwargs = dict(kwargs)
+            try:
+                from leagent.llm.provider_config import ProviderConfigService
+
+                pc = ProviderConfigService().get_provider(resolved_provider)
+                meta = pc.metadata if pc and isinstance(pc.metadata, dict) else {}
+                for key in ("enable_thinking", "enable_search", "thinking"):
+                    if key in meta and key not in stream_kwargs:
+                        stream_kwargs[key] = meta[key]
+            except Exception:
+                logger.debug("provider_metadata_stream_kwargs_failed", exc_info=True)
+
             started = time.perf_counter()
             first_chunk_at: float | None = None
             final_model = streaming_model
@@ -558,7 +632,7 @@ class LLMService:
                 max_tokens=streaming_max,
                 tools=tools,
                 tool_choice=tool_choice,
-                **kwargs,
+                **stream_kwargs,
             ):
                 if first_chunk_at is None:
                     first_chunk_at = time.perf_counter()
@@ -566,7 +640,7 @@ class LLMService:
                         from leagent.utils.metrics import get_metrics
 
                         get_metrics().record_llm_stream_ttfb(
-                            provider,
+                            resolved_provider,
                             streaming_model,
                             tier or "tier1",
                             first_chunk_at - started,
@@ -577,7 +651,7 @@ class LLMService:
                     from leagent.utils.metrics import get_metrics
 
                     get_metrics().llm_streaming_chunks_total.labels(
-                        provider=provider,
+                        provider=resolved_provider,
                         model=streaming_model,
                     ).inc()
                 except Exception:
@@ -587,10 +661,10 @@ class LLMService:
                 if chunk.usage is not None:
                     final_usage = chunk.usage
                 yield chunk
-            self.registry.record_success(provider)
+            self.registry.record_success(resolved_provider)
             self._record_request_log(
                 LLMResponse(model=final_model, usage=final_usage or TokenUsage()),
-                provider=provider,
+                provider=resolved_provider,
                 request_model=streaming_model,
                 model=final_model,
                 duration=time.perf_counter() - started,
@@ -604,6 +678,13 @@ class LLMService:
         tier_config = self.router.get_tier_config(decision.tier.value)
         streaming_temp = temperature if temperature is not None else (tier_config.temperature if tier_config else 0.1)
         streaming_max = max_tokens if max_tokens is not None else (tier_config.max_tokens if tier_config else 4096)
+        request_model_for_clamp = self.router.resolve_model_alias(decision.model) or decision.model
+        streaming_max = self.router.clamp_max_tokens(
+            messages,
+            provider=decision.provider,
+            model=request_model_for_clamp,
+            requested=streaming_max,
+        )
         errors: list[str] = []
 
         for provider_name in self.router._candidate_providers(decision):
@@ -832,6 +913,8 @@ class LLMService:
         temperature: float | None = None,
         model_tier: str | None = None,
         max_tokens: int | None = None,
+        provider: str | None = None,
+        model: str | None = None,
         **kwargs: Any,
     ) -> AsyncIterator[StreamChunk]:
         """Streaming variant of chat() for SSE endpoints."""
@@ -898,6 +981,8 @@ class LLMService:
         async for chunk in self.stream(
             chat_messages,
             tier=tier,
+            provider=provider,
+            model=model,
             temperature=temperature,
             max_tokens=max_tokens,
             tools=tool_definitions,

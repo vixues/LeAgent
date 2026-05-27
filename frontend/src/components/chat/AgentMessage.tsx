@@ -312,11 +312,9 @@ function AgentMessageInner({
         </span>
       </div>
 
-      {/* Thinking block */}
+      {/* Thinking block — show when reasoning arrived, or while waiting for any first output */}
       {(message.thinking ||
-        (assistantStreamingLive &&
-          !message.content &&
-          !message.toolCalls?.length)) && (
+        (assistantStreamingLive && !message.content)) && (
         <ThinkingBlock
           thought={message.thinking}
           isStreaming={assistantStreamingLive}
@@ -702,6 +700,7 @@ function ThinkingBlock({
         type="button"
         className="w-full flex items-center gap-2 px-2.5 py-2 text-left"
         onClick={() => thought && setExpanded(!expanded)}
+        aria-expanded={Boolean(thought && expanded)}
       >
         {isStreaming ? (
           <Loader2

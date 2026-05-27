@@ -20,7 +20,7 @@ from leagent.llm.base import (
 )
 from leagent.llm.registry import ProviderInfo, ProviderRegistry
 from leagent.llm.router import ModelRouter, ModelTier, RoutingDecision, TierConfig
-from leagent.llm.service import LLMService
+from leagent.llm.service import LLMService, _configure_router_tiers_from_registry
 
 
 # ===========================================================================
@@ -333,3 +333,129 @@ class TestLLMServiceRetries:
 
         assert response.content == "ok"
         assert provider.complete.await_count == 2
+
+
+class TestRouterTierSyncFromRegistry:
+    def test_configure_router_tiers_from_registry(self) -> None:
+        """Registry tier aliases from providers.yaml must populate router.tier_configs."""
+        provider = MagicMock()
+        provider._get_default_model.return_value = "fallback-model"
+
+        registry = ProviderRegistry()
+        registry.register("my-custom", provider)
+        registry.register(
+            "tier1",
+            provider,
+            metadata={"vendor": "my-custom", "model": "custom-reasoner"},
+        )
+        registry.register(
+            "tier2",
+            provider,
+            metadata={"vendor": "my-custom", "model": "custom-fast"},
+        )
+
+        router = ModelRouter(registry=registry)
+        settings = MagicMock()
+        settings.llm.tier1_max_tokens = 8192
+        settings.llm.tier2_max_tokens = 2048
+        settings.llm.tier1_temperature = 0.1
+        settings.llm.tier2_temperature = 0.1
+        settings.llm.tier1_timeout = 120
+        settings.llm.tier2_timeout = 60
+
+        _configure_router_tiers_from_registry(registry, router, settings=settings)
+
+        assert "tier1" in router.tier_configs
+        assert router.tier_configs["tier1"].model == "custom-reasoner"
+        assert router.tier_configs["tier1"].provider == "my-custom"
+        assert "tier2" in router.tier_configs
+        assert router.tier_configs["tier2"].model == "custom-fast"
+        assert router.tier_configs["tier2"].provider == "my-custom"
+
+    def test_explicit_tier_route_after_sync(self) -> None:
+        provider = MagicMock()
+        provider._get_default_model.return_value = "m"
+
+        registry = ProviderRegistry()
+        registry.register("my-custom", provider)
+        registry.register(
+            "tier1",
+            provider,
+            metadata={"vendor": "my-custom", "model": "custom-reasoner"},
+        )
+        registry.register(
+            "tier2",
+            provider,
+            metadata={"vendor": "my-custom", "model": "custom-fast"},
+        )
+
+        router = ModelRouter(registry=registry)
+        settings = MagicMock()
+        settings.llm.tier1_max_tokens = 4096
+        settings.llm.tier2_max_tokens = 2048
+        settings.llm.tier1_temperature = 0.1
+        settings.llm.tier2_temperature = 0.1
+        settings.llm.tier1_timeout = 120
+        settings.llm.tier2_timeout = 60
+        _configure_router_tiers_from_registry(registry, router, settings=settings)
+
+        decision = router.route("hello", explicit_tier="tier1")
+        assert decision.model == "custom-reasoner"
+        assert decision.provider == "my-custom"
+
+
+class TestClampMaxTokens:
+    def test_clamp_reduces_output_when_prompt_is_large(self) -> None:
+        from unittest.mock import patch
+
+        from leagent.llm.base import ChatMessage
+        from leagent.llm.provider_config import ProviderConfig
+
+        registry = ProviderRegistry()
+        router = ModelRouter(registry=registry)
+        messages = [ChatMessage.user("hello")]
+        pc = ProviderConfig(
+            name="local",
+            type="custom",
+            models=[{"name": "qwen-local", "context_window": 32768}],
+        )
+        with (
+            patch("leagent.llm.provider_config.ProviderConfigService") as mock_svc,
+            patch.object(router, "count_message_tokens", return_value=24_577),
+        ):
+            mock_svc.return_value.get_provider.return_value = pc
+            clamped = router.clamp_max_tokens(
+                messages,
+                provider="local",
+                model="qwen-local",
+                requested=8192,
+            )
+        # 32768 - 24577 - margin(128) = 8063
+        assert clamped == 8063
+
+    def test_clamp_unchanged_for_million_token_context(self) -> None:
+        from unittest.mock import patch
+
+        from leagent.llm.base import ChatMessage
+        from leagent.llm.provider_config import ProviderConfig
+
+        registry = ProviderRegistry()
+        router = ModelRouter(registry=registry)
+        messages = [ChatMessage.user("hello")]
+        pc = ProviderConfig(
+            name="deepseek",
+            type="deepseek",
+            models=[{"name": "deepseek-v4-pro", "context_window": 1_000_000}],
+        )
+        with (
+            patch("leagent.llm.provider_config.ProviderConfigService") as mock_svc,
+            patch.object(router, "count_message_tokens", return_value=24_577),
+        ):
+            mock_svc.return_value.get_provider.return_value = pc
+            clamped = router.clamp_max_tokens(
+                messages,
+                provider="deepseek",
+                model="deepseek-v4-pro",
+                requested=8192,
+            )
+        assert clamped == 8192

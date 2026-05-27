@@ -79,147 +79,16 @@ def validate_models_list(models: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 
 # ---------------------------------------------------------------------------
-# Provider type presets
+# Provider type presets — imported from the centralized model catalog
 # ---------------------------------------------------------------------------
 
-PROVIDER_PRESETS: dict[str, dict[str, Any]] = {
-    "openai": {
-        "label": "OpenAI",
-        "default_base_url": "https://api.openai.com/v1",
-        "requires_api_key": True,
-        "models": [
-            {
-                "name": "gpt-4o", "tier": "tier1", "context_window": 128_000,
-                "price_input_per_1m": 2.50, "price_output_per_1m": 10.00,
-                "supports_tools": True, "supports_vision": True,
-                "description": "Flagship multimodal model — strong reasoning, vision, and tool use.",
-            },
-            {
-                "name": "gpt-4o-mini", "tier": "tier2", "context_window": 128_000,
-                "price_input_per_1m": 0.15, "price_output_per_1m": 0.60,
-                "supports_tools": True, "supports_vision": True,
-                "description": "Affordable, intelligent small model for fast, lightweight tasks.",
-            },
-            {
-                "name": "o3-mini", "tier": "tier1", "context_window": 200_000,
-                "price_input_per_1m": 1.10, "price_output_per_1m": 4.40,
-                "supports_tools": True,
-                "description": "Reasoning model — thinks step-by-step. Use reasoning_effort to control depth.",
-            },
-        ],
-    },
-    "anthropic": {
-        "label": "Anthropic",
-        "default_base_url": "https://api.anthropic.com",
-        "requires_api_key": True,
-        "models": [
-            {
-                "name": "claude-sonnet-4-20250514", "tier": "tier1", "context_window": 200_000,
-                "price_input_per_1m": 3.00, "price_output_per_1m": 15.00,
-                "supports_tools": True, "supports_vision": True,
-                "description": "High-performance Claude model with extended thinking.",
-            },
-            {
-                "name": "claude-opus-4-7", "tier": "tier1", "context_window": 200_000,
-                "price_input_per_1m": 15.00, "price_output_per_1m": 75.00,
-                "supports_tools": True, "supports_vision": True,
-                "description": "Most capable Claude model — adaptive thinking, task budgets.",
-            },
-            {
-                "name": "claude-3-5-haiku-20241022", "tier": "tier2", "context_window": 200_000,
-                "price_input_per_1m": 0.80, "price_output_per_1m": 4.00,
-                "supports_tools": True, "supports_vision": True,
-                "description": "Fast, affordable Claude model for lightweight tasks.",
-            },
-        ],
-    },
-    "qwen": {
-        "label": "Qwen (通义千问)",
-        "default_base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
-        "requires_api_key": True,
-        "models": [
-            {
-                "name": "qwen3-max", "tier": "tier1", "context_window": 128_000,
-                "price_input_per_1m": 10.00, "price_output_per_1m": 30.00,
-                "supports_tools": True, "supports_thinking": True,
-                "description": "Qwen3-Max — strongest reasoning with thinking mode.",
-            },
-            {
-                "name": "qwen3.5-plus", "tier": "tier1", "context_window": 128_000,
-                "price_input_per_1m": 2.00, "price_output_per_1m": 8.00,
-                "supports_tools": True, "supports_thinking": True,
-                "description": "Qwen3.5-Plus — balanced performance and cost.",
-            },
-            {
-                "name": "qwen-plus", "tier": "tier2", "context_window": 128_000,
-                "price_input_per_1m": 0.80, "price_output_per_1m": 2.00,
-                "supports_tools": True,
-                "description": "Qwen-Plus — cost-effective general-purpose model.",
-            },
-            {
-                "name": "qwen3.5-flash", "tier": "tier2", "context_window": 128_000,
-                "price_input_per_1m": 0.30, "price_output_per_1m": 0.60,
-                "supports_tools": True, "supports_thinking": True,
-                "description": "Qwen3.5-Flash — fast and cost-effective.",
-            },
-            {
-                "name": "qwq-plus", "tier": "tier1", "context_window": 128_000,
-                "price_input_per_1m": 3.00, "price_output_per_1m": 12.00,
-                "supports_tools": True, "supports_thinking": True,
-                "description": "QwQ-Plus — specialized reasoning model.",
-            },
-            {
-                "name": "qwen-long", "tier": "tier1", "context_window": 1_000_000,
-                "price_input_per_1m": 0.50, "price_output_per_1m": 2.00,
-                "supports_tools": True,
-                "description": "Long-context Qwen — up to 1M tokens via file API.",
-            },
-            {
-                "name": "qwen-vl-max", "tier": "tier1", "context_window": 128_000,
-                "price_input_per_1m": 10.00, "price_output_per_1m": 30.00,
-                "supports_tools": True,
-                "description": "Qwen-VL-Max — multimodal vision-language model.",
-            },
-        ],
-    },
-    "deepseek": {
-        "label": "DeepSeek",
-        "default_base_url": "https://api.deepseek.com",
-        "requires_api_key": True,
-        "models": [
-            {
-                "name": "deepseek-v4-flash", "tier": "tier2", "context_window": 1_000_000,
-                "price_input_per_1m": 0.14, "price_output_per_1m": 0.28,
-                "supports_tools": True,
-                "description": "DeepSeek-V4 Flash — fast default. V4 preview: https://api-docs.deepseek.com/news/news260424",
-            },
-            {
-                "name": "deepseek-v4-pro", "tier": "tier1", "context_window": 1_000_000,
-                "price_input_per_1m": 1.74, "price_output_per_1m": 3.48,
-                "supports_tools": True,
-                "description": "DeepSeek-V4 Pro (current API). See https://api-docs.deepseek.com/quick_start/pricing",
-            },
-        ],
-    },
-    "ollama": {
-        "label": "Ollama (本地模型)",
-        "default_base_url": "http://localhost:11434",
-        "requires_api_key": False,
-        "models": [],
-    },
-    "vllm": {
-        "label": "vLLM (本地/远程自托管模型)",
-        "default_base_url": "http://localhost:8000/v1",
-        "requires_api_key": True,
-        "models": [],
-    },
-    "custom": {
-        "label": "自定义 API (OpenAI 兼容)",
-        "default_base_url": "",
-        "requires_api_key": True,
-        "models": [],
-    },
-}
+from leagent.llm.model_catalog import (
+    PROVIDER_PRESETS as _CATALOG_PRESETS,
+    get_provider_presets_dict as _get_presets_dict,
+)
+
+# Backward-compatible plain-dict form used throughout the codebase.
+PROVIDER_PRESETS: dict[str, dict[str, Any]] = _get_presets_dict()
 
 
 # ---------------------------------------------------------------------------
@@ -313,7 +182,7 @@ class ProviderConfigService:
 
     def _load_yaml(self) -> dict[str, Any]:
         if not self._path.exists():
-            return {"default_provider": "", "default_model": "", "providers": [], "routing": {}, "pricing": {}}
+            return self._auto_init_from_env()
         with open(self._path, encoding="utf-8") as fh:
             data = yaml.safe_load(fh)
         if not isinstance(data, dict):
@@ -323,6 +192,57 @@ class ProviderConfigService:
         if self._migrate_legacy_deepseek_config(data):
             self._save_yaml(data)
         return data
+
+    def _auto_init_from_env(self) -> dict[str, Any]:
+        """Auto-create providers.yaml from detected API keys on first run."""
+        from leagent.config.settings import get_settings
+        from leagent.llm.model_catalog import get_default_base_url, get_default_models
+
+        settings = get_settings()
+        providers: list[dict[str, Any]] = []
+        default_provider = ""
+        default_model = ""
+
+        env_key_map: list[tuple[str, str, str]] = [
+            (settings.llm.deepseek_api_key, "deepseek", settings.llm.deepseek_base_url),
+            (settings.llm.dashscope_api_key, "qwen", settings.llm.dashscope_base_url),
+            (settings.llm.openai_api_key, "openai", ""),
+            (settings.llm.anthropic_api_key, "anthropic", ""),
+        ]
+
+        for api_key, ptype, base_url_override in env_key_map:
+            if not api_key:
+                continue
+            base_url = base_url_override or get_default_base_url(ptype)
+            models = get_default_models(ptype)
+            entry: dict[str, Any] = {
+                "name": ptype,
+                "type": ptype,
+                "api_key": api_key,
+                "base_url": base_url,
+                "models": models,
+                "enabled": True,
+            }
+            providers.append(entry)
+            if not default_provider:
+                default_provider = ptype
+                tier1_models = [m["name"] for m in models if m.get("tier") == "tier1"]
+                default_model = tier1_models[0] if tier1_models else (models[0]["name"] if models else "")
+
+        config: dict[str, Any] = {
+            "default_provider": default_provider,
+            "default_model": default_model,
+            "providers": providers,
+        }
+
+        if providers:
+            logger.info(
+                "Auto-initialized providers.yaml with %d provider(s) from env (default: %s/%s)",
+                len(providers), default_provider, default_model,
+            )
+            self._save_yaml(config)
+
+        return config
 
     _DEEPSEEK_MODEL_RENAMES: dict[str, str] = {
         "deepseek-chat": "deepseek-v4-flash",
@@ -419,12 +339,18 @@ class ProviderConfigService:
         api_key = self._resolve_api_key(pc.api_key)
         default_model = pc.models[0]["name"] if pc.models else ""
 
+        # Allow metadata.parse_think_tags to override per-type defaults.
+        meta = pc.metadata if isinstance(pc.metadata, dict) else {}
+        meta_parse_think = meta.get("parse_think_tags")
+
         if pc.type in ("openai", "azure", "custom"):
+            default_parse = pc.type == "custom"
             return OpenAIProvider(
                 api_key=api_key or "not-needed",
                 base_url=pc.base_url or "https://api.openai.com/v1",
                 default_model=default_model or "gpt-4o",
                 timeout=pc.timeout,
+                parse_think_tags=bool(meta_parse_think) if meta_parse_think is not None else default_parse,
             )
         if pc.type == "anthropic":
             return AnthropicProvider(
@@ -455,11 +381,7 @@ class ProviderConfigService:
                 timeout=pc.timeout,
             )
         if pc.type == "vllm":
-            enable_auto_tool_choice = False
-            if isinstance(pc.metadata, dict):
-                enable_auto_tool_choice = bool(
-                    pc.metadata.get("enable_auto_tool_choice", False)
-                )
+            enable_auto_tool_choice = bool(meta.get("enable_auto_tool_choice", False))
             return VLLMProvider(
                 api_key=api_key or "not-needed",
                 base_url=pc.base_url or VLLMProvider.DEFAULT_BASE_URL,
@@ -467,12 +389,13 @@ class ProviderConfigService:
                 timeout=pc.timeout,
                 enable_auto_tool_choice=enable_auto_tool_choice,
             )
-        # Fallback: treat as OpenAI-compatible
+        # Fallback: treat as OpenAI-compatible; enable think-tag parsing by default.
         return OpenAIProvider(
             api_key=api_key or "not-needed",
             base_url=pc.base_url,
             default_model=default_model,
             timeout=pc.timeout,
+            parse_think_tags=bool(meta_parse_think) if meta_parse_think is not None else True,
         )
 
     @staticmethod

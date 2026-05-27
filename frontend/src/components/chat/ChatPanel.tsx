@@ -2,7 +2,7 @@ import { useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { cn } from '@/lib/utils';
 import { isChatStreamBusyForSession, useChatStore } from '@/stores/chat';
-import { buildComposerSendParams, resetComposerAfterSend } from '@/stores/chatDraft';
+import { buildComposerSendParams, getComposerModelMode, resetComposerAfterSend } from '@/stores/chatDraft';
 import { generateId } from '@/lib/utils';
 import { GenUiActionBridge } from '@/components/canvas/genUi/GenUiActionBridge';
 import { ChatHeader } from './ChatHeader';
@@ -149,6 +149,7 @@ export function ChatPanel({ className }: ChatPanelProps) {
           userMessageId,
           assistantMsgId,
           content: trimmed,
+          modelMode: getComposerModelMode(),
           signal: controller.signal,
           t,
         });
@@ -184,10 +185,10 @@ export function ChatPanel({ className }: ChatPanelProps) {
     async (suggestionPrompt: string) => {
       const store = useChatStore.getState();
       if (isChatStreamBusyForSession(store.currentSessionId, store)) return;
-      const { content, attachments, folderId, fileIds, projectFolderId } =
+      const { content, attachments, folderId, fileIds, projectFolderId, modelMode } =
         buildComposerSendParams(suggestionPrompt);
       if (!content.trim() && !attachments?.length) return;
-      await handleSend(content, attachments, folderId, fileIds, projectFolderId);
+      await handleSend(content, attachments, folderId, fileIds, projectFolderId, modelMode);
     },
     [handleSend],
   );

@@ -196,6 +196,67 @@ class ModelRouter:
         """Count tokens in text using tiktoken."""
         return len(self.tokenizer.encode(text))
 
+    def _resolve_model_context_window(
+        self,
+        pc: Any,
+        model: str,
+    ) -> int:
+        """Context window from providers.yaml, falling back to catalog presets."""
+        if pc is None:
+            return 0
+        for entry in pc.models:
+            if (entry.get("name") or "").strip() == model:
+                cw = int(entry.get("context_window") or 0)
+                if cw > 0:
+                    return cw
+        try:
+            from leagent.llm.model_catalog import PROVIDER_PRESETS
+
+            preset = PROVIDER_PRESETS.get(pc.type)
+            if preset:
+                for cap in preset.models:
+                    if cap.name == model and cap.context_window > 0:
+                        return cap.context_window
+        except Exception:
+            pass
+        return 0
+
+    def clamp_max_tokens(
+        self,
+        messages: list[ChatMessage],
+        *,
+        provider: str,
+        model: str,
+        requested: int,
+    ) -> int:
+        """Reduce completion tokens only when prompt + output would exceed context.
+
+        Large-context models (e.g. DeepSeek 1M) keep the requested ``max_tokens``
+        unless the combined budget would overflow the window.
+        """
+        if requested <= 0:
+            return requested
+        resolved = self.registry.resolve_provider_name(provider)
+        try:
+            from leagent.llm.provider_config import ProviderConfigService
+
+            pc = ProviderConfigService().get_provider(resolved)
+            context_window = self._resolve_model_context_window(pc, model)
+            if context_window <= 0:
+                return requested
+
+            input_est = self.count_message_tokens(messages)
+            margin = min(1024, max(128, context_window // 512))
+            if input_est + requested + margin <= context_window:
+                return requested
+
+            available = context_window - input_est - margin
+            if available < 256:
+                available = max(256, context_window - input_est - margin)
+            return min(requested, max(256, available))
+        except Exception:
+            return requested
+
     def count_message_tokens(self, messages: list[ChatMessage]) -> int:
         """Estimate tokens in a message list.
 
@@ -426,9 +487,16 @@ class ModelRouter:
                     default_temperature=config.temperature,
                     default_max_tokens=config.max_tokens,
                 )
+                request_model = self.resolve_model_alias(attempt_decision.model) or attempt_decision.model
+                max_tokens = self.clamp_max_tokens(
+                    messages,
+                    provider=provider_name,
+                    model=request_model,
+                    requested=max_tokens,
+                )
                 response = await provider.complete(
                     messages=messages,
-                    model=self.resolve_model_alias(attempt_decision.model) or attempt_decision.model,
+                    model=request_model,
                     temperature=temperature,
                     max_tokens=max_tokens,
                     tools=tools,

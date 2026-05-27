@@ -83,12 +83,14 @@ export async function runChatStream({
   }
 
   if (modelMode && modelMode !== 'auto') {
-    formData.append('model_mode', modelMode);
-    const [providerName = '', ...modelParts] = modelMode.split('/');
-    const modelName = modelParts.join('/');
-    if (providerName && modelName) {
-      formData.append('model_provider', providerName);
-      formData.append('model_name', modelName);
+    if (modelMode === 'reasoning' || modelMode === 'max') {
+      formData.append('model_mode', modelMode);
+    } else {
+      const slash = modelMode.indexOf('/');
+      if (slash > 0) {
+        formData.append('model_provider', modelMode.slice(0, slash));
+        formData.append('model_name', modelMode.slice(slash + 1));
+      }
     }
   }
 
@@ -174,7 +176,7 @@ export async function runChatStream({
             userMessageId,
             t,
           });
-          if (!titlePollingStarted && event.type === 'content_delta') {
+          if (!titlePollingStarted && event.type === 'content') {
             titlePollingStarted = true;
             stopTitlePolling = startTitlePolling();
           }

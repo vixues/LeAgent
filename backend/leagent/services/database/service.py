@@ -8,6 +8,7 @@ serialize behind a single ``StaticPool`` connection.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import time
 from contextlib import asynccontextmanager
@@ -81,7 +82,7 @@ class DatabaseService:
             try:
                 yield session
                 await session.commit()
-            except Exception:
+            except (Exception, asyncio.CancelledError):
                 status_label = "error"
                 await session.rollback()
                 raise

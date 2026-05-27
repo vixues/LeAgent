@@ -13,11 +13,15 @@ import {
   DollarSign,
   Box,
   Eye,
+  Brain,
   Wrench,
   Clock,
   Layers,
   Search,
   RefreshCw,
+  ChevronDown,
+  GripVertical,
+  Pencil,
 } from 'lucide-react';
 import {
   Card,
@@ -28,7 +32,6 @@ import {
   Input,
   Select,
   Switch,
-  Textarea,
   Modal,
   ModalHeader,
   ModalBody,
@@ -219,14 +222,8 @@ function presetRowToFormModel(m: ProviderModelInfo): ProviderModelInfo {
     price_output_per_1m: m.price_output_per_1m,
     supports_tools: m.supports_tools,
     supports_vision: m.supports_vision,
+    supports_thinking: m.supports_thinking,
   };
-}
-
-function parseFreeformModelIds(input: string): string[] {
-  return input
-    .split(/\r?\n|,/g)
-    .map((s) => s.trim())
-    .filter(Boolean);
 }
 
 function formatRelativeTime(iso: string | null | undefined, t: (k: string, p?: Record<string, unknown>) => string): string {
@@ -294,6 +291,352 @@ function StatCard({ label, value, hint, icon, accent = 'text-primary-600 dark:te
 }
 
 // ---------------------------------------------------------------------------
+// Model config editor — rich per-model property editing
+// ---------------------------------------------------------------------------
+
+type ModelEntry = NonNullable<ModelProviderFormData['models']>[number];
+
+interface ModelConfigEditorProps {
+  models: ModelEntry[];
+  onChange: (models: ModelEntry[]) => void;
+  presetCatalog: ProviderModelInfo[];
+  onError?: (msg: string) => void;
+  discoveredModels?: DiscoveredModel[];
+}
+
+function ModelConfigEditor({
+  models,
+  onChange,
+  presetCatalog,
+  onError,
+  discoveredModels,
+}: ModelConfigEditorProps) {
+  const { t } = useTranslation();
+  const [expandedIdx, setExpandedIdx] = useState<number | null>(null);
+  const [addInput, setAddInput] = useState('');
+  const hasPresets = presetCatalog.length > 0;
+
+  const selectedNames = useMemo(() => new Set(models.map((m) => m.name)), [models]);
+  const unselectedPresets = useMemo(
+    () => presetCatalog.filter((m) => !selectedNames.has(m.name)),
+    [presetCatalog, selectedNames],
+  );
+
+  const updateModel = (idx: number, patch: Partial<ModelEntry>) => {
+    const next = models.map((m, i) => (i === idx ? { ...m, ...patch } : m));
+    onChange(next);
+  };
+
+  const removeModel = (idx: number) => {
+    onChange(models.filter((_, i) => i !== idx));
+    if (expandedIdx === idx) setExpandedIdx(null);
+    else if (expandedIdx !== null && expandedIdx > idx) setExpandedIdx(expandedIdx - 1);
+  };
+
+  const addPreset = (preset: ProviderModelInfo) => {
+    if (selectedNames.has(preset.name)) return;
+    onChange([...models, presetRowToFormModel(preset)]);
+  };
+
+  const addCustomModel = () => {
+    const names = addInput
+      .split(/[,\n]/)
+      .map((s) => s.trim())
+      .filter(Boolean);
+    if (names.length === 0) return;
+    const newModels: ModelEntry[] = [];
+    for (const name of names) {
+      if (selectedNames.has(name) || newModels.some((m) => m.name === name)) {
+        onError?.(t('admin.provider.duplicateModelName', { name }));
+        return;
+      }
+      newModels.push({ name, tier: '', context_window: 0, enabled: true });
+    }
+    onChange([...models, ...newModels]);
+    setAddInput('');
+  };
+
+  const addDiscovered = (row: DiscoveredModel) => {
+    const name = row.name || row.id;
+    if (!name || selectedNames.has(name)) return;
+    onChange([...models, { name, tier: '', context_window: 0, enabled: true }]);
+  };
+
+  return (
+    <div className="space-y-2">
+      {/* Selected models with expandable config */}
+      {models.length > 0 && (
+        <div className="space-y-1 rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden">
+          {models.map((m, idx) => {
+            const isExpanded = expandedIdx === idx;
+            return (
+              <div
+                key={m.name}
+                className={cn(
+                  'border-b border-gray-100 dark:border-gray-800 last:border-b-0',
+                  isExpanded && 'bg-gray-50/50 dark:bg-gray-800/30',
+                )}
+              >
+                {/* Collapsed row */}
+                <div className="flex items-center gap-2 px-3 py-2">
+                  <GripVertical className="w-3.5 h-3.5 text-gray-300 dark:text-gray-600 shrink-0" />
+                  <Switch
+                    checked={m.enabled !== false}
+                    onCheckedChange={(checked) => updateModel(idx, { enabled: checked })}
+                    size="sm"
+                  />
+                  <button
+                    type="button"
+                    className="flex-1 min-w-0 flex items-center gap-2 text-left"
+                    onClick={() => setExpandedIdx(isExpanded ? null : idx)}
+                  >
+                    <span className="font-mono text-xs text-gray-900 dark:text-white truncate">
+                      {m.name}
+                    </span>
+                    <span className="flex items-center gap-1 shrink-0">
+                      {m.tier && (
+                        <Badge variant="default" size="sm">{m.tier}</Badge>
+                      )}
+                      {m.context_window ? (
+                        <span className="text-[10px] text-gray-400">{formatContext(m.context_window)}</span>
+                      ) : null}
+                      {m.supports_tools && <Wrench className="w-3 h-3 text-sky-500" />}
+                      {m.supports_vision && <Eye className="w-3 h-3 text-blue-500" />}
+                      {m.supports_thinking && <Brain className="w-3 h-3 text-purple-500" />}
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    className="p-1 rounded text-gray-400 hover:text-gray-600 hover:bg-gray-100 dark:hover:text-gray-300 dark:hover:bg-gray-700 transition-colors"
+                    onClick={() => setExpandedIdx(isExpanded ? null : idx)}
+                    aria-label={t('admin.provider.modelEditor.configure')}
+                  >
+                    <ChevronDown className={cn('w-4 h-4 transition-transform', isExpanded && 'rotate-180')} />
+                  </button>
+                  <button
+                    type="button"
+                    className="p-1 rounded text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
+                    onClick={() => removeModel(idx)}
+                    aria-label={t('common.delete')}
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+
+                {/* Expanded config */}
+                {isExpanded && (
+                  <div className="px-3 pb-3 pt-1 border-t border-gray-100 dark:border-gray-800">
+                    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                      {/* Tier */}
+                      <div>
+                        <label className="block text-[11px] font-medium text-gray-500 dark:text-gray-400 mb-1 uppercase tracking-wide">
+                          {t('admin.provider.modelEditor.tier')}
+                        </label>
+                        <Select
+                          value={m.tier || ''}
+                          onChange={(e) => updateModel(idx, { tier: e.target.value })}
+                          className="h-8 text-xs"
+                        >
+                          <option value="">{t('admin.provider.modelEditor.tierNone')}</option>
+                          <option value="tier1">{t('admin.provider.modelEditor.tier1')}</option>
+                          <option value="tier2">{t('admin.provider.modelEditor.tier2')}</option>
+                        </Select>
+                      </div>
+
+                      {/* Context window */}
+                      <div>
+                        <label className="block text-[11px] font-medium text-gray-500 dark:text-gray-400 mb-1 uppercase tracking-wide">
+                          {t('admin.provider.modelEditor.contextWindow')}
+                        </label>
+                        <Input
+                          type="number"
+                          value={m.context_window || ''}
+                          onChange={(e) => updateModel(idx, { context_window: Number(e.target.value) || 0 })}
+                          placeholder="128000"
+                          className="h-8 text-xs"
+                        />
+                      </div>
+
+                      {/* Description */}
+                      <div className="sm:col-span-2 lg:col-span-1">
+                        <label className="block text-[11px] font-medium text-gray-500 dark:text-gray-400 mb-1 uppercase tracking-wide">
+                          {t('admin.provider.modelEditor.description')}
+                        </label>
+                        <Input
+                          value={m.description || ''}
+                          onChange={(e) => updateModel(idx, { description: e.target.value })}
+                          placeholder={t('admin.provider.modelEditor.descriptionPlaceholder')}
+                          className="h-8 text-xs"
+                        />
+                      </div>
+
+                      {/* Input price */}
+                      <div>
+                        <label className="block text-[11px] font-medium text-gray-500 dark:text-gray-400 mb-1 uppercase tracking-wide">
+                          {t('admin.provider.modelEditor.inputPrice')}
+                        </label>
+                        <Input
+                          type="number"
+                          step="0.01"
+                          value={m.price_input_per_1m ?? ''}
+                          onChange={(e) => updateModel(idx, { price_input_per_1m: Number(e.target.value) || 0 })}
+                          placeholder="0.00"
+                          className="h-8 text-xs"
+                        />
+                      </div>
+
+                      {/* Output price */}
+                      <div>
+                        <label className="block text-[11px] font-medium text-gray-500 dark:text-gray-400 mb-1 uppercase tracking-wide">
+                          {t('admin.provider.modelEditor.outputPrice')}
+                        </label>
+                        <Input
+                          type="number"
+                          step="0.01"
+                          value={m.price_output_per_1m ?? ''}
+                          onChange={(e) => updateModel(idx, { price_output_per_1m: Number(e.target.value) || 0 })}
+                          placeholder="0.00"
+                          className="h-8 text-xs"
+                        />
+                      </div>
+                    </div>
+
+                    {/* Capability toggles */}
+                    <div className="mt-3 flex flex-wrap gap-x-5 gap-y-2">
+                      <label className="flex items-center gap-2 cursor-pointer text-xs text-gray-700 dark:text-gray-300">
+                        <Switch
+                          checked={Boolean(m.supports_tools)}
+                          onCheckedChange={(checked) => updateModel(idx, { supports_tools: checked })}
+                          size="sm"
+                        />
+                        <Wrench className="w-3.5 h-3.5 text-sky-500" />
+                        {t('admin.provider.modelEditor.supportsTools')}
+                      </label>
+                      <label className="flex items-center gap-2 cursor-pointer text-xs text-gray-700 dark:text-gray-300">
+                        <Switch
+                          checked={Boolean(m.supports_vision)}
+                          onCheckedChange={(checked) => updateModel(idx, { supports_vision: checked })}
+                          size="sm"
+                        />
+                        <Eye className="w-3.5 h-3.5 text-blue-500" />
+                        {t('admin.provider.modelEditor.supportsVision')}
+                      </label>
+                      <label className="flex items-center gap-2 cursor-pointer text-xs text-gray-700 dark:text-gray-300">
+                        <Switch
+                          checked={Boolean(m.supports_thinking)}
+                          onCheckedChange={(checked) => updateModel(idx, { supports_thinking: checked })}
+                          size="sm"
+                        />
+                        <Brain className="w-3.5 h-3.5 text-purple-500" />
+                        {t('admin.provider.modelEditor.supportsThinking')}
+                      </label>
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {models.length === 0 && (
+        <div className="rounded-lg border border-dashed border-gray-300 dark:border-gray-600 p-6 text-center">
+          <Layers className="w-8 h-8 mx-auto mb-2 text-gray-300 dark:text-gray-600" />
+          <p className="text-xs text-gray-500 dark:text-gray-400">
+            {t('admin.provider.modelEditor.emptyHint')}
+          </p>
+        </div>
+      )}
+
+      {/* Add from presets */}
+      {hasPresets && unselectedPresets.length > 0 && (
+        <div className="space-y-1">
+          <p className="text-[11px] font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">
+            {t('admin.provider.modelEditor.addFromCatalog')}
+          </p>
+          <div className="flex flex-wrap gap-1.5">
+            {unselectedPresets.map((p) => (
+              <button
+                key={p.name}
+                type="button"
+                className={cn(
+                  'inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium',
+                  'border border-dashed border-gray-300 dark:border-gray-600',
+                  'text-gray-600 dark:text-gray-400',
+                  'hover:border-primary-400 hover:text-primary-600 hover:bg-primary-50/50',
+                  'dark:hover:border-primary-600 dark:hover:text-primary-400 dark:hover:bg-primary-900/20',
+                  'transition-colors',
+                )}
+                onClick={() => addPreset(p)}
+              >
+                <Plus className="w-3 h-3" />
+                {p.name}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Discovered models */}
+      {discoveredModels && discoveredModels.length > 0 && (
+        <div className="space-y-1">
+          <p className="text-[11px] font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">
+            {t('admin.provider.modelEditor.discovered')}
+          </p>
+          <div className="flex flex-wrap gap-1.5 max-h-32 overflow-y-auto">
+            {discoveredModels.filter((d) => !selectedNames.has(d.name || d.id)).slice(0, 30).map((d) => (
+              <button
+                key={d.id}
+                type="button"
+                className={cn(
+                  'inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium',
+                  'border border-dashed border-gray-300 dark:border-gray-600',
+                  'text-gray-600 dark:text-gray-400',
+                  'hover:border-green-400 hover:text-green-600 hover:bg-green-50/50',
+                  'dark:hover:border-green-600 dark:hover:text-green-400 dark:hover:bg-green-900/20',
+                  'transition-colors',
+                )}
+                onClick={() => addDiscovered(d)}
+              >
+                <Plus className="w-3 h-3" />
+                <span className="font-mono">{d.name || d.id}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Custom model input */}
+      <div className="flex gap-2">
+        <Input
+          value={addInput}
+          onChange={(e) => setAddInput(e.target.value)}
+          placeholder={t('admin.provider.modelEditor.addCustomPlaceholder')}
+          className="h-8 text-xs font-mono flex-1"
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') {
+              e.preventDefault();
+              addCustomModel();
+            }
+          }}
+        />
+        <Button
+          type="button"
+          size="sm"
+          variant="secondary"
+          onClick={addCustomModel}
+          disabled={!addInput.trim()}
+          className="shrink-0 flex-nowrap whitespace-nowrap"
+          leftIcon={<Plus className="w-3.5 h-3.5" aria-hidden />}
+        >
+          {t('admin.provider.modelEditor.addButton')}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Default empty form
 // ---------------------------------------------------------------------------
 
@@ -349,7 +692,6 @@ export function ModelProviderConfig() {
 
   // Add/edit modal state
   const [formData, setFormData] = useState<ModelProviderFormData>({ ...EMPTY_FORM });
-  const [modelsInput, setModelsInput] = useState('');
   const [formError, setFormError] = useState('');
   const [testResult, setTestResult] = useState<TestResult | null>(null);
   const [discoveredModels, setDiscoveredModels] = useState<DiscoveredModel[]>([]);
@@ -362,8 +704,6 @@ export function ModelProviderConfig() {
     const p = presets?.find((x) => x.type === formData.type);
     return p?.models?.length ? p.models : [];
   }, [presets, formData.type]);
-
-  const usePresetModelMultiselect = presetCatalog.length > 0;
 
   const usageByModel = useMemo(() => {
     const map: Record<string, ModelUsageRow> = {};
@@ -418,7 +758,6 @@ export function ModelProviderConfig() {
       base_url: preset.default_base_url,
       models: preset.models.map((m) => presetRowToFormModel(m)),
     });
-    setModelsInput(preset.models.map((m) => m.name).join('\n'));
     setFormError('');
     setStep('config');
   };
@@ -426,7 +765,6 @@ export function ModelProviderConfig() {
   const handleOpenCreate = () => {
     setSelectedProvider(null);
     setFormData({ ...EMPTY_FORM });
-    setModelsInput('');
     setFormError('');
     setTestResult(null);
     setDiscoveredModels([]);
@@ -442,13 +780,10 @@ export function ModelProviderConfig() {
       type: provider.type,
       base_url: provider.base_url,
       api_key: '',
-      // Preserve the full model payload (pricing, description, enabled…) so
-      // that saving the modal does not accidentally strip those fields.
       models: provider.models.map((m) => ({ ...m })),
       enabled: provider.enabled,
       metadata: provider.metadata ?? {},
     });
-    setModelsInput(provider.models.map((m) => m.name).join('\n'));
     setFormError('');
     setTestResult(null);
     setDiscoveredModels([]);
@@ -461,7 +796,6 @@ export function ModelProviderConfig() {
     setProviderModalOpen(false);
     setSelectedProvider(null);
     setFormData({ ...EMPTY_FORM });
-    setModelsInput('');
     setFormError('');
     setTestResult(null);
     setDiscoveredModels([]);
@@ -469,88 +803,24 @@ export function ModelProviderConfig() {
     setStep('type');
   };
 
-  const togglePresetCatalogModel = (catalogRow: ProviderModelInfo) => {
-    setFormError('');
-    const name = catalogRow.name;
-    const has = (formData.models ?? []).some((m) => m.name === name);
-    if (has) {
-      setFormData((prev) => ({
-        ...prev,
-        models: (prev.models ?? []).filter((m) => m.name !== name),
-      }));
-    } else {
-      setFormData((prev) => ({
-        ...prev,
-        models: [...(prev.models ?? []), presetRowToFormModel(catalogRow)],
-      }));
-    }
-  };
-
   const handleSubmit = async () => {
     setFormError('');
-    let models: ProviderModelInfo[];
-
-    if (usePresetModelMultiselect) {
-      const selected = formData.models ?? [];
-      if (selected.length === 0) {
-        setFormError(t('admin.provider.atLeastOneModel'));
-        return;
-      }
-      const seen = new Set<string>();
-      models = [];
-      for (const m of selected) {
-        if (seen.has(m.name)) continue;
-        seen.add(m.name);
-        models.push({
-          name: m.name,
-          tier: m.tier ?? '',
-          context_window: m.context_window ?? 0,
-          enabled: m.enabled,
-          description: m.description,
-          price_input_per_1m: m.price_input_per_1m,
-          price_output_per_1m: m.price_output_per_1m,
-          supports_tools: m.supports_tools,
-          supports_vision: m.supports_vision,
-        });
-      }
-      if (models.length === 0) {
-        setFormError(t('admin.provider.atLeastOneModel'));
-        return;
-      }
-    } else {
-      const ids = parseFreeformModelIds(modelsInput);
-      if (ids.length === 0) {
-        setFormError(t('admin.provider.atLeastOneModel'));
-        return;
-      }
-      const seen = new Set<string>();
-      models = [];
-      for (const name of ids) {
-        if (seen.has(name)) {
-          setFormError(t('admin.provider.duplicateModelName', { name }));
-          return;
-        }
-        seen.add(name);
-        const existing = formData.models?.find((m) => m.name === name);
-        models.push(
-          existing
-            ? {
-                name: existing.name,
-                tier: existing.tier ?? '',
-                context_window: existing.context_window ?? 0,
-                enabled: existing.enabled,
-                description: existing.description,
-                price_input_per_1m: existing.price_input_per_1m,
-                price_output_per_1m: existing.price_output_per_1m,
-                supports_tools: existing.supports_tools,
-                supports_vision: existing.supports_vision,
-              }
-            : { name, tier: '', context_window: 0 }
-        );
-      }
+    const models = formData.models ?? [];
+    if (models.length === 0) {
+      setFormError(t('admin.provider.atLeastOneModel'));
+      return;
     }
 
-    const payload: ModelProviderFormData = { ...formData, models };
+    const mergedMetadata = {
+      ...(formData.metadata ?? {}),
+      ...(formData.extra ?? {}),
+    };
+    const payload: ModelProviderFormData = {
+      ...formData,
+      models,
+      metadata: Object.keys(mergedMetadata).length > 0 ? mergedMetadata : formData.metadata,
+    };
+    delete payload.extra;
     // When editing, strip empty api_key so the backend preserves the existing key.
     if (selectedProvider && !payload.api_key?.trim()) {
       delete payload.api_key;
@@ -614,14 +884,6 @@ export function ModelProviderConfig() {
     }
   };
 
-  const handleAddDiscoveredModel = (row: DiscoveredModel) => {
-    const modelName = row.name || row.id;
-    if (!modelName || (formData.models ?? []).some((m) => m.name === modelName)) return;
-    const next = [...(formData.models ?? []), { name: modelName, tier: '', context_window: 0 }];
-    setFormData((prev) => ({ ...prev, models: next }));
-    setModelsInput(next.map((m) => m.name).join('\n'));
-  };
-
   const handleSpeedTest = async () => {
     if (!selectedProvider) return;
     const candidates = [
@@ -651,6 +913,20 @@ export function ModelProviderConfig() {
       if (m.name !== model.name) return m;
       return { ...m, enabled: m.enabled === false ? true : false };
     });
+    await updateProvider.mutateAsync({
+      name: provider.name,
+      data: { models: nextModels },
+    });
+  };
+
+  const handleUpdateModel = async (
+    provider: ModelProvider,
+    model: ProviderModelInfo,
+    patch: Partial<ProviderModelInfo>,
+  ) => {
+    const nextModels = provider.models.map((m) =>
+      m.name === model.name ? { ...m, ...patch } : m,
+    );
     await updateProvider.mutateAsync({
       name: provider.name,
       data: { models: nextModels },
@@ -943,6 +1219,7 @@ export function ModelProviderConfig() {
               onTest={() => handleTest(focusedProvider.name)}
               onDelete={() => handleDelete(focusedProvider.name)}
               onToggleModel={(m) => handleToggleModel(focusedProvider, m)}
+              onUpdateModel={(m, patch) => handleUpdateModel(focusedProvider, m, patch)}
               onSetDefault={(m) => handleSetDefaultModel(focusedProvider.name, m.name)}
               testing={testProvider.isPending}
               updating={updateProvider.isPending}
@@ -1198,7 +1475,6 @@ export function ModelProviderConfig() {
                     const preset = presets?.find((p) => p.type === newType);
                     setFormError('');
                     if (preset && preset.models.length > 0 && !selectedProvider) {
-                      setModelsInput(preset.models.map((m) => m.name).join('\n'));
                       setFormData((prev) => ({
                         ...prev,
                         type: newType,
@@ -1206,7 +1482,6 @@ export function ModelProviderConfig() {
                         models: preset.models.map((m) => presetRowToFormModel(m)),
                       }));
                     } else if (!selectedProvider) {
-                      setModelsInput('');
                       setFormData((prev) => ({
                         ...prev,
                         type: newType,
@@ -1378,10 +1653,49 @@ export function ModelProviderConfig() {
                 </div>
               )}
 
+              {['custom', 'openai', 'vllm', 'ollama'].includes(formData.type) && (
+                <div className="space-y-3 rounded-lg border border-violet-200 dark:border-violet-800 bg-violet-50 dark:bg-violet-900/20 p-3">
+                  <p className="text-xs font-medium text-violet-700 dark:text-violet-400">
+                    {t('admin.provider.thinkingSettings', { defaultValue: '思考过程解析' })}
+                  </p>
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <label className="text-sm text-gray-700 dark:text-gray-300">
+                        {t('admin.provider.parseThinkTags', { defaultValue: '解析 <think> 标签' })}
+                      </label>
+                      <p className="mt-0.5 text-xs text-gray-500">
+                        {t('admin.provider.parseThinkTagsHelp', {
+                          defaultValue:
+                            '启用后，模型输出中的 <think>…</think> 标签会被提取并显示为思考过程，而不出现在正文内容中。适用于 DeepSeek / QwQ 等本地或自定义部署模型。',
+                        })}
+                      </p>
+                    </div>
+                    <Switch
+                      checked={
+                        formData.metadata?.parse_think_tags != null
+                          ? Boolean(formData.metadata.parse_think_tags)
+                          : formData.type === 'custom'
+                      }
+                      onCheckedChange={(checked) =>
+                        setFormData({
+                          ...formData,
+                          metadata: { ...(formData.metadata ?? {}), parse_think_tags: checked },
+                        })
+                      }
+                    />
+                  </div>
+                </div>
+              )}
+
               <div>
-                <div className="mb-1 flex items-center justify-between gap-2">
+                <div className="mb-2 flex items-center justify-between gap-2">
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
                     {t('admin.provider.availableModelsLabel')}
+                    {(formData.models?.length ?? 0) > 0 && (
+                      <span className="ml-1.5 text-xs font-normal text-gray-400">
+                        ({formData.models?.length})
+                      </span>
+                    )}
                   </label>
                   {selectedProvider && (
                     <Button
@@ -1395,71 +1709,16 @@ export function ModelProviderConfig() {
                     </Button>
                   )}
                 </div>
-                {usePresetModelMultiselect ? (
-                  <div className="space-y-2 max-h-56 overflow-y-auto rounded-lg border border-gray-200 dark:border-gray-700 p-3">
-                    {presetCatalog.map((m) => {
-                      const checked = (formData.models ?? []).some((x) => x.name === m.name);
-                      return (
-                        <label
-                          key={m.name}
-                          className="flex items-start gap-2.5 cursor-pointer text-sm text-gray-800 dark:text-gray-200"
-                        >
-                          <input
-                            type="checkbox"
-                            className="mt-1 rounded border-gray-300 dark:border-gray-600"
-                            checked={checked}
-                            onChange={() => togglePresetCatalogModel(m)}
-                          />
-                          <span>
-                            <span className="font-mono text-xs">{m.name}</span>
-                            {m.description ? (
-                              <span className="block text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-                                {m.description}
-                              </span>
-                            ) : null}
-                          </span>
-                        </label>
-                      );
-                    })}
-                    <p className="text-xs text-gray-500 dark:text-gray-400 pt-1">
-                      {t('admin.provider.modelsCheckboxHelp')}
-                    </p>
-                  </div>
-                ) : (
-                  <>
-                    <Textarea
-                      value={modelsInput}
-                      onChange={(e) => {
-                        setFormError('');
-                        setModelsInput(e.target.value);
-                      }}
-                      placeholder={t('admin.provider.modelsOnePerLinePlaceholder')}
-                      rows={5}
-                      className="font-mono text-sm"
-                    />
-                    <p className="mt-1 text-xs text-gray-500">
-                      {t('admin.provider.modelsOnePerLineHelp')}
-                    </p>
-                  </>
-                )}
-                {discoveredModels.length > 0 && (
-                  <div className="mt-3 max-h-40 space-y-1 overflow-y-auto rounded-lg border border-gray-200 p-2 dark:border-gray-700">
-                    {discoveredModels.slice(0, 50).map((row) => (
-                      <button
-                        key={row.id}
-                        type="button"
-                        disabled={row.already_configured || (formData.models ?? []).some((m) => m.name === (row.name || row.id))}
-                        className="flex w-full items-center justify-between rounded px-2 py-1 text-left text-xs hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50 dark:hover:bg-gray-800"
-                        onClick={() => handleAddDiscoveredModel(row)}
-                      >
-                        <span className="font-mono">{row.name || row.id}</span>
-                        <span className="text-gray-500">
-                          {row.already_configured ? t('admin.provider.discovery.configured') : row.owned_by}
-                        </span>
-                      </button>
-                    ))}
-                  </div>
-                )}
+                <ModelConfigEditor
+                  models={formData.models ?? []}
+                  onChange={(models) => {
+                    setFormError('');
+                    setFormData((prev) => ({ ...prev, models }));
+                  }}
+                  presetCatalog={presetCatalog}
+                  onError={setFormError}
+                  discoveredModels={discoveredModels.length > 0 ? discoveredModels : undefined}
+                />
                 {formError ? (
                   <p className="mt-2 text-sm text-red-600 dark:text-red-400" role="alert">
                     {formError}
@@ -1614,6 +1873,7 @@ interface ProviderDetailPanelProps {
   onTest: () => void;
   onDelete: () => void;
   onToggleModel: (model: ProviderModelInfo) => void;
+  onUpdateModel: (model: ProviderModelInfo, patch: Partial<ProviderModelInfo>) => void;
   onSetDefault: (model: ProviderModelInfo) => void;
   testing: boolean;
   updating: boolean;
@@ -1627,6 +1887,7 @@ function ProviderDetailPanel({
   onTest,
   onDelete,
   onToggleModel,
+  onUpdateModel,
   onSetDefault,
   testing,
   updating,
@@ -1634,6 +1895,7 @@ function ProviderDetailPanel({
   const { t } = useTranslation();
   const brand = getBrand(provider.type);
   const [deepSeekBalance, setDeepSeekBalance] = useState<DeepSeekBalanceStatus | null>(null);
+  const [editingModel, setEditingModel] = useState<string | null>(null);
 
   useEffect(() => {
     if (provider.type !== 'deepseek' || !provider.enabled || !provider.api_key_set) {
@@ -1862,6 +2124,7 @@ function ProviderDetailPanel({
                   const isDefault = defaultModel?.provider === provider.name
                     && defaultModel?.model === m.name;
                   const usage = usageByModel[m.name];
+                  const isEditing = editingModel === m.name;
                   return (
                     <tr key={m.name} className={cn(!isEnabled && 'opacity-50')}>
                       <td className="py-2 pr-3">
@@ -1890,45 +2153,116 @@ function ProviderDetailPanel({
                         )}
                       </td>
                       <td className="py-2 px-3">
-                        {m.tier ? (
-                          <Badge variant="default" size="sm">
-                            {m.tier}
-                          </Badge>
+                        {isEditing ? (
+                          <Select
+                            value={m.tier || ''}
+                            onChange={(e) => onUpdateModel(m, { tier: e.target.value })}
+                            className="h-7 text-xs w-20"
+                          >
+                            <option value="">—</option>
+                            <option value="tier1">tier1</option>
+                            <option value="tier2">tier2</option>
+                          </Select>
+                        ) : m.tier ? (
+                          <Badge variant="default" size="sm">{m.tier}</Badge>
                         ) : (
                           <span className="text-gray-400">—</span>
                         )}
                       </td>
                       <td className="py-2 px-3 text-right tabular-nums text-gray-600 dark:text-gray-400">
-                        {formatContext(m.context_window)}
+                        {isEditing ? (
+                          <Input
+                            type="number"
+                            value={m.context_window || ''}
+                            onChange={(e) => onUpdateModel(m, { context_window: Number(e.target.value) || 0 })}
+                            className="h-7 text-xs w-24 text-right"
+                            placeholder="128000"
+                          />
+                        ) : (
+                          formatContext(m.context_window)
+                        )}
                       </td>
                       <td className="py-2 px-3 text-right tabular-nums text-gray-600 dark:text-gray-400">
-                        {formatPrice(m.price_input_per_1m)}
+                        {isEditing ? (
+                          <Input
+                            type="number"
+                            step="0.01"
+                            value={m.price_input_per_1m ?? ''}
+                            onChange={(e) => onUpdateModel(m, { price_input_per_1m: Number(e.target.value) || 0 })}
+                            className="h-7 text-xs w-20 text-right"
+                            placeholder="0.00"
+                          />
+                        ) : (
+                          formatPrice(m.price_input_per_1m)
+                        )}
                       </td>
                       <td className="py-2 px-3 text-right tabular-nums text-gray-600 dark:text-gray-400">
-                        {formatPrice(m.price_output_per_1m)}
+                        {isEditing ? (
+                          <Input
+                            type="number"
+                            step="0.01"
+                            value={m.price_output_per_1m ?? ''}
+                            onChange={(e) => onUpdateModel(m, { price_output_per_1m: Number(e.target.value) || 0 })}
+                            className="h-7 text-xs w-20 text-right"
+                            placeholder="0.00"
+                          />
+                        ) : (
+                          formatPrice(m.price_output_per_1m)
+                        )}
                       </td>
                       <td className="py-2 px-3">
-                        <div className="flex items-center justify-center gap-1">
-                          {m.supports_tools && (
-                            <span
-                              title={t('admin.provider.modelsTable.toolsTip')}
-                              className="text-sky-600 dark:text-sky-400"
-                            >
-                              <Wrench className="w-3.5 h-3.5" />
-                            </span>
-                          )}
-                          {m.supports_vision && (
-                            <span
-                              title={t('admin.provider.modelsTable.visionTip')}
-                              className="text-blue-500"
-                            >
-                              <Eye className="w-3.5 h-3.5" />
-                            </span>
-                          )}
-                          {!m.supports_tools && !m.supports_vision && (
-                            <span className="text-gray-400">—</span>
-                          )}
-                        </div>
+                        {isEditing ? (
+                          <div className="flex items-center justify-center gap-2">
+                            <label className="flex items-center gap-1 cursor-pointer" title={t('admin.provider.modelsTable.toolsTip')}>
+                              <input
+                                type="checkbox"
+                                checked={Boolean(m.supports_tools)}
+                                onChange={(e) => onUpdateModel(m, { supports_tools: e.target.checked })}
+                                className="rounded border-gray-300 text-sky-600"
+                              />
+                              <Wrench className="w-3 h-3 text-sky-500" />
+                            </label>
+                            <label className="flex items-center gap-1 cursor-pointer" title={t('admin.provider.modelsTable.visionTip')}>
+                              <input
+                                type="checkbox"
+                                checked={Boolean(m.supports_vision)}
+                                onChange={(e) => onUpdateModel(m, { supports_vision: e.target.checked })}
+                                className="rounded border-gray-300 text-blue-600"
+                              />
+                              <Eye className="w-3 h-3 text-blue-500" />
+                            </label>
+                            <label className="flex items-center gap-1 cursor-pointer" title={t('admin.provider.modelsTable.thinkingTip')}>
+                              <input
+                                type="checkbox"
+                                checked={Boolean(m.supports_thinking)}
+                                onChange={(e) => onUpdateModel(m, { supports_thinking: e.target.checked })}
+                                className="rounded border-gray-300 text-purple-600"
+                              />
+                              <Brain className="w-3 h-3 text-purple-500" />
+                            </label>
+                          </div>
+                        ) : (
+                          <div className="flex items-center justify-center gap-1">
+                            {m.supports_tools && (
+                              <span title={t('admin.provider.modelsTable.toolsTip')} className="text-sky-600 dark:text-sky-400">
+                                <Wrench className="w-3.5 h-3.5" />
+                              </span>
+                            )}
+                            {m.supports_vision && (
+                              <span title={t('admin.provider.modelsTable.visionTip')} className="text-blue-500">
+                                <Eye className="w-3.5 h-3.5" />
+                              </span>
+                            )}
+                            {m.supports_thinking && (
+                              <span title={t('admin.provider.modelsTable.thinkingTip')} className="text-purple-600 dark:text-purple-400">
+                                <Brain className="w-3.5 h-3.5" />
+                              </span>
+                            )}
+                            {!m.supports_tools && !m.supports_vision && !m.supports_thinking && (
+                              <span className="text-gray-400">—</span>
+                            )}
+                          </div>
+                        )}
                       </td>
                       <td className="py-2 px-3 text-right tabular-nums">
                         {usage ? (
@@ -1940,16 +2274,27 @@ function ProviderDetailPanel({
                         )}
                       </td>
                       <td className="py-2 pl-3">
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          disabled={!provider.enabled || !isEnabled || isDefault}
-                          onClick={() => onSetDefault(m)}
-                        >
-                          {isDefault
-                            ? t('admin.provider.modelsTable.isDefault')
-                            : t('admin.provider.modelsTable.makeDefault')}
-                        </Button>
+                        <div className="flex items-center gap-1">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => setEditingModel(isEditing ? null : m.name)}
+                            className={cn(isEditing && 'text-primary-600 dark:text-primary-400')}
+                            title={isEditing ? t('common.save') : t('admin.provider.modelsTable.editModel')}
+                          >
+                            <Pencil className="w-3.5 h-3.5" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            disabled={!provider.enabled || !isEnabled || isDefault}
+                            onClick={() => onSetDefault(m)}
+                          >
+                            {isDefault
+                              ? t('admin.provider.modelsTable.isDefault')
+                              : t('admin.provider.modelsTable.makeDefault')}
+                          </Button>
+                        </div>
                       </td>
                     </tr>
                   );

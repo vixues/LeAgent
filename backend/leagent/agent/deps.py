@@ -495,6 +495,79 @@ def _normalize_fallback_tool_call(tc: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _known_tool_names(tools: list[dict[str, Any]] | None) -> set[str]:
+    names: set[str] = set()
+    if not tools:
+        return names
+    for tool in tools:
+        if not isinstance(tool, dict):
+            continue
+        fn = tool.get("function")
+        if isinstance(fn, dict):
+            name = fn.get("name")
+            if isinstance(name, str) and name.strip():
+                names.add(name.strip())
+        name = tool.get("name")
+        if isinstance(name, str) and name.strip():
+            names.add(name.strip())
+    return names
+
+
+def _try_extract_content_tool_calls(
+    content: str,
+    *,
+    known_tool_names: set[str] | None = None,
+) -> list[dict[str, Any]]:
+    """Recover tool calls emitted as plain JSON in assistant ``content``.
+
+    Some OpenAI-compatible gateways (notably vLLM + reasoning models with
+    ``tool_choice=auto``) return ``{"name": "...", "arguments": {...}}`` in
+    ``delta.content`` instead of structured ``tool_calls`` chunks.
+    """
+    text = (content or "").strip()
+    if not text or '"name"' not in text:
+        return []
+
+    candidates: list[str] = [text]
+    start = text.find("{")
+    end = text.rfind("}")
+    if start >= 0 and end > start:
+        candidates.append(text[start : end + 1])
+
+    seen: set[str] = set()
+    for cand in candidates:
+        if cand in seen:
+            continue
+        seen.add(cand)
+        obj: dict[str, Any] | None
+        try:
+            loaded = json.loads(cand)
+            obj = loaded if isinstance(loaded, dict) else None
+        except json.JSONDecodeError:
+            parsed = parse_tool_arguments_str(cand)
+            obj = parsed if isinstance(parsed, dict) else None
+        if not obj:
+            continue
+        name_raw = obj.get("name")
+        if not isinstance(name_raw, str) or not name_raw.strip():
+            continue
+        name = name_raw.strip()
+        if known_tool_names and name not in known_tool_names:
+            continue
+        args_raw = obj.get("arguments", {})
+        if isinstance(args_raw, str):
+            parsed_args = parse_tool_arguments_str(args_raw)
+            args: dict[str, Any] = (
+                parsed_args if parsed_args is not None else {"__raw__": args_raw}
+            )
+        elif isinstance(args_raw, dict):
+            args = args_raw
+        else:
+            args = {}
+        return [{"id": "call_content_0", "name": name, "arguments": args}]
+    return []
+
+
 async def _finalize_pending_tool_calls(
     pending_tool_calls: dict[int, dict[str, Any]],
     last_delta_emit: dict[int, dict[str, Any]],
@@ -615,6 +688,7 @@ def _make_llm_call_model(llm: "LLMService") -> CallModel:
             final_usage: dict[str, Any] = {}
             final_finish: str | None = None
             final_model: str = ""
+            accumulated_content = ""
 
             try:
                 stream_iter = llm.chat_stream(
@@ -651,6 +725,7 @@ def _make_llm_call_model(llm: "LLMService") -> CallModel:
                     if chunk.content or reasoning_piece:
                         if chunk.content:
                             emitted_visible_content = True
+                            accumulated_content += chunk.content
                         yield ModelStreamEvent(
                             content_delta=chunk.content or None,
                             reasoning_delta=reasoning_piece,
@@ -800,6 +875,12 @@ def _make_llm_call_model(llm: "LLMService") -> CallModel:
             break
 
         sid = str(tool_use_context.session_id) if tool_use_context.session_id else None
+        if not pending_tool_calls and tools and accumulated_content.strip():
+            for tc in _try_extract_content_tool_calls(
+                accumulated_content,
+                known_tool_names=_known_tool_names(tools),
+            ):
+                yield ModelStreamEvent(tool_call=tc)
         for ev in await _finalize_pending_tool_calls(
             pending_tool_calls, last_delta_emit, sid,
         ):

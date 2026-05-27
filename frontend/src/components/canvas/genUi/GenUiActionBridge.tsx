@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { isChatStreamBusyForSession, useChatStore } from '@/stores/chat';
 import { useArtifactStore } from '@/stores/artifact';
 import { useGenUiStore } from '@/stores/genUi';
+import { getComposerModelMode } from '@/stores/chatDraft';
 import { generateId } from '@/lib/utils';
 import { handleChatStreamFailure, runChatStream } from '@/lib/runChatStream';
 import { registerGenUiActionAdapters } from '@/lib/genUiActionBus';
@@ -64,6 +65,7 @@ export function GenUiActionBridge() {
             userMessageId,
             assistantMsgId,
             content,
+            modelMode: getComposerModelMode(),
             signal: controller.signal,
             t: tRef.current,
           });

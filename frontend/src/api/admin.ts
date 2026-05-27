@@ -27,6 +27,7 @@ import type {
   PricingEntry,
   SpeedTestResult,
   SpendLimitStatus,
+  AvailableModel,
 } from '@/types/admin';
 
 export const adminApi = {
@@ -49,6 +50,10 @@ export const adminApi = {
   defaultModel: {
     get: () => apiClient.get<DefaultModelConfig>('/models/default'),
     set: (data: DefaultModelConfig) => apiClient.put<DefaultModelConfig>('/models/default', data),
+  },
+
+  availableModels: {
+    list: () => apiClient.get<AvailableModel[]>('/models/available'),
   },
 
   presets: {

@@ -433,6 +433,7 @@
     "modelSelector": "Select model",
     "modelSelectorAuto": "Auto",
     "modelSelectorAutoDescription": "Use the default configured model",
+    "modelSelectorRecent": "Recent",
     "skillsInSlash": "Skills",
     "composerRefs": {
       "sectionLabel": "References",

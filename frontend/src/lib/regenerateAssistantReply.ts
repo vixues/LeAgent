@@ -3,6 +3,7 @@ import { generateId, isUuid } from '@/lib/utils';
 import { useChatStore } from '@/stores/chat';
 import type { Message } from '@/types/chat';
 import { handleChatStreamFailure, runChatStream } from '@/lib/runChatStream';
+import { getComposerModelMode } from '@/stores/chatDraft';
 
 export function findPrecedingUserMessage(
   messages: Message[],
@@ -66,6 +67,7 @@ export async function regenerateAssistantReply(params: {
       assistantMsgId,
       content: trimmed,
       fileIds: fileIds.length ? fileIds : undefined,
+      modelMode: getComposerModelMode(),
       signal: controller.signal,
       t: params.t,
     });

@@ -2,6 +2,7 @@ import { useCallback } from 'react';
 import type { TFunction } from 'i18next';
 import { isChatStreamBusyForSession, useChatStore } from '@/stores/chat';
 import { runChatStream, handleChatStreamFailure } from '@/lib/runChatStream';
+import { getComposerModelMode } from '@/stores/chatDraft';
 
 /**
  * POST ``tool_replies`` to continue the same assistant message after ``ask_user``.
@@ -32,6 +33,7 @@ export function useAskUserResume(t: TFunction) {
           assistantMsgId: pending.assistantMsgId,
           content: '',
           toolReplies,
+          modelMode: getComposerModelMode(),
           signal: controller.signal,
           t,
         });

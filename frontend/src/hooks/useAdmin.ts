@@ -11,6 +11,7 @@ import type {
 const QUERY_KEYS = {
   providers: ['models', 'providers'] as const,
   defaultModel: ['models', 'default'] as const,
+  availableModels: ['models', 'available'] as const,
   presets: ['models', 'presets'] as const,
   usage: ['models', 'usage'] as const,
   health: ['models', 'health'] as const,
@@ -102,6 +103,14 @@ export function useCheckAllProvidersHealth() {
   });
 }
 
+export function useAvailableModels() {
+  return useQuery({
+    queryKey: QUERY_KEYS.availableModels,
+    queryFn: adminApi.availableModels.list,
+    staleTime: 60 * 1000,
+  });
+}
+
 export function useDefaultModel() {
   return useQuery({
     queryKey: QUERY_KEYS.defaultModel,
@@ -115,6 +124,7 @@ export function useSetDefaultModel() {
     mutationFn: (data: DefaultModelConfig) => adminApi.defaultModel.set(data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: QUERY_KEYS.defaultModel });
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.availableModels });
       queryClient.invalidateQueries({ queryKey: QUERY_KEYS.usage });
     },
   });

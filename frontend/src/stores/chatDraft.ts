@@ -21,6 +21,23 @@ function newClientId(): string {
   return `ref-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 }
 
+const SELECTED_MODEL_STORAGE_KEY = 'leagent.selectedModel';
+
+function readStoredComposerModelId(): string {
+  try {
+    const raw = localStorage.getItem(SELECTED_MODEL_STORAGE_KEY);
+    return raw && raw.trim() ? raw.trim() : 'auto';
+  } catch {
+    return 'auto';
+  }
+}
+
+/** Resolved model for ``/chat/stream`` (``undefined`` when Auto). */
+export function getComposerModelMode(): string | undefined {
+  const id = useChatDraftStore.getState().composerModelId;
+  return id && id !== 'auto' ? id : undefined;
+}
+
 /**
  * Ephemeral composer state for surfaces outside <ChatInput/> (workspace,
  * snippets, etc.).
@@ -51,8 +68,11 @@ interface ChatDraftStore {
   projectFolderId: string | null;
   projectFolderName: string | null;
   projectFolderPath: string | null;
+  /** Composer model selector (`auto` or `provider/model`). */
+  composerModelId: string;
 
   setComposerBody: (body: string) => void;
+  setComposerModelId: (modelId: string) => void;
   setComposerFiles: (files: File[] | ((prev: File[]) => File[])) => void;
 
   pushInsert: (text: string) => void;
@@ -79,8 +99,18 @@ export const useChatDraftStore = create<ChatDraftStore>((set) => ({
   projectFolderId: null,
   projectFolderName: null,
   projectFolderPath: null,
+  composerModelId: readStoredComposerModelId(),
 
   setComposerBody: (composerBody) => set({ composerBody }),
+
+  setComposerModelId: (composerModelId) => {
+    try {
+      localStorage.setItem(SELECTED_MODEL_STORAGE_KEY, composerModelId);
+    } catch {
+      /* ignore quota / private mode */
+    }
+    set({ composerModelId });
+  },
 
   setComposerFiles: (updater) =>
     set((state) => ({
@@ -146,6 +176,7 @@ export function buildComposerSendParams(suggestionAppend?: string) {
     folderId: s.folderId,
     fileIds: fileIds.length > 0 ? fileIds : undefined,
     projectFolderId: s.projectFolderId,
+    modelMode: getComposerModelMode(),
   };
 }
 

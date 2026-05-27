@@ -10,6 +10,23 @@ export interface ProviderModelInfo {
   price_output_per_1m?: number;
   supports_tools?: boolean | null;
   supports_vision?: boolean | null;
+  supports_thinking?: boolean | null;
+}
+
+export interface AvailableModel {
+  provider_name: string;
+  provider_type: string;
+  provider_label: string;
+  model_name: string;
+  tier: string;
+  context_window: number;
+  supports_tools: boolean;
+  supports_vision: boolean;
+  supports_thinking: boolean;
+  price_input_per_1m: number;
+  price_output_per_1m: number;
+  description: string;
+  is_default: boolean;
 }
 
 export interface ModelUsageRow {
@@ -112,6 +129,7 @@ export interface ModelProviderFormData {
     price_output_per_1m?: number;
     supports_tools?: boolean | null;
     supports_vision?: boolean | null;
+    supports_thinking?: boolean | null;
   }>;
   enabled: boolean;
   timeout?: number;

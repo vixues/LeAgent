@@ -79,21 +79,28 @@ class DatabaseSettings(BaseSettings):
 class LLMSettings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="LLM_")
 
-    tier1_endpoint: str = "https://api.deepseek.com"
-    tier1_model: str = "deepseek-v4-flash"
+    # Unified default provider/model — authoritative when providers.yaml
+    # does not specify a default.  Set via env or auto-detected at startup.
+    default_provider: str = ""
+    default_model: str = ""
+
+    # Legacy tier endpoints — kept for backward compatibility.
+    # When empty, tier routing derives from providers.yaml default_provider.
+    tier1_endpoint: str = ""
+    tier1_model: str = ""
     tier1_api_key: str = ""
     tier1_max_tokens: int = 8192
     tier1_temperature: float = 0.1
     tier1_timeout: int = 120
 
-    tier2_endpoint: str = "https://api.deepseek.com"
-    tier2_model: str = "deepseek-v4-flash"
+    tier2_endpoint: str = ""
+    tier2_model: str = ""
     tier2_api_key: str = ""
     tier2_max_tokens: int = 2048
     tier2_temperature: float = 0.1
     tier2_timeout: int = 60
 
-    embedding_endpoint: str = "http://localhost:8080/v1"
+    embedding_endpoint: str = ""
     embedding_model: str = "bge-large-zh-v1.5"
     embedding_dim: int = 1024
 

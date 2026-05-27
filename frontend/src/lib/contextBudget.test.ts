@@ -23,7 +23,7 @@ const providers: ModelProvider[] = [
     type: 'deepseek',
     enabled: true,
     models: [
-      { name: 'deepseek-v4-flash', tier: 'tier2', context_window: 1_000_000 },
+      { name: 'deepseek-v4-flash', tier: 'tier2', context_window: 128_000 },
       { name: 'deepseek-v4-pro', tier: 'tier1', context_window: 1_000_000 },
     ],
   }),
@@ -48,7 +48,7 @@ describe('resolveContextBudgetTokens', () => {
     ).toBe(32_000);
   });
 
-  it('uses default model for auto', () => {
+  it('uses tier1 model on the default provider for auto', () => {
     expect(
       resolveContextBudgetTokens('auto', providers, {
         provider: 'qwen',
@@ -57,7 +57,16 @@ describe('resolveContextBudgetTokens', () => {
     ).toBe(32_000);
   });
 
-  it('falls back to max enabled window when auto has no default', () => {
+  it('does not use a lower-tier default model when auto routes to tier1', () => {
+    expect(
+      resolveContextBudgetTokens('auto', providers, {
+        provider: 'deepseek',
+        model: 'deepseek-v4-flash',
+      }),
+    ).toBe(1_000_000);
+  });
+
+  it('falls back to the first valid provider when auto has no default', () => {
     expect(resolveContextBudgetTokens('auto', providers, { provider: '', model: '' })).toBe(
       1_000_000,
     );

@@ -105,7 +105,7 @@ export function ChatInput({
   const setComposerBody = useChatDraftStore((s) => s.setComposerBody);
   const setComposerFiles = useChatDraftStore((s) => s.setComposerFiles);
   const [isDragging, setIsDragging] = useState(false);
-  const [modelId, setModelId] = useState('auto');
+  const modelId = useChatDraftStore((s) => s.composerModelId);
   const [pickerKind, setPickerKind] = useState<PickerKind>(null);
   const [pickerQuery, setPickerQuery] = useState('');
   const [cameraOpen, setCameraOpen] = useState(false);
@@ -372,6 +372,7 @@ export function ChatInput({
       folderId: fid,
       fileIds,
       projectFolderId: pfid,
+      modelMode,
     } = buildComposerSendParams();
 
     const selectedPageFolderId =
@@ -382,7 +383,7 @@ export function ChatInput({
       fid ?? selectedPageFolderId,
       fileIds,
       pfid,
-      modelId !== 'auto' ? modelId : undefined,
+      modelMode,
     );
     closePicker();
   };
@@ -847,7 +848,7 @@ export function ChatInput({
 
             <div className="w-px h-4 bg-border-subtle mx-1" />
 
-            <ModelSelector value={modelId} onChange={setModelId} />
+            <ModelSelector />
           </div>
 
           <div className="flex items-center gap-1">

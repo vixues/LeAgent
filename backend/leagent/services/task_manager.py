@@ -249,10 +249,14 @@ class TaskManager:
             # Do not hold the manager's task-row transaction while a handler
             # runs; SQLite readers can otherwise block kill/cancel commits.
             async with db.session() as handler_session:
-                result = await asyncio.wait_for(
-                    handler.spawn(ctx, handler_params, handler_session),
-                    timeout=timeout,
-                )
+                try:
+                    result = await asyncio.wait_for(
+                        handler.spawn(ctx, handler_params, handler_session),
+                        timeout=timeout,
+                    )
+                except asyncio.CancelledError:
+                    await handler_session.rollback()
+                    raise
 
             async with db.session() as session:
                 task = await session.get(Task, UUID(task_id))

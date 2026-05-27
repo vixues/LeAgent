@@ -72,6 +72,7 @@ class ProviderModelInfo(BaseModel):
     price_output_per_1m: float = 0.0
     supports_tools: bool | None = None
     supports_vision: bool | None = None
+    supports_thinking: bool | None = None
 
 
 class ProviderResponse(BaseModel):
@@ -340,11 +341,25 @@ def _resolve_provider_api_key(pc: ProviderConfig, svc: ProviderConfigService) ->
     return ""
 
 
+def _provider_display_label(pc: ProviderConfig) -> str:
+    """Human-readable provider name for UI (custom YAML names, metadata label, presets)."""
+    from leagent.llm.provider_config import PROVIDER_PRESETS
+
+    meta = pc.metadata if isinstance(pc.metadata, dict) else {}
+    meta_label = meta.get("label")
+    if isinstance(meta_label, str) and meta_label.strip():
+        return meta_label.strip()
+    if pc.type == "custom":
+        return pc.name
+    preset = PROVIDER_PRESETS.get(pc.type, {})
+    return str(preset.get("label") or pc.type)
+
+
 def _to_response(pc: ProviderConfig, svc: ProviderConfigService) -> ProviderResponse:
     from leagent.llm.provider_config import PROVIDER_PRESETS
 
+    label = _provider_display_label(pc)
     preset = PROVIDER_PRESETS.get(pc.type, {})
-    label = preset.get("label", pc.type)
     requires_api_key = bool(preset.get("requires_api_key", True))
 
     is_healthy: bool | None = None
@@ -675,6 +690,70 @@ async def set_default_model(
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc))
     await _trigger_llm_reload()
     return DefaultModelResponse(provider=d.provider, model=d.model)
+
+
+class AvailableModel(BaseModel):
+    """A model available for chat selection, aggregated across all enabled providers."""
+    provider_name: str
+    provider_type: str
+    provider_label: str = ""
+    model_name: str
+    tier: str = ""
+    context_window: int = 0
+    supports_tools: bool = False
+    supports_vision: bool = False
+    supports_thinking: bool = False
+    price_input_per_1m: float = 0.0
+    price_output_per_1m: float = 0.0
+    description: str = ""
+    is_default: bool = False
+
+
+@router.get("/available", response_model=list[AvailableModel])
+async def list_available_models(
+    user_id: CurrentUserId,
+    svc: Annotated[ProviderConfigService, Depends(_get_service)],
+) -> list[AvailableModel]:
+    """Return a flat list of all available models across enabled providers.
+
+    Suitable for populating the chat model selector dropdown.
+    """
+    from leagent.llm.model_catalog import get_provider_presets_dict
+
+    default_cfg = svc.get_default()
+    presets_dict = get_provider_presets_dict()
+    result: list[AvailableModel] = []
+
+    for pc in svc.list_providers():
+        if not pc.enabled:
+            continue
+        label = _provider_display_label(pc)
+        for m in pc.models:
+            if m.get("enabled", True) is False:
+                continue
+            name = (m.get("name") or "").strip()
+            if not name:
+                continue
+            is_default = (pc.name == default_cfg.provider and name == default_cfg.model)
+            result.append(
+                AvailableModel(
+                    provider_name=pc.name,
+                    provider_type=pc.type,
+                    provider_label=label,
+                    model_name=name,
+                    tier=m.get("tier", ""),
+                    context_window=m.get("context_window", 0),
+                    supports_tools=bool(m.get("supports_tools")),
+                    supports_vision=bool(m.get("supports_vision")),
+                    supports_thinking=bool(m.get("supports_thinking")),
+                    price_input_per_1m=float(m.get("price_input_per_1m", 0.0)),
+                    price_output_per_1m=float(m.get("price_output_per_1m", 0.0)),
+                    description=m.get("description", ""),
+                    is_default=is_default,
+                )
+            )
+
+    return result
 
 
 @router.get("/presets", response_model=list[PresetInfo])

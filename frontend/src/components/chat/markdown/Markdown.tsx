@@ -116,7 +116,18 @@ function extractTextContent(nodes?: Array<{ value?: string; children?: Array<{ v
  *
  * Use `variant="article"` for long-form skill bodies and docs modals (clear hierarchy & rhythm).
  */
+/**
+ * Strip any residual ``<think>…</think>`` blocks from content before rendering.
+ * These should normally be removed by the backend (parse_think_tags), but may
+ * leak through when a provider is configured without tag-parsing enabled.
+ */
+function stripThinkTags(text: string): string {
+  if (!text.includes('<think>')) return text;
+  return text.replace(/<think>[\s\S]*?<\/redacted_thinking>/gi, '').replace(/^\n+/, '');
+}
+
 export function Markdown({ content, className, variant = 'default', imageAttachments }: MarkdownProps) {
+  const safeContent = useMemo(() => stripThinkTags(content), [content]);
   const remarkPlugins = useMemo(
     () => [remarkGfm, remarkMath, remarkCallouts],
     [],
@@ -344,7 +355,7 @@ export function Markdown({ content, className, variant = 'default', imageAttachm
       )}
     >
       <ReactMarkdown remarkPlugins={remarkPlugins} rehypePlugins={rehypePlugins} components={components}>
-        {content}
+        {safeContent}
       </ReactMarkdown>
     </div>
   );

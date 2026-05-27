@@ -10,7 +10,7 @@ from __future__ import annotations
 import pytest
 
 from leagent.llm.base import ChatMessage, StreamChunk, TokenUsage, ToolCall, ToolDefinition
-from leagent.llm.providers.openai import OpenAIProvider
+from leagent.llm.providers.openai import OpenAIProvider, _context_retry_max_tokens
 from leagent.exceptions.llm import (
     LLMRateLimitError,
     LLMServiceError,
@@ -247,6 +247,97 @@ class TestOpenAIStreamParsing:
         assert chunk.tool_calls_delta == []
         assert chunk.finish_reason is None
 
+    def test_thinking_delta_mapped_to_reasoning_content(self) -> None:
+        """Custom OpenAI-compatible gateways often use ``delta.thinking``."""
+        p = OpenAIProvider(api_key="k")
+        chunk = self._parse(p, {
+            "model": "custom-reasoner",
+            "choices": [{"delta": {"thinking": "step 1"}, "finish_reason": None}],
+        })
+        assert chunk.content == ""
+        assert chunk.raw_delta == {"reasoning_content": "step 1"}
+
+    def test_reasoning_alias_delta(self) -> None:
+        p = OpenAIProvider(api_key="k")
+        chunk = self._parse(p, {
+            "model": "custom-reasoner",
+            "choices": [{"delta": {"reasoning": "plan"}, "finish_reason": None}],
+        })
+        assert chunk.raw_delta == {"reasoning_content": "plan"}
+
+    def test_parse_response_extracts_thinking_field(self) -> None:
+        p = OpenAIProvider(api_key="k")
+        data = {
+            "model": "custom-reasoner",
+            "choices": [{
+                "message": {
+                    "role": "assistant",
+                    "content": "Final answer",
+                    "thinking": "Internal reasoning",
+                },
+                "finish_reason": "stop",
+            }],
+            "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
+        }
+        resp = p._parse_response(data)
+        assert resp.reasoning_content == "Internal reasoning"
+        assert resp.content == "Final answer"
+
+    def test_parse_response_extracts_think_tags(self) -> None:
+        p = OpenAIProvider(api_key="k", parse_think_tags=True)
+        data = {
+            "model": "custom-reasoner",
+            "choices": [{
+                "message": {
+                    "role": "assistant",
+                    "content": "<think>step by step</think>\nFinal answer",
+                },
+                "finish_reason": "stop",
+            }],
+            "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
+        }
+        resp = p._parse_response(data)
+        assert resp.reasoning_content == "step by step"
+        assert resp.content == "Final answer"
+
+    def test_parse_response_leaves_think_tags_by_default(self) -> None:
+        p = OpenAIProvider(api_key="k")
+        data = {
+            "model": "gpt-4o",
+            "choices": [{
+                "message": {
+                    "role": "assistant",
+                    "content": "<think>official provider text</think>\nFinal answer",
+                },
+                "finish_reason": "stop",
+            }],
+            "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
+        }
+        resp = p._parse_response(data)
+        assert resp.reasoning_content is None
+        assert resp.content == "<think>official provider text</think>\nFinal answer"
+
+    def test_deepseek_does_not_enable_think_tag_parser(self) -> None:
+        from leagent.llm.providers.deepseek import DeepSeekProvider
+
+        p = DeepSeekProvider(api_key="k")
+        data = {
+            "model": "deepseek-v4-pro",
+            "choices": [{
+                "message": {
+                    "role": "assistant",
+                    "content": "<think>leave official stream untouched</think>\nFinal answer",
+                    "reasoning_content": "official reasoning",
+                },
+                "finish_reason": "stop",
+            }],
+            "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
+        }
+        resp = p._parse_response(data)
+        assert p.parse_think_tags is False
+        assert resp.reasoning_content == "official reasoning"
+        assert resp.content == "<think>leave official stream untouched</think>\nFinal answer"
+
     def test_null_content_coalesced(self) -> None:
         p = OpenAIProvider(api_key="k")
         chunk = self._parse(p, {
@@ -297,6 +388,29 @@ class TestOpenAIStreamParsing:
         assert chunk.content == ""
         assert chunk.tool_calls_delta == []
 
+    @pytest.mark.asyncio
+    async def test_think_tags_stream_as_reasoning_content(self) -> None:
+        p = OpenAIProvider(api_key="k", parse_think_tags=True)
+        chunks = [
+            c
+            async for c in p._split_think_chunk(
+                StreamChunk(content="<think>plan</think>answer", model="local"),
+                in_think=False,
+                pending="",
+            )
+        ]
+        clean = []
+        for chunk in chunks:
+            raw = dict(chunk.raw_delta or {})
+            raw.pop("__in_think", None)
+            raw.pop("__pending_think_tag", None)
+            chunk.raw_delta = raw or None
+            clean.append(chunk)
+        assert clean[0].raw_delta == {"reasoning_content": "plan"}
+        assert clean[0].content == ""
+        assert clean[1].content == "answer"
+        assert clean[1].raw_delta is None
+
 
 # ---------------------------------------------------------------------------
 # Error handling
@@ -327,3 +441,15 @@ class TestOpenAIErrorHandling:
         p = OpenAIProvider(api_key="k")
         with pytest.raises(LLMServiceError, match="API error.*400"):
             p._handle_error(400, {"error": {"message": "bad request"}}, "gpt-4o")
+
+    def test_context_error_computes_retry_max_tokens(self) -> None:
+        body = {
+            "error": {
+                "message": (
+                    "This model's maximum context length is 32768 tokens. "
+                    "However, you requested 8192 output tokens and your prompt "
+                    "contains at least 24577 input tokens, for a total of at least 32769 tokens."
+                )
+            }
+        }
+        assert _context_retry_max_tokens(body, 8192) == 8063

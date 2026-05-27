@@ -433,6 +433,7 @@
     "modelSelector": "选择模型",
     "modelSelectorAuto": "自动",
     "modelSelectorAutoDescription": "使用已配置的默认模型",
+    "modelSelectorRecent": "最近使用",
     "skillsInSlash": "技能",
     "composerRefs": {
       "sectionLabel": "引用文件",
