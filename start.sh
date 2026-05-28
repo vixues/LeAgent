@@ -144,6 +144,7 @@ Environment:
   LEAGENT_SHUTDOWN_GRACE_SEC  SIGTERM grace period (default: 5)
   UV_SYNC_EXTRAS          uv extras             (default: dev browser)
   LEAGENT_SKIP_PLAYWRIGHT_INSTALL  set to 1 to skip `playwright install` after uv sync
+  (markers: backend/.playwright_chromium_marker, backend/.playwright_system_deps_marker)
   LEAGENT_PLAYWRIGHT_MIRROR        set to 1 to use a common npm mirror for browser downloads (China-friendly)
   PLAYWRIGHT_DOWNLOAD_HOST         optional explicit Playwright download host URL (overrides mirror flag)
   UV_PROJECT_ENVIRONMENT  Python virtualenv dir (default: backend/.venv)
@@ -172,6 +173,30 @@ release_lock() {
     if [ "$lock_pid" = "$$" ]; then
         rm -f "$LOCK_FILE"
     fi
+}
+
+stop_leagent() {
+    _kill_port "$BACKEND_PORT"
+    _kill_port "$FRONTEND_PORT"
+    if [ -f "$LOCK_FILE" ]; then
+        local lock_pid
+        lock_pid="$(tr -d '\n\r ' < "$LOCK_FILE" 2>/dev/null || true)"
+        if [ -n "$lock_pid" ] && kill -0 "$lock_pid" 2>/dev/null; then
+            info "Stopping start.sh supervisor (PID ${lock_pid})"
+            kill -TERM "$lock_pid" 2>/dev/null || true
+            local waited=0
+            while [ "$waited" -lt "$SHUTDOWN_GRACE_SEC" ]; do
+                kill -0 "$lock_pid" 2>/dev/null || break
+                sleep 1
+                waited=$((waited + 1))
+            done
+            if kill -0 "$lock_pid" 2>/dev/null; then
+                kill -9 "$lock_pid" 2>/dev/null || true
+            fi
+        fi
+        rm -f "$LOCK_FILE"
+    fi
+    success "Stopped LeAgent processes on ports ${BACKEND_PORT}, ${FRONTEND_PORT}"
 }
 
 # ── Platform-safe port killing ──────────────────────────────────
@@ -455,8 +480,13 @@ ensure_playwright_browsers() {
         export PLAYWRIGHT_DOWNLOAD_HOST="https://npmmirror.com/mirrors/playwright/"
     fi
     local pw_marker="$BACKEND_DIR/.playwright_chromium_marker"
+    local deps_marker="$BACKEND_DIR/.playwright_system_deps_marker"
     local lockfile="$BACKEND_DIR/uv.lock"
-    if [ -f "$pw_marker" ] && [ -f "$lockfile" ] && [ "$pw_marker" -nt "$lockfile" ]; then
+    local lock_hash
+    lock_hash="$(_file_sha256 "$lockfile")"
+    # Fingerprint uv.lock (same idea as .uv_sync_marker), not file mtimes — uv sync
+    # updates uv.lock and used to invalidate an empty touch marker every start.
+    if [ "$(_read_marker "$pw_marker")" = "$lock_hash" ]; then
         return 0
     fi
     if ! uv run --directory "$BACKEND_DIR" python -c "import playwright" 2>/dev/null; then
@@ -466,13 +496,21 @@ ensure_playwright_browsers() {
     step "Ensuring Playwright Chromium is installed"
     local t; t="$(date +%s)"
     if uv run --directory "$BACKEND_DIR" playwright install chromium; then
-        touch "$pw_marker"
+        _write_marker "$pw_marker" "$lock_hash"
         success "Playwright Chromium ready ($(_elapsed "$t"))"
     else
         warn "playwright install chromium failed — set PLAYWRIGHT_DOWNLOAD_HOST or LEAGENT_PLAYWRIGHT_MIRROR=1 and retry"
+        return 0
     fi
-    if [ "$PLATFORM" = "linux" ]; then
-        uv run --directory "$BACKEND_DIR" playwright install-deps chromium 2>/dev/null || true
+    # System libraries (apt) — one-time; do not re-run on every marker miss.
+    if [ "$PLATFORM" = "linux" ] && [ "$(_read_marker "$deps_marker")" != "installed" ]; then
+        step "Installing Playwright system dependencies (one-time; may ask for sudo)"
+        if uv run --directory "$BACKEND_DIR" playwright install-deps chromium; then
+            _write_marker "$deps_marker" "installed"
+            success "Playwright system dependencies ready"
+        else
+            warn "playwright install-deps failed — rerun manually: cd backend && uv run playwright install-deps chromium"
+        fi
     fi
 }
 
@@ -759,10 +797,7 @@ case "$COMMAND" in
         fi
         ;;
     stop)
-        _kill_port "$BACKEND_PORT"
-        _kill_port "$FRONTEND_PORT"
-        release_lock
-        success "Stopped LeAgent processes on ports ${BACKEND_PORT}, ${FRONTEND_PORT}"
+        stop_leagent
         ;;
     backend)
         acquire_lock

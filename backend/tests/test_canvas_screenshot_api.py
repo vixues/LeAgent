@@ -83,6 +83,7 @@ def stub_playwright_browser(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
         return _STUB_JPEG if type == "jpeg" else _STUB_PNG
 
     page = MagicMock()
+    page.goto = AsyncMock()
     page.set_content = AsyncMock()
     page.evaluate = AsyncMock()
     page.wait_for_timeout = AsyncMock()
@@ -218,8 +219,11 @@ class TestCanvasPreviewScreenshotResponse:
         assert resp.content.startswith(_STUB_PNG[:8])
 
         page = stub_playwright_browser["page"]
-        page.set_content.assert_awaited_once()
-        assert page.set_content.await_args.kwargs.get("wait_until") == "load"
+        page.goto.assert_awaited_once()
+        assert page.goto.await_args.kwargs.get("wait_until") == "load"
+        nav_url = page.goto.await_args.args[0] if page.goto.await_args.args else ""
+        assert "/api/v1/canvas/preview" in nav_url
+        assert "token=" in nav_url
 
     def test_passes_viewport_to_playwright(
         self,

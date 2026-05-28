@@ -17,7 +17,9 @@ from leagent.services.auth import CurrentUserId  # noqa: TC001
 from leagent.services.canvas.service import (
     CanvasService,
     build_preview_html,
+    canvas_preview_absolute_url,
     get_canvas_service,
+    load_html_in_playwright_page,
 )
 
 logger = logging.getLogger(__name__)
@@ -252,18 +254,16 @@ async def screenshot_canvas(
     doc = await canvas.load_verified_from_token(token)
     if doc is None:
         raise HTTPException(status.HTTP_403_FORBIDDEN, detail="Invalid or expired preview token")
-    html, _mime = build_preview_html(doc, settings)
 
     browser = await _get_pw_browser()
     page = await browser.new_page(viewport={"width": width, "height": height})
     try:
-        # Match PDF export: "load" is reliable with Tailwind CDN; networkidle often times out.
-        await page.set_content(html, wait_until="load", timeout=30_000)
-        try:
-            await page.evaluate("() => document.fonts.ready")
-        except Exception:
-            pass
-        await page.wait_for_timeout(300)
+        preview_url = canvas_preview_absolute_url(settings, token)
+        await load_html_in_playwright_page(
+            page,
+            settings,
+            navigate_url=preview_url,
+        )
         screenshot_bytes = await page.screenshot(
             type=fmt,
             full_page=True,
@@ -326,13 +326,9 @@ async def genui_export_pdf(
     browser = await _get_pw_browser()
     viewport = _pdf_viewport(body.page_size, body.orientation)
     page = await browser.new_page(viewport=viewport)
+    settings = get_settings()
     try:
-        await page.set_content(html_doc, wait_until="load", timeout=30_000)
-        try:
-            await page.evaluate("() => document.fonts.ready")
-        except Exception:
-            pass
-        await page.wait_for_timeout(150)
+        await load_html_in_playwright_page(page, settings, html=html_doc)
         # Use print CSS cascade (typography, @page) — not screen snapshot scaling.
         await page.emulate_media(media="print")
 

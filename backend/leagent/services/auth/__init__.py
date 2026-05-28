@@ -30,6 +30,7 @@ from leagent.services.auth.signed_url import (
     build_download_url,
     build_preview_url,
     create_signed_token,
+    sign_managed_file_urls_in_html,
     verify_signed_token,
 )
 from leagent.services.auth.tokens import TokenError, decode_token, mint_token
@@ -60,6 +61,7 @@ __all__ = [
     "build_download_url",
     "build_preview_url",
     "create_signed_token",
+    "sign_managed_file_urls_in_html",
     "verify_signed_token",
     "TokenError",
     "decode_token",

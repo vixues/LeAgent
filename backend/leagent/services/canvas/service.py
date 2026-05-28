@@ -12,6 +12,7 @@ from sqlmodel import col, func, select
 
 from leagent.services.auth.tokens import mint_token, decode_token, TokenError
 
+from leagent.services.auth.signed_url import sign_managed_file_urls_in_html
 from leagent.services.canvas.html_bundle import merge_html_files_to_document
 from leagent.services.database.models.canvas import CanvasContentType, CanvasDocument
 from leagent.services.database.models.message import ChatSession
@@ -407,8 +408,77 @@ def _inject_preview_assets_into_full_document(html: str) -> str:
     return html
 
 
-def build_preview_html(doc: CanvasDocument, settings: Settings) -> tuple[str, str]:
-    """Return (html_body, content_type mime)."""
+def playwright_document_base(settings: Settings) -> str:
+    """Origin Playwright uses to resolve ``/api/v1/...`` asset URLs in ``set_content``."""
+    explicit = (settings.canvas.preview_public_base or "").strip().rstrip("/")
+    if explicit:
+        return explicit
+    return f"http://127.0.0.1:{int(settings.port)}"
+
+
+_WAIT_DOCUMENT_MEDIA_JS = """
+async () => {
+  try { await document.fonts.ready; } catch (e) {}
+  const imgs = Array.from(document.images || []);
+  await Promise.all(
+    imgs.map((img) => {
+      if (img.complete && img.naturalWidth > 0) return Promise.resolve();
+      return new Promise((resolve) => {
+        img.addEventListener("load", resolve, { once: true });
+        img.addEventListener("error", resolve, { once: true });
+        setTimeout(resolve, 15000);
+      });
+    }),
+  );
+}
+"""
+
+
+def canvas_preview_absolute_url(settings: Settings, token: str) -> str:
+    """Full URL for Playwright to load the same HTML as the hosted canvas iframe."""
+    return f"{playwright_document_base(settings).rstrip('/')}{preview_query_path(token)}"
+
+
+async def load_html_in_playwright_page(
+    page: Any,
+    settings: Settings,
+    *,
+    html: str | None = None,
+    navigate_url: str | None = None,
+    wait_until: str = "load",
+    timeout_ms: int = 30_000,
+) -> None:
+    """Load HTML in headless Chromium and wait for fonts/images.
+
+    Use ``navigate_url`` (canvas preview) when relative ``/api/v1/files/...`` assets
+    must resolve against the running API. Use ``html`` + absolute asset URLs for
+    offline documents (e.g. GenUI PDF). Playwright's ``set_content`` has no ``url=``
+    parameter on our supported version.
+    """
+    if navigate_url:
+        await page.goto(navigate_url, wait_until=wait_until, timeout=timeout_ms)
+    elif html is not None:
+        await page.set_content(html, wait_until=wait_until, timeout=timeout_ms)
+    else:
+        raise ValueError("load_html_in_playwright_page requires html or navigate_url")
+    try:
+        await page.evaluate(_WAIT_DOCUMENT_MEDIA_JS)
+    except Exception:
+        pass
+    await page.wait_for_timeout(200)
+
+
+def build_preview_html(
+    doc: CanvasDocument,
+    settings: Settings,
+    *,
+    public_base: str | None = None,
+) -> tuple[str, str]:
+    """Return (html_body, content_type mime).
+
+    Pass ``public_base`` when rendering offline (Playwright screenshot/PDF) so
+    managed file preview URLs resolve against the running API origin.
+    """
     from html import escape
 
     ct = doc.content_type
@@ -440,6 +510,12 @@ def build_preview_html(doc: CanvasDocument, settings: Settings) -> tuple[str, st
     body = doc.html_body or ""
     body = _inject_maps_key(body, (settings.canvas.google_maps_api_key or "").strip())
     body = sanitize_html(body, max_bytes=settings.canvas.max_html_bytes)
+    body = sign_managed_file_urls_in_html(
+        body,
+        settings=settings,
+        user_id=doc.user_id,
+        public_base=public_base,
+    )
     if "<html" in body.lower():
         return _inject_preview_assets_into_full_document(body), "text/html; charset=utf-8"
     wrapped = _wrap_html_fragment(body)
