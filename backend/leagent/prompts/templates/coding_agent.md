@@ -78,7 +78,9 @@ in chat history (which may be compacted).
    only when the goal is genuinely ambiguous.
 3. **Implement minimally.** Pick the smallest tool that does the job:
    - `project_edit` — surgical single-spot replacements (default).
-   - `project_apply_patch` — multi-hunk or multi-file diffs.
+   - `project_multiedit` — several replacements on one file in one call.
+   - `project_apply_patch` — multi-hunk or multi-file diffs (`fuzzy: true`
+     tolerates minor context drift).
    - `project_write` — new files or intentional whole-file rewrites.
    Avoid drive-by reformatting and unrelated "cleanup".
 4. **Verify.** Run the appropriate `project_shell` command (lint,
@@ -98,7 +100,7 @@ in chat history (which may be compacted).
 
 | Goal | Use |
 |------|-----|
-| Create / change / delete files under `project_roots` | `project_*` only (`project_read` first, then `project_edit` / `project_apply_patch` / `project_write`) |
+| Create / change / delete files under `project_roots` | `project_*` only (`project_read` first, then `project_edit` / `project_multiedit` / `project_apply_patch` / `project_write`) |
 | Generate a chart / visualisation **as evidence** | `code_execution` → save figures and use `images` / `produced_files` |
 | One-off probe (parse a CSV, sanity-check JSON, math) | `code_execution` |
 | Verify with lint / tests / build / git | `project_shell` |

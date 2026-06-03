@@ -1,42 +1,17 @@
-"""Live integration test: DeepSeek + ``QueryEngine`` + Excel fixture.
+"""Optional live DeepSeek test: ``QueryEngine`` + Excel fixture.
 
-Gated behind ``DEEPSEEK_API_KEY`` — the test is skipped automatically
-on CI / dev machines without a key. Pass ``-m integration`` (or the
-``--run-live`` opt-in) to run it explicitly.
+Skipped when ``DEEPSEEK_API_KEY`` is unset.
 
-The test drives one end-to-end turn:
-
-1. Build a real ``LLMService`` wired to ``DeepSeekProvider``.
-2. Bootstrap the standard tool registry (so ``excel_reader`` /
-   ``code_execution`` / ``file_manager`` are all available).
-3. Construct a ``QueryEngine`` with a tailored Excel-analysis system
-   prompt (loaded inline here — the engine itself never hardcodes
-   prompts).
-4. Submit the fixture workbook path + a free-form question and
-   collect the streaming SDK messages.
-
-We then assert the model used at least one tool call AND produced a
-final assistant message that mentions at least one of the ground-truth
-answers baked into the fixture manifest. The assertions are loose on
-purpose — LLM output is non-deterministic and we don't want CI to
-bounce on cosmetic phrasing.
+    uv run pytest tests/integration/test_deepseek_excel.py -m live -v
 """
 
 from __future__ import annotations
 
-import asyncio
-import os
-from pathlib import Path
-
 import pytest
 
-pytestmark = [
-    pytest.mark.integration,
-    pytest.mark.skipif(
-        not os.getenv("DEEPSEEK_API_KEY"),
-        reason="DEEPSEEK_API_KEY not set; live DeepSeek integration test skipped.",
-    ),
-]
+from tests.integration.conftest import drive_query_engine, requires_live_deepseek
+
+pytestmark = [pytest.mark.integration, pytest.mark.live, requires_live_deepseek]
 
 
 # ---------------------------------------------------------------------------
@@ -67,64 +42,18 @@ information needed, say so explicitly.
 """
 
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-
-def _build_llm_service():
-    """Construct a real ``LLMService`` backed by ``DeepSeekProvider``."""
-    from leagent.llm.providers.deepseek import DeepSeekProvider
-    from leagent.llm.registry import ProviderRegistry
-    from leagent.llm.router import ModelRouter, TierConfig
-    from leagent.llm.service import LLMService
-
-    api_key = os.environ["DEEPSEEK_API_KEY"]
-    base_url = os.getenv("DEEPSEEK_BASE_URL", DeepSeekProvider.DEFAULT_BASE_URL)
-    model = os.getenv("DEEPSEEK_MODEL", DeepSeekProvider.DEFAULT_MODEL)
-
-    registry = ProviderRegistry()
-    # Register the same provider under its canonical name and both tier
-    # aliases so the router + QueryEngine both find it.
-    for name in ("deepseek", "tier1", "tier2"):
-        registry.register(
-            name,
-            DeepSeekProvider(api_key=api_key, base_url=base_url, default_model=model),
-            metadata={"tier": name, "vendor": "deepseek", "model": model},
-        )
-
-    router = ModelRouter(
-        registry=registry,
-        tier_configs={
-            "tier1": TierConfig(provider="tier1", model=model, temperature=0.1),
-            "tier2": TierConfig(provider="tier2", model=model, temperature=0.1),
-        },
-    )
-    return LLMService(registry=registry, router=router)
-
-
-def _build_registry():
-    from leagent.bootstrap.tools import register_default_tools
-    from leagent.tools.registry import ToolRegistry
-
-    registry = ToolRegistry()
-    register_default_tools(registry=registry)
-    return registry
-
-
-# ---------------------------------------------------------------------------
-# Test
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.asyncio
-async def test_deepseek_analyses_excel(excel_analysis_manifest) -> None:  # type: ignore[no-untyped-def]
+async def test_deepseek_analyses_excel(
+    excel_analysis_manifest,  # type: ignore[no-untyped-def]
+    deepseek_llm,
+    full_tool_registry,
+) -> None:
     from leagent.agent.query_engine import QueryEngine, QueryEngineConfig
     from leagent.tools.executor import ToolExecutor
 
     manifest = excel_analysis_manifest
-    llm = _build_llm_service()
-    registry = _build_registry()
+    llm = deepseek_llm
+    registry = full_tool_registry
     executor = ToolExecutor(registry=registry, service_manager=None)
 
     engine = QueryEngine(
@@ -149,45 +78,19 @@ async def test_deepseek_analyses_excel(excel_analysis_manifest) -> None:  # type
         "and which single product has the highest unit price?"
     )
 
-    tool_uses: list[str] = []
-    tool_results: list[str] = []
-    assistant_chunks: list[str] = []
-    final_reason: str | None = None
-
-    async def _drive() -> None:
-        nonlocal final_reason
-        async for msg in engine.submit_message(user_prompt):
-            if msg.type == "tool_use":
-                tool_uses.append(str(msg.data.get("name")))
-            elif msg.type == "tool_result":
-                content = str(msg.data.get("content", ""))
-                tool_results.append(content)
-            elif msg.type == "stream_delta":
-                assistant_chunks.append(str(msg.data.get("content", "")))
-            elif msg.type == "assistant":
-                if content := msg.data.get("content"):
-                    assistant_chunks.append(str(content))
-            elif msg.type == "result":
-                final_reason = str(msg.data.get("reason"))
-
-    # 3-minute ceiling — DeepSeek streaming is usually well under that,
-    # but network + tool dispatch can spike.
-    await asyncio.wait_for(_drive(), timeout=180.0)
+    trace = await drive_query_engine(engine, user_prompt, timeout=180.0)
 
     # -- Process-level assertions ---------------------------------------
-    assert final_reason == "completed", (
-        f"QueryEngine did not finish cleanly: reason={final_reason}, "
-        f"tool_uses={tool_uses}"
+    assert trace.final_reason == "completed", (
+        f"QueryEngine did not finish cleanly: reason={trace.final_reason}, "
+        f"tool_uses={trace.tool_uses}"
     )
-    assert tool_uses, "Agent never called a tool — expected at least excel_reader."
-    # We don't pin to a specific tool name (the model might pick
-    # ``code_execution`` directly if it prefers) — just verify the
-    # Excel path did end up in at least one tool result.
-    joined_results = "\n".join(tool_results)
+    assert trace.tool_uses, "Agent never called a tool — expected at least excel_reader."
+    joined_results = trace.joined_tool_results
     assert str(manifest.path) in joined_results or "Sales" in joined_results
 
     # -- Answer-content assertions (loose, case-insensitive) ------------
-    final = "".join(assistant_chunks).lower()
+    final = trace.final_text.lower()
     assert final.strip(), "Assistant returned an empty final answer."
 
     # Total revenue: allow the model to format as ``6,819,000`` / ``6.82M`` etc.

@@ -89,12 +89,14 @@ _CURATED_UTIL_TOOL_PATHS: tuple[tuple[str, str], ...] = (
     ("leagent.tools.canvas.ui_components", "EmitUiPatchTool"),
     # --- code ---
     ("leagent.tools.code.execution", "CodeExecutionTool"),
+    ("leagent.tools.code.workspace_edit", "CodeWorkspaceEditTool"),
     ("leagent.tools.code.deepseek_fim", "DeepSeekFimTool"),
     ("leagent.tools.code.uv_pip_install", "UvPipInstallTool"),
     # --- project (multi-file coding agent toolbox) ---
     ("leagent.tools.project.read", "ProjectReadTool"),
     ("leagent.tools.project.write", "ProjectWriteTool"),
     ("leagent.tools.project.edit", "ProjectEditTool"),
+    ("leagent.tools.project.multiedit", "ProjectMultieditTool"),
     ("leagent.tools.project.patch", "ProjectApplyPatchTool"),
     ("leagent.tools.project.grep", "ProjectGrepTool"),
     ("leagent.tools.project.glob", "ProjectGlobTool"),

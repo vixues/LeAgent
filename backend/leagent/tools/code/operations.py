@@ -98,6 +98,7 @@ class CodeExecOp(BaseModel):
     syntax_diagnostics: list[dict[str, Any]] | None = None
     suggested_fix_region: dict[str, Any] | None = None
     workspace_file: str | None = None
+    repair_workflow: str | None = None
 
 
 # ---------------------------------------------------------------------------

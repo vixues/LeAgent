@@ -17,6 +17,7 @@ Tools registered here:
 * ``project_read``         — line-numbered read with offset/limit.
 * ``project_write``        — whole-file write (creates parent dirs).
 * ``project_edit``         — uniqueness-checked string replace.
+* ``project_multiedit``    — batch string replace on one file.
 * ``project_apply_patch``  — apply a unified diff across one or more files.
 * ``project_grep``         — regex search across the project (rg-aware).
 * ``project_glob``         — find files by glob, sorted by mtime.
@@ -30,6 +31,7 @@ from __future__ import annotations
 from leagent.tools.project.edit import ProjectEditTool
 from leagent.tools.project.glob import ProjectGlobTool
 from leagent.tools.project.grep import ProjectGrepTool
+from leagent.tools.project.multiedit import ProjectMultieditTool
 from leagent.tools.project.outline import ProjectOutlineTool
 from leagent.tools.project.patch import ProjectApplyPatchTool
 from leagent.tools.project.read import ProjectReadTool
@@ -41,6 +43,7 @@ __all__ = [
     "ProjectReadTool",
     "ProjectWriteTool",
     "ProjectEditTool",
+    "ProjectMultieditTool",
     "ProjectApplyPatchTool",
     "ProjectGrepTool",
     "ProjectGlobTool",

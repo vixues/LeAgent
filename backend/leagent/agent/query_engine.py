@@ -610,12 +610,27 @@ class QueryEngine:
         """Feed artifact success/failure into the context manager's tracker."""
         tracker = self._context.artifact_tracker
         error_text = ""
+        error_type = ""
         if not item.success:
             env = item.envelope
             if isinstance(env, dict):
                 error_text = str(env.get("error") or "")
+                data = env.get("data")
+                if isinstance(data, dict):
+                    error_type = str(data.get("error_type") or "")
             if not error_text:
                 error_text = item.content[:500] if item.content else "Unknown error"
+            if not error_type and item.content.strip().startswith("{"):
+                try:
+                    import json
+
+                    parsed = json.loads(item.content)
+                    if isinstance(parsed, dict):
+                        detail = parsed.get("detail")
+                        if isinstance(detail, dict):
+                            error_type = str(detail.get("error_type") or "")
+                except json.JSONDecodeError:
+                    pass
         canvas_id = ""
         env = item.envelope
         if isinstance(env, dict):
@@ -628,6 +643,7 @@ class QueryEngine:
             success=item.success,
             error_text=error_text,
             canvas_id=canvas_id,
+            error_type=error_type,
         )
 
     async def _register_workspace_attachments(

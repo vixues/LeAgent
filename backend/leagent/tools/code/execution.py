@@ -57,6 +57,24 @@ logger = structlog.get_logger(__name__)
 
 _SOURCE_ECHO_LIMIT = 12_000
 
+_REPAIR_WORKFLOW_SYNTAX = (
+    "1) Use `code_workspace_edit` on `__last_source__.py` (or the failing "
+    "`workspace_file`) with a minimal old_string/new_string fix using "
+    "`source_echo` and `suggested_fix_region`; "
+    "2) Re-run `code_execution` with `workspace_file=__last_source__.py` "
+    "(no need to resend full `source`)."
+)
+_REPAIR_WORKFLOW_RUNTIME = (
+    "1) Read stderr/traceback and `suggested_fix_region`; "
+    "2) Fix with `code_workspace_edit` on `__last_source__.py`; "
+    "3) Re-run via `workspace_file=__last_source__.py`."
+)
+_REPAIR_WORKFLOW_VALIDATION = (
+    "Tool-call JSON may be malformed. Retry with strict JSON escaping or "
+    "use `tool_argument_blob` + `source_blob_id`. If the script itself is "
+    "fine, regenerate `source` from scratch."
+)
+
 
 # ---------------------------------------------------------------------------
 # Typed result envelope
@@ -93,6 +111,22 @@ class CodeExecutionEnvelope(TypedDict, total=False):
     syntax_diagnostics: list[dict[str, Any]] | None
     suggested_fix_region: dict[str, Any] | None
     workspace_file: str | None
+    repair_workflow: str | None
+
+
+def _repair_workflow_for(error_type: ErrorType | None) -> str | None:
+    if error_type == "syntax":
+        return _REPAIR_WORKFLOW_SYNTAX
+    if error_type == "runtime":
+        return _REPAIR_WORKFLOW_RUNTIME
+    if error_type in ("validation", "dependency"):
+        return _REPAIR_WORKFLOW_VALIDATION
+    if error_type == "timeout":
+        return (
+            "Inspect partial stdout/stderr; reduce work or raise `timeout_sec`, "
+            "then fix via `code_workspace_edit` and re-run with `workspace_file`."
+        )
+    return None
 
 
 def _extract_fix_region(
@@ -180,6 +214,7 @@ def _build_envelope(
         "syntax_diagnostics": syntax_diagnostics,
         "suggested_fix_region": fix_region,
         "workspace_file": workspace_file,
+        "repair_workflow": _repair_workflow_for(error_type) if is_error else None,
     }
     return envelope
 
@@ -582,8 +617,11 @@ class CodeExecutionTool(BaseTool):
                 prim = artifact.diagnostics[0] if artifact.diagnostics else None
                 msg = prim["message"] if prim else "Python syntax error"
                 ws_path = ""
+                persisted: str | None = None
                 try:
-                    ws_path = str(self._get_workspace(context).path)
+                    ws = self._get_workspace(context)
+                    ws_path = str(ws.path)
+                    persisted = self._persist_source(source, context)
                 except Exception:  # noqa: BLE001
                     ws_path = ""
                 return _build_envelope(
@@ -596,6 +634,7 @@ class CodeExecutionTool(BaseTool):
                     artifact_id=artifact.artifact_id,
                     syntax_diagnostics=artifact.diagnostics,
                     include_source_echo=True,
+                    workspace_file=persisted,
                 ), None
 
         if artifact is None and not skip_syntax:
@@ -611,8 +650,11 @@ class CodeExecutionTool(BaseTool):
                 prim = syn.diagnostics[0] if syn.diagnostics else None
                 msg = prim.message if prim else "Python syntax error"
                 ws_path = ""
+                persisted: str | None = None
                 try:
-                    ws_path = str(self._get_workspace(context).path)
+                    ws = self._get_workspace(context)
+                    ws_path = str(ws.path)
+                    persisted = self._persist_source(source, context)
                 except Exception:  # noqa: BLE001
                     ws_path = ""
                 return _build_envelope(
@@ -624,6 +666,7 @@ class CodeExecutionTool(BaseTool):
                     returncode=-1,
                     syntax_diagnostics=[d.to_dict() for d in syn.diagnostics],
                     include_source_echo=True,
+                    workspace_file=persisted,
                 ), None
 
         return source, artifact

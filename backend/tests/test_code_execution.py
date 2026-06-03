@@ -482,6 +482,8 @@ async def test_source_echo_present_on_syntax_error(tmp_path) -> None:
     assert res.success is False
     assert isinstance(res.data, dict)
     assert res.data["source_echo"] == broken_source
+    assert res.data.get("workspace_file") == "__last_source__.py"
+    assert res.data.get("repair_workflow")
 
 
 @pytest.mark.asyncio

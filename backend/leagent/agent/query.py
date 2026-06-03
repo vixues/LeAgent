@@ -813,6 +813,9 @@ async def _dispatch_tools(
             serial.append(tc)
 
     results: list[ToolResultMessage] = []
+    from leagent.agent.recovery import ErrorRecovery
+
+    recovery = ErrorRecovery(ctx.executor)
 
     async def _run_one(call: dict[str, Any]) -> ToolResultMessage:
         name = call["name"]
@@ -831,13 +834,15 @@ async def _dispatch_tools(
                 extra={"tool": name, "call_id": call.get("id")},
             )
         try:
+            from leagent.agent.base import ToolCall
+
             cid = call.get("id")
-            base = await ctx.executor.run_tool(
-                name,
-                args,
-                ctx,
-                call_id=str(cid) if cid is not None else None,
+            tool_call = ToolCall(
+                id=str(cid) if cid is not None else "",
+                name=name,
+                arguments=args if isinstance(args, dict) else {},
             )
+            base = await recovery.as_middleware()(tool_call, ctx)
             content = _serialize_result(base)
             err_text = str(getattr(base, "error", "") or "")
             if not getattr(base, "success", True) and (

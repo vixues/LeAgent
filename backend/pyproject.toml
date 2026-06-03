@@ -155,5 +155,6 @@ filterwarnings = [
     "ignore::pytest.PytestUnhandledThreadExceptionWarning",
 ]
 markers = [
-    "integration: live integration tests that hit real external services (LLM APIs, etc.)",
+    "integration: end-to-end tests across agent loop and tools (offline by default)",
+    "live: optional live LLM tests; requires DEEPSEEK_API_KEY and -m live",
 ]

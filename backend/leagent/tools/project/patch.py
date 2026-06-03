@@ -18,18 +18,60 @@ Limitations (kept deliberate to avoid silent miscompiles):
 
 from __future__ import annotations
 
+import re
+from pathlib import Path
 from typing import Any
 
 import structlog
 
 from leagent.tools.base import BaseTool, ToolCategory, ToolContext
+
 from leagent.tools.project._fs import (
     apply_unified_diff,
     resolve_content,
     select_project_root,
 )
+from leagent.tools.project.edit_hints import find_closest_lines
 
 logger = structlog.get_logger(__name__)
+
+
+def _patch_failure_payload(message: str, root: Path) -> dict[str, Any]:
+    """Enrich patch rejection errors with did-you-mean snippets when possible."""
+    payload: dict[str, Any] = {"error": message}
+    path_match = re.search(
+        r"mismatch in (\S+) at line (\d+): expected (.+?) got",
+        message,
+    )
+    if not path_match:
+        return payload
+    rel_path = path_match.group(1)
+    expected_raw = path_match.group(3).strip()
+    try:
+        import ast
+
+        expected = ast.literal_eval(expected_raw)
+        if not isinstance(expected, str):
+            expected = str(expected)
+    except (SyntaxError, ValueError):
+        expected = expected_raw.strip("'\"")
+    target = (root / rel_path).resolve()
+    try:
+        file_text = target.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return payload
+    closest = find_closest_lines(file_text, expected)
+    if closest:
+        payload["patch_hint"] = {
+            "path": rel_path,
+            "instruction": (
+                "Patch hunk context did not match the file on disk. "
+                "Compare the expected line with the closest matches below, "
+                "re-read with `project_read`, and retry the hunk."
+            ),
+            "closest_matches": closest,
+        }
+    return payload
 
 
 class ProjectApplyPatchTool(BaseTool):
@@ -80,6 +122,14 @@ class ProjectApplyPatchTool(BaseTool):
                         "Optional override of the active project root."
                     ),
                 },
+                "fuzzy": {
+                    "type": "boolean",
+                    "description": (
+                        "When true, allow context lines in hunks to match "
+                        "within ±5 lines (strict by default)."
+                    ),
+                    "default": False,
+                },
             },
             "additionalProperties": False,
         }
@@ -106,9 +156,13 @@ class ProjectApplyPatchTool(BaseTool):
         await self._track_artifact(diff_text, context)
 
         try:
-            applied = apply_unified_diff(root, diff_text)
+            applied = apply_unified_diff(
+                root,
+                diff_text,
+                fuzzy=bool(params.get("fuzzy") or False),
+            )
         except (ValueError, FileNotFoundError, PermissionError) as exc:
-            return {"error": str(exc)}
+            return _patch_failure_payload(str(exc), root)
 
         files = [
             {
