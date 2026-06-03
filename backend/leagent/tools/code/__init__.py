@@ -27,6 +27,7 @@ from leagent.tools.code.operations import (
 from leagent.tools.code.pipeline import CodeGenerationPipeline, get_pipeline
 from leagent.tools.code.syntax_validator import SyntaxValidatorTool
 from leagent.tools.code.uv_pip_install import UvPipInstallTool
+from leagent.tools.code.workspace_edit import CodeWorkspaceEditTool
 
 __all__ = [
     "ArtifactKind",
@@ -37,6 +38,7 @@ __all__ = [
     "CodeExecutionEnvelope",
     "CodeExecutionTool",
     "CodeGenerationPipeline",
+    "CodeWorkspaceEditTool",
     "DeepSeekFimTool",
     "ErrorType",
     "FileEditOp",

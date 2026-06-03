@@ -67,6 +67,7 @@ DEFAULT_CODING_AGENT_TOOLS: tuple[str, ...] = (
     "project_read",
     "project_write",
     "project_edit",
+    "project_multiedit",
     "project_apply_patch",
     "project_grep",
     "project_glob",
@@ -156,6 +157,7 @@ def build_coding_agent_engine(
     session_id: UUID | None = None,
     workflow_node_id: str | None = None,
     extra_tool_context: dict[str, Any] | None = None,
+    deps: Any = None,
 ) -> "QueryEngine":
     """Return a :class:`QueryEngine` configured as a coding sub-agent.
 
@@ -209,6 +211,7 @@ def build_coding_agent_engine(
         user_id=user_id,
         session_id=session_id,
         tool_extra=tool_extra,
+        deps=deps,
     )
     return QueryEngine(cfg)
 

@@ -16,6 +16,8 @@ from typing import Any
 
 __all__ = ["ArtifactError", "ArtifactErrorTracker"]
 
+_CODE_ESCALATE_AFTER_FAILURES = 3
+
 _ARTIFACT_TOOL_NAMES: frozenset[str] = frozenset({
     "emit_ui_tree",
     "emit_ui_patch",
@@ -36,6 +38,8 @@ class ArtifactError:
     error_message: str
     source_tool_call_id: str
     turn_index: int
+    error_type: str = ""
+    failure_count: int = 1
     timestamp: float = field(default_factory=time.monotonic)
 
 
@@ -64,6 +68,9 @@ class ArtifactErrorTracker:
         self._turn_index += 1
 
     def record_error(self, error: ArtifactError) -> None:
+        existing = self._errors.get(error.artifact_id)
+        if existing is not None:
+            error.failure_count = existing.failure_count + 1
         error.turn_index = self._turn_index
         self._errors[error.artifact_id] = error
         if error.artifact_type == "code":
@@ -77,6 +84,7 @@ class ArtifactErrorTracker:
         error_text: str,
         *,
         canvas_id: str = "",
+        error_type: str = "",
     ) -> None:
         """Convenience: derive an :class:`ArtifactError` from a tool result."""
         if success:
@@ -98,6 +106,7 @@ class ArtifactErrorTracker:
             error_message=error_text[:500],
             source_tool_call_id=tool_call_id,
             turn_index=self._turn_index,
+            error_type=(error_type or "").strip().lower(),
         ))
 
     def clear_artifact(self, artifact_id: str) -> None:
@@ -118,6 +127,40 @@ class ArtifactErrorTracker:
 
     def dirty_artifacts(self) -> list[ArtifactError]:
         return list(self._errors.values())
+
+    def _code_directive(self, err: ArtifactError) -> str:
+        et = err.error_type
+        base = (
+            f"Previous code execution (tool_call {err.source_tool_call_id}) "
+            f"failed: {err.error_message}."
+        )
+        if err.failure_count >= _CODE_ESCALATE_AFTER_FAILURES:
+            return (
+                f"{base} This artifact failed {err.failure_count} times. "
+                "Pass `reset_workspace: true` and regenerate the script from "
+                "scratch with `code_execution`."
+            )
+        if et in ("syntax", "runtime", "timeout", ""):
+            return (
+                f"{base} Prefer a minimal fix: use `source_echo`, "
+                "`suggested_fix_region`, and `repair_workflow` from the tool "
+                "result. Patch the persisted script with `code_workspace_edit` "
+                "on `__last_source__.py`, then re-run `code_execution` with "
+                "`workspace_file=__last_source__.py`. Do NOT rewrite the "
+                "entire program unless multiple regions are broken."
+            )
+        if et in ("validation", "dependency"):
+            return (
+                f"{base} Fix transport or environment first (valid JSON tool "
+                "args, `tool_argument_blob` + `source_blob_id`, or "
+                "`uv_pip_install` for missing packages). Then retry "
+                "`code_execution`."
+            )
+        return (
+            f"{base} Follow `repair_workflow` in the tool result. Prefer "
+            "`code_workspace_edit` + `workspace_file` over resending full "
+            "`source`."
+        )
 
     def get_regeneration_directives(self) -> list[str]:
         """Return human-readable directives for the LLM system prompt."""
@@ -152,13 +195,7 @@ class ArtifactErrorTracker:
                     "the previous HTML/embed output."
                 )
             elif err.artifact_type == "code":
-                directives.append(
-                    f"Previous code execution (tool_call {err.source_tool_call_id}) "
-                    f"failed: {err.error_message}. "
-                    "Reset the workspace and regenerate the script from scratch. "
-                    "Pass `reset_workspace: true` in the next `code_execution` "
-                    "call. Do NOT patch the previously generated code."
-                )
+                directives.append(self._code_directive(err))
         return directives
 
     # -- serialisation (for clone) -----------------------------------------

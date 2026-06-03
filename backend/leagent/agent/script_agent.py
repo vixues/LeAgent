@@ -52,6 +52,7 @@ logger = structlog.get_logger(__name__)
 
 DEFAULT_SCRIPT_AGENT_TOOLS: tuple[str, ...] = (
     "code_execution",
+    "code_workspace_edit",
     "tool_argument_blob",
     "deepseek_fim",
     "syntax_validator",
@@ -157,6 +158,7 @@ def build_script_agent_engine(
     user_id: UUID | None = None,
     session_id: UUID | None = None,
     workflow_node_id: str | None = None,
+    deps: Any = None,
 ) -> "QueryEngine":
     """Return a :class:`QueryEngine` configured as the script/compute sub-agent."""
     from leagent.agent.query_engine import QueryEngine, QueryEngineConfig
@@ -190,6 +192,7 @@ def build_script_agent_engine(
         agent_id=agent_id,
         user_id=user_id,
         session_id=session_id,
+        deps=deps,
     )
     return QueryEngine(cfg)
 

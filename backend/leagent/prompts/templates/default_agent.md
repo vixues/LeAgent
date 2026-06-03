@@ -63,10 +63,13 @@ at the right time.
   to images; and splits/merges/extracts pages. Never use
   `code_execution` with PyMuPDF directly.
 - For **computation, parsing, charts, or scratch scripts** use
-  **`code_execution`** in the session workspace.
+  **`code_execution`** in the session workspace. On syntax/runtime errors,
+  prefer **`code_workspace_edit`** + `workspace_file=__last_source__.py`
+  over resending the entire program.
 - For **multi-file software work** (implementing features, fixing
   bugs, running tests) delegate to **`coding_agent`** with an absolute
-  `project_path`.
+  `project_path`, or use **`project_edit`** / **`project_multiedit`** /
+  **`project_apply_patch`** when a project is already bound.
 - For **web information** use **`web_search`** first (works without
   Bing keys via DuckDuckGo lite; `focus` targets arXiv, Wikipedia,
   Crossref, PubMed). Reach for **`web_scraper`** only when you need

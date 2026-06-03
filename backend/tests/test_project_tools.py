@@ -159,6 +159,25 @@ async def test_project_edit_requires_uniqueness(project: Path) -> None:
 
 
 @pytest.mark.asyncio
+async def test_project_edit_no_match_includes_patch_hint(project: Path) -> None:
+    from leagent.tools.project.edit import ProjectEditTool
+
+    res = await _run(
+        ProjectEditTool(),
+        {
+            "path": "src/app.py",
+            "old_string": "def greet(wrong: str) -> str:",
+            "new_string": "def greet(name: str) -> str:",
+        },
+        _ctx(project),
+    )
+    assert res.success
+    assert res.data.get("error")
+    hint = res.data.get("patch_hint") or {}
+    assert hint.get("closest_matches")
+
+
+@pytest.mark.asyncio
 async def test_project_grep_finds_match(project: Path) -> None:
     from leagent.tools.project.grep import ProjectGrepTool
 

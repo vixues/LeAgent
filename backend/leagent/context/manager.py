@@ -160,6 +160,8 @@ class ContextManager:
 
         if self.artifact_tracker.has_dirty_artifacts():
             blocks = self._inject_regeneration_directives(blocks)
+            if self.artifact_tracker.needs_workspace_reset:
+                self._refresh_workspace_file_state()
 
         budget_result = minimise(
             blocks,
@@ -328,10 +330,10 @@ class ContextManager:
         if not directives:
             return blocks
         body = (
-            "[ARTIFACT REGENERATION REQUIRED]\n"
-            "Previous artifact generation failed. You MUST regenerate the "
-            "artifact completely from scratch. Do NOT apply incremental "
-            "patches to the previously generated output.\n\n"
+            "[ARTIFACT RECOVERY REQUIRED]\n"
+            "Previous artifact generation failed. Follow the tool-specific "
+            "directives below. Prefer minimal localized fixes when indicated; "
+            "only regenerate from scratch when a directive explicitly says so.\n\n"
             + "\n".join(f"- {d}" for d in directives)
         )
         regen_block = ContextBlock(
@@ -350,6 +352,12 @@ class ContextManager:
             dirty_count=len(directives),
         )
         return [regen_block] + blocks
+
+    def _refresh_workspace_file_state(self) -> None:
+        """Drop stale read cache entries for session sandbox source files."""
+        for path in list(self.file_state.paths()):
+            if "__last_source__.py" in path or "code-exec" in path.lower():
+                self.file_state.forget(path)
 
     def _build_resolve_context(
         self,

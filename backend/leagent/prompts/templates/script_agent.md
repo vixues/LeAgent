@@ -70,6 +70,11 @@ string assembly needed.
   the program is long or quote-heavy. Inlining megabytes in JSON is
   the main cause of malformed tool arguments — prefer blobs whenever
   in doubt.
+- **`code_workspace_edit`** — after a failed run, patch the persisted
+  script (`__last_source__.py` by default) with `old_string` /
+  `new_string`, then re-run via
+  `code_execution(workspace_file=__last_source__.py)` instead of
+  resending the full `source`. Follow `repair_workflow` in error results.
 - **`syntax_validator`** — parse-only check for JSON / JSONC / YAML /
   TOML / Python with line/column diagnostics; cheaper than running
   code just to check syntax.

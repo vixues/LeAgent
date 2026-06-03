@@ -24,7 +24,7 @@ import os
 import re
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
-from typing import Iterable, Iterator
+from typing import Any, Iterable, Iterator
 
 import structlog
 
@@ -481,6 +481,60 @@ def apply_str_replace(
     )
 
 
+class StrReplaceError(ValueError):
+    """Raised when str_replace fails; carries optional :attr:`patch_hint`."""
+
+    def __init__(self, message: str, *, patch_hint: dict[str, Any] | None = None) -> None:
+        super().__init__(message)
+        self.patch_hint = patch_hint
+
+
+def perform_str_replace(
+    abs_path: Path,
+    rel_path: str,
+    *,
+    old_string: str,
+    new_string: str,
+    replace_all: bool,
+) -> EditResult:
+    """Run :func:`apply_str_replace`, enriching no-match errors with did-you-mean hints."""
+    from leagent.tools.project.edit_hints import format_no_match_hint
+
+    try:
+        return apply_str_replace(
+            abs_path,
+            rel_path,
+            old_string=old_string,
+            new_string=new_string,
+            replace_all=replace_all,
+        )
+    except ValueError as exc:
+        msg = str(exc)
+        if "old_string not found" in msg or "occurs" in msg:
+            try:
+                file_text = abs_path.read_text(encoding="utf-8", errors="replace")
+            except OSError:
+                raise StrReplaceError(msg) from exc
+            payload = format_no_match_hint(
+                rel_path=rel_path,
+                needle=old_string,
+                file_text=file_text,
+                base_message=msg,
+            )
+            raise StrReplaceError(msg, patch_hint=payload.get("patch_hint")) from exc
+        raise
+
+
+def str_replace_result_dict(result: EditResult) -> dict[str, Any]:
+    """Normalise a successful :class:`EditResult` to a tool response dict."""
+    return {
+        "path": result.rel_path,
+        "replacements": result.replacements,
+        "new_size": result.new_size,
+        "diff": result.diff,
+    }
+
+
 def _safe_encoding(detected: str) -> str:
     """Round detected encodings back to a writable codec.
 
@@ -513,7 +567,39 @@ class _PatchedFile:
     is_deleted: bool
 
 
-def apply_unified_diff(root: Path, diff_text: str) -> list[_PatchedFile]:
+def _resolve_context_line(
+    collected: list[str],
+    cursor: int,
+    expected: str,
+    *,
+    fuzzy: bool,
+    rel_path: str,
+) -> int:
+    """Return the index in *collected* that matches *expected* (context line)."""
+    if cursor < len(collected) and collected[cursor] == expected:
+        return cursor
+    if not fuzzy:
+        got = collected[cursor] if cursor < len(collected) else "<EOF>"
+        raise ValueError(
+            f"Context mismatch in {rel_path} at line {cursor + 1}: "
+            f"expected {expected!r} got {got!r}"
+        )
+    for offset in range(-5, 6):
+        idx = cursor + offset
+        if 0 <= idx < len(collected) and collected[idx] == expected:
+            return idx
+    raise ValueError(
+        f"Context mismatch in {rel_path} at line {cursor + 1}: "
+        f"expected {expected!r} (fuzzy search within ±5 lines failed)"
+    )
+
+
+def apply_unified_diff(
+    root: Path,
+    diff_text: str,
+    *,
+    fuzzy: bool = False,
+) -> list[_PatchedFile]:
     """Apply a multi-file unified diff in-memory and persist results.
 
     Supports the subset of unified diff that ``git diff`` and
@@ -587,13 +673,17 @@ def apply_unified_diff(root: Path, diff_text: str) -> list[_PatchedFile]:
                             raise ValueError(
                                 f"Patch context past EOF in {rel_path} at line {cursor + 1}"
                             )
-                        if collected[cursor] != line[1:]:
-                            raise ValueError(
-                                f"Context mismatch in {rel_path} at line {cursor + 1}: "
-                                f"expected {collected[cursor]!r} got {line[1:]!r}"
-                            )
-                        out_lines.append(collected[cursor])
-                        cursor += 1
+                        matched = _resolve_context_line(
+                            collected,
+                            cursor,
+                            line[1:],
+                            fuzzy=fuzzy,
+                            rel_path=rel_path,
+                        )
+                        if matched != cursor and fuzzy:
+                            out_lines.extend(collected[cursor:matched])
+                        out_lines.append(collected[matched])
+                        cursor = matched + 1
                     else:
                         out_lines.append(line[1:])
                     consumed_old += 1
@@ -715,6 +805,9 @@ __all__ = [
     "read_text_with_detection",
     "format_lines_with_numbers",
     "EditResult",
+    "StrReplaceError",
     "apply_str_replace",
+    "perform_str_replace",
+    "str_replace_result_dict",
     "apply_unified_diff",
 ]

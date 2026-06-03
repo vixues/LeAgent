@@ -25,10 +25,12 @@ import structlog
 
 from leagent.tools.base import BaseTool, ToolCategory, ToolContext
 from leagent.tools.project._fs import (
-    apply_str_replace,
+    StrReplaceError,
+    perform_str_replace,
     resolve_content,
     resolve_in_project,
     select_project_root,
+    str_replace_result_dict,
 )
 
 logger = structlog.get_logger(__name__)
@@ -158,15 +160,18 @@ class ProjectEditTool(BaseTool):
         )
 
         try:
-            result = apply_str_replace(
+            result = perform_str_replace(
                 resolved.abs_path,
                 resolved.rel_path,
                 old_string=old_string,
                 new_string=new_string,
                 replace_all=bool(params.get("replace_all") or False),
             )
-        except ValueError as exc:
-            return {"error": str(exc), "path": resolved.rel_path}
+        except StrReplaceError as exc:
+            payload: dict[str, Any] = {"error": str(exc), "path": resolved.rel_path}
+            if exc.patch_hint is not None:
+                payload["patch_hint"] = exc.patch_hint
+            return payload
 
         logger.info(
             "project_edit",
@@ -184,10 +189,7 @@ class ProjectEditTool(BaseTool):
             summary=f"{result.replacements} replacement(s)",
         )
         return {
-            "path": resolved.rel_path,
-            "replacements": result.replacements,
-            "new_size": result.new_size,
-            "diff": result.diff,
+            **str_replace_result_dict(result),
         }
 
     @staticmethod
