@@ -63,7 +63,6 @@ async def test_deepseek_analyses_excel(
             tools=registry,
             executor=executor,
             system_prompt=EXCEL_ANALYSIS_SYSTEM_PROMPT,
-            model_tier="tier1",
             temperature=0.1,
             max_turns=8,
             max_tool_calls_per_turn=4,

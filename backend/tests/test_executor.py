@@ -17,6 +17,7 @@ from leagent.tools.executor import (
     ToolCall,
     ToolExecutor,
     _recover_canvas_publish_args,
+    _recover_project_edit_args,
     _try_parse_raw_tool_args,
     format_tool_arguments_json_error,
     parse_tool_arguments_str,
@@ -437,6 +438,32 @@ def test_recover_canvas_publish_args_html_blob_id_only() -> None:
         "session_id": "current",
         "html_blob_id": "a1b2c3d4e5f64789900112233445566",
     }
+
+
+def test_recover_project_edit_args_basic() -> None:
+    raw = (
+        '{"path":"src/index.html","old_string":"<div>old</div>",'
+        '"new_string":"<div>new content\nwith lines</div>"}'
+    )
+    result = _recover_project_edit_args(raw)
+    assert result is not None
+    assert result["path"] == "src/index.html"
+    assert result["old_string"] == "<div>old</div>"
+    assert "new content" in result["new_string"]
+
+
+def test_recover_project_edit_args_with_raw_newlines() -> None:
+    raw = '{"path":"app.py","old_string":"pass","new_string":"def main():\n    print(\'hello\')\n"}'
+    result = _recover_project_edit_args(raw)
+    assert result is not None
+    assert result["path"] == "app.py"
+    assert result["old_string"] == "pass"
+    assert "def main()" in result["new_string"]
+
+
+def test_recover_project_edit_args_returns_none_for_irrelevant() -> None:
+    raw = '{"html":"<div>test</div>"}'
+    assert _recover_project_edit_args(raw) is None
 
 
 def test_try_parse_raw_tool_args_includes_canvas_publish_recovery() -> None:

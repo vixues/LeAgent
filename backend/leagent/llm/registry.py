@@ -5,12 +5,29 @@ from __future__ import annotations
 import asyncio
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
+from urllib.parse import urlparse
 
 from leagent.exceptions.llm import LLMServiceError, ModelNotFoundError
 from leagent.llm.circuit_breaker import CircuitBreaker
 
 if TYPE_CHECKING:
     from leagent.llm.base import LLMProvider
+
+
+def _endpoint_hostname_is_deepseek(endpoint: str) -> bool:
+    """Return whether an endpoint points at DeepSeek's public API host."""
+    host = (urlparse(endpoint).hostname or "").lower()
+    return host == "api.deepseek.com" or host.endswith(".deepseek.com")
+
+
+def _endpoint_hostname_is_dashscope(endpoint: str) -> bool:
+    """Return whether an endpoint points at DashScope-compatible API hosts."""
+    host = (urlparse(endpoint).hostname or "").lower()
+    return host in {
+        "dashscope.aliyuncs.com",
+        "dashscope-intl.aliyuncs.com",
+        "maas.aliyuncs.com",
+    }
 
 
 @dataclass

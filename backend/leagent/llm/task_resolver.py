@@ -140,6 +140,7 @@ class TaskResolver:
                 reason = "vision_unavailable_use_tools"
 
         if user_provider and user_model:
+            reason = "user_explicit"
             spec = self.catalog.get_spec(user_provider, user_model)
             if spec is None:
                 raise ModelNotFoundError(

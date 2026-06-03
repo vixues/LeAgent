@@ -499,91 +499,16 @@ class TestNormalizeDeepSeekBaseUrl:
         assert normalize_deepseek_base_url("https://api.deepseek.com/v2") == "https://api.deepseek.com/v2"
 
 
-# ---------------------------------------------------------------------------
-# Legacy config migration
-# ---------------------------------------------------------------------------
+class TestProviderConfigDeepSeekBaseUrl:
+    def test_from_dict_normalizes_trailing_v1(self) -> None:
+        from leagent.llm.provider_config import ProviderConfig
 
-class TestLegacyDeepSeekMigration:
-    def test_renames_legacy_models(self) -> None:
-        from leagent.llm.provider_config import ProviderConfigService
-
-        config = {
-            "default_provider": "deepseek",
-            "default_model": "deepseek-chat",
-            "providers": [
-                {
-                    "type": "deepseek",
-                    "base_url": "https://api.deepseek.com",
-                    "models": [
-                        {"name": "deepseek-chat", "tier": "tier1"},
-                        {"name": "deepseek-reasoner", "tier": "tier1"},
-                    ],
-                }
-            ],
-        }
-        changed = ProviderConfigService._migrate_legacy_deepseek_config(config)
-        assert changed is True
-        names = [m["name"] for m in config["providers"][0]["models"]]
-        assert names == ["deepseek-v4-flash", "deepseek-v4-pro"]
-        assert config["default_model"] == "deepseek-v4-flash"
-
-    def test_deduplicates_after_rename(self) -> None:
-        from leagent.llm.provider_config import ProviderConfigService
-
-        config = {
-            "default_provider": "deepseek",
-            "default_model": "deepseek-v4-flash",
-            "providers": [
-                {
-                    "type": "deepseek",
-                    "base_url": "https://api.deepseek.com",
-                    "models": [
-                        {"name": "deepseek-chat", "tier": "tier1"},
-                        {"name": "deepseek-v4-flash", "tier": "tier2"},
-                        {"name": "deepseek-v4-pro", "tier": "tier1"},
-                    ],
-                }
-            ],
-        }
-        changed = ProviderConfigService._migrate_legacy_deepseek_config(config)
-        assert changed is True
-        names = [m["name"] for m in config["providers"][0]["models"]]
-        assert names == ["deepseek-v4-flash", "deepseek-v4-pro"]
-
-    def test_strips_v1_from_base_url(self) -> None:
-        from leagent.llm.provider_config import ProviderConfigService
-
-        config = {
-            "default_provider": "deepseek",
-            "default_model": "deepseek-v4-flash",
-            "providers": [
-                {
-                    "type": "deepseek",
-                    "base_url": "https://api.deepseek.com/v1",
-                    "models": [{"name": "deepseek-v4-flash", "tier": "tier2"}],
-                }
-            ],
-        }
-        changed = ProviderConfigService._migrate_legacy_deepseek_config(config)
-        assert changed is True
-        assert config["providers"][0]["base_url"] == "https://api.deepseek.com"
-
-    def test_no_change_for_current_config(self) -> None:
-        from leagent.llm.provider_config import ProviderConfigService
-
-        config = {
-            "default_provider": "deepseek",
-            "default_model": "deepseek-v4-flash",
-            "providers": [
-                {
-                    "type": "deepseek",
-                    "base_url": "https://api.deepseek.com",
-                    "models": [
-                        {"name": "deepseek-v4-flash", "tier": "tier2"},
-                        {"name": "deepseek-v4-pro", "tier": "tier1"},
-                    ],
-                }
-            ],
-        }
-        changed = ProviderConfigService._migrate_legacy_deepseek_config(config)
-        assert changed is False
+        pc = ProviderConfig.from_dict(
+            {
+                "name": "deepseek",
+                "type": "deepseek",
+                "base_url": "https://api.deepseek.com/v1",
+                "models": [{"name": "deepseek-v4-flash"}],
+            }
+        )
+        assert pc.base_url == "https://api.deepseek.com"

@@ -70,6 +70,36 @@ def test_fork_scoped_engine_executor_matches_tools() -> None:
     assert child.config.executor.registry is child_reg
 
 
+def test_fork_scoped_engine_syncs_context_variant() -> None:
+    reg = ToolRegistry()
+    reg.register(_DummyTool())
+
+    parent_ex = ToolExecutor(registry=reg)
+    engine = QueryEngine(
+        QueryEngineConfig(
+            llm=MagicMock(),
+            tools=reg,
+            executor=parent_ex,
+            prompt_variant="default_agent",
+        )
+    )
+    child = fork_scoped_engine(
+        engine,
+        child_registry=reg,
+        prompt_variant="coding_agent",
+    )
+    assert child.config.prompt_variant == "coding_agent"
+    if hasattr(child, "_context") and hasattr(child._context, "variant"):
+        assert child._context.variant == "coding_agent"
+
+
+def test_coding_agent_tool_timeout_and_retries() -> None:
+    from leagent.agent.coding_agent import CodingAgentTool
+
+    assert CodingAgentTool.timeout_sec == 600
+    assert CodingAgentTool.max_retries == 0
+
+
 def test_import_tier_defaults_unrestricted() -> None:
     from leagent.config.settings import get_settings
 

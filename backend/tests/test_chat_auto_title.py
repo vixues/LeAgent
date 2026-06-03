@@ -38,19 +38,20 @@ def test_normalize_generated_title() -> None:
 
 
 @pytest.mark.asyncio
-async def test_complete_title_llm_falls_back_to_tier1() -> None:
+async def test_complete_title_llm_uses_title_task() -> None:
     llm = MagicMock()
-    llm.complete = AsyncMock(
-        side_effect=[
-            LLMServiceError("tier2 down"),
-            LLMResponse(content="Redis 配置", model="m"),
-        ]
-    )
+    llm.complete = AsyncMock(return_value=LLMResponse(content="Redis 配置", model="m"))
+
     result = await _complete_title_llm(llm, [])
+
     assert result.content == "Redis 配置"
-    assert llm.complete.await_count == 2
-    assert llm.complete.await_args_list[0].kwargs["tier"] == "tier2"
-    assert llm.complete.await_args_list[1].kwargs["tier"] == "tier1"
+    llm.complete.assert_awaited_once()
+    kwargs = llm.complete.await_args.kwargs
+    assert kwargs["task"] == "title"
+    assert kwargs["thinking"] == {"type": "disabled"}
+    assert kwargs["enable_thinking"] is False
+    assert kwargs["max_tokens"] == 128
+    assert "tier" not in kwargs
 
 
 @pytest.mark.asyncio

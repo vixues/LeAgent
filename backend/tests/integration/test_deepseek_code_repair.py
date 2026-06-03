@@ -54,7 +54,6 @@ async def test_live_deepseek_script_repair_via_workspace_edit(
         llm=deepseek_llm,
         tools=full_tool_registry,
         cwd=str(tmp_path),
-        model_tier="tier2",
         max_turns=12,
         max_tool_calls_per_turn=4,
         temperature=0.1,

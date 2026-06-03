@@ -251,6 +251,8 @@ class CodingAgentTool(BaseTool):
     is_read_only = False
     interrupt_behavior = "cancel"
     max_result_size_chars = 200_000
+    timeout_sec = 600
+    max_retries = 0
 
     def __init__(
         self,
@@ -441,7 +443,7 @@ async def _run_coding_agent(
         tool_extra={"project_roots": [project_path]},
         cwd=project_path,
         temperature=0.2,
-        max_output_tokens=min(8192, max(2048, parent_cap)),
+        max_output_tokens=min(16384, max(4096, parent_cap)),
         max_tool_calls_per_turn=8,
         inherit_abort=True,
         log_event="coding_agent_invoke",

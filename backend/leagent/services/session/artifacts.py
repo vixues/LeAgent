@@ -9,6 +9,7 @@ managed session attachments with UUID preview/download URLs.
 from __future__ import annotations
 
 import json
+import mimetypes
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterable
@@ -18,6 +19,11 @@ from uuid import UUID
 import structlog
 
 logger = structlog.get_logger(__name__)
+
+_PREVIEWABLE_MIME_PREFIXES = ("image/", "application/pdf", "text/html")
+_PREVIEWABLE_EXTENSIONS = frozenset({
+    ".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp", ".svg", ".pdf", ".html", ".htm",
+})
 
 
 _SINGLE_PATH_KEYS = (
@@ -225,10 +231,177 @@ def extract_produced_path_candidates(
             if isinstance(item, str):
                 add(item, source=f"{key}[{idx}]")
             elif isinstance(item, dict):
+                if item.get("file_id") or item.get("attachment_id"):
+                    continue
                 add_from_mapping(item, source=f"{key}[{idx}]")
 
     add_from_mapping(meta, source="metadata")
     return candidates
+
+
+def is_previewable_produced_file(path: Path, *, mime: str | None = None) -> bool:
+    """Return whether a produced file should be exposed in the chat file workspace."""
+    guessed = mime or mimetypes.guess_type(path.name)[0] or ""
+    if guessed.startswith(_PREVIEWABLE_MIME_PREFIXES):
+        return True
+    return path.suffix.lower() in _PREVIEWABLE_EXTENSIONS
+
+
+def _resolve_produced_entry_path(raw_path: str, workspace_root: Path | None) -> Path | None:
+    path = Path(raw_path).expanduser()
+    try:
+        if path.is_absolute():
+            resolved = path.resolve()
+        elif workspace_root is not None:
+            resolved = (workspace_root / path).resolve()
+        else:
+            return None
+    except OSError:
+        return None
+    return resolved if resolved.is_file() else None
+
+
+def _session_uploads_dir(session_id: str) -> Path | None:
+    try:
+        from leagent.services.session.paths import get_session_path_registry
+
+        return get_session_path_registry().uploads_dir(UUID(str(session_id)))
+    except (ValueError, TypeError, ImportError):
+        return None
+
+
+def _path_under_uploads(path: Path, uploads: Path) -> bool:
+    try:
+        return path.resolve().is_relative_to(uploads.resolve())
+    except (OSError, ValueError):
+        return False
+
+
+def _code_execution_allowed_roots(workspace_root: Path | None) -> tuple[str, ...]:
+    roots: list[str] = []
+    if workspace_root is not None:
+        roots.append(str(workspace_root))
+    try:
+        from leagent.tools._sandbox.paths import _system_temp_roots
+
+        roots.extend(str(root) for root in _system_temp_roots())
+    except ImportError:
+        pass
+    return tuple(roots)
+
+
+async def ingest_previewable_produced_files(
+    context: Any,
+    produced_files: list[dict[str, Any]],
+    *,
+    workspace: str | None = None,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Copy previewable ``code_execution`` outputs into session uploads.
+
+    Returns updated ``produced_files`` entries (paths rewritten to managed
+    storage when registration succeeds) and UI-ready ``managed_artifacts``.
+    """
+    session_id = getattr(context, "session_id", None)
+    if not session_id or not produced_files:
+        return produced_files, []
+
+    try:
+        session_uuid = UUID(str(session_id))
+    except (ValueError, TypeError):
+        return produced_files, []
+
+    user_uuid: UUID | None = None
+    user_id = getattr(context, "user_id", None)
+    if user_id:
+        try:
+            user_uuid = UUID(str(user_id))
+        except (ValueError, TypeError):
+            user_uuid = None
+
+    session_manager: Any | None = None
+    try:
+        from leagent.main import get_service_manager
+
+        sm = get_service_manager()
+        session_manager = getattr(sm, "session_manager", None) if sm else None
+    except (RuntimeError, AssertionError):
+        session_manager = None
+
+    if session_manager is None:
+        return produced_files, []
+
+    workspace_root = _resolve_workspace_root(workspace)
+    uploads = _session_uploads_dir(str(session_id))
+    allowed_roots = _code_execution_allowed_roots(workspace_root)
+    updated: list[dict[str, Any]] = []
+    managed: list[dict[str, Any]] = []
+
+    for raw_entry in produced_files:
+        if not isinstance(raw_entry, dict):
+            continue
+        if raw_entry.get("file_id") or raw_entry.get("attachment_id"):
+            updated.append(dict(raw_entry))
+            continue
+
+        raw_path = str(raw_entry.get("path") or raw_entry.get("file_path") or "").strip()
+        if not raw_path:
+            updated.append(dict(raw_entry))
+            continue
+
+        resolved = _resolve_produced_entry_path(raw_path, workspace_root)
+        if resolved is None:
+            updated.append(dict(raw_entry))
+            continue
+
+        mime = raw_entry.get("mime") if isinstance(raw_entry.get("mime"), str) else None
+        if not is_previewable_produced_file(resolved, mime=mime):
+            updated.append(dict(raw_entry))
+            continue
+
+        if uploads is not None and _path_under_uploads(resolved, uploads):
+            entry = dict(raw_entry)
+            entry["path"] = str(resolved)
+            updated.append(entry)
+            continue
+
+        reg = await session_manager.register_external_file(
+            session_uuid,
+            user_uuid,
+            str(resolved),
+            display_name=raw_entry.get("name") or resolved.name,
+            allowed_roots=allowed_roots or None,
+        )
+        if reg is None:
+            logger.info(
+                "code_execution_produced_register_skipped",
+                extra={"session_id": str(session_id), "source_path": str(resolved)},
+            )
+            updated.append(dict(raw_entry))
+            continue
+
+        storage = Path(str(reg.get("storage_path") or "")).expanduser()
+        entry = dict(raw_entry)
+        entry["path"] = str(storage) if storage.is_file() else str(resolved)
+        entry["source_path"] = str(resolved)
+        entry["file_id"] = str(reg.get("id") or "")
+        if reg.get("preview_url"):
+            entry["preview_url"] = reg["preview_url"]
+        if reg.get("download_url"):
+            entry["download_url"] = reg["download_url"]
+        entry["managed"] = True
+        updated.append(entry)
+        managed.append(dict(reg))
+        logger.info(
+            "code_execution_produced_registered",
+            extra={
+                "session_id": str(session_id),
+                "source_path": str(resolved),
+                "storage_path": entry["path"],
+                "file_id": entry.get("file_id"),
+            },
+        )
+
+    return updated, managed
 
 
 class ArtifactRegistrar:
@@ -285,5 +458,7 @@ __all__ = [
     "attachment_dicts",
     "coerce_tool_result_data",
     "extract_produced_path_candidates",
+    "ingest_previewable_produced_files",
+    "is_previewable_produced_file",
     "strip_inline_base64_payloads",
 ]

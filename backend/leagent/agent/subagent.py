@@ -97,7 +97,13 @@ def fork_scoped_engine(
     prompt_variant: str,
     system_prompt: str | None = None,
 ) -> "QueryEngine":
-    """Fork with an executor bound to ``child_registry`` (authoritative tool lookup)."""
+    """Fork with an executor bound to ``child_registry`` (authoritative tool lookup).
+
+    After forking, syncs the child's ``ContextManager.variant`` with
+    *prompt_variant* so that ``prepare_turn()`` uses the correct persona,
+    policies, and context recipe (the parent's ``clone()`` copies the
+    parent variant by default).
+    """
     ex = getattr(parent_engine.config, "executor", None)
     if ex is None:
         from leagent.tools.executor import ToolExecutor
@@ -105,12 +111,15 @@ def fork_scoped_engine(
         scoped = ToolExecutor(registry=child_registry, service_manager=None)
     else:
         scoped = make_child_executor(ex, child_registry)
-    return parent_engine.fork(
+    child = parent_engine.fork(
         system_prompt=system_prompt,
         tools=child_registry,
         prompt_variant=prompt_variant,
         executor=scoped,
     )
+    if hasattr(child, "_context") and hasattr(child._context, "variant"):
+        child._context.variant = prompt_variant
+    return child
 
 
 def _paths_from_unified_diff(diff: str) -> list[str]:

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from collections.abc import Callable
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
@@ -243,6 +244,11 @@ class TestCanvasPreviewScreenshotResponse:
 
 class TestCanvasPreviewScreenshotPlaywrightIntegration:
     """Optional end-to-end render against real Chromium (skipped when unavailable)."""
+
+    pytestmark = pytest.mark.skipif(
+        os.getenv("LEAGENT_RUN_PLAYWRIGHT_E2E") != "1",
+        reason="Set LEAGENT_RUN_PLAYWRIGHT_E2E=1 to run real Chromium screenshot tests.",
+    )
 
     @pytest.fixture
     def live_canvas_doc(

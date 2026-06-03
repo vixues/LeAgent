@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import json
+import shutil
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 from uuid import uuid4
 
@@ -13,14 +15,14 @@ from leagent.agent.query_engine import QueryEngine, QueryEngineConfig
 from leagent.services.session.artifacts import (
     ArtifactRegistrar,
     extract_produced_path_candidates,
+    ingest_previewable_produced_files,
+    is_previewable_produced_file,
     strip_inline_base64_payloads,
 )
+from leagent.tools.base import ToolContext
 
 
 class _FakeSessionManager:
-    def __init__(self) -> None:
-        self.calls: list[dict[str, Any]] = []
-
     async def register_external_file(
         self,
         session_id,
@@ -34,6 +36,9 @@ class _FakeSessionManager:
         if not path.is_file():
             return None
         file_id = uuid4()
+        storage = self.storage_dir / f"{file_id}_{path.name}"
+        storage.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(path, storage)
         self.calls.append(
             {
                 "session_id": session_id,
@@ -47,13 +52,18 @@ class _FakeSessionManager:
             "id": str(file_id),
             "filename": display_name or path.name,
             "name": display_name or path.name,
-            "kind": "image" if path.suffix == ".png" else "text",
-            "content_type": "image/png" if path.suffix == ".png" else "text/plain",
+            "kind": "image" if path.suffix in {".png", ".gif"} else "text",
+            "content_type": "image/png" if path.suffix == ".png" else "image/gif",
             "size": path.stat().st_size,
             "sha256": "fake-sha256",
+            "storage_path": str(storage),
             "preview_url": f"/api/v1/files/{file_id}/preview?token=signed",
             "download_url": f"/api/v1/files/{file_id}/download?token=signed",
         }
+
+    def __init__(self, storage_dir: Path | None = None) -> None:
+        self.calls: list[dict[str, Any]] = []
+        self.storage_dir = storage_dir or Path("/tmp/fake-uploads")
 
 
 def test_extracts_workspace_relative_and_file_uri_paths(tmp_path: Path) -> None:
@@ -75,6 +85,87 @@ def test_extracts_workspace_relative_and_file_uri_paths(tmp_path: Path) -> None:
     by_name = {Path(c.path).name: c for c in candidates}
     assert by_name["chart.png"].allowed_root == str(workspace.resolve())
     assert by_name["report.txt"].allowed_root is None
+
+
+def test_is_previewable_produced_file(tmp_path: Path) -> None:
+    gif = tmp_path / "spin.gif"
+    gif.write_bytes(b"GIF89a")
+    csv = tmp_path / "data.csv"
+    csv.write_text("a,b", encoding="utf-8")
+    assert is_previewable_produced_file(gif)
+    assert not is_previewable_produced_file(csv)
+
+
+def test_extract_skips_already_managed_produced_files(tmp_path: Path) -> None:
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    managed = workspace / "chart.png"
+    managed.write_text("png", encoding="utf-8")
+
+    candidates = extract_produced_path_candidates(
+        {
+            "workspace": str(workspace),
+            "produced_files": [
+                {"path": "chart.png", "file_id": "already-registered"},
+                {"path": str(managed)},
+            ],
+        }
+    )
+    assert len(candidates) == 1
+    assert Path(candidates[0].path).name == "chart.png"
+
+
+@pytest.mark.asyncio
+async def test_ingest_previewable_produced_files_registers_outside_uploads(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    gif = tmp_path / "3d_rotation.gif"
+    gif.write_bytes(b"GIF89a")
+    manager = _FakeSessionManager(storage_dir=tmp_path / "uploads")
+    session_id = uuid4()
+    user_id = uuid4()
+    ctx = ToolContext(user_id=str(user_id), session_id=str(session_id))
+
+    monkeypatch.setattr(
+        "leagent.main.get_service_manager",
+        lambda: SimpleNamespace(session_manager=manager),
+    )
+
+    produced, managed = await ingest_previewable_produced_files(
+        ctx,
+        [{"path": str(gif), "mime": "image/gif"}],
+        workspace=str(tmp_path / "ws"),
+    )
+
+    assert len(manager.calls) == 1
+    assert manager.calls[0]["source_path"] == str(gif.resolve())
+    assert produced[0]["file_id"]
+    assert produced[0]["managed"] is True
+    assert Path(produced[0]["path"]).is_file()
+    assert managed[0]["preview_url"].startswith("/api/v1/files/")
+
+
+@pytest.mark.asyncio
+async def test_ingest_skips_entries_with_existing_file_id(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    manager = _FakeSessionManager()
+    ctx = ToolContext(user_id=str(uuid4()), session_id=str(uuid4()))
+    monkeypatch.setattr(
+        "leagent.main.get_service_manager",
+        lambda: SimpleNamespace(session_manager=manager),
+    )
+
+    produced, managed = await ingest_previewable_produced_files(
+        ctx,
+        [{"path": str(tmp_path / "x.png"), "file_id": "existing"}],
+    )
+
+    assert manager.calls == []
+    assert produced[0]["file_id"] == "existing"
+    assert managed == []
 
 
 def test_strip_inline_base64_payloads_recursively() -> None:

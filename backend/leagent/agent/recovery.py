@@ -408,12 +408,21 @@ class ErrorRecovery:
         err = str(getattr(result, "error", None) or "").lower()
         return "rate limit" in err or "rate_limit" in err or "429" in err
 
+    _SUBAGENT_TOOLS = frozenset({"coding_agent", "script_agent"})
+
     async def _handle_timeout(
         self,
         tool_call: ToolCall,
         context: AgentContext | None,
     ) -> BaseToolResult | None:
-        """Re-run once with a doubled timeout budget."""
+        """Re-run once with a doubled timeout budget.
+
+        Subagent-class tools (coding_agent, script_agent) manage their own
+        internal recovery and should not be restarted from scratch.
+        """
+        if tool_call.name in self._SUBAGENT_TOOLS:
+            logger.info("recovery_timeout_skip_subagent", tool=tool_call.name)
+            return None
         logger.info("recovery_timeout_retry", tool=tool_call.name)
         timeout = int(getattr(self.executor, "default_timeout", 60) * 2)
         try:

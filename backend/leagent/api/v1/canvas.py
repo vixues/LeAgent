@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from datetime import UTC, datetime
 from typing import Annotated, Any, Literal
@@ -217,20 +218,26 @@ async def _get_pw_browser() -> Any:
     """Lazy-init a shared Playwright Chromium browser instance."""
     global _pw_browser, _pw_lock
     if _pw_lock is None:
-        import asyncio
         _pw_lock = asyncio.Lock()
     async with _pw_lock:
         if _pw_browser is None or not _pw_browser.is_connected():
             try:
                 from playwright.async_api import async_playwright
-                pw = await async_playwright().start()
-                _pw_browser = await pw.chromium.launch(
-                    headless=True,
-                    args=[
-                        "--no-sandbox",
-                        "--disable-dev-shm-usage",
-                        "--use-gl=swiftshader",
-                    ],
+
+                async def _launch_browser() -> Any:
+                    pw = await async_playwright().start()
+                    return await pw.chromium.launch(
+                        headless=True,
+                        args=[
+                            "--no-sandbox",
+                            "--disable-dev-shm-usage",
+                            "--use-gl=swiftshader",
+                        ],
+                    )
+
+                _pw_browser = await asyncio.wait_for(
+                    _launch_browser(),
+                    timeout=15,
                 )
             except Exception as exc:
                 logger.warning("playwright_browser_launch_failed: %s", exc, exc_info=True)

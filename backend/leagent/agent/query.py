@@ -40,6 +40,55 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 ASK_USER_TOOL_NAME = "ask_user"
+
+_TRUNCATION_RECOVERY_HINT = (
+    "[System: your previous output was truncated because "
+    "the tool call arguments exceeded the output token "
+    "limit. Do NOT retry the same oversized inline call. "
+    "Instead: use `tool_argument_blob` with "
+    "`action=create_and_finalize` then pass `*_blob_id` "
+    "to the consumer tool — e.g. "
+    "`project_write(content_blob_id=…)`, "
+    "`project_edit(new_string_blob_id=…)`, "
+    "`code_execution(source_blob_id=…)`, or "
+    "`canvas_publish(html_blob_id=…)`. "
+    "For multi-step staging when content was cut "
+    "mid-stream: `create` → `append` → `finalize`.]"
+)
+
+
+def _has_truncated_tool_args(tool_calls: list[dict[str, Any]]) -> bool:
+    return any(
+        isinstance(tc.get("arguments"), dict)
+        and isinstance(tc["arguments"].get("__raw__"), str)
+        for tc in tool_calls
+    )
+
+
+def _build_length_recovery_state(
+    state: "QueryState",
+    params: "QueryParams",
+    tool_calls: list[dict[str, Any]],
+) -> "QueryState":
+    """Build a recovery ``QueryState`` after output-length truncation."""
+    had_truncated = _has_truncated_tool_args(tool_calls)
+    recovery_attempt = state.max_output_tokens_recovery_count + 1
+    recovery_messages = list(state.messages)
+    if had_truncated:
+        recovery_messages.append({
+            "role": "user",
+            "content": _TRUNCATION_RECOVERY_HINT,
+        })
+    return QueryState(
+        messages=recovery_messages,
+        tool_use_context=state.tool_use_context,
+        auto_compact_tracking=state.auto_compact_tracking,
+        max_output_tokens_recovery_count=recovery_attempt,
+        has_attempted_reactive_compact=state.has_attempted_reactive_compact,
+        max_output_tokens_override=(params.max_output_tokens or 4096) * 2,
+        turn_count=state.turn_count,
+        transition=Continue(reason=ContinueReason.MAX_OUTPUT_TOKENS_RECOVERY),
+    )
 # Placeholder tool body so OpenAI-shaped history always has a tool row after ask_user tool_calls.
 ASK_USER_PENDING_TOOL_JSON = '{"_wa_pending": true}'
 
@@ -575,39 +624,7 @@ async def _query_loop(params: QueryParams) -> AsyncIterator[Any]:
             if (
                 "max_output" in err_kind or finish_reason == "length"
             ) and state.max_output_tokens_recovery_count < 2:
-                had_truncated = any(
-                    isinstance(tc.get("arguments"), dict)
-                    and isinstance(tc["arguments"].get("__raw__"), str)
-                    for tc in tool_calls
-                )
-                recovery_messages = list(state.messages)
-                if had_truncated:
-                    recovery_messages.append({
-                        "role": "user",
-                        "content": (
-                            "[System: your previous output was truncated because "
-                            "the tool call arguments exceeded the output token "
-                            "limit. Do NOT retry the same oversized inline call. "
-                            "If the full payload fits in one chunk (under ~64K "
-                            "UTF-8 chars): use `tool_argument_blob` with "
-                            "`action=create_and_finalize` and `chunk` or "
-                            "`chunk_base64`, then pass `*_blob_id` to the "
-                            "consumer tool. Use multi-step "
-                            "`create` → `append` → `finalize` only when the "
-                            "payload was cut mid-stream and needs more appends.]"
-                        ),
-                    })
-                state = QueryState(
-                    messages=recovery_messages,
-                    tool_use_context=state.tool_use_context,
-                    auto_compact_tracking=state.auto_compact_tracking,
-                    max_output_tokens_recovery_count=state.max_output_tokens_recovery_count
-                    + 1,
-                    has_attempted_reactive_compact=state.has_attempted_reactive_compact,
-                    max_output_tokens_override=(params.max_output_tokens or 4096) * 2,
-                    turn_count=state.turn_count,
-                    transition=Continue(reason=ContinueReason.MAX_OUTPUT_TOKENS_RECOVERY),
-                )
+                state = _build_length_recovery_state(state, params, tool_calls)
                 continue
             yield Terminal(
                 reason=TerminalReason.MODEL_ERROR,
@@ -625,48 +642,16 @@ async def _query_loop(params: QueryParams) -> AsyncIterator[Any]:
             finish_reason == "length"
             and state.max_output_tokens_recovery_count < 2
         ):
-            had_truncated_tool_args = any(
-                isinstance(tc.get("arguments"), dict)
-                and isinstance(tc["arguments"].get("__raw__"), str)
-                for tc in tool_calls
-            )
-            recovery_attempt = state.max_output_tokens_recovery_count + 1
             logger.info(
                 "query_loop_length_truncation_recovery",
                 extra={
-                    "recovery_attempt": recovery_attempt,
+                    "recovery_attempt": state.max_output_tokens_recovery_count + 1,
                     "had_tool_calls": bool(assistant_msg.tool_calls),
-                    "had_truncated_tool_args": had_truncated_tool_args,
+                    "had_truncated_tool_args": _has_truncated_tool_args(tool_calls),
                     "text_len": len(assistant_text),
                 },
             )
-            recovery_messages = list(state.messages)
-            if had_truncated_tool_args:
-                recovery_messages.append({
-                    "role": "user",
-                    "content": (
-                        "[System: your previous output was truncated because "
-                        "the tool call arguments exceeded the output token "
-                        "limit. Do NOT retry the same oversized inline call. "
-                        "For HTML pages or long code: if the full body fits one "
-                        "chunk (under ~64K UTF-8 chars), use "
-                        "`tool_argument_blob` with `action=create_and_finalize` "
-                        "then `canvas_publish(html_blob_id=…)` or "
-                        "`code_execution(source_blob_id=…)`. Use "
-                        "`create` → `append` → `finalize` only when output was "
-                        "cut mid-payload and needs additional appends.]"
-                    ),
-                })
-            state = QueryState(
-                messages=recovery_messages,
-                tool_use_context=state.tool_use_context,
-                auto_compact_tracking=state.auto_compact_tracking,
-                max_output_tokens_recovery_count=recovery_attempt,
-                has_attempted_reactive_compact=state.has_attempted_reactive_compact,
-                max_output_tokens_override=(params.max_output_tokens or 4096) * 2,
-                turn_count=state.turn_count,
-                transition=Continue(reason=ContinueReason.MAX_OUTPUT_TOKENS_RECOVERY),
-            )
+            state = _build_length_recovery_state(state, params, tool_calls)
             continue
 
         # ------------------------------------------------------------------

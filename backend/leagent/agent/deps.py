@@ -177,6 +177,7 @@ async def _try_blob_streaming_ingest(
 
 _DIRECT_INGEST_TOOLS: dict[str, tuple[str, str]] = {
     "project_write": ("content", "content_blob_id"),
+    "project_edit": ("new_string", "new_string_blob_id"),
     "code_execution": ("source", "source_blob_id"),
     "canvas_publish": ("html", "html_blob_id"),
 }
@@ -192,11 +193,13 @@ def _get_direct_ingest_recover_fn(tool_name: str) -> Any:
         from leagent.tools.executor import (
             _recover_canvas_publish_args,
             _recover_code_execution_args,
+            _recover_project_edit_args,
             _recover_project_write_args,
         )
 
         _DIRECT_INGEST_RECOVER_FNS = {
             "project_write": _recover_project_write_args,
+            "project_edit": _recover_project_edit_args,
             "code_execution": _recover_code_execution_args,
             "canvas_publish": _recover_canvas_publish_args,
         }
@@ -218,7 +221,8 @@ async def _try_direct_content_ingest(
     ``*_blob_id`` so the tool consumes the content without the LLM needing
     to go through the multi-step ``tool_argument_blob`` flow.
 
-    Supported tools: ``project_write``, ``code_execution``, ``canvas_publish``.
+    Supported tools: ``project_write``, ``project_edit``, ``code_execution``,
+    ``canvas_publish``.
     """
     spec = _DIRECT_INGEST_TOOLS.get(tool_name)
     if spec is None:

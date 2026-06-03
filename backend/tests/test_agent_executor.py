@@ -468,3 +468,20 @@ class TestErrorRecovery:
         dispatch = recovery.as_middleware()
         with pytest.raises(ToolExecutionError):
             await dispatch(_call())
+
+    async def test_timeout_skips_retry_for_subagent_tools(self) -> None:
+        executor = MagicMock()
+        executor.default_timeout = 30
+        executor.run_tool = AsyncMock(
+            return_value=BaseToolResult(success=True, data="should not be called"),
+        )
+        recovery = ErrorRecovery(executor)
+
+        for tool_name in ("coding_agent", "script_agent"):
+            recovered = await recovery.attempt_recovery(
+                BaseToolResult(success=False, error="timed out after 600s"),
+                tool_call=_call(name=tool_name),
+                exception=ToolTimeoutError(tool_name=tool_name, timeout_sec=600),
+            )
+            assert recovered is None
+        executor.run_tool.assert_not_awaited()

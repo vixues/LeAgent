@@ -24,10 +24,12 @@ import pytest
 from leagent.agent.deps import ModelStreamEvent, QueryDeps
 from leagent.agent.tool_use_context import ToolUseContext
 from leagent.bootstrap.tools import register_default_tools
+from leagent.llm.model_registry import ModelRegistry
+from leagent.llm.model_spec import ModelTask
 from leagent.llm.providers.deepseek import DeepSeekProvider
 from leagent.llm.registry import ProviderRegistry
-from leagent.llm.router import ModelRouter, TierConfig
 from leagent.llm.service import LLMService
+from leagent.llm.task_resolver import TaskResolver
 from leagent.tools.registry import ToolRegistry
 
 
@@ -180,25 +182,55 @@ def build_deepseek_llm_service(
         base_url=base_url,
         default_model=resolved_model,
     )
-    for name in ("deepseek", "tier1", "tier2"):
-        registry.register(
-            name,
-            provider,
-            metadata={"tier": name, "vendor": "deepseek", "model": resolved_model},
-        )
-
-    router = ModelRouter(
-        registry=registry,
-        tier_configs={
-            "tier1": TierConfig(
-                provider="tier1", model=resolved_model, temperature=temperature,
-            ),
-            "tier2": TierConfig(
-                provider="tier2", model=resolved_model, temperature=temperature,
-            ),
-        },
+    registry.register(
+        "deepseek",
+        provider,
+        metadata={"vendor": "deepseek", "model": resolved_model},
     )
-    return LLMService(registry=registry, router=router)
+
+    model_registry = ModelRegistry()
+    model_registry.load_from_config(
+        {
+            "providers": [
+                {
+                    "name": "deepseek",
+                    "enabled": True,
+                    "models": [
+                        {
+                            "name": resolved_model,
+                            "kind": "chat",
+                            "capabilities": {
+                                "input": ["text"],
+                                "output": ["text"],
+                                "tool_call": True,
+                                "reasoning": True,
+                            },
+                        }
+                    ],
+                }
+            ],
+            "routing": {
+                "tasks": {
+                    task.value: {
+                        "provider": "deepseek",
+                        "model": resolved_model,
+                        "temperature": temperature,
+                    }
+                    for task in (
+                        ModelTask.CHAT,
+                        ModelTask.FAST,
+                        ModelTask.COMPRESSION,
+                        ModelTask.TITLE,
+                    )
+                }
+            },
+        }
+    )
+    return LLMService(
+        registry=registry,
+        model_registry=model_registry,
+        resolver=TaskResolver(registry, model_registry),
+    )
 
 
 def build_full_tool_registry() -> ToolRegistry:

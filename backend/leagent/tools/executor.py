@@ -394,6 +394,40 @@ def _recover_project_write_args(raw: str) -> dict[str, Any] | None:
     return recovered
 
 
+def _recover_project_edit_args(raw: str) -> dict[str, Any] | None:
+    """Recover ``project_edit`` args when ``new_string`` breaks outer JSON."""
+    text = _strip_json_code_fence(raw)
+    if '"path"' not in text or '"new_string"' not in text:
+        return None
+    path_info = _extract_json_string_value(text, "path")
+    if path_info is None:
+        return None
+    path, _, _ = path_info
+    if not path.strip():
+        return None
+    old_info = _extract_json_string_value(text, "old_string")
+    new_info = _extract_json_string_value(text, "new_string") or _extract_malformed_quoted_field(
+        text,
+        "new_string",
+        ("project_path",),
+    )
+    if new_info is None:
+        return None
+    new_string, _, new_end = new_info
+    recovered: dict[str, Any] = {"path": path, "new_string": new_string}
+    if old_info is not None:
+        recovered["old_string"] = old_info[0]
+    suffix = text[new_end + 1 :].strip()
+    if suffix.startswith(","):
+        suffix = "{" + suffix[1:]
+        parsed_suffix = _loads_json_dict(_repair_trailing_commas(suffix))
+        if parsed_suffix:
+            for key in ("project_path",):
+                if key in parsed_suffix:
+                    recovered[key] = parsed_suffix[key]
+    return recovered
+
+
 def _recover_project_apply_patch_args(raw: str) -> dict[str, Any] | None:
     """Recover ``project_apply_patch`` args when ``diff`` breaks outer JSON."""
     text = _strip_json_code_fence(raw)
@@ -704,6 +738,7 @@ def _try_parse_raw_tool_args(raw: str) -> dict[str, Any] | None:
         or _recover_emit_ui_tree_args(raw)
         or _recover_canvas_publish_args(raw)
         or _recover_project_write_args(raw)
+        or _recover_project_edit_args(raw)
         or _recover_project_apply_patch_args(raw)
         or _recover_code_execution_args(raw)
     )

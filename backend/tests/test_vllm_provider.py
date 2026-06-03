@@ -358,7 +358,7 @@ class TestVLLMRegistryWiring:
         assert PROVIDER_PRESETS["vllm"]["default_base_url"] == "http://localhost:8000/v1"
         assert PROVIDER_PRESETS["vllm"]["requires_api_key"] is True
 
-    def test_vllm_env_registers_tiers(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_vllm_env_registers_provider(self, monkeypatch: pytest.MonkeyPatch) -> None:
         from leagent.config.settings import get_settings
         from leagent.llm.registry import create_default_registry
 
@@ -372,8 +372,7 @@ class TestVLLMRegistryWiring:
             get_settings.cache_clear()
 
         assert isinstance(registry.get_provider("vllm"), VLLMProvider)
-        assert registry.get_provider("tier1") is registry.get_provider("vllm")
-        assert registry.get_provider_info("tier1").metadata["vendor"] == "vllm"
+        assert registry.get_provider_info("vllm").metadata["vendor"] == "vllm"
         assert registry.get_provider("vllm").enable_auto_tool_choice is True
 
 

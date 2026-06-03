@@ -47,6 +47,24 @@ def enabled_model_names(models: list[dict[str, Any]]) -> list[str]:
     return out
 
 
+def _chat_binding(config: dict[str, Any]) -> tuple[str, str]:
+    """Return the configured chat task provider/model from routing.tasks."""
+    routing = config.get("routing") if isinstance(config.get("routing"), dict) else {}
+    tasks = routing.get("tasks") if isinstance(routing.get("tasks"), dict) else {}
+    chat = tasks.get("chat") if isinstance(tasks.get("chat"), dict) else {}
+    provider = str(chat.get("provider") or "").strip()
+    model = str(chat.get("model") or "").strip()
+    return provider, model
+
+
+def _set_chat_binding(config: dict[str, Any], provider: str, model: str) -> None:
+    routing = config.get("routing") if isinstance(config.get("routing"), dict) else {}
+    tasks = routing.get("tasks") if isinstance(routing.get("tasks"), dict) else {}
+    tasks["chat"] = {"provider": provider, "model": model}
+    routing["tasks"] = tasks
+    config["routing"] = routing
+
+
 def _first_enabled_model(models: list[dict[str, Any]]) -> str:
     for m in models:
         if not _model_entry_enabled(m):
@@ -181,23 +199,7 @@ class ProviderConfigService:
                 f"Unsupported providers.yaml version {data.get('version')!r}. "
                 "Expected version 2. Run: leagent providers migrate"
             )
-        if self._migrate_legacy_deepseek_config(data):
-            self._save_yaml(data)
-        normalized = validate_v2_config(data)
-        self._sync_legacy_default_fields(normalized)
-        return normalized
-
-    def _sync_legacy_default_fields(self, config: dict[str, Any]) -> None:
-        """Keep default_provider/default_model aligned with routing.tasks.chat for Admin UI."""
-        routing = config.get("routing") if isinstance(config.get("routing"), dict) else {}
-        tasks = routing.get("tasks") if isinstance(routing.get("tasks"), dict) else {}
-        chat = tasks.get("chat") if isinstance(tasks.get("chat"), dict) else {}
-        provider = str(chat.get("provider") or config.get("default_provider") or "").strip()
-        model = str(chat.get("model") or config.get("default_model") or "").strip()
-        if provider:
-            config["default_provider"] = provider
-        if model:
-            config["default_model"] = model
+        return validate_v2_config(data)
 
     def _auto_init_from_env(self) -> dict[str, Any]:
         """Auto-create providers.yaml v2 from detected API keys on first run."""
@@ -226,64 +228,6 @@ class ProviderConfigService:
             config = build_default_v2_config(deepseek_key="${DEEPSEEK_API_KEY}")
             self._save_yaml(config)
         return config
-
-    _DEEPSEEK_MODEL_RENAMES: dict[str, str] = {
-        "deepseek-chat": "deepseek-v4-flash",
-        "deepseek-reasoner": "deepseek-v4-pro",
-    }
-
-    @staticmethod
-    def _migrate_legacy_deepseek_config(config: dict[str, Any]) -> bool:
-        """Migrate legacy DeepSeek base URLs and model names.
-
-        - Strips ``/v1`` suffix from base URLs.
-        - Renames ``deepseek-chat`` -> ``deepseek-v4-flash`` and
-          ``deepseek-reasoner`` -> ``deepseek-v4-pro``.
-        - Deduplicates model entries that collide after renaming.
-        """
-        from leagent.llm.providers.deepseek_utils import normalize_deepseek_base_url
-
-        changed = False
-        renames = ProviderConfigService._DEEPSEEK_MODEL_RENAMES
-
-        for entry in config.get("providers", []):
-            if not isinstance(entry, dict) or entry.get("type") != "deepseek":
-                continue
-
-            raw = str(entry.get("base_url") or "")
-            if raw:
-                normalized = normalize_deepseek_base_url(raw)
-                if normalized != raw.rstrip("/"):
-                    entry["base_url"] = normalized
-                    changed = True
-
-            models = entry.get("models")
-            if not isinstance(models, list):
-                continue
-
-            seen: set[str] = set()
-            deduped: list[dict[str, Any]] = []
-            for m in models:
-                name = (m.get("name") or "")
-                new_name = renames.get(name)
-                if new_name:
-                    m["name"] = new_name
-                    name = new_name
-                    changed = True
-                if name not in seen:
-                    seen.add(name)
-                    deduped.append(m)
-                else:
-                    changed = True
-
-            if len(deduped) != len(models):
-                entry["models"] = deduped
-
-        if config.get("default_model") in renames:
-            config["default_model"] = renames[config["default_model"]]
-            changed = True
-
-        return changed
 
     def _save_yaml(self, config: dict[str, Any]) -> None:
         self._path.parent.mkdir(parents=True, exist_ok=True)
@@ -453,14 +397,13 @@ class ProviderConfigService:
         return tasks if isinstance(tasks, dict) else {}
 
     def set_task_routing(self, tasks: dict[str, Any]) -> dict[str, Any]:
-        """Persist routing.tasks and sync default_provider/default_model from chat."""
+        """Persist routing.tasks."""
         if not isinstance(tasks, dict):
             raise ProviderConfigValidationError("'tasks' must be an object")
         config = self._load_yaml()
         routing = config.get("routing") if isinstance(config.get("routing"), dict) else {}
         routing["tasks"] = tasks
         config["routing"] = routing
-        self._sync_legacy_default_fields(config)
         self._save_yaml(config)
         self._registry.clear()
         self._load_and_sync()
@@ -517,7 +460,7 @@ class ProviderConfigService:
                         entry = {**entry, "api_key": by_name[entry["name"]].get("api_key", "")}
                     by_name[str(entry["name"])] = entry
             current["providers"] = list(by_name.values())
-            for key in ("default_provider", "default_model", "routing", "pricing"):
+            for key in ("routing", "pricing"):
                 if key in data:
                     current[key] = data[key]
         else:
@@ -622,14 +565,11 @@ class ProviderConfigService:
         providers.append(pc.to_dict())
         config["providers"] = providers
 
-        # Convenience: if no default provider/model is set yet, promote the
-        # first successfully created enabled provider as the default so the
-        # system immediately starts using it for tier routing.
-        if pc.enabled and not str(config.get("default_provider") or "").strip():
+        chat_provider, _chat_model = _chat_binding(config)
+        if pc.enabled and not chat_provider:
             dm = _first_enabled_model(pc.models)
             if dm:
-                config["default_provider"] = pc.name
-                config["default_model"] = dm
+                _set_chat_binding(config, pc.name, dm)
 
         self._save_yaml(config)
 
@@ -664,26 +604,14 @@ class ProviderConfigService:
         pc.models = validate_models_list(pc.models)
         existing["models"] = pc.models
         self._maybe_warn_host_model_mismatch(pc, name)
-        had_any_default = bool(str(config.get("default_provider") or "").strip())
+        had_chat_binding = bool(_chat_binding(config)[0])
         self._clear_default_if_invalid_for_provider(config, pc)
 
-        # If there is no default provider/model configured yet and this update
-        # results in an enabled provider with at least one enabled model,
-        # promote it as the default. This matches user expectations in the
-        # Admin UI: configuring a provider should make it take effect without
-        # requiring a separate default-model action.
-        #
-        # If we just cleared a stale default (invalid model for this provider),
-        # do not auto-pick a replacement — the operator should set default explicitly.
-        if (
-            pc.enabled
-            and not str(config.get("default_provider") or "").strip()
-            and not had_any_default
-        ):
+        chat_provider, _chat_model = _chat_binding(config)
+        if pc.enabled and not chat_provider and not had_chat_binding:
             dm = _first_enabled_model(pc.models)
             if dm:
-                config["default_provider"] = pc.name
-                config["default_model"] = dm
+                _set_chat_binding(config, pc.name, dm)
 
         config["providers"] = providers
         self._save_yaml(config)
@@ -701,9 +629,9 @@ class ProviderConfigService:
         providers = config.get("providers", [])
         config["providers"] = [p for p in providers if p.get("name") != name]
 
-        if config.get("default_provider") == name:
-            config["default_provider"] = ""
-            config["default_model"] = ""
+        chat_provider, _chat_model = _chat_binding(config)
+        if chat_provider == name:
+            _set_chat_binding(config, "", "")
 
         self._save_yaml(config)
 
@@ -730,8 +658,7 @@ class ProviderConfigService:
 
     def get_default(self) -> DefaultModelConfig:
         config = self._load_yaml()
-        provider = str(config.get("default_provider") or "")
-        model = str(config.get("default_model") or "")
+        provider, model = _chat_binding(config)
         current = self.get_provider(provider) if provider else None
         if current and current.enabled:
             allowed = enabled_model_names(current.models)
@@ -773,32 +700,25 @@ class ProviderConfigService:
             )
 
         config = self._load_yaml()
-        config["default_provider"] = provider
-        config["default_model"] = model
-        routing = config.get("routing") if isinstance(config.get("routing"), dict) else {}
-        tasks = routing.get("tasks") if isinstance(routing.get("tasks"), dict) else {}
-        tasks["chat"] = {"provider": provider, "model": model}
-        routing["tasks"] = tasks
-        config["routing"] = routing
+        _set_chat_binding(config, provider, model)
         self._save_yaml(config)
         self._registry.clear()
         self._load_and_sync()
         return DefaultModelConfig(provider=provider, model=model)
 
     def _clear_default_if_invalid_for_provider(self, config: dict[str, Any], pc: ProviderConfig) -> None:
-        if config.get("default_provider") != pc.name:
+        chat_provider, chat_model = _chat_binding(config)
+        if chat_provider != pc.name:
             return
-        dm = (config.get("default_model") or "").strip()
         allowed = set(enabled_model_names(pc.models))
-        if not pc.enabled or not dm or dm not in allowed:
+        if not pc.enabled or not chat_model or chat_model not in allowed:
             logger.warning(
-                "Clearing default_provider/default_model: default %r/%r is not valid for provider %r.",
-                config.get("default_provider"),
-                dm,
+                "Clearing routing.tasks.chat: binding %r/%r is not valid for provider %r.",
+                chat_provider,
+                chat_model,
                 pc.name,
             )
-            config["default_provider"] = ""
-            config["default_model"] = ""
+            _set_chat_binding(config, "", "")
 
     def _maybe_warn_host_model_mismatch(self, pc: ProviderConfig, logical_name: str) -> None:
         if pc.type not in ("custom", "openai"):

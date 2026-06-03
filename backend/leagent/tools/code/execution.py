@@ -800,12 +800,24 @@ class CodeExecutionTool(BaseTool):
         except Exception as exc:  # noqa: BLE001 - surfaced but non-fatal
             logger.warning("code_execution_quota_exceeded", error=str(exc))
 
-        from leagent.services.session.artifacts import strip_inline_base64_payloads
+        from leagent.services.session.artifacts import (
+            ingest_previewable_produced_files,
+            strip_inline_base64_payloads,
+        )
 
         persisted_file = self._persist_source(source, context)
 
         is_error = result.status not in ("ok", None)
         error_type: ErrorType | None = "runtime" if is_error else None
+
+        produced_files = list(result.produced_files or [])
+        managed_artifacts: list[dict[str, Any]] = []
+        if not is_error and produced_files:
+            produced_files, managed_artifacts = await ingest_previewable_produced_files(
+                context,
+                produced_files,
+                workspace=str(workspace.path),
+            )
 
         envelope = strip_inline_base64_payloads(
             _build_envelope(
@@ -818,7 +830,7 @@ class CodeExecutionTool(BaseTool):
                 stdout_truncated=result.stdout_truncated,
                 stderr_truncated=result.stderr_truncated,
                 result=result.result,
-                produced_files=result.produced_files,
+                produced_files=produced_files,
                 images=result.image_artifacts,
                 files=result.file_artifacts,
                 duration_ms=result.duration_ms,
@@ -829,6 +841,8 @@ class CodeExecutionTool(BaseTool):
                 workspace_file=persisted_file,
             )
         )
+        if managed_artifacts:
+            envelope["managed_artifacts"] = managed_artifacts
 
         from leagent.tools.code.pipeline import record_operation
 
@@ -923,6 +937,19 @@ class CodeExecutionTool(BaseTool):
             value = extra_ctx.get(key)
             if isinstance(value, str):
                 _add(value)
+
+        try:
+            from leagent.config.settings import get_settings
+            from leagent.tools._sandbox.paths import _system_temp_roots
+
+            settings = get_settings()
+            if settings.is_single_machine_profile or getattr(
+                settings, "code_execution_permissive", False
+            ):
+                for temp_root in _system_temp_roots():
+                    _add(str(temp_root))
+        except Exception:  # noqa: BLE001
+            logger.debug("scan_roots_temp_unavailable", exc_info=True)
 
         return tuple(roots)
 
