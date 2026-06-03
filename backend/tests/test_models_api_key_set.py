@@ -59,7 +59,7 @@ def test_compute_fallback_deepseek_env(tmp_path, monkeypatch: pytest.MonkeyPatch
         assert _compute_api_key_set(pc, svc) is True
 
 
-def test_compute_tier_alias_name(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_compute_deepseek_from_env_when_yaml_empty(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
     svc = ProviderConfigService(providers_path=tmp_path / "empty.yaml")
     pc = ProviderConfig(
         name="tier2",
@@ -67,6 +67,6 @@ def test_compute_tier_alias_name(tmp_path, monkeypatch: pytest.MonkeyPatch) -> N
         api_key="",
         models=[{"name": "deepseek-v4-flash"}],
     )
-    llm = _fake_llm(tier2_api_key="k-tier")
+    llm = _fake_llm(deepseek_api_key="k-tier")
     with patch("leagent.config.settings.get_settings", return_value=SimpleNamespace(llm=llm)):
         assert _compute_api_key_set(pc, svc) is True

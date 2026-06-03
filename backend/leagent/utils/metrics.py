@@ -58,7 +58,7 @@ class LeAgentMetrics:
             result = await tool.run()
         
         # Record LLM request
-        metrics.record_llm_request("tier1", "qwen-plus", 0.5, 1500, 200)
+        metrics.record_llm_request("chat", "qwen-plus", 0.5, 1500, 200)
         
         # Track sessions
         metrics.active_sessions.inc()
@@ -381,7 +381,7 @@ class LeAgentMetrics:
         """Context manager for timing LLM requests.
         
         Usage:
-            with metrics.llm_request_timer("openai", "gpt-4", "tier1") as timer:
+            with metrics.llm_request_timer("openai", "gpt-4", "chat") as timer:
                 response = await llm.complete(messages)
                 timer.set_status("success")
         """

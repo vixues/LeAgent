@@ -39,12 +39,9 @@ function resolveAutoProviderModel(
   const models = enabledModels(provider);
   if (!provider || !models.length) return undefined;
 
-  const tier1Model = models.find((m) => (m.tier || '').trim().toLowerCase() === 'tier1');
-  if (tier1Model) return { provider, model: tier1Model };
-
   const modelName = defaultModel?.model?.trim();
   const defaultProviderModel = modelName ? models.find((m) => m.name === modelName) : undefined;
-  return { provider, model: defaultProviderModel ?? models[0]! };
+  return { provider, model: defaultProviderModel ?? models.find((m) => m.kind === 'chat') ?? models[0]! };
 }
 
 export interface ResolvedContextBudget {
@@ -57,7 +54,7 @@ export interface ResolvedContextBudget {
  * Resolve the context window (token budget) for the context usage ring.
  *
  * - Explicit ``provider/model`` selection uses that model's ``context_window``.
- * - ``auto`` mirrors chat routing: tier1 model on the default provider, then a
+ * - ``auto`` mirrors chat task routing: default chat model first, then a
  *   valid fallback provider/model.
  */
 export function resolveContextBudget(

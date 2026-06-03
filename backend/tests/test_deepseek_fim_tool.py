@@ -8,7 +8,7 @@ import pytest
 
 from leagent.llm.providers.deepseek import DeepSeekProvider
 from leagent.llm.registry import ProviderRegistry
-from leagent.llm.router import ModelRouter
+from leagent.llm.model_registry import ModelRegistry
 from leagent.llm.service import LLMService
 from leagent.tools.base import ToolContext
 from leagent.tools.code.deepseek_fim import DeepSeekFimTool, _resolve_deepseek_provider
@@ -42,8 +42,8 @@ class _StubDeepSeek(DeepSeekProvider):
 
 def _service_with_deepseek(stub: _StubDeepSeek) -> LLMService:
     reg = ProviderRegistry()
-    reg.register("tier1", stub)
-    return LLMService(registry=reg, router=ModelRouter(registry=reg))
+    reg.register("deepseek", stub)
+    return LLMService(registry=reg, model_registry=ModelRegistry())
 
 
 @pytest.mark.asyncio
@@ -116,8 +116,8 @@ async def test_fim_no_deepseek_returns_structured_error() -> None:
     reg = ProviderRegistry()
     from leagent.llm.providers.openai import OpenAIProvider
 
-    reg.register("tier1", OpenAIProvider(api_key="k", base_url="https://x", default_model="gpt-4o-mini"))
-    llm = LLMService(registry=reg, router=ModelRouter(registry=reg))
+    reg.register("openai", OpenAIProvider(api_key="k", base_url="https://x", default_model="gpt-4o-mini"))
+    llm = LLMService(registry=reg, model_registry=ModelRegistry())
     tool = DeepSeekFimTool()
     ctx = ToolContext(user_id="u", session_id="s", llm=llm)
     out = await tool.execute(
@@ -133,8 +133,8 @@ async def test_fim_run_coerces_failure_envelope() -> None:
     reg = ProviderRegistry()
     from leagent.llm.providers.openai import OpenAIProvider
 
-    reg.register("tier1", OpenAIProvider(api_key="k", base_url="https://x", default_model="gpt-4o-mini"))
-    llm = LLMService(registry=reg, router=ModelRouter(registry=reg))
+    reg.register("openai", OpenAIProvider(api_key="k", base_url="https://x", default_model="gpt-4o-mini"))
+    llm = LLMService(registry=reg, model_registry=ModelRegistry())
     tool = DeepSeekFimTool()
     ctx = ToolContext(user_id="u", session_id="s", llm=llm)
     res = await tool.run({"action": "infill", "prefix": "a", "suffix": "b"}, ctx)

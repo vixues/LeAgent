@@ -1,35 +1,51 @@
 """Populate os.environ from dotenv files before Settings is instantiated.
 
-``~/.leagent/.env`` holds user-level keys (e.g. DashScope / 千问). The process
-otherwise only sees the shell environment, so keys there were ignored.
+Load order (``override=False``): cwd ``.env`` first, then ``$LEAGENT_HOME/.env``.
 
-Load order (``override=False``): current working directory ``.env`` first, then
-``$LEAGENT_HOME/.env``, so existing process env (Docker ``-e``, exports) always
-wins, project-local file fills gaps, then home file fills remaining gaps.
-
-If only ``DASHSCOPE_API_KEY`` is set (common in CLI templates), map it to
-``LEAGENT_LLM__*`` keys expected by :class:`Settings` when those are unset.
+If deprecated ``*_TIER*`` variables are still present, startup fails with a pointer
+to ``leagent models migrate`` (one-shot migration; no runtime tier compatibility).
 """
 
 from __future__ import annotations
 
 import os
+import sys
 from pathlib import Path
 
 from leagent.config.constants import LEAGENT_HOME
+from leagent.config.tier_env_guard import detect_legacy_tier_env, detect_obsolete_llm_env
+
+
+def _set_env_if_empty(name: str, value: str) -> None:
+    if value and not (os.getenv(name) or "").strip():
+        os.environ[name] = value
 
 
 def _bridge_dashscope_key() -> None:
     raw = (os.getenv("DASHSCOPE_API_KEY") or "").strip()
     if not raw:
         return
-    for name in (
-        "LEAGENT_LLM__DASHSCOPE_API_KEY",
-        "LEAGENT_LLM__TIER1_API_KEY",
-        "LEAGENT_LLM__TIER2_API_KEY",
-    ):
-        if not (os.getenv(name) or "").strip():
-            os.environ[name] = raw
+    _set_env_if_empty("LEAGENT_LLM__DASHSCOPE_API_KEY", raw)
+
+
+def _fail_on_legacy_tier_env() -> None:
+    if any("migrate" in (arg or "") for arg in sys.argv):
+        return
+    legacy = detect_obsolete_llm_env()
+    if not legacy:
+        return
+    keys = ", ".join(legacy[:6])
+    suffix = "…" if len(legacy) > 6 else ""
+    msg = (
+        "Legacy tier1/tier2 and LLM_* model env vars are no longer supported.\n"
+        f"Found: {keys}{suffix}\n\n"
+        "Run once to migrate ~/.leagent/.env and providers.yaml:\n"
+        "  cd backend && uv run leagent models migrate\n"
+        "Or:\n"
+        "  cd backend && uv run python ../scripts/migrate_to_v2.py\n"
+    )
+    print(msg, file=sys.stderr)
+    raise SystemExit(1)
 
 
 def load_dotenv_files() -> None:
@@ -37,6 +53,7 @@ def load_dotenv_files() -> None:
         from dotenv import load_dotenv
     except ImportError:
         _bridge_dashscope_key()
+        _fail_on_legacy_tier_env()
         return
 
     cwd_env = Path.cwd() / ".env"
@@ -48,6 +65,7 @@ def load_dotenv_files() -> None:
         load_dotenv(home_env, override=False)
 
     _bridge_dashscope_key()
+    _fail_on_legacy_tier_env()
 
 
 load_dotenv_files()

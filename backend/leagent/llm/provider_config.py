@@ -59,23 +59,10 @@ def _first_enabled_model(models: list[dict[str, Any]]) -> str:
 
 
 def validate_models_list(models: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Require at least one model, non-empty names, no duplicates."""
-    if not models:
-        raise ProviderConfigValidationError("At least one model is required")
-    seen: set[str] = set()
-    out: list[dict[str, Any]] = []
-    for raw in models:
-        if not isinstance(raw, dict):
-            raise ProviderConfigValidationError("Each model must be an object with a 'name' field")
-        raw_name = raw.get("name")
-        name = (raw_name if isinstance(raw_name, str) else str(raw_name or "")).strip()
-        if not name:
-            raise ProviderConfigValidationError("Model name cannot be empty")
-        if name in seen:
-            raise ProviderConfigValidationError(f"Duplicate model name: {name}")
-        seen.add(name)
-        out.append({**raw, "name": name})
-    return out
+    """Require at least one v2 model entry with valid kind/capabilities."""
+    from leagent.llm.providers_schema import validate_models_list_v2
+
+    return validate_models_list_v2(models)
 
 
 # ---------------------------------------------------------------------------
@@ -186,62 +173,58 @@ class ProviderConfigService:
         with open(self._path, encoding="utf-8") as fh:
             data = yaml.safe_load(fh)
         if not isinstance(data, dict):
-            return {"providers": []}
-        data.setdefault("routing", {})
-        data.setdefault("pricing", {})
+            return self._auto_init_from_env()
+        from leagent.llm.providers_schema import validate_v2_config
+
+        if data.get("version") != 2:
+            raise ProviderConfigValidationError(
+                f"Unsupported providers.yaml version {data.get('version')!r}. "
+                "Expected version 2. Run: leagent providers migrate"
+            )
         if self._migrate_legacy_deepseek_config(data):
             self._save_yaml(data)
-        return data
+        normalized = validate_v2_config(data)
+        self._sync_legacy_default_fields(normalized)
+        return normalized
+
+    def _sync_legacy_default_fields(self, config: dict[str, Any]) -> None:
+        """Keep default_provider/default_model aligned with routing.tasks.chat for Admin UI."""
+        routing = config.get("routing") if isinstance(config.get("routing"), dict) else {}
+        tasks = routing.get("tasks") if isinstance(routing.get("tasks"), dict) else {}
+        chat = tasks.get("chat") if isinstance(tasks.get("chat"), dict) else {}
+        provider = str(chat.get("provider") or config.get("default_provider") or "").strip()
+        model = str(chat.get("model") or config.get("default_model") or "").strip()
+        if provider:
+            config["default_provider"] = provider
+        if model:
+            config["default_model"] = model
 
     def _auto_init_from_env(self) -> dict[str, Any]:
-        """Auto-create providers.yaml from detected API keys on first run."""
+        """Auto-create providers.yaml v2 from detected API keys on first run."""
         from leagent.config.settings import get_settings
-        from leagent.llm.model_catalog import get_default_base_url, get_default_models
+        from leagent.llm.providers_schema import build_default_v2_config
 
         settings = get_settings()
-        providers: list[dict[str, Any]] = []
-        default_provider = ""
-        default_model = ""
-
-        env_key_map: list[tuple[str, str, str]] = [
-            (settings.llm.deepseek_api_key, "deepseek", settings.llm.deepseek_base_url),
-            (settings.llm.dashscope_api_key, "qwen", settings.llm.dashscope_base_url),
-            (settings.llm.openai_api_key, "openai", ""),
-            (settings.llm.anthropic_api_key, "anthropic", ""),
-        ]
-
-        for api_key, ptype, base_url_override in env_key_map:
-            if not api_key:
-                continue
-            base_url = base_url_override or get_default_base_url(ptype)
-            models = get_default_models(ptype)
-            entry: dict[str, Any] = {
-                "name": ptype,
-                "type": ptype,
-                "api_key": api_key,
-                "base_url": base_url,
-                "models": models,
-                "enabled": True,
-            }
-            providers.append(entry)
-            if not default_provider:
-                default_provider = ptype
-                tier1_models = [m["name"] for m in models if m.get("tier") == "tier1"]
-                default_model = tier1_models[0] if tier1_models else (models[0]["name"] if models else "")
-
-        config: dict[str, Any] = {
-            "default_provider": default_provider,
-            "default_model": default_model,
-            "providers": providers,
-        }
-
-        if providers:
+        config = build_default_v2_config(
+            deepseek_key=settings.llm.deepseek_api_key or "${DEEPSEEK_API_KEY}",
+            dashscope_key=settings.llm.dashscope_api_key or "${DASHSCOPE_API_KEY}",
+            openai_key=settings.llm.openai_api_key or "${OPENAI_API_KEY}",
+            anthropic_key=settings.llm.anthropic_api_key or "${ANTHROPIC_API_KEY}",
+        )
+        # Only persist when at least one real key is present
+        has_key = any(
+            getattr(settings.llm, f"{name}_api_key", "")
+            for name in ("deepseek", "dashscope", "openai", "anthropic")
+        )
+        if config.get("providers") and has_key:
             logger.info(
-                "Auto-initialized providers.yaml with %d provider(s) from env (default: %s/%s)",
-                len(providers), default_provider, default_model,
+                "Auto-initialized providers.yaml v2 with %d provider(s)",
+                len(config["providers"]),
             )
             self._save_yaml(config)
-
+        elif not config.get("providers"):
+            config = build_default_v2_config(deepseek_key="${DEEPSEEK_API_KEY}")
+            self._save_yaml(config)
         return config
 
     _DEEPSEEK_MODEL_RENAMES: dict[str, str] = {
@@ -406,6 +389,30 @@ class ProviderConfigService:
             parse_think_tags=bool(meta_parse_think) if meta_parse_think is not None else True,
         )
 
+    def _create_image_gen_provider(self, pc: ProviderConfig, model_name: str):
+        """Instantiate an image generation provider for *pc*."""
+        from leagent.llm.image_gen.dashscope import DashScopeWanxProvider
+        from leagent.llm.image_gen.openai import OpenAIImageGenProvider
+
+        api_key = self._resolve_api_key(pc.api_key)
+        if pc.type in ("openai", "azure", "custom"):
+            return OpenAIImageGenProvider(
+                api_key=api_key or "not-needed",
+                base_url=pc.base_url or "https://api.openai.com/v1",
+                timeout=float(pc.timeout),
+            )
+        if pc.type in ("qwen", "dashscope"):
+            return DashScopeWanxProvider(
+                api_key=api_key,
+                base_url=pc.base_url or "https://dashscope.aliyuncs.com/api/v1",
+                timeout=float(pc.timeout),
+            )
+        return OpenAIImageGenProvider(
+            api_key=api_key or "not-needed",
+            base_url=pc.base_url or "https://api.openai.com/v1",
+            timeout=float(pc.timeout),
+        )
+
     @staticmethod
     def _resolve_api_key(raw: str) -> str:
         """Resolve ``${ENV_VAR}`` references in API key values."""
@@ -431,39 +438,37 @@ class ProviderConfigService:
         pricing = config.get("pricing")
         return pricing if isinstance(pricing, dict) else {}
 
-    def get_model_aliases(self) -> dict[str, str]:
-        """Build logical model aliases from routing config and model metadata."""
+    def get_model_registry(self) -> "ModelRegistry":
+        """Build a :class:`ModelRegistry` from the current YAML config."""
+        from leagent.llm.model_registry import ModelRegistry
+
+        catalog = ModelRegistry()
+        catalog.load_from_config(self._load_yaml())
+        return catalog
+
+    def get_task_routing(self) -> dict[str, Any]:
+        """Return routing.tasks from providers.yaml."""
+        routing = self.get_routing_config()
+        tasks = routing.get("tasks")
+        return tasks if isinstance(tasks, dict) else {}
+
+    def set_task_routing(self, tasks: dict[str, Any]) -> dict[str, Any]:
+        """Persist routing.tasks and sync default_provider/default_model from chat."""
+        if not isinstance(tasks, dict):
+            raise ProviderConfigValidationError("'tasks' must be an object")
         config = self._load_yaml()
         routing = config.get("routing") if isinstance(config.get("routing"), dict) else {}
-        aliases: dict[str, str] = {
-            str(k): str(v)
-            for k, v in (routing.get("model_aliases") or {}).items()
-            if isinstance(k, str) and isinstance(v, str) and v.strip()
-        }
+        routing["tasks"] = tasks
+        config["routing"] = routing
+        self._sync_legacy_default_fields(config)
+        self._save_yaml(config)
+        self._registry.clear()
+        self._load_and_sync()
+        return tasks
 
-        default_provider = str(config.get("default_provider") or "")
-        providers = [
-            ProviderConfig.from_dict(e)
-            for e in config.get("providers", [])
-            if isinstance(e, dict)
-        ]
-        preferred = next((p for p in providers if p.name == default_provider), None) or (providers[0] if providers else None)
-        if not preferred:
-            return aliases
-
-        tier1 = next((m.get("name") for m in preferred.models if m.get("tier") == "tier1" and _model_entry_enabled(m)), "")
-        tier2 = next((m.get("name") for m in preferred.models if m.get("tier") == "tier2" and _model_entry_enabled(m)), "")
-        vision = next((m.get("name") for m in preferred.models if m.get("supports_vision") and _model_entry_enabled(m)), "")
-
-        if tier2:
-            aliases.setdefault("fast", str(tier2))
-            aliases.setdefault("tier2", str(tier2))
-        if tier1:
-            aliases.setdefault("reasoning", str(tier1))
-            aliases.setdefault("tier1", str(tier1))
-        if vision:
-            aliases.setdefault("vision", str(vision))
-        return aliases
+    def get_model_aliases(self) -> dict[str, str]:
+        """Deprecated: v2 uses routing.tasks instead of aliases."""
+        return {}
 
     def set_pricing_config(self, pricing: dict[str, Any]) -> dict[str, Any]:
         """Persist editable model pricing metadata."""
@@ -770,7 +775,14 @@ class ProviderConfigService:
         config = self._load_yaml()
         config["default_provider"] = provider
         config["default_model"] = model
+        routing = config.get("routing") if isinstance(config.get("routing"), dict) else {}
+        tasks = routing.get("tasks") if isinstance(routing.get("tasks"), dict) else {}
+        tasks["chat"] = {"provider": provider, "model": model}
+        routing["tasks"] = tasks
+        config["routing"] = routing
         self._save_yaml(config)
+        self._registry.clear()
+        self._load_and_sync()
         return DefaultModelConfig(provider=provider, model=model)
 
     def _clear_default_if_invalid_for_provider(self, config: dict[str, Any], pc: ProviderConfig) -> None:

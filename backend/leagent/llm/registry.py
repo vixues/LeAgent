@@ -146,15 +146,7 @@ class ProviderRegistry:
         return name in self._providers
 
     def resolve_provider_name(self, name: str) -> str:
-        """Map tier routing aliases (``tier1``/``tier2``) to the YAML provider name."""
-        if name not in self._providers:
-            return name
-        meta = self._providers[name].metadata
-        if not isinstance(meta, dict):
-            return name
-        vendor = meta.get("vendor")
-        if isinstance(vendor, str) and vendor.strip() and vendor.strip() in self._providers:
-            return vendor.strip()
+        """Return the provider name unchanged (v2: no pseudo-provider aliases)."""
         return name
 
     def list_providers(self) -> list[str]:
@@ -364,282 +356,36 @@ class ProviderRegistry:
         self._providers.clear()
 
 
-def _endpoint_hostname_is_deepseek(base_url: str) -> bool:
-    """True when *base_url* points at DeepSeek's API (OpenAI-compatible)."""
-    from urllib.parse import urlparse
-
-    h = (urlparse(base_url or "").hostname or "").lower()
-    return "deepseek" in h
-
-
-def _endpoint_hostname_is_dashscope(base_url: str) -> bool:
-    """True when *base_url* points at DashScope's API (OpenAI-compatible)."""
-    from urllib.parse import urlparse
-
-    h = (urlparse(base_url or "").hostname or "").lower()
-    return "dashscope" in h or "maas.aliyuncs.com" in h
-
-
-def _first_yaml_enabled_model(models: list[dict]) -> str:
-    """Return the first enabled non-empty model name from a YAML model list."""
-    for model in models:
-        if model.get("enabled", True) is False:
-            continue
-        name = str(model.get("name") or "").strip()
-        if name:
-            return name
-    return ""
-
-
 def create_default_registry() -> ProviderRegistry:
-    """Create a registry with providers from YAML (primary) and env vars (fallback).
-
-    Resolution order:
-    1. Load providers from ``providers.yaml`` via :class:`ProviderConfigService`.
-    2. If no YAML providers exist, register providers from env vars (backward compat).
-    3. Register special env-only providers (vLLM override, embedding, Ollama).
-    4. Promote the default provider to tier1/tier2 for routing.
-    """
+    """Create a registry from providers.yaml v2 plus optional env-only overrides."""
     import logging
 
     _log = logging.getLogger(__name__)
     registry = ProviderRegistry()
 
-    # --- Step 1: YAML providers (primary authority) ---
-    yaml_svc = _load_yaml_providers(registry, _log)
-
-    # --- Step 2: Env-var fallback when YAML has no providers ---
-    yaml_provider_names = {p for p in registry.list_providers()}
-    if not yaml_provider_names:
-        _register_from_env(registry, _log)
-
-    # --- Step 3: Special env-only providers (always checked) ---
-    _register_env_overrides(registry, _log)
-
-    # --- Step 4: Assign tier1/tier2 from default provider ---
-    _assign_tiers(registry, yaml_svc, _log)
-
-    return registry
-
-
-def _load_yaml_providers(
-    registry: ProviderRegistry,
-    _log: "logging.Logger",
-) -> "ProviderConfigService | None":
-    """Load all enabled providers from ``providers.yaml`` into the registry."""
     try:
         from leagent.llm.provider_config import ProviderConfigService
 
-        svc = ProviderConfigService()
+        ProviderConfigService(registry=registry)
     except Exception:
-        _log.debug("providers.yaml not available; skipping YAML load")
-        return None
+        _log.debug("providers.yaml not available; registry may be empty")
 
-    for pc in svc.list_providers():
-        if not pc.enabled:
-            continue
-        try:
-            provider = svc._create_llm_provider(pc)
-            registry.register(
-                pc.name,
-                provider,
-                metadata={
-                    "type": pc.type,
-                    "models": [m.get("name", "") for m in pc.models],
-                    "source": "providers.yaml",
-                },
-            )
-        except Exception:
-            _log.warning("YAML provider %s failed to register", pc.name, exc_info=True)
-
-    return svc
-
-
-def _register_from_env(
-    registry: ProviderRegistry,
-    _log: "logging.Logger",
-) -> None:
-    """Register providers from env vars when providers.yaml is empty."""
-    from leagent.config.settings import get_settings
-    from leagent.llm.providers.anthropic import AnthropicProvider
-    from leagent.llm.providers.openai import OpenAIProvider
-    from leagent.llm.providers.dashscope import DashScopeProvider
-    from leagent.llm.providers.deepseek import DeepSeekProvider
-
-    settings = get_settings()
-
-    # Legacy explicit tier endpoints
-    _tier_key = (
-        settings.llm.tier1_api_key
-        or settings.llm.openai_api_key
-        or settings.llm.dashscope_api_key
-        or settings.llm.deepseek_api_key
-    )
-
-    if settings.llm.tier1_endpoint and settings.llm.tier1_model:
-        _register_tier_from_env(
-            registry, "tier1",
-            settings.llm.tier1_endpoint,
-            settings.llm.tier1_model,
-            _tier_key or "not-needed",
-            settings.llm.tier1_timeout,
-        )
-
-    _tier2_key = (
-        settings.llm.tier2_api_key
-        or settings.llm.openai_api_key
-        or settings.llm.dashscope_api_key
-        or settings.llm.deepseek_api_key
-    )
-
-    if settings.llm.tier2_endpoint and settings.llm.tier2_model:
-        _register_tier_from_env(
-            registry, "tier2",
-            settings.llm.tier2_endpoint,
-            settings.llm.tier2_model,
-            _tier2_key or "not-needed",
-            settings.llm.tier2_timeout,
-        )
-
-    # Cloud providers when not local-only
-    if not settings.llm.local_only:
-        if settings.llm.openai_api_key:
-            registry.register(
-                "openai",
-                OpenAIProvider(
-                    api_key=settings.llm.openai_api_key,
-                    default_model="gpt-4o",
-                ),
-                metadata={"type": "cloud", "vendor": "openai"},
-            )
-
-        if settings.llm.anthropic_api_key:
-            registry.register(
-                "anthropic",
-                AnthropicProvider(
-                    api_key=settings.llm.anthropic_api_key,
-                    default_model=settings.llm.anthropic_model,
-                ),
-                metadata={"type": "cloud", "vendor": "anthropic", "model": settings.llm.anthropic_model},
-            )
-
-        if settings.llm.dashscope_api_key:
-            registry.register(
-                "dashscope",
-                DashScopeProvider(
-                    api_key=settings.llm.dashscope_api_key,
-                    base_url=settings.llm.dashscope_base_url,
-                    default_model=settings.llm.dashscope_model,
-                ),
-                metadata={"type": "cloud", "vendor": "dashscope", "model": settings.llm.dashscope_model},
-            )
-            if not registry.has_provider("tier1"):
-                tier1_model = settings.llm.dashscope_model
-                if tier1_model == DashScopeProvider.DEFAULT_MODEL:
-                    tier1_model = "qwen3-max"
-                registry.register(
-                    "tier1",
-                    DashScopeProvider(
-                        api_key=settings.llm.dashscope_api_key,
-                        base_url=settings.llm.dashscope_base_url,
-                        default_model=tier1_model,
-                    ),
-                    metadata={"tier": "tier1", "vendor": "dashscope", "model": tier1_model},
-                )
-            if not registry.has_provider("tier2"):
-                registry.register(
-                    "tier2",
-                    DashScopeProvider(
-                        api_key=settings.llm.dashscope_api_key,
-                        base_url=settings.llm.dashscope_base_url,
-                        default_model=settings.llm.dashscope_model,
-                    ),
-                    metadata={"tier": "tier2", "vendor": "dashscope", "model": settings.llm.dashscope_model},
-                )
-
-        if settings.llm.deepseek_api_key:
-            registry.register(
-                "deepseek",
-                DeepSeekProvider(
-                    api_key=settings.llm.deepseek_api_key,
-                    base_url=settings.llm.deepseek_base_url,
-                    default_model=settings.llm.deepseek_model,
-                ),
-                metadata={"type": "cloud", "vendor": "deepseek", "model": settings.llm.deepseek_model},
-            )
-            if not registry.has_provider("tier1"):
-                tier1_model = settings.llm.deepseek_model
-                if tier1_model == DeepSeekProvider.DEFAULT_MODEL:
-                    tier1_model = "deepseek-v4-pro"
-                registry.register(
-                    "tier1",
-                    DeepSeekProvider(
-                        api_key=settings.llm.deepseek_api_key,
-                        base_url=settings.llm.deepseek_base_url,
-                        default_model=tier1_model,
-                    ),
-                    metadata={"tier": "tier1", "vendor": "deepseek", "model": tier1_model},
-                )
-            if not registry.has_provider("tier2"):
-                registry.register(
-                    "tier2",
-                    DeepSeekProvider(
-                        api_key=settings.llm.deepseek_api_key,
-                        base_url=settings.llm.deepseek_base_url,
-                        default_model=settings.llm.deepseek_model,
-                    ),
-                    metadata={"tier": "tier2", "vendor": "deepseek", "model": settings.llm.deepseek_model},
-                )
-
-
-def _register_tier_from_env(
-    registry: ProviderRegistry,
-    tier_name: str,
-    endpoint: str,
-    model: str,
-    api_key: str,
-    timeout: int,
-) -> None:
-    """Register a tier provider from env vars, detecting the correct provider class."""
-    from leagent.llm.providers.dashscope import DashScopeProvider
-    from leagent.llm.providers.deepseek import DeepSeekProvider
-    from leagent.llm.providers.custom import CustomOpenAIProvider
-
-    if _endpoint_hostname_is_deepseek(endpoint):
-        provider = DeepSeekProvider(
-            api_key=api_key, base_url=endpoint.rstrip("/"),
-            default_model=model, timeout=timeout,
-        )
-    elif _endpoint_hostname_is_dashscope(endpoint):
-        provider = DashScopeProvider(
-            api_key=api_key, base_url=endpoint.rstrip("/"),
-            default_model=model, timeout=timeout,
-        )
-    else:
-        provider = CustomOpenAIProvider(
-            api_key=api_key, base_url=endpoint,
-            default_model=model, timeout=timeout,
-        )
-    registry.register(
-        tier_name, provider,
-        metadata={"tier": tier_name, "model": model, "source": "env"},
-    )
+    _register_env_overrides(registry, _log)
+    return registry
 
 
 def _register_env_overrides(
     registry: ProviderRegistry,
     _log: "logging.Logger",
 ) -> None:
-    """Register special providers that are always driven by env vars."""
+    """Register optional env-only providers (vLLM, Ollama)."""
     from leagent.config.settings import get_settings
     from leagent.llm.providers.ollama import OllamaProvider
-    from leagent.llm.providers.openai import OpenAIProvider
     from leagent.llm.providers.vllm import VLLMProvider
 
     settings = get_settings()
 
-    # vLLM override: when configured, takes over tier1/tier2
-    if settings.llm.vllm_endpoint:
+    if settings.llm.vllm_endpoint and not registry.has_provider("vllm"):
         vllm_model_label = settings.llm.vllm_model or "auto-detect"
         vllm_provider = VLLMProvider(
             api_key=settings.llm.vllm_api_key or "not-needed",
@@ -650,24 +396,12 @@ def _register_env_overrides(
         )
         _ep = settings.llm.vllm_endpoint
         _is_local = "localhost" in _ep or "127.0.0.1" in _ep or "host.docker.internal" in _ep
-        registry.replace("vllm", vllm_provider, metadata={"type": "local" if _is_local else "remote", "vendor": "vllm", "model": vllm_model_label})
-        registry.replace("tier1", vllm_provider, metadata={"tier": "tier1", "vendor": "vllm", "model": vllm_model_label, "description": "vLLM (configured via LLM_VLLM_ENDPOINT)"})
-        registry.replace("tier2", vllm_provider, metadata={"tier": "tier2", "vendor": "vllm", "model": vllm_model_label, "description": "vLLM (configured via LLM_VLLM_ENDPOINT)"})
+        registry.register(
+            "vllm",
+            vllm_provider,
+            metadata={"type": "local" if _is_local else "remote", "vendor": "vllm", "model": vllm_model_label},
+        )
 
-    # Embedding provider
-    if settings.llm.embedding_endpoint:
-        if not registry.has_provider("embedding"):
-            registry.register(
-                "embedding",
-                OpenAIProvider(
-                    api_key=settings.llm.openai_api_key or "not-needed",
-                    base_url=settings.llm.embedding_endpoint,
-                    default_model=settings.llm.embedding_model,
-                ),
-                metadata={"type": "embedding", "model": settings.llm.embedding_model, "dimension": settings.llm.embedding_dim},
-            )
-
-    # Ollama (local, always registered when endpoint is set)
     if settings.llm.ollama_endpoint and not registry.has_provider("ollama"):
         registry.register(
             "ollama",
@@ -677,86 +411,3 @@ def _register_env_overrides(
             ),
             metadata={"type": "local", "vendor": "ollama", "model": settings.llm.ollama_model},
         )
-
-
-def _assign_tiers(
-    registry: ProviderRegistry,
-    yaml_svc: "ProviderConfigService | None",
-    _log: "logging.Logger",
-) -> None:
-    """Promote the default provider to tier1/tier2 using model tier annotations."""
-    if registry.has_provider("tier1") and registry.has_provider("tier2"):
-        # vLLM override or env tiers already assigned — nothing to do
-        tier1_meta = registry.get_provider_info("tier1").metadata
-        if tier1_meta.get("vendor") == "vllm":
-            return
-
-    if yaml_svc is None:
-        return
-
-    from leagent.llm.provider_config import _model_entry_enabled, enabled_model_names
-
-    default_cfg = yaml_svc.get_default()
-    default_pc = yaml_svc.get_provider(default_cfg.provider) if default_cfg.provider else None
-    allowed = enabled_model_names(default_pc.models) if default_pc else []
-
-    default_is_valid = bool(
-        default_pc and default_pc.enabled and allowed
-        and (not default_cfg.model or default_cfg.model in allowed)
-    )
-
-    if not default_is_valid:
-        fallback_pc = next(
-            (pc for pc in yaml_svc.list_providers() if pc.enabled and enabled_model_names(pc.models)),
-            None,
-        )
-        if fallback_pc is None:
-            if default_cfg.provider:
-                _log.warning("default_provider '%s' is invalid and no enabled provider available", default_cfg.provider)
-            return
-        fallback_model = _first_yaml_enabled_model(fallback_pc.models)
-        _log.warning(
-            "default_provider '%s' model '%s' invalid; using '%s' model '%s'",
-            default_cfg.provider, default_cfg.model, fallback_pc.name, fallback_model,
-        )
-        default_cfg.provider = fallback_pc.name
-        default_cfg.model = fallback_model
-        default_pc = fallback_pc
-
-    if not registry.has_provider(default_cfg.provider):
-        _log.warning("default_provider '%s' not registered; cannot assign tiers", default_cfg.provider)
-        return
-
-    default_provider_instance = registry.get_provider(default_cfg.provider)
-    default_model = default_cfg.model or default_provider_instance._get_default_model()
-
-    tier1_model = ""
-    tier2_model = ""
-    if default_pc:
-        for m in default_pc.models:
-            if not _model_entry_enabled(m):
-                continue
-            mt = (m.get("tier") or "").strip().lower()
-            mn = (m.get("name") or "").strip()
-            if not mn:
-                continue
-            if mt == "tier1" and not tier1_model:
-                tier1_model = mn
-            elif mt == "tier2" and not tier2_model:
-                tier2_model = mn
-
-    if not tier1_model:
-        tier1_model = default_model
-    if not tier2_model:
-        tier2_model = tier1_model
-
-    _log.info("default_provider=%s tier1_model=%s tier2_model=%s", default_cfg.provider, tier1_model, tier2_model)
-
-    registry.replace(
-        "tier1", default_provider_instance,
-        metadata={"tier": "tier1", "vendor": default_cfg.provider, "model": tier1_model, "description": f"{default_cfg.provider} (from providers.yaml)"},
-    )
-    registry.replace(
-        "tier2", default_provider_instance,
-        metadata={"tier": "tier2", "vendor": default_cfg.provider, "model": tier2_model, "description": f"{default_cfg.provider} (from providers.yaml)"},
-    )

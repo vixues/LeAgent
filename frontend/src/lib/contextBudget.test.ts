@@ -17,14 +17,16 @@ function providerFixture(provider: Pick<ModelProvider, 'name' | 'type' | 'enable
   };
 }
 
+const chatCaps = { input: ['text'], output: ['text'], tool_call: true };
+
 const providers: ModelProvider[] = [
   providerFixture({
     name: 'deepseek',
     type: 'deepseek',
     enabled: true,
     models: [
-      { name: 'deepseek-v4-flash', tier: 'tier2', context_window: 128_000 },
-      { name: 'deepseek-v4-pro', tier: 'tier1', context_window: 1_000_000 },
+      { name: 'deepseek-v4-flash', kind: 'chat', capabilities: chatCaps, context_window: 128_000 },
+      { name: 'deepseek-v4-pro', kind: 'chat', capabilities: chatCaps, context_window: 1_000_000 },
     ],
   }),
   providerFixture({
@@ -32,8 +34,8 @@ const providers: ModelProvider[] = [
     type: 'qwen',
     enabled: true,
     models: [
-      { name: 'qwen-max', tier: 'tier1', context_window: 32_000 },
-      { name: 'qwen-long', tier: 'tier1', context_window: 1_000_000 },
+      { name: 'qwen-max', kind: 'chat', capabilities: chatCaps, context_window: 32_000 },
+      { name: 'qwen-long', kind: 'chat', capabilities: chatCaps, context_window: 1_000_000 },
     ],
   }),
 ];
@@ -48,7 +50,7 @@ describe('resolveContextBudgetTokens', () => {
     ).toBe(32_000);
   });
 
-  it('uses tier1 model on the default provider for auto', () => {
+  it('uses default provider chat model for auto', () => {
     expect(
       resolveContextBudgetTokens('auto', providers, {
         provider: 'qwen',
@@ -57,18 +59,18 @@ describe('resolveContextBudgetTokens', () => {
     ).toBe(32_000);
   });
 
-  it('does not use a lower-tier default model when auto routes to tier1', () => {
+  it('prefers chat kind model on default provider when auto', () => {
     expect(
       resolveContextBudgetTokens('auto', providers, {
         provider: 'deepseek',
         model: 'deepseek-v4-flash',
       }),
-    ).toBe(1_000_000);
+    ).toBe(128_000);
   });
 
   it('falls back to the first valid provider when auto has no default', () => {
     expect(resolveContextBudgetTokens('auto', providers, { provider: '', model: '' })).toBe(
-      1_000_000,
+      128_000,
     );
   });
 

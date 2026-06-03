@@ -31,7 +31,7 @@ class ChatMessage(BaseModel):
     """A single message in a chat conversation."""
 
     role: MessageRole
-    content: str | None = None
+    content: Any = None
     # Qwen / DashScope "thinking" mode and similar APIs require echoing this
     # on the assistant message when continuing multi-turn chat.
     reasoning_content: str | None = None
@@ -44,7 +44,7 @@ class ChatMessage(BaseModel):
         return cls(role=MessageRole.SYSTEM, content=content)
 
     @classmethod
-    def user(cls, content: str, name: str | None = None) -> ChatMessage:
+    def user(cls, content: Any, name: str | None = None) -> ChatMessage:
         return cls(role=MessageRole.USER, content=content, name=name)
 
     @classmethod

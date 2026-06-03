@@ -110,7 +110,6 @@ def build_script_execution_agent(
         agent_name="script_agent",
         prompt_variant="script_agent",
     )
-    config.model_tier = parent.config.model_tier
     config.temperature = parent.config.temperature
 
     child_registry = build_script_agent_registry(parent.tools, allowed_tools=allowed_tools)
@@ -149,7 +148,6 @@ def build_script_agent_engine(
     agent_memory: "AgentMemory | None" = None,
     hooks: Any = None,
     service_manager: "ServiceManager | None" = None,
-    model_tier: str = "tier1",
     max_turns: int = 15,
     max_tool_calls_per_turn: int = 6,
     temperature: float | None = 0.2,
@@ -186,7 +184,6 @@ def build_script_agent_engine(
         max_tool_calls_per_turn=max_tool_calls_per_turn,
         temperature=temperature,
         max_output_tokens=max_output_tokens,
-        model_tier=model_tier,
         agent_id=agent_id,
         user_id=user_id,
         session_id=session_id,

@@ -169,8 +169,6 @@ const TOKEN_ENV_ROWS: { key: string; labelKey: string }[] = [
   { key: 'DEEPSEEK_THINKING_TYPE', labelKey: 'settings.tokensDeepseekThinkingType' },
   { key: 'DEEPSEEK_REASONING_EFFORT', labelKey: 'settings.tokensDeepseekReasoningEffort' },
   { key: 'DASHSCOPE_API_KEY', labelKey: 'settings.tokensDashscope' },
-  { key: 'LLM_TIER1_API_KEY', labelKey: 'settings.tokensLlmTier1' },
-  { key: 'LLM_TIER2_API_KEY', labelKey: 'settings.tokensLlmTier2' },
   { key: 'WEB_SEARCH_PROVIDER', labelKey: 'settings.tokensWebSearchProvider' },
   { key: 'WEB_SEARCH_BING_API_KEY', labelKey: 'settings.tokensWebSearchBing' },
   { key: 'WEB_SEARCH_SEARXNG_BASE_URL', labelKey: 'settings.tokensWebSearchSearxng' },

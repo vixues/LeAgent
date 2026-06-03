@@ -79,27 +79,6 @@ class DatabaseSettings(BaseSettings):
 class LLMSettings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="LLM_")
 
-    # Unified default provider/model — authoritative when providers.yaml
-    # does not specify a default.  Set via env or auto-detected at startup.
-    default_provider: str = ""
-    default_model: str = ""
-
-    # Legacy tier endpoints — kept for backward compatibility.
-    # When empty, tier routing derives from providers.yaml default_provider.
-    tier1_endpoint: str = ""
-    tier1_model: str = ""
-    tier1_api_key: str = ""
-    tier1_max_tokens: int = 8192
-    tier1_temperature: float = 0.1
-    tier1_timeout: int = 120
-
-    tier2_endpoint: str = ""
-    tier2_model: str = ""
-    tier2_api_key: str = ""
-    tier2_max_tokens: int = 2048
-    tier2_temperature: float = 0.1
-    tier2_timeout: int = 60
-
     embedding_endpoint: str = ""
     embedding_model: str = "bge-large-zh-v1.5"
     embedding_dim: int = 1024
@@ -111,10 +90,6 @@ class LLMSettings(BaseSettings):
     dashscope_api_key: str = Field(
         default="",
         validation_alias=AliasChoices("LLM_DASHSCOPE_API_KEY", "DASHSCOPE_API_KEY"),
-    )
-    dashscope_model: str = Field(
-        default="qwen-plus",
-        validation_alias=AliasChoices("LLM_DASHSCOPE_MODEL", "DASHSCOPE_MODEL"),
     )
     dashscope_base_url: str = Field(
         default="https://dashscope.aliyuncs.com/compatible-mode/v1",
@@ -138,10 +113,6 @@ class LLMSettings(BaseSettings):
     deepseek_api_key: str = Field(
         default="",
         validation_alias=AliasChoices("LLM_DEEPSEEK_API_KEY", "DEEPSEEK_API_KEY"),
-    )
-    deepseek_model: str = Field(
-        default="deepseek-v4-flash",
-        validation_alias=AliasChoices("LLM_DEEPSEEK_MODEL", "DEEPSEEK_MODEL"),
     )
     deepseek_base_url: str = Field(
         default="https://api.deepseek.com",
@@ -276,18 +247,6 @@ class CanvasSettings(BaseSettings):
     google_maps_api_key: str = ""
     preview_csp: str = CANVAS_PREVIEW_CSP_LOCAL
     embed_allow_loopback: bool = True
-
-
-class ImageSettings(BaseSettings):
-    """AI image generation configuration."""
-
-    model_config = SettingsConfigDict(env_prefix="IMAGE_")
-
-    provider: str = "openai"
-    default_model: str = "dall-e-3"
-    default_size: str = "1024x1024"
-    default_quality: str = "standard"
-    max_requests_per_session: int = 20
 
 
 class ImageSearchSettings(BaseSettings):
@@ -473,7 +432,6 @@ class Settings(BaseSettings):
     files: FilesSettings = Field(default_factory=FilesSettings)
     session: SessionSettings = Field(default_factory=SessionSettings)
     canvas: CanvasSettings = Field(default_factory=CanvasSettings)
-    image: ImageSettings = Field(default_factory=ImageSettings)
     image_search: ImageSearchSettings = Field(default_factory=ImageSearchSettings)
     web_browser: WebBrowserSettings = Field(default_factory=WebBrowserSettings)
     web_search: WebSearchSettings = Field(default_factory=WebSearchSettings)

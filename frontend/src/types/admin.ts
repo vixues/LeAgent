@@ -2,15 +2,20 @@ export type ProviderType = 'openai' | 'anthropic' | 'qwen' | 'ollama' | 'custom'
 
 export interface ProviderModelInfo {
   name: string;
-  tier: string;
+  kind: 'chat' | 'embedding' | 'image_gen';
+  capabilities: {
+    input?: string[];
+    output?: string[];
+    tool_call?: boolean;
+    reasoning?: boolean;
+  };
   context_window: number;
   enabled?: boolean;
   description?: string;
-  price_input_per_1m?: number;
-  price_output_per_1m?: number;
-  supports_tools?: boolean | null;
-  supports_vision?: boolean | null;
-  supports_thinking?: boolean | null;
+  pricing?: {
+    input_per_1m?: number;
+    output_per_1m?: number;
+  };
 }
 
 export interface AvailableModel {
@@ -18,13 +23,18 @@ export interface AvailableModel {
   provider_type: string;
   provider_label: string;
   model_name: string;
-  tier: string;
+  kind: 'chat' | 'embedding' | 'image_gen';
+  capabilities: {
+    input?: string[];
+    output?: string[];
+    tool_call?: boolean;
+    reasoning?: boolean;
+  };
   context_window: number;
-  supports_tools: boolean;
-  supports_vision: boolean;
-  supports_thinking: boolean;
-  price_input_per_1m: number;
-  price_output_per_1m: number;
+  pricing?: {
+    input_per_1m?: number;
+    output_per_1m?: number;
+  };
   description: string;
   is_default: boolean;
 }
@@ -121,15 +131,20 @@ export interface ModelProviderFormData {
   api_key?: string;
   models?: Array<{
     name: string;
-    tier?: string;
+    kind?: 'chat' | 'embedding' | 'image_gen';
+    capabilities?: {
+      input?: string[];
+      output?: string[];
+      tool_call?: boolean;
+      reasoning?: boolean;
+    };
     context_window?: number;
     enabled?: boolean;
     description?: string;
-    price_input_per_1m?: number;
-    price_output_per_1m?: number;
-    supports_tools?: boolean | null;
-    supports_vision?: boolean | null;
-    supports_thinking?: boolean | null;
+    pricing?: {
+      input_per_1m?: number;
+      output_per_1m?: number;
+    };
   }>;
   enabled: boolean;
   timeout?: number;
@@ -140,6 +155,24 @@ export interface ModelProviderFormData {
 export interface DefaultModelConfig {
   provider: string;
   model: string;
+}
+
+export interface TaskBinding {
+  provider: string;
+  model: string;
+}
+
+export type ModelTaskKey =
+  | 'chat'
+  | 'fast'
+  | 'vision'
+  | 'compression'
+  | 'title'
+  | 'embedding'
+  | 'image_gen';
+
+export interface TaskRoutingConfig {
+  tasks: Partial<Record<ModelTaskKey, TaskBinding>>;
 }
 
 export interface PresetInfo {
@@ -388,7 +421,6 @@ export interface AgentRunRequest {
   description?: string | null;
   runtime_profile?: RuntimeProfile;
   prompt_variant?: string;
-  model_tier?: string;
   project_roots?: string[];
   authorized_roots?: string[];
   max_turns?: number;

@@ -102,7 +102,7 @@ class CompactService:
             resp = await self.llm.chat(
                 messages=[{"role": "user", "content": summary_prompt}],
                 temperature=0.0,
-                model_tier="tier2",
+                task="compression",
             )
             summary_text = resp.get("content", "")
 

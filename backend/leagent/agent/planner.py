@@ -189,7 +189,6 @@ class TaskPlanner:
 
         response = await self._chat_with_abort(
             [{"role": "user", "content": prompt}],
-            model_tier="tier1",
             temperature=0.1,
             abort_event=abort_event,
         )
@@ -246,7 +245,6 @@ class TaskPlanner:
 
         response = await self._chat_with_abort(
             [{"role": "user", "content": prompt}],
-            model_tier="tier1",
             temperature=0.1,
             abort_event=abort_event,
         )
@@ -510,7 +508,6 @@ class TaskPlanner:
         self,
         messages: list[dict[str, Any]],
         *,
-        model_tier: str,
         temperature: float,
         abort_event: asyncio.Event | None,
     ) -> dict[str, Any]:
@@ -519,7 +516,6 @@ class TaskPlanner:
             self.llm.chat(
                 messages=messages,
                 temperature=temperature,
-                model_tier=model_tier,
             )
         )
         if abort_event is None:

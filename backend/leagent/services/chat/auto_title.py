@@ -133,23 +133,11 @@ async def _complete_title_llm(
                 **llm_kwargs,
             )
 
-        last_exc: Exception | None = None
-        for tier in ("tier2", "tier1"):
-            try:
-                return await llm.complete(
-                    messages,
-                    tier=tier,
-                    **llm_kwargs,
-                )
-            except LLMServiceError as exc:
-                last_exc = exc
-                logger.debug("auto_title_llm_failed tier=%s", tier, exc_info=True)
-            except Exception as exc:
-                last_exc = exc
-                logger.debug("auto_title_llm_unexpected tier=%s", tier, exc_info=True)
-        if last_exc is not None:
-            raise last_exc
-        raise LLMServiceError("auto_title_llm_unavailable")
+        return await llm.complete(
+            messages,
+            task="title",
+            **llm_kwargs,
+        )
 
 
 async def maybe_auto_title_session(

@@ -19,8 +19,10 @@ from leagent.llm.base import (
     TokenUsage,
 )
 from leagent.llm.registry import ProviderInfo, ProviderRegistry
-from leagent.llm.router import ModelRouter, ModelTier, RoutingDecision, TierConfig
-from leagent.llm.service import LLMService, _configure_router_tiers_from_registry
+from leagent.llm.model_registry import ModelRegistry
+from leagent.llm.model_spec import ModelSpec, ModelTask
+from leagent.llm.service import LLMService
+from leagent.llm.task_resolver import TaskResolver
 
 
 # ===========================================================================
@@ -213,249 +215,118 @@ class TestProviderRegistry:
 
 
 # ===========================================================================
-# ModelRouter
+# TaskResolver
 # ===========================================================================
 
 
-class TestModelRouter:
-    def _registry(self) -> ProviderRegistry:
+def _minimal_catalog(provider: str = "mock", model: str = "gpt-4") -> ModelRegistry:
+    catalog = ModelRegistry()
+    catalog.load_from_config(
+        {
+            "version": 2,
+            "providers": [
+                {
+                    "name": provider,
+                    "type": "openai",
+                    "enabled": True,
+                    "models": [
+                        {
+                            "name": model,
+                            "kind": "chat",
+                            "capabilities": {
+                                "input": ["text"],
+                                "output": ["text"],
+                                "tool_call": True,
+                            },
+                            "context_window": 128000,
+                        }
+                    ],
+                }
+            ],
+            "routing": {"tasks": {"chat": {"provider": provider, "model": model}}},
+        }
+    )
+    return catalog
+
+
+class TestTaskResolver:
+    def _resolver(self) -> TaskResolver:
         reg = ProviderRegistry()
         mock_prov = MagicMock()
         mock_prov.name = "mock"
         reg.register("mock", mock_prov)
-        return reg
+        return TaskResolver(reg, _minimal_catalog())
 
-    def _router(self) -> ModelRouter:
-        reg = self._registry()
-        router = ModelRouter(registry=reg)
-        router.configure_tier(
-            ModelTier.TIER1.value,
-            provider="mock",
-            model="gpt-4",
-            fallback_tier=ModelTier.TIER2.value,
+    def test_resolve_chat_task_binding(self) -> None:
+        resolved = self._resolver().resolve(ModelTask.CHAT)
+        assert resolved.provider == "mock"
+        assert resolved.model == "gpt-4"
+        assert resolved.task == ModelTask.CHAT
+
+    def test_explicit_user_model(self) -> None:
+        resolved = self._resolver().resolve(
+            ModelTask.CHAT,
+            user_provider="mock",
+            user_model="gpt-4",
         )
-        router.configure_tier(
-            ModelTier.TIER2.value,
-            provider="mock",
-            model="gpt-3.5-turbo",
-        )
-        return router
+        assert resolved.reason == "user_explicit"
 
-    def test_explicit_tier_routing(self) -> None:
-        router = self._router()
-        decision = router.route("any task", explicit_tier=ModelTier.TIER2.value)
-        assert decision.tier == ModelTier.TIER2
-        assert decision.reason == "explicit_tier"
-
-    def test_tier1_keyword_routing(self) -> None:
-        router = self._router()
-        decision = router.route("please analyze and plan this complex task")
-        assert decision.tier == ModelTier.TIER1
-
-    def test_tier2_keyword_routing(self) -> None:
-        router = self._router()
-        decision = router.route("classify this text quickly")
-        assert decision.tier == ModelTier.TIER2
-
-    def test_large_context_triggers_tier1(self) -> None:
-        router = self._router()
-        msgs = [ChatMessage.user("x" * 2000) for _ in range(50)]
-        decision = router.route("handle this task", messages=msgs)
-        assert decision.tier == ModelTier.TIER1
-
-    def test_low_complexity_default_routes_to_tier2(self) -> None:
-        router = self._router()
-        decision = router.route("some unclassified task description")
-        assert decision.tier == ModelTier.TIER2
-        assert decision.reason == "low_complexity_heuristic"
-
-    def test_complex_unclassified_task_defaults_to_tier1(self) -> None:
-        router = self._router()
-        decision = router.route(
-            "Please review this production architecture and migration risk in detail."
-        )
-        assert decision.tier == ModelTier.TIER1
-
-    def test_no_tiers_configured_raises(self) -> None:
-        reg = self._registry()
-        router = ModelRouter(registry=reg)
-        with pytest.raises(LLMServiceError):
-            router.route("some task")
-
-    def test_unknown_explicit_tier_raises(self) -> None:
-        router = self._router()
+    def test_unknown_model_raises(self) -> None:
         with pytest.raises(ModelNotFoundError):
-            router.route("task", explicit_tier="nonexistent_tier")
-
-    def test_list_tiers(self) -> None:
-        router = self._router()
-        tiers = router.list_tiers()
-        assert ModelTier.TIER1.value in tiers
-        assert ModelTier.TIER2.value in tiers
-
-    def test_count_tokens(self) -> None:
-        router = self._router()
-        tokens = router.count_tokens("Hello, world!")
-        assert tokens > 0
-
-    def test_count_message_tokens(self) -> None:
-        router = self._router()
-        msgs = [ChatMessage.user("Hello"), ChatMessage.assistant("Hi!")]
-        total = router.count_message_tokens(msgs)
-        assert total > 0
+            self._resolver().resolve(
+                ModelTask.CHAT,
+                user_provider="mock",
+                user_model="missing",
+            )
 
 
 class TestLLMServiceRetries:
     @pytest.mark.asyncio
-    async def test_direct_complete_retries_rate_limit(
+    async def test_with_transient_retries_rate_limit(
         self,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
+        from leagent.llm.service import _with_transient_retries
+
         monkeypatch.setattr("leagent.llm.service.asyncio.sleep", AsyncMock())
+        calls = {"n": 0}
 
-        provider = MagicMock()
-        provider._get_default_model.return_value = "mock-model"
-        provider.complete = AsyncMock(
-            side_effect=[
-                LLMRateLimitError(model="mock-model", retry_after=0.01),
-                LLMResponse(content="ok"),
-            ]
-        )
-        registry = ProviderRegistry()
-        registry.register("mock", provider)
-        router = ModelRouter(registry=registry)
-        service = LLMService(registry=registry, router=router)
+        async def operation() -> LLMResponse:
+            calls["n"] += 1
+            if calls["n"] == 1:
+                raise LLMRateLimitError(model="mock-model", retry_after=0.01)
+            return LLMResponse(content="ok")
 
-        response = await service.complete(
-            [ChatMessage.user("hello")],
-            provider="mock",
-        )
-
-        assert response.content == "ok"
-        assert provider.complete.await_count == 2
-
-
-class TestRouterTierSyncFromRegistry:
-    def test_configure_router_tiers_from_registry(self) -> None:
-        """Registry tier aliases from providers.yaml must populate router.tier_configs."""
-        provider = MagicMock()
-        provider._get_default_model.return_value = "fallback-model"
-
-        registry = ProviderRegistry()
-        registry.register("my-custom", provider)
-        registry.register(
-            "tier1",
-            provider,
-            metadata={"vendor": "my-custom", "model": "custom-reasoner"},
-        )
-        registry.register(
-            "tier2",
-            provider,
-            metadata={"vendor": "my-custom", "model": "custom-fast"},
-        )
-
-        router = ModelRouter(registry=registry)
-        settings = MagicMock()
-        settings.llm.tier1_max_tokens = 8192
-        settings.llm.tier2_max_tokens = 2048
-        settings.llm.tier1_temperature = 0.1
-        settings.llm.tier2_temperature = 0.1
-        settings.llm.tier1_timeout = 120
-        settings.llm.tier2_timeout = 60
-
-        _configure_router_tiers_from_registry(registry, router, settings=settings)
-
-        assert "tier1" in router.tier_configs
-        assert router.tier_configs["tier1"].model == "custom-reasoner"
-        assert router.tier_configs["tier1"].provider == "my-custom"
-        assert "tier2" in router.tier_configs
-        assert router.tier_configs["tier2"].model == "custom-fast"
-        assert router.tier_configs["tier2"].provider == "my-custom"
-
-    def test_explicit_tier_route_after_sync(self) -> None:
-        provider = MagicMock()
-        provider._get_default_model.return_value = "m"
-
-        registry = ProviderRegistry()
-        registry.register("my-custom", provider)
-        registry.register(
-            "tier1",
-            provider,
-            metadata={"vendor": "my-custom", "model": "custom-reasoner"},
-        )
-        registry.register(
-            "tier2",
-            provider,
-            metadata={"vendor": "my-custom", "model": "custom-fast"},
-        )
-
-        router = ModelRouter(registry=registry)
-        settings = MagicMock()
-        settings.llm.tier1_max_tokens = 4096
-        settings.llm.tier2_max_tokens = 2048
-        settings.llm.tier1_temperature = 0.1
-        settings.llm.tier2_temperature = 0.1
-        settings.llm.tier1_timeout = 120
-        settings.llm.tier2_timeout = 60
-        _configure_router_tiers_from_registry(registry, router, settings=settings)
-
-        decision = router.route("hello", explicit_tier="tier1")
-        assert decision.model == "custom-reasoner"
-        assert decision.provider == "my-custom"
+        result = await _with_transient_retries(operation, operation_name="test.complete")
+        assert result.content == "ok"
+        assert calls["n"] == 2
 
 
 class TestClampMaxTokens:
     def test_clamp_reduces_output_when_prompt_is_large(self) -> None:
         from unittest.mock import patch
 
-        from leagent.llm.base import ChatMessage
-        from leagent.llm.provider_config import ProviderConfig
-
         registry = ProviderRegistry()
-        router = ModelRouter(registry=registry)
+        resolver = TaskResolver(registry, ModelRegistry())
         messages = [ChatMessage.user("hello")]
-        pc = ProviderConfig(
-            name="local",
-            type="custom",
-            models=[{"name": "qwen-local", "context_window": 32768}],
-        )
-        with (
-            patch("leagent.llm.provider_config.ProviderConfigService") as mock_svc,
-            patch.object(router, "count_message_tokens", return_value=24_577),
+        spec = ModelSpec(name="qwen-local", provider="local", context_window=32768)
+        with patch(
+            "tiktoken.get_encoding",
+            return_value=MagicMock(encode=lambda _text: [0] * 24577),
         ):
-            mock_svc.return_value.get_provider.return_value = pc
-            clamped = router.clamp_max_tokens(
-                messages,
-                provider="local",
-                model="qwen-local",
-                requested=8192,
-            )
-        # 32768 - 24577 - margin(128) = 8063
-        assert clamped == 8063
+            clamped = resolver.clamp_max_tokens(messages, spec=spec, requested=8192)
+        assert clamped == 8127
 
     def test_clamp_unchanged_for_million_token_context(self) -> None:
         from unittest.mock import patch
 
-        from leagent.llm.base import ChatMessage
-        from leagent.llm.provider_config import ProviderConfig
-
         registry = ProviderRegistry()
-        router = ModelRouter(registry=registry)
+        resolver = TaskResolver(registry, ModelRegistry())
         messages = [ChatMessage.user("hello")]
-        pc = ProviderConfig(
-            name="deepseek",
-            type="deepseek",
-            models=[{"name": "deepseek-v4-pro", "context_window": 1_000_000}],
-        )
-        with (
-            patch("leagent.llm.provider_config.ProviderConfigService") as mock_svc,
-            patch.object(router, "count_message_tokens", return_value=24_577),
+        spec = ModelSpec(name="deepseek-v4-pro", provider="deepseek", context_window=1_000_000)
+        with patch(
+            "tiktoken.get_encoding",
+            return_value=MagicMock(encode=lambda _text: [0] * 24577),
         ):
-            mock_svc.return_value.get_provider.return_value = pc
-            clamped = router.clamp_max_tokens(
-                messages,
-                provider="deepseek",
-                model="deepseek-v4-pro",
-                requested=8192,
-            )
+            clamped = resolver.clamp_max_tokens(messages, spec=spec, requested=8192)
         assert clamped == 8192

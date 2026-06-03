@@ -29,7 +29,7 @@ def _svc() -> ProviderConfigService:
 
 @click.group(name="models")
 def models_group() -> None:
-    """Inspect or edit ``providers.yaml`` (tier1/tier2 routing, DeepSeek/OpenAI/Qwen/…)."""
+    """Inspect or edit ``providers.yaml`` task routing and model capabilities."""
 
 
 @models_group.command(name="list")
@@ -74,7 +74,7 @@ def list_providers(show_all: bool, as_json: bool) -> None:
             title=title,
             columns=[
                 ("Model", {"style": "cyan"}),
-                ("Tier", {}),
+                ("Kind", {}),
                 ("Context Window", {"justify": "right"}),
                 ("Default", {}),
             ],
@@ -82,13 +82,13 @@ def list_providers(show_all: bool, as_json: bool) -> None:
 
         for model in provider.models:
             model_name = model.get("name", "unknown")
-            tier = model.get("tier", "-")
+            kind = model.get("kind", "chat")
             context = model.get("context_window", "-")
             is_default_model = model_name == default.model and is_default
 
             table.add_row(
                 model_name,
-                tier,
+                kind,
                 f"{context:,}" if isinstance(context, int) else str(context),
                 "✓" if is_default_model else "",
             )
@@ -272,10 +272,66 @@ def pull_model(model: str, provider: str) -> None:
 
         models = list(pc.models)
         if not any(m.get("name") == model for m in models):
-            models.append({"name": model, "tier": "tier2", "context_window": 32000})
+            models.append({
+                "name": model,
+                "kind": "chat",
+                "context_window": 32000,
+                "capabilities": {"input": ["text"], "output": ["text"], "tool_call": True},
+            })
             svc.update_provider(pc.name, {"models": models})
             print_info(f"Added '{model}' to Ollama provider configuration.")
 
     except Exception as e:
         print_error(f"Failed to pull model: {e}")
         raise click.Abort()
+
+
+@models_group.command(name="migrate")
+@click.option("--dry-run", is_flag=True, help="Preview changes without writing files.")
+@click.option("--env-only", is_flag=True, help="Migrate ~/.leagent/.env only.")
+@click.option("--providers-only", is_flag=True, help="Migrate providers.yaml only.")
+def migrate_providers(dry_run: bool, env_only: bool, providers_only: bool) -> None:
+    """Migrate tier1/tier2 env + providers.yaml to v2 task routing (one-shot)."""
+    import json
+
+    from leagent.config.migrate_v2 import run_migration
+
+    try:
+        report = run_migration(
+            migrate_env=not providers_only,
+            migrate_providers=not env_only,
+            dry_run=dry_run,
+            in_place=True,
+        )
+    except FileNotFoundError as exc:
+        print_error(str(exc))
+        raise click.Abort() from exc
+    except ValueError as exc:
+        print_error(str(exc))
+        raise click.Abort() from exc
+
+    if report.env_changed:
+        print_success(f"Migrated {report.env_path}")
+        if report.env_removed_keys:
+            print_dim(f"  Removed tier keys: {', '.join(report.env_removed_keys[:8])}")
+        if report.env_added_keys:
+            print_dim(f"  Added keys: {', '.join(report.env_added_keys)}")
+    elif report.env_path and report.env_path.is_file():
+        print_info(f"No env changes needed: {report.env_path}")
+
+    if report.providers_changed:
+        print_success(f"Migrated {report.providers_path}")
+        if report.providers_backup:
+            print_dim(f"  Backup: {report.providers_backup}")
+    elif report.providers_path and report.providers_path.is_file():
+        print_info("providers.yaml is already v2.")
+
+    if report.routing_tasks:
+        console.print_json(json.dumps({"routing.tasks": report.routing_tasks}, ensure_ascii=False))
+
+    if dry_run:
+        print_warning("Dry-run: no files were modified.")
+    elif report.env_changed or report.providers_changed:
+        print_info("Restart LeAgent for changes to take effect.")
+    else:
+        print_info("Nothing to migrate.")

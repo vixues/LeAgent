@@ -74,7 +74,6 @@ class AgentTaskHandler:
         # ``prompt_variant`` param for specialised task flows).
         system_prompt = params.get("system_prompt") or ""
         prompt_variant = params.get("prompt_variant") or "default_agent"
-        model_tier = params.get("model_tier", "tier1")
         max_turns = _int_param(params, "max_turns", budget.max_turns)
         max_tool_calls = _int_param(
             params,
@@ -119,7 +118,6 @@ class AgentTaskHandler:
             executor=executor,
             system_prompt=system_prompt,
             prompt_variant=prompt_variant,
-            model_tier=model_tier,
             max_turns=max_turns,
             max_tool_calls_per_turn=max_tool_calls,
             session_id=session_id,

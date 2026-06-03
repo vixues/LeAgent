@@ -4,7 +4,7 @@
   payloads so they don't dominate the context window.
 - **autocompact** kicks in when the cumulative token count exceeds a
   configured threshold; it summarises the oldest assistant/tool turns via
-  the tier2 LLM and replaces them with a compact summary message.
+  the compression task model and replaces them with a compact summary message.
 
 Both helpers are intentionally conservative: if the LLM call fails for any
 reason we fall back to the identity transform, because losing a turn is much
@@ -247,7 +247,7 @@ def build_autocompact(
                 messages=summarise_prompt,
                 tools=None,
                 temperature=0.1,
-                model_tier="tier2",
+                task="compression",
             )
             summary = (response or {}).get("content") or ""
             if summary.strip():
@@ -365,7 +365,7 @@ async def apply_forced_autocompact(
             messages=summarise_prompt,
             tools=None,
             temperature=0.1,
-            model_tier="tier2",
+            task="compression",
         )
         summary = (response or {}).get("content") or ""
     except Exception as exc:  # noqa: BLE001

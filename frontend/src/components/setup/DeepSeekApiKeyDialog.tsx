@@ -35,14 +35,12 @@ const EMPTY_FORM: ModelProviderFormData = {
 function presetRowToFormModel(m: ProviderModelInfo): ProviderModelInfo {
   return {
     name: m.name,
-    tier: m.tier ?? '',
+    kind: m.kind ?? 'chat',
+    capabilities: m.capabilities ?? { input: ['text'], output: ['text'] },
     context_window: m.context_window ?? 0,
     enabled: m.enabled !== false,
     description: m.description,
-    price_input_per_1m: m.price_input_per_1m,
-    price_output_per_1m: m.price_output_per_1m,
-    supports_tools: m.supports_tools,
-    supports_vision: m.supports_vision,
+    pricing: m.pricing,
   };
 }
 
@@ -166,17 +164,17 @@ export function DeepSeekApiKeyDialog() {
       for (const m of selected) {
         if (seen.has(m.name)) continue;
         seen.add(m.name);
-        models.push({
-          name: m.name,
-          tier: m.tier ?? '',
-          context_window: m.context_window ?? 0,
-          enabled: m.enabled,
-          description: m.description,
-          price_input_per_1m: m.price_input_per_1m,
-          price_output_per_1m: m.price_output_per_1m,
-          supports_tools: m.supports_tools,
-          supports_vision: m.supports_vision,
-        });
+        models.push(
+          presetRowToFormModel({
+            name: m.name,
+            kind: m.kind ?? 'chat',
+            capabilities: m.capabilities ?? { input: ['text'], output: ['text'] },
+            context_window: m.context_window ?? 0,
+            enabled: m.enabled,
+            description: m.description,
+            pricing: m.pricing,
+          }),
+        );
       }
     } else {
       const ids = parseFreeformModelIds(modelsInput);
@@ -197,16 +195,14 @@ export function DeepSeekApiKeyDialog() {
           existing
             ? {
                 name: existing.name,
-                tier: existing.tier ?? '',
+                kind: existing.kind ?? 'chat',
+                capabilities: existing.capabilities ?? { input: ['text'], output: ['text'] },
                 context_window: existing.context_window ?? 0,
                 enabled: existing.enabled,
                 description: existing.description,
-                price_input_per_1m: existing.price_input_per_1m,
-                price_output_per_1m: existing.price_output_per_1m,
-                supports_tools: existing.supports_tools,
-                supports_vision: existing.supports_vision,
+                pricing: existing.pricing,
               }
-            : { name, tier: '', context_window: 0 },
+            : { name, kind: 'chat' as const, capabilities: { input: ['text'], output: ['text'] }, context_window: 0 },
         );
       }
     }

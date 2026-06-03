@@ -40,6 +40,53 @@ def test_set_default_rejects_unknown_model(tmp_path: Path) -> None:
         svc.set_default("acme", "qwen-max")
 
 
+def _v2_yaml(
+    *,
+    default_provider: str = "acme",
+    default_model: str = "model-a",
+    chat_provider: str | None = None,
+    chat_model: str | None = None,
+) -> str:
+    cp = chat_provider if chat_provider is not None else default_provider
+    cm = chat_model if chat_model is not None else default_model
+    return f"""
+        version: 2
+        default_task: chat
+        default_provider: {default_provider}
+        default_model: {default_model}
+        routing:
+          tasks:
+            chat:
+              provider: {cp}
+              model: {cm}
+        providers:
+          - name: acme
+            type: custom
+            enabled: true
+            base_url: https://api.example.com/v1
+            models:
+              - name: model-a
+                kind: chat
+                capabilities:
+                  input: [text]
+                  output: [text]
+              - name: model-b
+                kind: chat
+                capabilities:
+                  input: [text]
+                  output: [text]
+        """
+
+
+def test_set_default_syncs_chat_task_routing(tmp_path: Path) -> None:
+    svc = _svc(_v2_yaml(chat_model="model-a"), tmp_path)
+    svc.set_default("acme", "model-b")
+    assert svc.get_default().model == "model-b"
+    raw = svc._load_yaml()
+    assert raw["routing"]["tasks"]["chat"]["model"] == "model-b"
+    assert raw["default_model"] == "model-b"
+
+
 def test_set_default_accepts_enabled_model(tmp_path: Path) -> None:
     svc = _svc(
         """

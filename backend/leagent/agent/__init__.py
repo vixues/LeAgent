@@ -40,7 +40,7 @@ from leagent.agent.base import (
     ToolCall,
     ToolResult,
 )
-from leagent.agent.controller import AgentController, ModelRouter
+from leagent.agent.controller import AgentController
 from leagent.agent.executor import (
     ErrorRecovery,
     RecoveryHandler,
@@ -94,7 +94,6 @@ __all__ = [
     "ConversationContext",
     # Controller
     "AgentController",
-    "ModelRouter",
     # QueryEngine
     "QueryEngine",
     "QueryEngineConfig",

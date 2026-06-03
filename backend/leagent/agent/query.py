@@ -280,8 +280,8 @@ class QueryParams:
     - ``tool_use_context``: runtime handle (abort, registry, executor, cache).
     - ``tools_schema``: JSON tool schemas sent to the model.
     - ``max_turns``: guard against runaway loops.
-    - ``temperature`` / ``max_output_tokens`` / ``model_tier``: model controls.
-      ``model_provider`` / ``model_name`` optionally bypass tier routing.
+    - ``temperature`` / ``max_output_tokens``: model controls.
+      ``model_provider`` / ``model_name`` optionally select a specific model.
     - ``deps``: injected dependencies for streaming + compaction.
     - ``max_tool_calls_per_turn``: cap on parallel tool dispatch (mirrors
       ``AgentConfig.max_tool_calls_per_turn``).
@@ -298,7 +298,6 @@ class QueryParams:
     max_tool_calls_per_turn: int = 10
     temperature: float | None = None
     max_output_tokens: int | None = None
-    model_tier: str = "tier1"
     model_provider: str | None = None
     model_name: str | None = None
 
@@ -493,7 +492,6 @@ async def _query_loop(params: QueryParams) -> AsyncIterator[Any]:
                 "max_output_tokens": (
                     state.max_output_tokens_override or params.max_output_tokens
                 ),
-                "model_tier": params.model_tier,
             }
             if params.model_provider:
                 call_kwargs["model_provider"] = params.model_provider
