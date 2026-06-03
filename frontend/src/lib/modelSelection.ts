@@ -36,7 +36,7 @@ export function formatModelDisplayLabel(
   return modelName;
 }
 
-/** Mirrors backend chat auto routing: tier1 model on the default provider. */
+/** Mirrors backend chat task routing: use configured default chat model. */
 export function resolveAutoAvailableModel(
   availableModels: AvailableModel[] | undefined,
   defaultModel: DefaultModelConfig | undefined,
@@ -55,12 +55,9 @@ export function resolveAutoAvailableModel(
     : list.filter((m) => m.provider_name === list[0]?.provider_name);
   if (!candidates.length) return undefined;
 
-  const tier1 = candidates.find((m) => (m.tier || '').trim().toLowerCase() === 'tier1');
-  if (tier1) return tier1;
-
   const defaultModelName = defaultModel?.model?.trim();
   const configuredDefault = defaultModelName
     ? candidates.find((m) => m.model_name === defaultModelName)
     : undefined;
-  return configuredDefault ?? candidates[0];
+  return configuredDefault ?? candidates.find((m) => m.kind === 'chat') ?? candidates[0];
 }

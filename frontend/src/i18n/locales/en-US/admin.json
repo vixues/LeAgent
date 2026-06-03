@@ -24,6 +24,7 @@
     "contactSupport": "If you have questions, contact",
     "tabs": {
       "providers": "Model Providers",
+      "modelSettings": "Model Settings",
       "tools": "Tool Management",
       "rules": "Rule Configuration",
       "users": "User Management",
@@ -31,7 +32,7 @@
     },
     "provider": {
       "title": "Model Providers",
-      "description": "Configure AI model provider connections",
+      "description": "Configure provider connections, model catalog, and capabilities",
       "add": "Add Provider",
       "edit": "Edit Provider",
       "name": "Name",
@@ -165,7 +166,7 @@
         "empty": "No models configured. Edit this provider to add some.",
         "on": "On",
         "model": "Model",
-        "tier": "Tier",
+        "kind": "Kind",
         "context": "Context",
         "inputPrice": "In $/1M",
         "outputPrice": "Out $/1M",
@@ -175,6 +176,8 @@
         "defaultTag": "default",
         "isDefault": "Default",
         "makeDefault": "Set default",
+        "setDefaultSuccess": "Default model updated",
+        "setDefaultError": "Failed to set default model",
         "toolsTip": "Supports tool/function calls",
         "visionTip": "Supports image input",
         "thinkingTip": "Supports extended thinking / reasoning",
@@ -183,10 +186,12 @@
       },
       "modelEditor": {
         "configure": "Configure model",
-        "tier": "Tier",
-        "tierNone": "None",
-        "tier1": "Tier 1 (primary)",
-        "tier2": "Tier 2 (fallback)",
+        "kind": "Kind",
+        "kind_chat": "Chat",
+        "kind_embedding": "Embedding",
+        "kind_image_gen": "Image generation",
+        "inputModalities": "Input modalities",
+        "outputModalities": "Output modalities",
         "contextWindow": "Context window",
         "description": "Description",
         "descriptionPlaceholder": "Optional description",
@@ -200,6 +205,20 @@
         "discovered": "Discovered from API",
         "addCustomPlaceholder": "Custom model name (e.g. my-model-v2)",
         "addButton": "Add"
+      },
+      "taskRouting": {
+        "title": "Task routing",
+        "desc": "Assign a provider/model to each logical task slot (chat, vision, compression, etc.).",
+        "unset": "— not configured —",
+        "tasks": {
+          "chat": "Chat (default agent)",
+          "fast": "Fast / lightweight",
+          "vision": "Vision / multimodal",
+          "compression": "Context compression",
+          "title": "Conversation titles",
+          "embedding": "Embeddings",
+          "image_gen": "Image generation"
+        }
       },
       "usage": {
         "title": "Usage by model",
@@ -215,6 +234,72 @@
       "requestLog": {
         "title": "Recent requests",
         "desc": "Request-level model usage, latency, and estimated cost.",
+        "time": "Time",
+        "provider": "Provider",
+        "model": "Model",
+        "tokens": "Tokens",
+        "cost": "Cost",
+        "latency": "Latency"
+      }
+    },
+    "modelSettings": {
+      "title": "Model Settings",
+      "description": "Configure task routing and default model, and review usage analytics and request logs.",
+      "timeRange": {
+        "7d": "7 days",
+        "30d": "30 days",
+        "90d": "90 days"
+      },
+      "stats": {
+        "requests": "Requests",
+        "tokens": "Tokens",
+        "cost": "Est. cost",
+        "avgLatency": "Avg latency",
+        "periodHint": "Last {{days}} days"
+      },
+      "charts": {
+        "dailyTrend": "Daily usage trend",
+        "tokenShare": "Token share by model",
+        "latencyByModel": "Avg latency by model",
+        "costByModel": "Cost by model",
+        "cost": "Cost",
+        "other": "Other",
+        "latencyHint": "Mean end-to-end latency per model (arithmetic average)"
+      },
+      "defaultModel": {
+        "title": "Default model",
+        "desc": "Used when a task does not specify a model explicitly.",
+        "selectPlaceholder": "— select default model —"
+      },
+      "taskRouting": {
+        "title": "Task routing",
+        "desc": "Assign a provider/model to each logical task slot (chat, vision, compression, etc.).",
+        "unset": "— not configured —",
+        "tasks": {
+          "chat": "Chat (default agent)",
+          "fast": "Fast / lightweight",
+          "vision": "Vision / multimodal",
+          "compression": "Context compression",
+          "title": "Conversation titles",
+          "embedding": "Embeddings",
+          "image_gen": "Image generation"
+        }
+      },
+      "usage": {
+        "title": "Usage by model",
+        "desc": "Aggregated over the last {{days}} days.",
+        "model": "Model",
+        "requests": "Requests",
+        "inTokens": "Input",
+        "outTokens": "Output",
+        "totalTokens": "Total",
+        "cost": "Cost",
+        "avgLatency": "Avg latency",
+        "lastUsed": "Last used"
+      },
+      "requestLog": {
+        "title": "Recent requests",
+        "desc": "Request-level usage, latency, and estimated cost for the latest {{max}} entries.",
         "time": "Time",
         "provider": "Provider",
         "model": "Model",

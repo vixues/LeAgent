@@ -871,20 +871,9 @@ class AgentController:
                 tools=tool_schemas if tool_schemas else None,
                 tool_choice="auto" if tool_schemas else None,
                 temperature=self.config.temperature,
-                model_tier=self.config.model_tier,
             )
             return response
         except LLMServiceError:
-            if self.config.model_tier == "tier1":
-                logger.warning("tier1_failed_falling_back", task_id=str(context.task_id))
-                response = await self.llm.chat(
-                    messages=messages,
-                    tools=tool_schemas if tool_schemas else None,
-                    tool_choice="auto" if tool_schemas else None,
-                    temperature=self.config.temperature,
-                    model_tier="tier2",
-                )
-                return response
             raise
 
     async def _maybe_compact(self, conversation: ConversationContext, context: AgentContext) -> None:
@@ -1365,7 +1354,6 @@ class AgentController:
             max_tool_calls_per_turn=self.config.max_tool_calls_per_turn,
             temperature=self.config.temperature,
             tools_deny_patterns=tools_deny_patterns,
-            model_tier=self.config.model_tier,
             model_provider=self.config.model_provider,
             model_name=self.config.model_name,
             user_id=context.user_id,
@@ -1398,6 +1386,19 @@ class AgentController:
             formatted_attachments,
             authorized_roots=authorized_roots,
         )
+        try:
+            from leagent.agent.multimodal import prepare_user_message_with_attachments
+
+            catalog = getattr(self.llm, "model_registry", None)
+            query_input = prepare_user_message_with_attachments(
+                query_input,
+                merged_attachments,
+                provider=self.config.model_provider,
+                model=self.config.model_name,
+                catalog=catalog,
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("multimodal_message_build_failed", error=str(exc))
         resume_hint = "Continue after the tool results above."
         submit_kw: dict[str, Any] = {"append_user_turn": not skip_user_append}
         turn_message_start = len(conversation.messages)
@@ -1861,28 +1862,3 @@ class AgentController:
             parts.append(root_info)
         return "".join(parts)
 
-
-class ModelRouter:
-    """Routes requests to appropriate LLM tier based on task characteristics."""
-
-    TIER1_TRIGGERS = ["plan", "analyze", "report", "compare", "evaluate", "reason", "complex"]
-    TIER2_TRIGGERS = ["classify", "extract", "summarize", "format", "translate", "tag", "simple"]
-
-    def route(self, task_description: str, message_history: list[dict] | None = None) -> str:
-        task_lower = task_description.lower()
-
-        for keyword in self.TIER2_TRIGGERS:
-            if keyword in task_lower:
-                return "tier2"
-
-        for keyword in self.TIER1_TRIGGERS:
-            if keyword in task_lower:
-                return "tier1"
-
-        if message_history:
-            total_chars = sum(len(m.get("content", "")) for m in message_history)
-            estimated_tokens = total_chars // 3
-            if estimated_tokens > 8000:
-                return "tier1"
-
-        return "tier1"

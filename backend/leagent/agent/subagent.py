@@ -442,7 +442,6 @@ async def _run_subagent_core(
                 hooks=getattr(parent_controller, "_hooks", None),
                 max_turns=max_turns,
                 temperature=parent_controller.config.temperature,
-                model_tier=parent_controller.config.model_tier,
                 model_provider=parent_controller.config.model_provider,
                 model_name=parent_controller.config.model_name,
                 abort_event=parent_abort,

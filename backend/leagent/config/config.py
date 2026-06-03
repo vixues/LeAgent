@@ -38,7 +38,6 @@ class AgentConfig(BaseModel):
     """Per-agent runtime configuration."""
 
     name: str = "default"
-    model_tier: str = "tier1"
     system_prompt: str = ""
     max_iterations: int = 15
     tools: list[str] = Field(default_factory=list)

@@ -54,6 +54,15 @@ _ALWAYS_VISIBLE_TOOL_DESCRIPTIONS: dict[str, str] = {
         "convert pages to images, split/merge/extract pages, metadata. "
         "Always prefer this over code_execution for PDF operations."
     ),
+    "image_ocr": (
+        "Extract text from image files (PNG/JPG/WebP). Use when the user attaches "
+        "images but the chat model is text-only."
+    ),
+    "code_execution": (
+        "Run Python for data/code tasks. For image files on text-only models, use "
+        "Pillow/OpenCV/imageio to read, resize, convert, or process images by path "
+        "instead of expecting inline vision input."
+    ),
     "get_genui_guide": (
         "GenUI guide: for non-trivial component UI, call this first for syntax/layout rules, "
         "then call list_ui_components before emit_ui_tree."

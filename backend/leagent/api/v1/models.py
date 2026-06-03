@@ -64,15 +64,12 @@ def _as_json_utc_opt(dt: datetime | None) -> datetime | None:
 
 class ProviderModelInfo(BaseModel):
     name: str
-    tier: str = ""
+    kind: str = "chat"
+    capabilities: dict[str, Any] = Field(default_factory=dict)
     context_window: int = 0
     enabled: bool = True
     description: str = ""
-    price_input_per_1m: float = 0.0
-    price_output_per_1m: float = 0.0
-    supports_tools: bool | None = None
-    supports_vision: bool | None = None
-    supports_thinking: bool | None = None
+    pricing: dict[str, float] = Field(default_factory=dict)
 
 
 class ProviderResponse(BaseModel):
@@ -295,12 +292,6 @@ def _compute_api_key_set(pc: ProviderConfig, svc: ProviderConfigService) -> bool
     from leagent.config.settings import get_settings
 
     llm = get_settings().llm
-    name = (pc.name or "").strip()
-    if name == "tier1" and str(llm.tier1_api_key or "").strip():
-        return True
-    if name == "tier2" and str(llm.tier2_api_key or "").strip():
-        return True
-
     t = pc.type
     if t in ("openai", "azure"):
         return bool(str(llm.openai_api_key or "").strip())
@@ -313,11 +304,7 @@ def _compute_api_key_set(pc: ProviderConfig, svc: ProviderConfigService) -> bool
     if t == "ollama":
         return False
     if t == "custom":
-        return bool(
-            str(llm.openai_api_key or "").strip()
-            or str(llm.tier1_api_key or "").strip()
-            or str(llm.tier2_api_key or "").strip()
-        )
+        return bool(str(llm.openai_api_key or "").strip())
     return False
 
 
@@ -330,12 +317,6 @@ def _resolve_provider_api_key(pc: ProviderConfig, svc: ProviderConfigService) ->
     from leagent.config.settings import get_settings
 
     llm = get_settings().llm
-    name = (pc.name or "").strip()
-    if name == "tier1" and str(llm.tier1_api_key or "").strip():
-        return str(llm.tier1_api_key).strip()
-    if name == "tier2" and str(llm.tier2_api_key or "").strip():
-        return str(llm.tier2_api_key).strip()
-
     if pc.type == "deepseek":
         return str(llm.deepseek_api_key or "").strip()
     return ""
@@ -388,14 +369,12 @@ def _to_response(pc: ProviderConfig, svc: ProviderConfigService) -> ProviderResp
         models=[
             ProviderModelInfo(
                 name=m.get("name", ""),
-                tier=m.get("tier", ""),
+                kind=m.get("kind", "chat"),
+                capabilities=m.get("capabilities", {}),
                 context_window=m.get("context_window", 0),
                 enabled=m.get("enabled", True),
                 description=m.get("description", ""),
-                price_input_per_1m=float(m.get("price_input_per_1m", 0.0) or 0.0),
-                price_output_per_1m=float(m.get("price_output_per_1m", 0.0) or 0.0),
-                supports_tools=m.get("supports_tools"),
-                supports_vision=m.get("supports_vision"),
+                pricing=m.get("pricing", {}),
             )
             for m in pc.models
         ],
@@ -692,19 +671,63 @@ async def set_default_model(
     return DefaultModelResponse(provider=d.provider, model=d.model)
 
 
+class TaskBinding(BaseModel):
+    provider: str = ""
+    model: str = ""
+
+
+class TaskRoutingResponse(BaseModel):
+    tasks: dict[str, TaskBinding] = Field(default_factory=dict)
+
+
+class TaskRoutingUpdateRequest(BaseModel):
+    tasks: dict[str, TaskBinding] = Field(default_factory=dict)
+
+
+@router.get("/routing/tasks", response_model=TaskRoutingResponse)
+async def get_task_routing(
+    user_id: CurrentUserId,
+    svc: Annotated[ProviderConfigService, Depends(_get_service)],
+) -> TaskRoutingResponse:
+    """Return routing.tasks from providers.yaml."""
+    raw = svc.get_task_routing()
+    tasks: dict[str, TaskBinding] = {}
+    for key, value in raw.items():
+        if not isinstance(value, dict):
+            continue
+        tasks[str(key)] = TaskBinding(
+            provider=str(value.get("provider") or ""),
+            model=str(value.get("model") or ""),
+        )
+    return TaskRoutingResponse(tasks=tasks)
+
+
+@router.put("/routing/tasks", response_model=TaskRoutingResponse)
+async def set_task_routing(
+    data: TaskRoutingUpdateRequest,
+    user_id: CurrentUserId,
+    svc: Annotated[ProviderConfigService, Depends(_get_service)],
+) -> TaskRoutingResponse:
+    """Update routing.tasks in providers.yaml."""
+    payload = {key: binding.model_dump() for key, binding in data.tasks.items()}
+    try:
+        svc.set_task_routing(payload)
+    except ProviderConfigValidationError as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
+    await _trigger_llm_reload()
+    return TaskRoutingResponse(tasks=data.tasks)
+
+
 class AvailableModel(BaseModel):
     """A model available for chat selection, aggregated across all enabled providers."""
     provider_name: str
     provider_type: str
     provider_label: str = ""
     model_name: str
-    tier: str = ""
+    kind: str = "chat"
+    capabilities: dict[str, Any] = Field(default_factory=dict)
     context_window: int = 0
-    supports_tools: bool = False
-    supports_vision: bool = False
-    supports_thinking: bool = False
-    price_input_per_1m: float = 0.0
-    price_output_per_1m: float = 0.0
+    pricing: dict[str, float] = Field(default_factory=dict)
     description: str = ""
     is_default: bool = False
 
@@ -718,10 +741,7 @@ async def list_available_models(
 
     Suitable for populating the chat model selector dropdown.
     """
-    from leagent.llm.model_catalog import get_provider_presets_dict
-
     default_cfg = svc.get_default()
-    presets_dict = get_provider_presets_dict()
     result: list[AvailableModel] = []
 
     for pc in svc.list_providers():
@@ -741,13 +761,10 @@ async def list_available_models(
                     provider_type=pc.type,
                     provider_label=label,
                     model_name=name,
-                    tier=m.get("tier", ""),
+                    kind=m.get("kind", "chat"),
+                    capabilities=m.get("capabilities", {}),
                     context_window=m.get("context_window", 0),
-                    supports_tools=bool(m.get("supports_tools")),
-                    supports_vision=bool(m.get("supports_vision")),
-                    supports_thinking=bool(m.get("supports_thinking")),
-                    price_input_per_1m=float(m.get("price_input_per_1m", 0.0)),
-                    price_output_per_1m=float(m.get("price_output_per_1m", 0.0)),
+                    pricing=m.get("pricing", {}),
                     description=m.get("description", ""),
                     is_default=is_default,
                 )
@@ -773,14 +790,12 @@ async def get_presets(
                 models=[
                     ProviderModelInfo(
                         name=m["name"],
-                        tier=m.get("tier", ""),
+                        kind=m.get("kind", "chat"),
+                        capabilities=m.get("capabilities", {}),
                         context_window=m.get("context_window", 0),
                         enabled=m.get("enabled", True),
                         description=m.get("description", ""),
-                        price_input_per_1m=float(m.get("price_input_per_1m", 0.0) or 0.0),
-                        price_output_per_1m=float(m.get("price_output_per_1m", 0.0) or 0.0),
-                        supports_tools=m.get("supports_tools"),
-                        supports_vision=m.get("supports_vision"),
+                        pricing=m.get("pricing", {}),
                     )
                     for m in info.get("models", [])
                 ],

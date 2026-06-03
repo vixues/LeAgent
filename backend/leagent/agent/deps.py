@@ -436,7 +436,6 @@ class CallModel(Protocol):
         tool_use_context: "ToolUseContext",
         temperature: float | None = None,
         max_output_tokens: int | None = None,
-        model_tier: str = "tier1",
         model_provider: str | None = None,
         model_name: str | None = None,
     ) -> AsyncIterator[ModelStreamEvent]: ...
@@ -664,7 +663,6 @@ def _make_llm_call_model(llm: "LLMService") -> CallModel:
         tool_use_context: "ToolUseContext",
         temperature: float | None = None,
         max_output_tokens: int | None = None,
-        model_tier: str = "tier1",
         model_provider: str | None = None,
         model_name: str | None = None,
     ) -> AsyncIterator[ModelStreamEvent]:
@@ -699,7 +697,6 @@ def _make_llm_call_model(llm: "LLMService") -> CallModel:
                     tools=tools,
                     tool_choice="auto" if tools else None,
                     temperature=temperature,
-                    model_tier=model_tier,
                     **stream_kw,
                 ).__aiter__()
                 saw_stream_event = False
@@ -806,7 +803,6 @@ def _make_llm_call_model(llm: "LLMService") -> CallModel:
                             tools=tools,
                             tool_choice="auto" if tools else None,
                             temperature=temperature,
-                            model_tier=model_tier,
                             **stream_kw,
                         )
                     except Exception as fallback_exc:  # noqa: BLE001

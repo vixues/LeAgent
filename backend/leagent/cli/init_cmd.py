@@ -180,63 +180,14 @@ def _create_providers_config(providers_path: Path, non_interactive: bool) -> Non
 
     console.print("[bold]Creating providers configuration...[/]")
 
-    # DeepSeek V4 models. Legacy names are auto-migrated on startup.
-    providers_config = {
-        "default_provider": "deepseek",
-        "default_model": "deepseek-v4-flash",
-        "providers": [
-            {
-                "name": "deepseek",
-                "type": "deepseek",
-                "enabled": True,
-                "api_key": "${DEEPSEEK_API_KEY}",
-                "base_url": "https://api.deepseek.com",
-                "models": [
-                    {"name": "deepseek-v4-flash", "tier": "tier2", "context_window": 1000000},
-                    {"name": "deepseek-v4-pro", "tier": "tier1", "context_window": 1000000},
-                ],
-            },
-            {
-                "name": "dashscope",
-                "type": "qwen",
-                "enabled": False,
-                "api_key": "${DASHSCOPE_API_KEY}",
-                "base_url": "${DASHSCOPE_BASE_URL:-https://dashscope.aliyuncs.com/compatible-mode/v1}",
-                "models": [
-                    {"name": "qwen3-max", "tier": "tier1", "context_window": 128000},
-                    {"name": "qwen3.5-plus", "tier": "tier1", "context_window": 128000},
-                    {"name": "qwen-plus", "tier": "tier2", "context_window": 128000},
-                    {"name": "qwen3.5-flash", "tier": "tier2", "context_window": 128000},
-                    {"name": "qwq-plus", "tier": "tier1", "context_window": 128000},
-                    {"name": "qwen-long", "tier": "tier1", "context_window": 1000000},
-                    {"name": "qwen-vl-max", "tier": "tier1", "context_window": 128000},
-                ],
-            },
-            {
-                "name": "openai",
-                "type": "openai",
-                "enabled": False,
-                "api_key": "${OPENAI_API_KEY}",
-                "base_url": "https://api.openai.com/v1",
-                "models": [
-                    {"name": "gpt-4o", "tier": "tier1", "context_window": 128000},
-                    {"name": "gpt-4o-mini", "tier": "tier2", "context_window": 128000},
-                    {"name": "gpt-3.5-turbo", "tier": "tier3", "context_window": 16385},
-                ],
-            },
-            {
-                "name": "ollama",
-                "type": "ollama",
-                "enabled": False,
-                "base_url": "http://localhost:11434",
-                "models": [
-                    {"name": "llama3.2", "tier": "tier1", "context_window": 128000},
-                    {"name": "qwen2.5:7b", "tier": "tier2", "context_window": 32000},
-                    {"name": "llama3.1:8b", "tier": "tier3", "context_window": 128000},
-                ],
-            },
-        ],
-    }
+    from leagent.llm.providers_schema import build_default_v2_config
+
+    providers_config = build_default_v2_config(
+        deepseek_key="${DEEPSEEK_API_KEY}",
+        dashscope_key="${DASHSCOPE_API_KEY}",
+        openai_key="${OPENAI_API_KEY}",
+        anthropic_key="${ANTHROPIC_API_KEY}",
+    )
 
     try:
         providers_path.parent.mkdir(parents=True, exist_ok=True)

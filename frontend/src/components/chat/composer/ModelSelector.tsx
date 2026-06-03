@@ -69,13 +69,13 @@ export function ModelSelector({ className }: ModelSelectorProps) {
         label: m.model_name,
         provider: m.provider_name,
         providerLabel: m.provider_label || m.provider_name,
-        supportsTools: m.supports_tools,
-        supportsVision: m.supports_vision,
-        supportsThinking: m.supports_thinking,
+        supportsTools: !!m.capabilities?.tool_call,
+        supportsVision: !!m.capabilities?.input?.includes('image'),
+        supportsThinking: !!m.capabilities?.reasoning,
         isDefault: m.is_default,
         description: m.description,
         contextWindow: m.context_window,
-        priceLevel: priceLevel(m.price_input_per_1m, m.price_output_per_1m),
+        priceLevel: priceLevel(m.pricing?.input_per_1m ?? 0, m.pricing?.output_per_1m ?? 0),
         icon: m.is_default ? <Star className="w-3.5 h-3.5 text-amber-500" /> : <Bot className="w-3.5 h-3.5" />,
       })) ?? [];
 

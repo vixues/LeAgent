@@ -52,6 +52,12 @@ export const adminApi = {
     set: (data: DefaultModelConfig) => apiClient.put<DefaultModelConfig>('/models/default', data),
   },
 
+  taskRouting: {
+    get: () => apiClient.get<{ tasks: Record<string, { provider: string; model: string }> }>('/models/routing/tasks'),
+    set: (tasks: Record<string, { provider: string; model: string }>) =>
+      apiClient.put<{ tasks: Record<string, { provider: string; model: string }> }>('/models/routing/tasks', { tasks }),
+  },
+
   availableModels: {
     list: () => apiClient.get<AvailableModel[]>('/models/available'),
   },

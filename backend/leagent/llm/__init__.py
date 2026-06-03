@@ -1,40 +1,4 @@
-"""LLM service package.
-
-Provides a unified interface for multiple LLM providers with:
-- Tier-based routing (tier1 for complex, tier2 for simple tasks)
-- Automatic fallback on failures
-- Token counting and context management
-- Streaming support
-- Function/tool calling
-- Embeddings
-
-Example usage:
-    from leagent.llm import (
-        ChatMessage,
-        LLMService,
-        ToolDefinition,
-    )
-
-    # Create service
-    service = LLMService.from_settings()
-
-    # Simple completion
-    response = await service.complete([
-        ChatMessage.user("Hello, how are you?")
-    ])
-
-    # With routing
-    response = await service.complete(
-        [ChatMessage.user("Analyze this complex problem...")],
-        tier="tier1",
-    )
-
-    # Streaming
-    async for chunk in service.stream([
-        ChatMessage.user("Write a story...")
-    ]):
-        print(chunk.content, end="")
-"""
+"""LLM service package with task-based model resolution."""
 
 from leagent.llm.base import (
     ChatMessage,
@@ -53,13 +17,10 @@ from leagent.llm.registry import (
     ProviderRegistry,
     create_default_registry,
 )
-from leagent.llm.router import (
-    ModelRouter,
-    ModelTier,
-    RoutingDecision,
-    TierConfig,
-)
+from leagent.llm.model_registry import ModelRegistry
+from leagent.llm.model_spec import ModelCapabilities, ModelSpec, ModelTask, ResolvedModel
 from leagent.llm.service import LLMService
+from leagent.llm.task_resolver import TaskResolver
 
 __all__ = [
     # Base types
@@ -77,11 +38,13 @@ __all__ = [
     "ProviderInfo",
     "ProviderRegistry",
     "create_default_registry",
-    # Router
-    "ModelRouter",
-    "ModelTier",
-    "RoutingDecision",
-    "TierConfig",
+    # Task routing
+    "ModelCapabilities",
+    "ModelRegistry",
+    "ModelSpec",
+    "ModelTask",
+    "ResolvedModel",
+    "TaskResolver",
     # Service
     "LLMService",
 ]

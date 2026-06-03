@@ -270,7 +270,6 @@ class AgentConfig:
         enable_memory: Whether to use memory for context retrieval.
         enable_streaming: Whether to stream responses token-by-token.
         temperature: LLM sampling temperature.
-        model_tier: Default model tier to use (tier1 or tier2).
         verbose: Enable verbose logging of internal state.
     """
 
@@ -283,7 +282,6 @@ class AgentConfig:
     enable_memory: bool = True
     enable_streaming: bool = True
     temperature: float = 0.1
-    model_tier: str = "tier1"
     model_provider: str | None = None
     model_name: str | None = None
     verbose: bool = False

@@ -7,7 +7,6 @@ from text prompts. Returns base64 image data and optionally saves to disk.
 from __future__ import annotations
 
 import base64
-import os
 import time
 from pathlib import Path
 from typing import Any
@@ -76,7 +75,11 @@ class ImageGenerateTool(BaseTool):
                 },
                 "model": {
                     "type": "string",
-                    "description": "Model to use (default from settings, typically 'dall-e-3').",
+                    "description": "Image model to use (default from routing.tasks.image_gen).",
+                },
+                "provider": {
+                    "type": "string",
+                    "description": "Optional image generation provider override.",
                 },
                 "output_path": {
                     "type": "string",
@@ -104,22 +107,38 @@ class ImageGenerateTool(BaseTool):
         output_path = params.get("output_path")
         write_path: str | None = output_path if isinstance(output_path, str) and output_path.strip() else None
 
-        model = params.get("model") or self._get_default_model()
-        provider = self._get_provider()
+        model = params.get("model")
+        provider = params.get("provider")
 
         start = time.perf_counter()
 
-        if provider == "openai":
-            result = await self._generate_openai(
-                prompt=prompt,
-                model=model,
-                style=style,
-                size=size,
-                quality=quality,
-                response_format=response_format,
-            )
-        else:
-            raise ValueError(f"Unsupported image generation provider: {provider}")
+        from leagent.main import get_service_manager
+
+        sm = get_service_manager()
+        llm = sm.llm_service if sm else None
+        if llm is None:
+            raise RuntimeError("LLM service is required for image generation")
+
+        image_result = await llm.generate_image(
+            prompt,
+            provider=provider if isinstance(provider, str) and provider.strip() else None,
+            model=model if isinstance(model, str) and model.strip() else None,
+            size=size,
+            quality=quality,
+            style=style,
+            response_format=response_format,
+        )
+        result: dict[str, Any] = {
+            "success": image_result.success,
+            "revised_prompt": image_result.revised_prompt,
+            "model": image_result.model,
+            "provider": image_result.provider,
+            "mime": image_result.mime,
+        }
+        if image_result.b64_json:
+            result["b64_json"] = image_result.b64_json
+        if image_result.url:
+            result["url"] = image_result.url
 
         elapsed_ms = int((time.perf_counter() - start) * 1000)
 
@@ -179,6 +198,8 @@ class ImageGenerateTool(BaseTool):
                 logger.warning("image_generate_session_register_failed", exc_info=True)
 
         result["elapsed_ms"] = elapsed_ms
+        model = str(result.get("model") or model or "")
+        provider = str(result.get("provider") or provider or "")
         result["model"] = model
         result["provider"] = provider
 
@@ -191,79 +212,3 @@ class ImageGenerateTool(BaseTool):
         )
 
         return result
-
-    async def _generate_openai(
-        self,
-        *,
-        prompt: str,
-        model: str,
-        style: str,
-        size: str,
-        quality: str,
-        response_format: str,
-    ) -> dict[str, Any]:
-        """Call OpenAI Images API."""
-        try:
-            from openai import AsyncOpenAI
-        except ImportError as e:
-            raise RuntimeError("openai package is required for image generation") from e
-
-        api_key = self._get_api_key("openai")
-        client = AsyncOpenAI(api_key=api_key)
-
-        response = await client.images.generate(
-            model=model,
-            prompt=prompt,
-            n=1,
-            size=size,
-            quality=quality,
-            style=style,
-            response_format=response_format,
-        )
-
-        image_data = response.data[0]
-        result: dict[str, Any] = {
-            "success": True,
-            "revised_prompt": getattr(image_data, "revised_prompt", None),
-        }
-
-        if response_format == "b64_json" and image_data.b64_json:
-            result["b64_json"] = image_data.b64_json
-            result["mime"] = "image/png"
-        elif image_data.url:
-            result["url"] = image_data.url
-
-        return result
-
-    def _get_provider(self) -> str:
-        try:
-            from leagent.config.settings import get_settings
-            s = get_settings()
-            if hasattr(s, "image") and hasattr(s.image, "provider"):
-                return s.image.provider
-        except Exception:
-            pass
-        return "openai"
-
-    def _get_default_model(self) -> str:
-        try:
-            from leagent.config.settings import get_settings
-            s = get_settings()
-            if hasattr(s, "image") and hasattr(s.image, "default_model"):
-                return s.image.default_model
-        except Exception:
-            pass
-        return "dall-e-3"
-
-    def _get_api_key(self, provider: str) -> str | None:
-        key = os.environ.get("OPENAI_API_KEY")
-        if key:
-            return key
-        try:
-            from leagent.config.settings import get_settings
-            s = get_settings()
-            if hasattr(s, "llm") and hasattr(s.llm, "openai_api_key"):
-                return s.llm.openai_api_key
-        except Exception:
-            pass
-        return None

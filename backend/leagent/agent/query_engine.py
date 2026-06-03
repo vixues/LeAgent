@@ -85,7 +85,6 @@ class QueryEngineConfig:
     max_tool_calls_per_turn: int = 10
     temperature: float | None = 0.1
     max_output_tokens: int | None = 8192
-    model_tier: str = "tier1"
     model_provider: str | None = None
     model_name: str | None = None
 
@@ -413,7 +412,6 @@ class QueryEngine:
             data={
                 "session_id": str(self.session_id),
                 "turn_id": str(turn_uuid),
-                "model_tier": self.config.model_tier,
                 "model_provider": self.config.model_provider,
                 "model_name": self.config.model_name,
                 "tools": [t.get("function", {}).get("name") for t in tools_schema],
@@ -432,7 +430,6 @@ class QueryEngine:
             max_tool_calls_per_turn=self.config.max_tool_calls_per_turn,
             temperature=self.config.temperature,
             max_output_tokens=self.config.max_output_tokens,
-            model_tier=self.config.model_tier,
             model_provider=self.config.model_provider,
             model_name=self.config.model_name,
         )
@@ -446,7 +443,6 @@ class QueryEngine:
             if hasattr(span, "set_attribute"):
                 span.set_attribute("agent.session_id", str(self.session_id))
                 span.set_attribute("agent.turn_id", str(turn_uuid))
-                span.set_attribute("agent.model_tier", self.config.model_tier)
                 if self.config.model_provider:
                     span.set_attribute("agent.model_provider", self.config.model_provider)
                 if self.config.model_name:
@@ -718,7 +714,6 @@ class QueryEngine:
             max_tool_calls_per_turn=self.config.max_tool_calls_per_turn,
             temperature=self.config.temperature,
             max_output_tokens=self.config.max_output_tokens,
-            model_tier=self.config.model_tier,
             model_provider=self.config.model_provider,
             model_name=self.config.model_name,
             session_id=self.session_id,

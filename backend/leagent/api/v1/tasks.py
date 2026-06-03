@@ -59,7 +59,6 @@ class AgentRunRequest(BaseModel):
     description: Optional[str] = Field(default=None, max_length=2000)
     runtime_profile: str = Field(default="coding_long")
     prompt_variant: str = Field(default="coding_agent")
-    model_tier: str = Field(default="tier1")
     project_roots: list[str] = Field(default_factory=list)
     authorized_roots: list[str] = Field(default_factory=list)
     max_turns: Optional[int] = Field(default=None, ge=1)
@@ -180,7 +179,6 @@ async def create_agent_run(
         "message": data.message,
         "runtime_profile": budget.name,
         "prompt_variant": data.prompt_variant,
-        "model_tier": data.model_tier,
         "project_roots": data.project_roots,
         "authorized_roots": data.authorized_roots,
     }

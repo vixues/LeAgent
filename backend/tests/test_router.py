@@ -1,4 +1,4 @@
-"""Tests for ModelRouter (tier routing and provider kwargs)."""
+"""Tests for task-based LLM routing via LLMService."""
 
 from __future__ import annotations
 
@@ -12,8 +12,9 @@ from leagent.llm.base import (
     StreamChunk,
     ToolDefinition,
 )
+from leagent.llm.model_registry import ModelRegistry
 from leagent.llm.registry import ProviderRegistry
-from leagent.llm.router import ModelRouter
+from leagent.llm.service import LLMService
 
 
 class _RecordingProvider(LLMProvider):
@@ -66,27 +67,50 @@ class _RecordingProvider(LLMProvider):
         yield StreamChunk(content="")
 
 
-def test_complete_with_routing_no_duplicate_temperature_kwargs() -> None:
-    """LLMService passes temperature/max_tokens/tool_choice in kwargs; router must not duplicate."""
+def _catalog_with_chat(provider: str, model: str) -> ModelRegistry:
+    catalog = ModelRegistry()
+    catalog.load_from_config(
+        {
+            "version": 2,
+            "providers": [
+                {
+                    "name": provider,
+                    "type": "openai",
+                    "enabled": True,
+                    "models": [
+                        {
+                            "name": model,
+                            "kind": "chat",
+                            "capabilities": {
+                                "input": ["text"],
+                                "output": ["text"],
+                                "tool_call": True,
+                            },
+                            "context_window": 128000,
+                        }
+                    ],
+                }
+            ],
+            "routing": {"tasks": {"chat": {"provider": provider, "model": model}}},
+        }
+    )
+    return catalog
+
+
+def test_complete_passes_through_generation_kwargs() -> None:
+    """LLMService must not duplicate temperature/max_tokens/tool_choice in kwargs."""
 
     async def _run() -> None:
         registry = ProviderRegistry()
         recording = _RecordingProvider()
-        registry.register("tier1_provider", recording)
-
-        router = ModelRouter(registry=registry)
-        router.configure_tier(
-            tier="tier1",
-            provider="tier1_provider",
-            model="qwen-max",
-            max_tokens=4096,
-            temperature=0.1,
-        )
+        registry.register("mock", recording)
+        catalog = _catalog_with_chat("mock", "qwen-max")
+        service = LLMService(registry=registry, model_registry=catalog)
 
         messages = [ChatMessage.user("ping")]
-        await router.complete_with_routing(
+        await service.complete(
             messages,
-            explicit_tier="tier1",
+            task="chat",
             temperature=0.55,
             max_tokens=512,
             tool_choice="auto",

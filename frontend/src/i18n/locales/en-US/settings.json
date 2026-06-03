@@ -105,8 +105,6 @@
     "tokensDashscopeBaseUrl": "DashScope base URL (DASHSCOPE_BASE_URL)",
     "tokensDashscopeEnableThinking": "DashScope thinking mode (DASHSCOPE_ENABLE_THINKING)",
     "tokensDashscopeEnableSearch": "DashScope web search (DASHSCOPE_ENABLE_SEARCH)",
-    "tokensLlmTier1": "LLM tier1 (LLM_TIER1_API_KEY)",
-    "tokensLlmTier2": "LLM tier2 (LLM_TIER2_API_KEY)",
     "tokensWebSearchProvider": "Web search provider (WEB_SEARCH_PROVIDER: duckduckgo_lite | searxng | bing)",
     "tokensWebSearchBing": "Bing Web Search API key (WEB_SEARCH_BING_API_KEY; use with provider bing)",
     "tokensWebSearchSearxng": "SearXNG base URL (WEB_SEARCH_SEARXNG_BASE_URL; use with provider searxng)",

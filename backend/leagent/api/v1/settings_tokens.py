@@ -28,8 +28,6 @@ ALLOWED_ENV_KEYS: tuple[str, ...] = (
     "DEEPSEEK_THINKING_TYPE",
     "DEEPSEEK_REASONING_EFFORT",
     "DASHSCOPE_API_KEY",
-    "LLM_TIER1_API_KEY",
-    "LLM_TIER2_API_KEY",
     # Web search (`web_search` tool) + Google image search (`web_image_search`)
     "WEB_SEARCH_PROVIDER",
     "WEB_SEARCH_BING_API_KEY",
@@ -293,8 +291,6 @@ async def put_tokens(
             "DEEPSEEK_THINKING_TYPE",
             "DEEPSEEK_REASONING_EFFORT",
             "DASHSCOPE_API_KEY",
-            "LLM_TIER1_API_KEY",
-            "LLM_TIER2_API_KEY",
         }
     )
     if llm_touch:

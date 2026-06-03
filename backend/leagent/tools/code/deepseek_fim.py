@@ -202,7 +202,7 @@ class DeepSeekFimTool(BaseTool):
                 "ok": False,
                 "error": (
                     "No DeepSeek provider is registered on the LLM service; "
-                    "configure DEEPSEEK_API_KEY (or a DeepSeek-backed tier1/tier2) "
+                    "configure DEEPSEEK_API_KEY (or a DeepSeek-backed chat task) "
                     "to use FIM."
                 ),
             }

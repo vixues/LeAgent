@@ -24,6 +24,7 @@
     "contactSupport": "如有问题，请联系",
     "tabs": {
       "providers": "模型提供商",
+      "modelSettings": "模型设置",
       "tools": "工具管理",
       "rules": "规则配置",
       "users": "用户管理",
@@ -31,7 +32,7 @@
     },
     "provider": {
       "title": "模型提供商",
-      "description": "配置 AI 模型提供商的连接信息",
+      "description": "配置 AI 模型提供商连接、模型目录与能力",
       "add": "添加提供商",
       "edit": "编辑提供商",
       "name": "名称",
@@ -165,7 +166,7 @@
         "empty": "暂无模型。点击编辑为该提供商添加模型。",
         "on": "启用",
         "model": "模型",
-        "tier": "等级",
+        "kind": "类型",
         "context": "上下文",
         "inputPrice": "输入 $/百万",
         "outputPrice": "输出 $/百万",
@@ -175,6 +176,8 @@
         "defaultTag": "默认",
         "isDefault": "默认中",
         "makeDefault": "设为默认",
+        "setDefaultSuccess": "已设为默认模型",
+        "setDefaultError": "设置默认模型失败",
         "toolsTip": "支持工具 / 函数调用",
         "visionTip": "支持图像输入",
         "thinkingTip": "支持扩展思考 / 推理",
@@ -183,10 +186,12 @@
       },
       "modelEditor": {
         "configure": "配置模型",
-        "tier": "层级",
-        "tierNone": "无",
-        "tier1": "一级（主要）",
-        "tier2": "二级（备选）",
+        "kind": "类型",
+        "kind_chat": "对话",
+        "kind_embedding": "嵌入",
+        "kind_image_gen": "图像生成",
+        "inputModalities": "输入模态",
+        "outputModalities": "输出模态",
         "contextWindow": "上下文窗口",
         "description": "描述",
         "descriptionPlaceholder": "可选描述",
@@ -200,6 +205,20 @@
         "discovered": "从 API 发现",
         "addCustomPlaceholder": "自定义模型名称（例如 my-model-v2）",
         "addButton": "添加"
+      },
+      "taskRouting": {
+        "title": "任务路由",
+        "desc": "为每个逻辑任务槽（对话、视觉、压缩等）指定 provider/model。",
+        "unset": "— 未配置 —",
+        "tasks": {
+          "chat": "对话（默认 Agent）",
+          "fast": "快速 / 轻量",
+          "vision": "视觉 / 多模态",
+          "compression": "上下文压缩",
+          "title": "会话标题",
+          "embedding": "嵌入向量",
+          "image_gen": "图像生成"
+        }
       },
       "usage": {
         "title": "按模型统计用量",
@@ -215,6 +234,72 @@
       "requestLog": {
         "title": "最近请求",
         "desc": "请求级模型用量、延迟和预估成本。",
+        "time": "时间",
+        "provider": "提供商",
+        "model": "模型",
+        "tokens": "Token",
+        "cost": "成本",
+        "latency": "延迟"
+      }
+    },
+    "modelSettings": {
+      "title": "模型设置",
+      "description": "配置任务路由、默认模型，并查看用量统计与请求明细。",
+      "timeRange": {
+        "7d": "7 天",
+        "30d": "30 天",
+        "90d": "90 天"
+      },
+      "stats": {
+        "requests": "请求数",
+        "tokens": "Token 量",
+        "cost": "预估成本",
+        "avgLatency": "平均延迟",
+        "periodHint": "最近 {{days}} 天"
+      },
+      "charts": {
+        "dailyTrend": "每日用量趋势",
+        "tokenShare": "模型 Token 占比",
+        "latencyByModel": "模型平均延迟",
+        "costByModel": "模型成本分布",
+        "cost": "成本",
+        "other": "其他",
+        "latencyHint": "各模型请求的平均端到端延迟（算术均值）"
+      },
+      "defaultModel": {
+        "title": "默认模型",
+        "desc": "当任务未显式指定模型时使用。",
+        "selectPlaceholder": "— 选择默认模型 —"
+      },
+      "taskRouting": {
+        "title": "任务路由",
+        "desc": "为每个逻辑任务槽（对话、视觉、压缩等）指定 provider/model。",
+        "unset": "— 未配置 —",
+        "tasks": {
+          "chat": "对话（默认 Agent）",
+          "fast": "快速 / 轻量",
+          "vision": "视觉 / 多模态",
+          "compression": "上下文压缩",
+          "title": "会话标题",
+          "embedding": "嵌入向量",
+          "image_gen": "图像生成"
+        }
+      },
+      "usage": {
+        "title": "按模型统计用量",
+        "desc": "最近 {{days}} 天的聚合数据。",
+        "model": "模型",
+        "requests": "请求数",
+        "inTokens": "输入",
+        "outTokens": "输出",
+        "totalTokens": "合计",
+        "cost": "成本",
+        "avgLatency": "平均延迟",
+        "lastUsed": "最近使用"
+      },
+      "requestLog": {
+        "title": "最近请求",
+        "desc": "最近 {{max}} 条请求级用量、延迟和预估成本。",
         "time": "时间",
         "provider": "提供商",
         "model": "模型",

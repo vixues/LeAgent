@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import type { ModelProvider, Tool, RuleSetInfo, Task } from '@/types/admin';
 
-type AdminTab = 'providers' | 'tools' | 'rules' | 'tasks';
+type AdminTab = 'providers' | 'modelSettings' | 'tools' | 'rules' | 'tasks';
 
 interface AdminState {
   activeTab: AdminTab;

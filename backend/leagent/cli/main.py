@@ -24,7 +24,7 @@ Examples:
     leagent run                  # Uvicorn ASGI (shortcut for ``app start``)
     leagent app start            # Same stack with extra flags (SSL, workers, …)
     leagent workflows list       # Requires running server
-    leagent models list         # ``providers.yaml`` + tier routing
+    leagent models migrate      # one-shot tier → v2 task routing migration
     leagent doctor               # Health / dependency sanity check
 """
 

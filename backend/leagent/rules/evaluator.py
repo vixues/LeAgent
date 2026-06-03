@@ -603,7 +603,7 @@ class LLMJudgeEvaluator(RuleEvaluator):
             - criteria: Clear criteria for pass/fail
 
         Optional params:
-            - tier: LLM tier to use (default: tier2)
+            - task: LLM task to use (default: fast)
             - temperature: Sampling temperature (default: 0.0)
             - max_tokens: Maximum response tokens (default: 500)
         """
@@ -617,7 +617,7 @@ class LLMJudgeEvaluator(RuleEvaluator):
 
         prompt = params.get("prompt", "")
         criteria = params.get("criteria", "")
-        tier = params.get("tier", "tier2")
+        task = params.get("task", "fast")
         temperature = float(params.get("temperature", 0.0))
         max_tokens = int(params.get("max_tokens", 500))
 
@@ -636,7 +636,7 @@ Respond with your judgment in JSON format."""
         details = {
             "prompt": prompt,
             "criteria": criteria,
-            "tier": tier,
+            "task": task,
             "temperature": temperature,
         }
 
@@ -646,7 +646,7 @@ Respond with your judgment in JSON format."""
                     ChatMessage.system(system_prompt),
                     ChatMessage.user(user_prompt),
                 ],
-                tier=tier,
+                task=task,
                 temperature=temperature,
                 max_tokens=max_tokens,
             )

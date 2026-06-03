@@ -10,7 +10,6 @@ import {
   Circle,
   ExternalLink,
   Activity,
-  DollarSign,
   Box,
   Eye,
   Brain,
@@ -25,7 +24,6 @@ import {
 } from 'lucide-react';
 import {
   Card,
-  CardHeader,
   CardTitle,
   CardContent,
   Button,
@@ -41,6 +39,7 @@ import {
 import { useAdminStore } from '@/stores/admin';
 import { PageLoader } from '@/components/common/PageLoader';
 import { SectionHeader } from '@/components/common/SectionHeader';
+import { useToast } from '@/components/ui/Toaster';
 import {
   useProviders,
   useCreateProvider,
@@ -55,7 +54,6 @@ import {
   useSpeedTestProvider,
   useCheckAllProvidersHealth,
   useProviderUsage,
-  useRequestLogs,
 } from '@/hooks/useAdmin';
 import type {
   DeepSeekBalanceResponse,
@@ -70,7 +68,11 @@ import type {
   SpeedTestResult,
 } from '@/types/admin';
 import { adminApi } from '@/api/admin';
-import { cn, parseApiDateTime } from '@/lib/utils';
+import { cn } from '@/lib/utils';
+import {
+  formatCompactNumber,
+  StatCard,
+} from './shared/adminFormat';
 
 // ---------------------------------------------------------------------------
 // Provider branding: colors + icons per type
@@ -174,14 +176,6 @@ function ProviderIconMark({
 // Formatting helpers
 // ---------------------------------------------------------------------------
 
-function formatCompactNumber(n: number | null | undefined): string {
-  if (n == null || !Number.isFinite(n)) return '0';
-  if (n < 1000) return String(n);
-  if (n < 1_000_000) return `${(n / 1000).toFixed(n < 10_000 ? 1 : 0)}k`;
-  if (n < 1_000_000_000) return `${(n / 1_000_000).toFixed(n < 10_000_000 ? 1 : 0)}M`;
-  return `${(n / 1_000_000_000).toFixed(1)}B`;
-}
-
 function formatContext(ctx: number | undefined): string {
   if (!ctx) return '—';
   if (ctx >= 1_000_000) return `${(ctx / 1_000_000).toFixed(ctx % 1_000_000 === 0 ? 0 : 1)}M`;
@@ -192,6 +186,66 @@ function formatContext(ctx: number | undefined): string {
 function formatPrice(usd: number | undefined): string {
   if (!usd) return '—';
   return `$${usd.toFixed(usd < 1 ? 2 : 2)}`;
+}
+
+type ModelCapabilities = NonNullable<ProviderModelInfo['capabilities']>;
+
+const MODEL_KINDS = ['chat', 'embedding', 'image_gen'] as const;
+const INPUT_MODALITIES = ['text', 'image', 'audio', 'pdf'] as const;
+const OUTPUT_MODALITIES = ['text', 'image'] as const;
+
+function normalizeCapabilities(caps?: ModelCapabilities): ModelCapabilities {
+  return {
+    input: caps?.input?.length ? [...caps.input] : ['text'],
+    output: caps?.output?.length ? [...caps.output] : ['text'],
+    tool_call: Boolean(caps?.tool_call),
+    reasoning: Boolean(caps?.reasoning),
+  };
+}
+
+function modelSupportsTools(m: { capabilities?: ModelCapabilities }) {
+  return Boolean(m.capabilities?.tool_call);
+}
+
+function modelSupportsVision(m: { capabilities?: ModelCapabilities }) {
+  return m.capabilities?.input?.includes('image') ?? false;
+}
+
+function modelSupportsReasoning(m: { capabilities?: ModelCapabilities }) {
+  return Boolean(m.capabilities?.reasoning);
+}
+
+function getInputPrice(m: { pricing?: ProviderModelInfo['pricing'] }) {
+  return m.pricing?.input_per_1m;
+}
+
+function getOutputPrice(m: { pricing?: ProviderModelInfo['pricing'] }) {
+  return m.pricing?.output_per_1m;
+}
+
+type ModelEntry = NonNullable<ModelProviderFormData['models']>[number];
+
+function defaultNewModel(name: string): ModelEntry {
+  return {
+    name,
+    kind: 'chat',
+    capabilities: normalizeCapabilities(),
+    context_window: 0,
+    enabled: true,
+  };
+}
+
+/** Preset catalog entry from GET /models/presets (same shape as ProviderModelInfo). */
+function presetRowToFormModel(m: ProviderModelInfo): ModelEntry {
+  return {
+    name: m.name,
+    kind: m.kind ?? 'chat',
+    capabilities: normalizeCapabilities(m.capabilities),
+    context_window: m.context_window ?? 0,
+    enabled: m.enabled !== false,
+    description: m.description,
+    pricing: m.pricing ? { ...m.pricing } : undefined,
+  };
 }
 
 type DeepSeekBalanceStatus =
@@ -208,34 +262,6 @@ function formatDeepSeekBalance(data: DeepSeekBalanceResponse): string {
     .filter(Boolean);
 
   return balances.length > 0 ? balances.join(' · ') : '—';
-}
-
-/** Preset catalog entry from GET /models/presets (same shape as ProviderModelInfo). */
-function presetRowToFormModel(m: ProviderModelInfo): ProviderModelInfo {
-  return {
-    name: m.name,
-    tier: m.tier ?? '',
-    context_window: m.context_window ?? 0,
-    enabled: m.enabled !== false,
-    description: m.description,
-    price_input_per_1m: m.price_input_per_1m,
-    price_output_per_1m: m.price_output_per_1m,
-    supports_tools: m.supports_tools,
-    supports_vision: m.supports_vision,
-    supports_thinking: m.supports_thinking,
-  };
-}
-
-function formatRelativeTime(iso: string | null | undefined, t: (k: string, p?: Record<string, unknown>) => string): string {
-  if (!iso) return t('admin.provider.neverUsed');
-  const now = Date.now();
-  const then = parseApiDateTime(iso).getTime();
-  const diffSec = Math.max(0, Math.floor((now - then) / 1000));
-  if (diffSec < 60) return t('admin.provider.justNow');
-  if (diffSec < 3600) return t('admin.provider.minutesAgo', { n: Math.floor(diffSec / 60) });
-  if (diffSec < 86_400) return t('admin.provider.hoursAgo', { n: Math.floor(diffSec / 3600) });
-  const days = Math.floor(diffSec / 86_400);
-  return t('admin.provider.daysAgo', { n: days });
 }
 
 // ---------------------------------------------------------------------------
@@ -256,45 +282,8 @@ function HealthDot({
 }
 
 // ---------------------------------------------------------------------------
-// Summary stats strip
-// ---------------------------------------------------------------------------
-
-interface StatCardProps {
-  label: string;
-  value: string | number;
-  hint?: string;
-  icon: React.ReactNode;
-  accent?: string;
-}
-
-function StatCard({ label, value, hint, icon, accent = 'text-primary-600 dark:text-primary-400' }: StatCardProps) {
-  return (
-    <Card className="p-4">
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <p className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">
-            {label}
-          </p>
-          <p className="mt-1 text-2xl font-semibold text-gray-900 dark:text-white truncate">
-            {value}
-          </p>
-          {hint && (
-            <p className="mt-0.5 text-xs text-gray-500 dark:text-gray-400 truncate">{hint}</p>
-          )}
-        </div>
-        <div className={cn('w-10 h-10 rounded-xl flex items-center justify-center bg-gray-50 dark:bg-surface-elevated', accent)}>
-          {icon}
-        </div>
-      </div>
-    </Card>
-  );
-}
-
-// ---------------------------------------------------------------------------
 // Model config editor — rich per-model property editing
 // ---------------------------------------------------------------------------
-
-type ModelEntry = NonNullable<ModelProviderFormData['models']>[number];
 
 interface ModelConfigEditorProps {
   models: ModelEntry[];
@@ -327,6 +316,32 @@ function ModelConfigEditor({
     onChange(next);
   };
 
+  const updateCapabilities = (idx: number, patch: Partial<ModelCapabilities>) => {
+    const current = normalizeCapabilities(models[idx]?.capabilities);
+    updateModel(idx, { capabilities: { ...current, ...patch } });
+  };
+
+  const toggleModality = (
+    idx: number,
+    field: 'input' | 'output',
+    modality: string,
+    checked: boolean,
+  ) => {
+    const current = normalizeCapabilities(models[idx]?.capabilities);
+    const set = new Set(current[field] ?? []);
+    if (checked) set.add(modality);
+    else set.delete(modality);
+    const next = Array.from(set);
+    if (field === 'input' && next.length === 0) next.push('text');
+    if (field === 'output' && next.length === 0) next.push('text');
+    updateCapabilities(idx, { [field]: next });
+  };
+
+  const updatePricing = (idx: number, field: 'input_per_1m' | 'output_per_1m', value: number) => {
+    const current = models[idx]?.pricing ?? {};
+    updateModel(idx, { pricing: { ...current, [field]: value } });
+  };
+
   const removeModel = (idx: number) => {
     onChange(models.filter((_, i) => i !== idx));
     if (expandedIdx === idx) setExpandedIdx(null);
@@ -350,7 +365,7 @@ function ModelConfigEditor({
         onError?.(t('admin.provider.duplicateModelName', { name }));
         return;
       }
-      newModels.push({ name, tier: '', context_window: 0, enabled: true });
+      newModels.push(defaultNewModel(name));
     }
     onChange([...models, ...newModels]);
     setAddInput('');
@@ -359,7 +374,7 @@ function ModelConfigEditor({
   const addDiscovered = (row: DiscoveredModel) => {
     const name = row.name || row.id;
     if (!name || selectedNames.has(name)) return;
-    onChange([...models, { name, tier: '', context_window: 0, enabled: true }]);
+    onChange([...models, defaultNewModel(name)]);
   };
 
   return (
@@ -394,15 +409,15 @@ function ModelConfigEditor({
                       {m.name}
                     </span>
                     <span className="flex items-center gap-1 shrink-0">
-                      {m.tier && (
-                        <Badge variant="default" size="sm">{m.tier}</Badge>
+                      {m.kind && (
+                        <Badge variant="default" size="sm">{m.kind}</Badge>
                       )}
                       {m.context_window ? (
                         <span className="text-[10px] text-gray-400">{formatContext(m.context_window)}</span>
                       ) : null}
-                      {m.supports_tools && <Wrench className="w-3 h-3 text-sky-500" />}
-                      {m.supports_vision && <Eye className="w-3 h-3 text-blue-500" />}
-                      {m.supports_thinking && <Brain className="w-3 h-3 text-purple-500" />}
+                      {modelSupportsTools(m) && <Wrench className="w-3 h-3 text-sky-500" />}
+                      {modelSupportsVision(m) && <Eye className="w-3 h-3 text-blue-500" />}
+                      {modelSupportsReasoning(m) && <Brain className="w-3 h-3 text-purple-500" />}
                     </span>
                   </button>
                   <button
@@ -427,23 +442,23 @@ function ModelConfigEditor({
                 {isExpanded && (
                   <div className="px-3 pb-3 pt-1 border-t border-gray-100 dark:border-gray-800">
                     <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                      {/* Tier */}
                       <div>
                         <label className="block text-[11px] font-medium text-gray-500 dark:text-gray-400 mb-1 uppercase tracking-wide">
-                          {t('admin.provider.modelEditor.tier')}
+                          {t('admin.provider.modelEditor.kind')}
                         </label>
                         <Select
-                          value={m.tier || ''}
-                          onChange={(e) => updateModel(idx, { tier: e.target.value })}
+                          value={m.kind || 'chat'}
+                          onChange={(e) => updateModel(idx, { kind: e.target.value as ModelEntry['kind'] })}
                           className="h-8 text-xs"
                         >
-                          <option value="">{t('admin.provider.modelEditor.tierNone')}</option>
-                          <option value="tier1">{t('admin.provider.modelEditor.tier1')}</option>
-                          <option value="tier2">{t('admin.provider.modelEditor.tier2')}</option>
+                          {MODEL_KINDS.map((kind) => (
+                            <option key={kind} value={kind}>
+                              {t(`admin.provider.modelEditor.kind_${kind}`)}
+                            </option>
+                          ))}
                         </Select>
                       </div>
 
-                      {/* Context window */}
                       <div>
                         <label className="block text-[11px] font-medium text-gray-500 dark:text-gray-400 mb-1 uppercase tracking-wide">
                           {t('admin.provider.modelEditor.contextWindow')}
@@ -457,7 +472,6 @@ function ModelConfigEditor({
                         />
                       </div>
 
-                      {/* Description */}
                       <div className="sm:col-span-2 lg:col-span-1">
                         <label className="block text-[11px] font-medium text-gray-500 dark:text-gray-400 mb-1 uppercase tracking-wide">
                           {t('admin.provider.modelEditor.description')}
@@ -470,7 +484,6 @@ function ModelConfigEditor({
                         />
                       </div>
 
-                      {/* Input price */}
                       <div>
                         <label className="block text-[11px] font-medium text-gray-500 dark:text-gray-400 mb-1 uppercase tracking-wide">
                           {t('admin.provider.modelEditor.inputPrice')}
@@ -478,14 +491,13 @@ function ModelConfigEditor({
                         <Input
                           type="number"
                           step="0.01"
-                          value={m.price_input_per_1m ?? ''}
-                          onChange={(e) => updateModel(idx, { price_input_per_1m: Number(e.target.value) || 0 })}
+                          value={getInputPrice(m) ?? ''}
+                          onChange={(e) => updatePricing(idx, 'input_per_1m', Number(e.target.value) || 0)}
                           placeholder="0.00"
                           className="h-8 text-xs"
                         />
                       </div>
 
-                      {/* Output price */}
                       <div>
                         <label className="block text-[11px] font-medium text-gray-500 dark:text-gray-400 mb-1 uppercase tracking-wide">
                           {t('admin.provider.modelEditor.outputPrice')}
@@ -493,20 +505,58 @@ function ModelConfigEditor({
                         <Input
                           type="number"
                           step="0.01"
-                          value={m.price_output_per_1m ?? ''}
-                          onChange={(e) => updateModel(idx, { price_output_per_1m: Number(e.target.value) || 0 })}
+                          value={getOutputPrice(m) ?? ''}
+                          onChange={(e) => updatePricing(idx, 'output_per_1m', Number(e.target.value) || 0)}
                           placeholder="0.00"
                           className="h-8 text-xs"
                         />
                       </div>
                     </div>
 
-                    {/* Capability toggles */}
+                    <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                      <div>
+                        <p className="text-[11px] font-medium text-gray-500 dark:text-gray-400 mb-1.5 uppercase tracking-wide">
+                          {t('admin.provider.modelEditor.inputModalities')}
+                        </p>
+                        <div className="flex flex-wrap gap-2">
+                          {INPUT_MODALITIES.map((modality) => (
+                            <label key={modality} className="flex items-center gap-1.5 text-xs text-gray-700 dark:text-gray-300">
+                              <input
+                                type="checkbox"
+                                checked={normalizeCapabilities(m.capabilities).input?.includes(modality) ?? false}
+                                onChange={(e) => toggleModality(idx, 'input', modality, e.target.checked)}
+                                className="rounded border-gray-300 text-primary-600"
+                              />
+                              {modality}
+                            </label>
+                          ))}
+                        </div>
+                      </div>
+                      <div>
+                        <p className="text-[11px] font-medium text-gray-500 dark:text-gray-400 mb-1.5 uppercase tracking-wide">
+                          {t('admin.provider.modelEditor.outputModalities')}
+                        </p>
+                        <div className="flex flex-wrap gap-2">
+                          {OUTPUT_MODALITIES.map((modality) => (
+                            <label key={modality} className="flex items-center gap-1.5 text-xs text-gray-700 dark:text-gray-300">
+                              <input
+                                type="checkbox"
+                                checked={normalizeCapabilities(m.capabilities).output?.includes(modality) ?? false}
+                                onChange={(e) => toggleModality(idx, 'output', modality, e.target.checked)}
+                                className="rounded border-gray-300 text-primary-600"
+                              />
+                              {modality}
+                            </label>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+
                     <div className="mt-3 flex flex-wrap gap-x-5 gap-y-2">
                       <label className="flex items-center gap-2 cursor-pointer text-xs text-gray-700 dark:text-gray-300">
                         <Switch
-                          checked={Boolean(m.supports_tools)}
-                          onCheckedChange={(checked) => updateModel(idx, { supports_tools: checked })}
+                          checked={modelSupportsTools(m)}
+                          onCheckedChange={(checked) => updateCapabilities(idx, { tool_call: checked })}
                           size="sm"
                         />
                         <Wrench className="w-3.5 h-3.5 text-sky-500" />
@@ -514,17 +564,8 @@ function ModelConfigEditor({
                       </label>
                       <label className="flex items-center gap-2 cursor-pointer text-xs text-gray-700 dark:text-gray-300">
                         <Switch
-                          checked={Boolean(m.supports_vision)}
-                          onCheckedChange={(checked) => updateModel(idx, { supports_vision: checked })}
-                          size="sm"
-                        />
-                        <Eye className="w-3.5 h-3.5 text-blue-500" />
-                        {t('admin.provider.modelEditor.supportsVision')}
-                      </label>
-                      <label className="flex items-center gap-2 cursor-pointer text-xs text-gray-700 dark:text-gray-300">
-                        <Switch
-                          checked={Boolean(m.supports_thinking)}
-                          onCheckedChange={(checked) => updateModel(idx, { supports_thinking: checked })}
+                          checked={modelSupportsReasoning(m)}
+                          onCheckedChange={(checked) => updateCapabilities(idx, { reasoning: checked })}
                           size="sm"
                         />
                         <Brain className="w-3.5 h-3.5 text-purple-500" />
@@ -655,12 +696,12 @@ const EMPTY_FORM: ModelProviderFormData = {
 
 export function ModelProviderConfig() {
   const { t } = useTranslation();
+  const { toast } = useToast();
   const { data: providers, isLoading } = useProviders();
   const { data: presets } = usePresets();
   const { data: defaultModel } = useDefaultModel();
   const { data: usage } = useModelUsageSummary(30);
   const { data: providerUsage } = useProviderUsage(30);
-  const { data: requestLogs } = useRequestLogs(7, 20);
   const createProvider = useCreateProvider();
   const updateProvider = useUpdateProvider();
   const deleteProvider = useDeleteProvider();
@@ -933,8 +974,20 @@ export function ModelProviderConfig() {
     });
   };
 
-  const handleSetDefaultModel = (providerName: string, modelName: string) => {
-    setDefaultModel.mutate({ provider: providerName, model: modelName });
+  const handleSetDefaultModel = async (providerName: string, modelName: string) => {
+    try {
+      await setDefaultModel.mutateAsync({ provider: providerName, model: modelName });
+      toast({
+        variant: 'success',
+        title: t('admin.provider.modelsTable.setDefaultSuccess'),
+      });
+    } catch (error) {
+      toast({
+        variant: 'error',
+        title: t('admin.provider.modelsTable.setDefaultError'),
+        description: error instanceof Error ? error.message : String(error),
+      });
+    }
   };
 
   // Determine if type requires api_key in modal
@@ -986,7 +1039,7 @@ export function ModelProviderConfig() {
       />
 
       {/* Summary stats strip */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <StatCard
           label={t('admin.provider.stats.providers')}
           value={providers?.length ?? 0}
@@ -1012,68 +1065,7 @@ export function ModelProviderConfig() {
           icon={<Activity className="w-5 h-5" />}
           accent="text-green-600 dark:text-green-400"
         />
-        <StatCard
-          label={t('admin.provider.stats.requests30d')}
-          value={formatCompactNumber(usage?.total_requests)}
-          hint={
-            usage?.avg_latency_ms
-              ? t('admin.provider.stats.avgLatency', {
-                  ms: Math.round(usage.avg_latency_ms),
-                })
-              : undefined
-          }
-          icon={<Zap className="w-5 h-5" />}
-          accent="text-amber-600 dark:text-amber-400"
-        />
-        <StatCard
-          label={t('admin.provider.stats.tokens30d')}
-          value={formatCompactNumber(usage?.total_tokens)}
-          icon={<DollarSign className="w-5 h-5" />}
-          accent="text-blue-600 dark:text-blue-400"
-        />
       </div>
-
-      {/* Default model card */}
-      <Card padding="sm">
-        <CardHeader className="mb-0 flex-col items-stretch gap-0 p-0 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex min-w-0 flex-1 flex-col gap-0.5 pb-3 sm:pb-0 sm:pr-4">
-            <CardTitle className="text-sm font-semibold leading-tight">
-              {t('admin.provider.defaultModel.title')}
-            </CardTitle>
-            <p className="text-[11px] leading-snug text-gray-500 dark:text-gray-400">
-              {t('admin.provider.defaultModel.desc')}
-            </p>
-          </div>
-          <div className="relative w-full shrink-0 sm:w-auto sm:max-w-md">
-            <Select
-              value={
-                defaultModel?.provider && defaultModel?.model
-                  ? `${defaultModel.provider}/${defaultModel.model}`
-                  : ''
-              }
-              onChange={(e) => {
-                const [providerName = '', ...modelParts] = e.target.value.split('/');
-                const model = modelParts.join('/');
-                if (providerName && model) handleSetDefaultModel(providerName, model);
-              }}
-              className="h-9 max-w-md py-1.5 sm:min-w-[16rem]"
-            >
-                <option value="">{t('admin.provider.defaultModel.selectPlaceholder')}</option>
-                {enabledProviders.map((p) => (
-                  <optgroup key={p.name} label={p.label || p.name}>
-                    {p.models
-                      .filter((m) => m.enabled !== false)
-                      .map((m) => (
-                        <option key={`${p.name}/${m.name}`} value={`${p.name}/${m.name}`}>
-                          {m.name}
-                        </option>
-                      ))}
-                  </optgroup>
-                ))}
-              </Select>
-          </div>
-        </CardHeader>
-      </Card>
 
       {/* Empty state */}
       {(!providers || providers.length === 0) && (
@@ -1223,114 +1215,10 @@ export function ModelProviderConfig() {
               onSetDefault={(m) => handleSetDefaultModel(focusedProvider.name, m.name)}
               testing={testProvider.isPending}
               updating={updateProvider.isPending}
+              settingDefault={setDefaultModel.isPending}
             />
           )}
         </div>
-      )}
-
-      {/* Usage table */}
-      {usage && usage.rows.length > 0 && (
-        <Card>
-          <CardHeader className="pb-3">
-            <div className="flex items-center justify-between">
-              <div>
-                <CardTitle className="text-base">
-                  {t('admin.provider.usage.title')}
-                </CardTitle>
-                <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-                  {t('admin.provider.usage.desc', { days: usage.days })}
-                </p>
-              </div>
-            </div>
-          </CardHeader>
-          <CardContent className="pt-0 overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide border-b border-gray-200 dark:border-gray-700">
-                  <th className="py-2 pr-4">{t('admin.provider.usage.model')}</th>
-                  <th className="py-2 px-4 text-right">{t('admin.provider.usage.requests')}</th>
-                  <th className="py-2 px-4 text-right">{t('admin.provider.usage.inTokens')}</th>
-                  <th className="py-2 px-4 text-right">{t('admin.provider.usage.outTokens')}</th>
-                  <th className="py-2 px-4 text-right">{t('admin.provider.usage.totalTokens')}</th>
-                  <th className="py-2 px-4 text-right">{t('admin.provider.usage.avgLatency')}</th>
-                  <th className="py-2 pl-4">{t('admin.provider.usage.lastUsed')}</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
-                {usage.rows.slice(0, 20).map((row) => (
-                  <tr key={row.model}>
-                    <td className="py-2 pr-4 font-mono text-xs text-gray-900 dark:text-white truncate max-w-xs">
-                      {row.model}
-                    </td>
-                    <td className="py-2 px-4 text-right tabular-nums">
-                      {formatCompactNumber(row.request_count)}
-                    </td>
-                    <td className="py-2 px-4 text-right tabular-nums text-gray-600 dark:text-gray-400">
-                      {formatCompactNumber(row.total_input_tokens)}
-                    </td>
-                    <td className="py-2 px-4 text-right tabular-nums text-gray-600 dark:text-gray-400">
-                      {formatCompactNumber(row.total_output_tokens)}
-                    </td>
-                    <td className="py-2 px-4 text-right tabular-nums font-medium">
-                      {formatCompactNumber(row.total_tokens)}
-                    </td>
-                    <td className="py-2 px-4 text-right tabular-nums text-gray-600 dark:text-gray-400">
-                      {row.avg_latency_ms ? `${Math.round(row.avg_latency_ms)} ms` : '—'}
-                    </td>
-                    <td className="py-2 pl-4 text-xs text-gray-500 dark:text-gray-400">
-                      {formatRelativeTime(row.last_used_at, t)}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </CardContent>
-        </Card>
-      )}
-
-      {requestLogs && requestLogs.length > 0 && (
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-base">{t('admin.provider.requestLog.title')}</CardTitle>
-            <p className="text-xs text-gray-500 dark:text-gray-400">
-              {t('admin.provider.requestLog.desc')}
-            </p>
-          </CardHeader>
-          <CardContent className="pt-0 overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-gray-200 text-left text-xs uppercase tracking-wide text-gray-500 dark:border-gray-700 dark:text-gray-400">
-                  <th className="py-2 pr-4">{t('admin.provider.requestLog.time')}</th>
-                  <th className="py-2 px-4">{t('admin.provider.requestLog.provider')}</th>
-                  <th className="py-2 px-4">{t('admin.provider.requestLog.model')}</th>
-                  <th className="py-2 px-4 text-right">{t('admin.provider.requestLog.tokens')}</th>
-                  <th className="py-2 px-4 text-right">{t('admin.provider.requestLog.cost')}</th>
-                  <th className="py-2 pl-4 text-right">{t('admin.provider.requestLog.latency')}</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
-                {requestLogs.map((row) => (
-                  <tr key={row.id}>
-                    <td className="py-2 pr-4 text-xs text-gray-500">
-                      {formatRelativeTime(row.created_at, t)}
-                    </td>
-                    <td className="py-2 px-4">{row.provider_name}</td>
-                    <td className="py-2 px-4 font-mono text-xs">{row.model}</td>
-                    <td className="py-2 px-4 text-right tabular-nums">
-                      {formatCompactNumber(row.input_tokens + row.output_tokens)}
-                    </td>
-                    <td className="py-2 px-4 text-right tabular-nums">
-                      ${row.total_cost_usd.toFixed(4)}
-                    </td>
-                    <td className="py-2 pl-4 text-right tabular-nums">
-                      {Math.round(row.latency_ms)} ms
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </CardContent>
-        </Card>
       )}
 
       {/* Test result toast */}
@@ -1877,6 +1765,7 @@ interface ProviderDetailPanelProps {
   onSetDefault: (model: ProviderModelInfo) => void;
   testing: boolean;
   updating: boolean;
+  settingDefault: boolean;
 }
 
 function ProviderDetailPanel({
@@ -1891,6 +1780,7 @@ function ProviderDetailPanel({
   onSetDefault,
   testing,
   updating,
+  settingDefault,
 }: ProviderDetailPanelProps) {
   const { t } = useTranslation();
   const brand = getBrand(provider.type);
@@ -1925,200 +1815,185 @@ function ProviderDetailPanel({
   }, [provider.api_key_set, provider.enabled, provider.name, provider.type]);
 
   return (
-    <div className="space-y-4">
-      {/* Header card */}
-      <Card>
-        <CardHeader>
-          <div className="flex items-start gap-3">
-            <div
-              className={cn(
-                'w-12 h-12 rounded-xl flex items-center justify-center font-bold text-base shrink-0',
-                brand.bg,
-                brand.text,
-              )}
-            >
-              <ProviderIconMark type={provider.type} label={provider.label || provider.name} />
-            </div>
-            <div className="flex-1 min-w-0">
-              <div className="flex items-center gap-2 flex-wrap">
-                <CardTitle className="text-lg">{provider.name}</CardTitle>
-                <HealthDot status={provider.is_healthy} />
-                <Badge variant={provider.enabled ? 'success' : 'default'} size="sm">
-                  {provider.enabled ? t('admin.provider.enabled') : t('admin.provider.disabled')}
-                </Badge>
-              </div>
-              <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">
-                {provider.label} · {provider.type}
-                {provider.type === 'deepseek' && provider.api_key_set && (
-                  <>
-                    {' · '}
-                    {t('settings.deepseekBalanceLabel', { defaultValue: 'Balance' })}:{' '}
-                    {deepSeekBalance?.state === 'success'
-                      ? formatDeepSeekBalance(deepSeekBalance.data)
-                      : deepSeekBalance?.state === 'error'
-                        ? t('settings.deepseekBalanceUnavailable', { defaultValue: 'Unavailable' })
-                        : t('settings.deepseekBalanceLoading', { defaultValue: 'Loading…' })}
-                    {deepSeekBalance?.state === 'success' && !deepSeekBalance.data.is_available && (
-                      <span className="ml-1 text-amber-600 dark:text-amber-400">
-                        {t('settings.deepseekBalanceInsufficient', { defaultValue: 'insufficient' })}
-                      </span>
-                    )}
-                  </>
-                )}
-              </p>
-            </div>
-            <div className="flex items-center gap-1 shrink-0">
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={onEdit}
-                leftIcon={<Settings2 className="w-3.5 h-3.5" aria-hidden />}
-              >
-                {t('common.edit')}
-              </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={onTest}
-                loading={testing}
-                leftIcon={<Zap className="w-3.5 h-3.5" aria-hidden />}
-              >
-                {t('admin.provider.test')}
-              </Button>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-900/20"
-                onClick={onDelete}
-                aria-label={t('common.delete')}
-                title={t('common.delete')}
-              >
-                <Trash2 className="w-3.5 h-3.5" aria-hidden />
-              </Button>
-            </div>
+    <Card padding="sm" className="overflow-hidden">
+      {/* Provider header + connection meta */}
+      <div className="flex flex-wrap items-start gap-3 gap-y-2 pb-3 border-b border-border">
+        <div
+          className={cn(
+            'w-10 h-10 rounded-lg flex items-center justify-center font-bold text-sm shrink-0',
+            brand.bg,
+            brand.text,
+          )}
+        >
+          <ProviderIconMark type={provider.type} label={provider.label || provider.name} compact />
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+            <CardTitle className="text-base leading-tight">{provider.name}</CardTitle>
+            <HealthDot status={provider.is_healthy} size="sm" />
+            <Badge variant={provider.enabled ? 'success' : 'default'} size="sm">
+              {provider.enabled ? t('admin.provider.enabled') : t('admin.provider.disabled')}
+            </Badge>
           </div>
-        </CardHeader>
-        <CardContent className="pt-0">
-          <dl className="grid gap-3 sm:grid-cols-2">
-            <div>
-              <dt className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">
-                {t('admin.provider.endpointUrlLabel')}
-              </dt>
-              <dd className="mt-0.5 text-sm text-gray-900 dark:text-white font-mono truncate flex items-center gap-1">
-                {provider.base_url ? (
-                  <>
-                    <ExternalLink className="w-3.5 h-3.5 shrink-0 text-gray-400" />
-                    <span className="truncate">{provider.base_url}</span>
-                  </>
-                ) : (
-                  <span className="text-gray-400">—</span>
-                )}
-              </dd>
-            </div>
-            <div>
-              <dt className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">
-                {t('admin.provider.apiKey')}
-              </dt>
-              <dd className="mt-0.5 text-sm text-gray-900 dark:text-white">
-                {provider.requires_api_key === false ? (
-                  <span className="inline-flex items-center gap-1 text-gray-500 dark:text-gray-400">
-                    <Circle className="w-3.5 h-3.5" />
-                    {t('admin.provider.apiKeyNotRequired')}
-                  </span>
-                ) : provider.api_key_set ? (
-                  <span className="inline-flex items-center gap-1 text-green-600 dark:text-green-400">
-                    <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
-                    {t('admin.provider.apiKeyConfigured')}
-                  </span>
-                ) : (
-                  <span className="inline-flex items-center gap-1 text-amber-600 dark:text-amber-400">
-                    <Circle className="w-3.5 h-3.5 shrink-0" />
-                    {t('admin.provider.apiKeyNotConfigured')}
+          <p className="text-xs text-muted-foreground mt-0.5 truncate">
+            {provider.label} · {provider.type}
+            {provider.type === 'deepseek' && provider.api_key_set && (
+              <>
+                {' · '}
+                {t('settings.deepseekBalanceLabel', { defaultValue: 'Balance' })}:{' '}
+                {deepSeekBalance?.state === 'success'
+                  ? formatDeepSeekBalance(deepSeekBalance.data)
+                  : deepSeekBalance?.state === 'error'
+                    ? t('settings.deepseekBalanceUnavailable', { defaultValue: 'Unavailable' })
+                    : t('settings.deepseekBalanceLoading', { defaultValue: 'Loading…' })}
+                {deepSeekBalance?.state === 'success' && !deepSeekBalance.data.is_available && (
+                  <span className="ml-1 text-amber-600 dark:text-amber-400">
+                    {t('settings.deepseekBalanceInsufficient', { defaultValue: 'insufficient' })}
                   </span>
                 )}
-              </dd>
-            </div>
-            <div>
-              <dt className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">
-                {t('admin.provider.capabilities')}
-              </dt>
-              <dd className="mt-0.5 flex flex-wrap gap-1">
-                {provider.supports_streaming && (
-                  <span className="text-xs px-2 py-0.5 rounded bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400">
-                    Streaming
-                  </span>
-                )}
-                {provider.supports_tools && (
-                  <span className="text-xs px-2 py-0.5 rounded bg-sky-50 dark:bg-sky-900/20 text-sky-700 dark:text-sky-400">
-                    Tools
-                  </span>
-                )}
-                {provider.supports_embeddings && (
-                  <span className="text-xs px-2 py-0.5 rounded bg-amber-50 dark:bg-amber-900/20 text-amber-600 dark:text-amber-400">
-                    Embeddings
-                  </span>
-                )}
-                {!provider.supports_streaming
-                  && !provider.supports_tools
-                  && !provider.supports_embeddings && (
-                    <span className="text-xs text-gray-400">—</span>
-                  )}
-              </dd>
-            </div>
-            <div>
-              <dt className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">
-                {t('admin.provider.timeout')}
-              </dt>
-              <dd className="mt-0.5 text-sm text-gray-900 dark:text-white flex items-center gap-1">
-                <Clock className="w-3.5 h-3.5 text-gray-400" />
-                {provider.timeout}s
-              </dd>
-            </div>
-          </dl>
-        </CardContent>
-      </Card>
+              </>
+            )}
+          </p>
+        </div>
+        <div className="flex items-center gap-0.5 shrink-0 ml-auto">
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-8 px-2 text-xs"
+            onClick={onEdit}
+            leftIcon={<Settings2 className="w-3.5 h-3.5" aria-hidden />}
+          >
+            {t('common.edit')}
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-8 px-2 text-xs"
+            onClick={onTest}
+            loading={testing}
+            leftIcon={<Zap className="w-3.5 h-3.5" aria-hidden />}
+          >
+            {t('admin.provider.test')}
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-8 w-8 text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-900/20"
+            onClick={onDelete}
+            aria-label={t('common.delete')}
+            title={t('common.delete')}
+          >
+            <Trash2 className="w-3.5 h-3.5" aria-hidden />
+          </Button>
+        </div>
+      </div>
 
-      {/* Models table */}
-      <Card>
-        <CardHeader className="pb-3">
-          <div className="flex items-center justify-between">
-            <div>
-              <CardTitle className="text-base">{t('admin.provider.modelsTable.title')}</CardTitle>
-              <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-                {t('admin.provider.modelsTable.desc')}
-              </p>
-            </div>
-          </div>
-        </CardHeader>
-        <CardContent className="pt-0 overflow-x-auto">
-          {provider.models.length === 0 ? (
-            <p className="text-sm text-gray-500 dark:text-gray-400 py-6 text-center">
-              {t('admin.provider.modelsTable.empty')}
-            </p>
-          ) : (
-            <table className="w-full text-sm">
+      <div className="grid grid-cols-2 gap-x-6 gap-y-3 py-3 text-xs border-b border-border">
+        <div className="min-w-0">
+          <span className="text-muted-foreground-tertiary uppercase tracking-wide text-[10px]">
+            {t('admin.provider.endpointUrlLabel')}
+          </span>
+          <p className="mt-0.5 font-mono text-foreground truncate flex items-center gap-1">
+            {provider.base_url ? (
+              <>
+                <ExternalLink className="w-3 h-3 shrink-0 text-muted-foreground-tertiary" />
+                <span className="truncate">{provider.base_url}</span>
+              </>
+            ) : (
+              <span className="text-muted-foreground-tertiary">—</span>
+            )}
+          </p>
+        </div>
+        <div>
+          <span className="text-muted-foreground-tertiary uppercase tracking-wide text-[10px]">
+            {t('admin.provider.apiKey')}
+          </span>
+          <p className="mt-0.5 text-foreground">
+            {provider.requires_api_key === false ? (
+              <span className="text-muted-foreground">{t('admin.provider.apiKeyNotRequired')}</span>
+            ) : provider.api_key_set ? (
+              <span className="inline-flex items-center gap-1 text-green-600 dark:text-green-400">
+                <CheckCircle2 className="w-3 h-3 shrink-0" />
+                {t('admin.provider.apiKeyConfigured')}
+              </span>
+            ) : (
+              <span className="inline-flex items-center gap-1 text-amber-600 dark:text-amber-400">
+                <Circle className="w-3 h-3 shrink-0" />
+                {t('admin.provider.apiKeyNotConfigured')}
+              </span>
+            )}
+          </p>
+        </div>
+        <div>
+          <span className="text-muted-foreground-tertiary uppercase tracking-wide text-[10px]">
+            {t('admin.provider.capabilities')}
+          </span>
+          <p className="mt-0.5 flex flex-wrap gap-1">
+            {provider.supports_streaming && (
+              <span className="px-1.5 py-px rounded bg-primary/10 text-primary text-[10px]">Streaming</span>
+            )}
+            {provider.supports_tools && (
+              <span className="px-1.5 py-px rounded bg-sky-500/10 text-sky-700 dark:text-sky-400 text-[10px]">Tools</span>
+            )}
+            {provider.supports_embeddings && (
+              <span className="px-1.5 py-px rounded bg-amber-500/10 text-amber-600 dark:text-amber-400 text-[10px]">Emb</span>
+            )}
+            {!provider.supports_streaming && !provider.supports_tools && !provider.supports_embeddings && (
+              <span className="text-muted-foreground-tertiary">—</span>
+            )}
+          </p>
+        </div>
+        <div>
+          <span className="text-muted-foreground-tertiary uppercase tracking-wide text-[10px]">
+            {t('admin.provider.timeout')}
+          </span>
+          <p className="mt-0.5 text-foreground flex items-center gap-1">
+            <Clock className="w-3 h-3 text-muted-foreground-tertiary" />
+            {provider.timeout}s
+          </p>
+        </div>
+      </div>
+
+      {/* Models — same card, compact table */}
+      <div className="pt-3">
+        <div className="flex items-baseline justify-between gap-2 mb-2">
+          <p className="text-xs font-medium text-foreground">
+            {t('admin.provider.modelsTable.title')}
+            <span className="ml-1.5 font-normal text-muted-foreground">
+              ({provider.models.length})
+            </span>
+          </p>
+          <p className="text-[10px] text-muted-foreground-tertiary hidden sm:block">
+            {t('admin.provider.modelsTable.desc')}
+          </p>
+        </div>
+        {provider.models.length === 0 ? (
+          <p className="text-xs text-muted-foreground py-4 text-center">
+            {t('admin.provider.modelsTable.empty')}
+          </p>
+        ) : (
+          <div className="overflow-x-auto -mx-1">
+            <table className="w-full text-xs">
               <thead>
-                <tr className="text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide border-b border-gray-200 dark:border-gray-700">
-                  <th className="py-2 pr-3 w-10">{t('admin.provider.modelsTable.on')}</th>
-                  <th className="py-2 px-3">{t('admin.provider.modelsTable.model')}</th>
-                  <th className="py-2 px-3">{t('admin.provider.modelsTable.tier')}</th>
-                  <th className="py-2 px-3 text-right">{t('admin.provider.modelsTable.context')}</th>
-                  <th className="py-2 px-3 text-right">
+                <tr className="text-left text-[10px] font-medium text-muted-foreground uppercase tracking-wide border-b border-border">
+                  <th className="py-1.5 pr-2 w-8">{t('admin.provider.modelsTable.on')}</th>
+                  <th className="py-1.5 px-2">{t('admin.provider.modelsTable.model')}</th>
+                  <th className="py-1.5 px-2">{t('admin.provider.modelsTable.kind')}</th>
+                  <th className="py-1.5 px-2 text-right">{t('admin.provider.modelsTable.context')}</th>
+                  <th className="py-1.5 px-2 text-right hidden md:table-cell">
                     {t('admin.provider.modelsTable.inputPrice')}
                   </th>
-                  <th className="py-2 px-3 text-right">
+                  <th className="py-1.5 px-2 text-right hidden md:table-cell">
                     {t('admin.provider.modelsTable.outputPrice')}
                   </th>
-                  <th className="py-2 px-3 text-center">
-                    {t('admin.provider.modelsTable.caps')}
-                  </th>
-                  <th className="py-2 px-3 text-right">
+                  <th className="py-1.5 px-2 text-center">{t('admin.provider.modelsTable.caps')}</th>
+                  <th className="py-1.5 px-2 text-right hidden sm:table-cell">
                     {t('admin.provider.modelsTable.requests30d')}
                   </th>
-                  <th className="py-2 pl-3 w-24">{t('admin.provider.modelsTable.actions')}</th>
+                  <th className="py-1.5 pl-2 w-20">{t('admin.provider.modelsTable.actions')}</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
+              <tbody className="divide-y divide-border-subtle">
                 {provider.models.map((m) => {
                   const isEnabled = m.enabled !== false;
                   const isDefault = defaultModel?.provider === provider.name
@@ -2127,167 +2002,186 @@ function ProviderDetailPanel({
                   const isEditing = editingModel === m.name;
                   return (
                     <tr key={m.name} className={cn(!isEnabled && 'opacity-50')}>
-                      <td className="py-2 pr-3">
+                      <td className="py-1.5 pr-2">
                         <Switch
                           checked={isEnabled}
                           onChange={() => onToggleModel(m)}
                           disabled={updating}
+                          size="sm"
                           aria-label={t('admin.provider.modelsTable.toggleAria', { model: m.name })}
                         />
                       </td>
-                      <td className="py-2 px-3">
-                        <div className="flex items-center gap-2 min-w-0">
-                          <span className="font-mono text-xs text-gray-900 dark:text-white truncate">
+                      <td className="py-1.5 px-2 max-w-[180px]">
+                        <div className="flex items-center gap-1 min-w-0">
+                          <span className="font-mono text-[11px] text-foreground truncate" title={m.name}>
                             {m.name}
                           </span>
                           {isDefault && (
-                            <Badge variant="success" size="sm">
+                            <Badge variant="success" size="sm" className="shrink-0 text-[10px] px-1 py-0">
                               {t('admin.provider.modelsTable.defaultTag')}
                             </Badge>
                           )}
                         </div>
                         {m.description && (
-                          <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5 truncate max-w-md">
+                          <p className="text-[10px] text-muted-foreground-tertiary truncate" title={m.description}>
                             {m.description}
                           </p>
                         )}
                       </td>
-                      <td className="py-2 px-3">
+                      <td className="py-1.5 px-2">
                         {isEditing ? (
                           <Select
-                            value={m.tier || ''}
-                            onChange={(e) => onUpdateModel(m, { tier: e.target.value })}
-                            className="h-7 text-xs w-20"
+                            value={m.kind || 'chat'}
+                            onChange={(e) => onUpdateModel(m, { kind: e.target.value as ProviderModelInfo['kind'] })}
+                            className="h-6 text-[10px] w-20"
                           >
-                            <option value="">—</option>
-                            <option value="tier1">tier1</option>
-                            <option value="tier2">tier2</option>
+                            {MODEL_KINDS.map((kind) => (
+                              <option key={kind} value={kind}>{kind}</option>
+                            ))}
                           </Select>
-                        ) : m.tier ? (
-                          <Badge variant="default" size="sm">{m.tier}</Badge>
+                        ) : m.kind ? (
+                          <Badge variant="default" size="sm" className="text-[10px]">{m.kind}</Badge>
                         ) : (
-                          <span className="text-gray-400">—</span>
+                          <span className="text-muted-foreground-tertiary">—</span>
                         )}
                       </td>
-                      <td className="py-2 px-3 text-right tabular-nums text-gray-600 dark:text-gray-400">
+                      <td className="py-1.5 px-2 text-right tabular-nums text-muted-foreground">
                         {isEditing ? (
                           <Input
                             type="number"
                             value={m.context_window || ''}
                             onChange={(e) => onUpdateModel(m, { context_window: Number(e.target.value) || 0 })}
-                            className="h-7 text-xs w-24 text-right"
+                            className="h-6 text-[10px] w-20 text-right"
                             placeholder="128000"
                           />
                         ) : (
                           formatContext(m.context_window)
                         )}
                       </td>
-                      <td className="py-2 px-3 text-right tabular-nums text-gray-600 dark:text-gray-400">
+                      <td className="py-1.5 px-2 text-right tabular-nums text-muted-foreground hidden md:table-cell">
                         {isEditing ? (
                           <Input
                             type="number"
                             step="0.01"
-                            value={m.price_input_per_1m ?? ''}
-                            onChange={(e) => onUpdateModel(m, { price_input_per_1m: Number(e.target.value) || 0 })}
-                            className="h-7 text-xs w-20 text-right"
+                            value={getInputPrice(m) ?? ''}
+                            onChange={(e) => onUpdateModel(m, {
+                              pricing: { ...(m.pricing ?? {}), input_per_1m: Number(e.target.value) || 0 },
+                            })}
+                            className="h-6 text-[10px] w-16 text-right"
                             placeholder="0.00"
                           />
                         ) : (
-                          formatPrice(m.price_input_per_1m)
+                          formatPrice(getInputPrice(m))
                         )}
                       </td>
-                      <td className="py-2 px-3 text-right tabular-nums text-gray-600 dark:text-gray-400">
+                      <td className="py-1.5 px-2 text-right tabular-nums text-muted-foreground hidden md:table-cell">
                         {isEditing ? (
                           <Input
                             type="number"
                             step="0.01"
-                            value={m.price_output_per_1m ?? ''}
-                            onChange={(e) => onUpdateModel(m, { price_output_per_1m: Number(e.target.value) || 0 })}
-                            className="h-7 text-xs w-20 text-right"
+                            value={getOutputPrice(m) ?? ''}
+                            onChange={(e) => onUpdateModel(m, {
+                              pricing: { ...(m.pricing ?? {}), output_per_1m: Number(e.target.value) || 0 },
+                            })}
+                            className="h-6 text-[10px] w-16 text-right"
                             placeholder="0.00"
                           />
                         ) : (
-                          formatPrice(m.price_output_per_1m)
+                          formatPrice(getOutputPrice(m))
                         )}
                       </td>
-                      <td className="py-2 px-3">
+                      <td className="py-1.5 px-2">
                         {isEditing ? (
-                          <div className="flex items-center justify-center gap-2">
-                            <label className="flex items-center gap-1 cursor-pointer" title={t('admin.provider.modelsTable.toolsTip')}>
+                          <div className="flex items-center justify-center gap-1.5">
+                            <label className="flex items-center cursor-pointer" title={t('admin.provider.modelsTable.toolsTip')}>
                               <input
                                 type="checkbox"
-                                checked={Boolean(m.supports_tools)}
-                                onChange={(e) => onUpdateModel(m, { supports_tools: e.target.checked })}
-                                className="rounded border-gray-300 text-sky-600"
+                                checked={modelSupportsTools(m)}
+                                onChange={(e) => onUpdateModel(m, {
+                                  capabilities: {
+                                    ...normalizeCapabilities(m.capabilities),
+                                    tool_call: e.target.checked,
+                                  },
+                                })}
+                                className="rounded border-gray-300 text-sky-600 w-3 h-3"
                               />
-                              <Wrench className="w-3 h-3 text-sky-500" />
                             </label>
-                            <label className="flex items-center gap-1 cursor-pointer" title={t('admin.provider.modelsTable.visionTip')}>
+                            <label className="flex items-center cursor-pointer" title={t('admin.provider.modelsTable.visionTip')}>
                               <input
                                 type="checkbox"
-                                checked={Boolean(m.supports_vision)}
-                                onChange={(e) => onUpdateModel(m, { supports_vision: e.target.checked })}
-                                className="rounded border-gray-300 text-blue-600"
+                                checked={modelSupportsVision(m)}
+                                onChange={(e) => {
+                                  const caps = normalizeCapabilities(m.capabilities);
+                                  const input = new Set(caps.input ?? ['text']);
+                                  if (e.target.checked) input.add('image');
+                                  else input.delete('image');
+                                  if (input.size === 0) input.add('text');
+                                  onUpdateModel(m, { capabilities: { ...caps, input: Array.from(input) } });
+                                }}
+                                className="rounded border-gray-300 text-blue-600 w-3 h-3"
                               />
-                              <Eye className="w-3 h-3 text-blue-500" />
                             </label>
-                            <label className="flex items-center gap-1 cursor-pointer" title={t('admin.provider.modelsTable.thinkingTip')}>
+                            <label className="flex items-center cursor-pointer" title={t('admin.provider.modelsTable.thinkingTip')}>
                               <input
                                 type="checkbox"
-                                checked={Boolean(m.supports_thinking)}
-                                onChange={(e) => onUpdateModel(m, { supports_thinking: e.target.checked })}
-                                className="rounded border-gray-300 text-purple-600"
+                                checked={modelSupportsReasoning(m)}
+                                onChange={(e) => onUpdateModel(m, {
+                                  capabilities: {
+                                    ...normalizeCapabilities(m.capabilities),
+                                    reasoning: e.target.checked,
+                                  },
+                                })}
+                                className="rounded border-gray-300 text-purple-600 w-3 h-3"
                               />
-                              <Brain className="w-3 h-3 text-purple-500" />
                             </label>
                           </div>
                         ) : (
-                          <div className="flex items-center justify-center gap-1">
-                            {m.supports_tools && (
+                          <div className="flex items-center justify-center gap-0.5">
+                            {modelSupportsTools(m) && (
                               <span title={t('admin.provider.modelsTable.toolsTip')} className="text-sky-600 dark:text-sky-400">
-                                <Wrench className="w-3.5 h-3.5" />
+                                <Wrench className="w-3 h-3" />
                               </span>
                             )}
-                            {m.supports_vision && (
+                            {modelSupportsVision(m) && (
                               <span title={t('admin.provider.modelsTable.visionTip')} className="text-blue-500">
-                                <Eye className="w-3.5 h-3.5" />
+                                <Eye className="w-3 h-3" />
                               </span>
                             )}
-                            {m.supports_thinking && (
+                            {modelSupportsReasoning(m) && (
                               <span title={t('admin.provider.modelsTable.thinkingTip')} className="text-purple-600 dark:text-purple-400">
-                                <Brain className="w-3.5 h-3.5" />
+                                <Brain className="w-3 h-3" />
                               </span>
                             )}
-                            {!m.supports_tools && !m.supports_vision && !m.supports_thinking && (
-                              <span className="text-gray-400">—</span>
+                            {!modelSupportsTools(m) && !modelSupportsVision(m) && !modelSupportsReasoning(m) && (
+                              <span className="text-muted-foreground-tertiary">—</span>
                             )}
                           </div>
                         )}
                       </td>
-                      <td className="py-2 px-3 text-right tabular-nums">
+                      <td className="py-1.5 px-2 text-right tabular-nums hidden sm:table-cell">
                         {usage ? (
-                          <span className="text-gray-900 dark:text-white">
-                            {formatCompactNumber(usage.request_count)}
-                          </span>
+                          <span className="text-foreground">{formatCompactNumber(usage.request_count)}</span>
                         ) : (
-                          <span className="text-gray-400">0</span>
+                          <span className="text-muted-foreground-tertiary">0</span>
                         )}
                       </td>
-                      <td className="py-2 pl-3">
-                        <div className="flex items-center gap-1">
+                      <td className="py-1.5 pl-2">
+                        <div className="flex items-center gap-0.5">
                           <Button
                             variant="ghost"
                             size="sm"
+                            className="h-7 w-7 p-0"
                             onClick={() => setEditingModel(isEditing ? null : m.name)}
-                            className={cn(isEditing && 'text-primary-600 dark:text-primary-400')}
                             title={isEditing ? t('common.save') : t('admin.provider.modelsTable.editModel')}
                           >
-                            <Pencil className="w-3.5 h-3.5" />
+                            <Pencil className={cn('w-3 h-3', isEditing && 'text-primary-600 dark:text-primary-400')} />
                           </Button>
                           <Button
                             variant="ghost"
                             size="sm"
-                            disabled={!provider.enabled || !isEnabled || isDefault}
+                            className="h-7 px-1.5 text-[10px] min-w-0"
+                            disabled={!provider.enabled || !isEnabled || isDefault || settingDefault}
+                            loading={settingDefault && !isDefault}
                             onClick={() => onSetDefault(m)}
                           >
                             {isDefault
@@ -2301,9 +2195,9 @@ function ProviderDetailPanel({
                 })}
               </tbody>
             </table>
-          )}
-        </CardContent>
-      </Card>
-    </div>
+          </div>
+        )}
+      </div>
+    </Card>
   );
 }

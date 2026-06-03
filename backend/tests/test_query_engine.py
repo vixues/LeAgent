@@ -110,7 +110,6 @@ def _scripted_call_model(script: list[list[ModelStreamEvent]]):
         tool_use_context: ToolUseContext,
         temperature: float | None = None,
         max_output_tokens: int | None = None,
-        model_tier: str = "tier1",
     ) -> AsyncIterator[ModelStreamEvent]:
         idx = min(turn["n"], len(script) - 1)
         turn["n"] += 1
@@ -908,7 +907,6 @@ class TestLengthTruncationRecovery:
             tool_use_context,
             temperature=None,
             max_output_tokens=None,
-            model_tier="tier1",
         ):
             idx = turn_idx["n"]
             turn_idx["n"] += 1
@@ -968,7 +966,6 @@ class TestLengthTruncationRecovery:
             tool_use_context,
             temperature=None,
             max_output_tokens=None,
-            model_tier="tier1",
         ):
             yield ModelStreamEvent(content_delta="truncated")
             yield ModelStreamEvent(
@@ -1023,7 +1020,6 @@ class TestLengthTruncationRecovery:
             tool_use_context,
             temperature=None,
             max_output_tokens=None,
-            model_tier="tier1",
         ):
             captured_messages.append(list(messages))
             if len(captured_messages) == 1:
@@ -1094,7 +1090,6 @@ class TestLengthTruncationRecovery:
             tool_use_context,
             temperature=None,
             max_output_tokens=None,
-            model_tier="tier1",
         ):
             idx = turn_idx["n"]
             turn_idx["n"] += 1

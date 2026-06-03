@@ -151,7 +151,7 @@ async def _generate_with_llm(llm: LLMService, locale: str, day: str) -> list[str
     try:
         response = await llm.complete(
             messages,
-            tier="tier2",
+            task="fast",
             temperature=0.85,
             max_tokens=512,
             tool_choice="none",
@@ -263,7 +263,7 @@ async def _generate_pet_bubbles_with_llm(
     try:
         response = await llm.complete(
             messages,
-            tier="tier2",
+            task="fast",
             temperature=0.85,
             max_tokens=512,
             tool_choice="none",

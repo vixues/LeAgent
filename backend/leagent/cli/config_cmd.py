@@ -64,7 +64,6 @@ _DEFAULT_PROJECT_CONFIG = {
     "version": "1",
     "agent": {
         "mode": "hybrid",
-        "model_tier": "tier1",
         "verbose": False,
     },
     "rules": {

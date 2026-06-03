@@ -11,6 +11,7 @@ import type {
 const QUERY_KEYS = {
   providers: ['models', 'providers'] as const,
   defaultModel: ['models', 'default'] as const,
+  taskRouting: ['models', 'routing', 'tasks'] as const,
   availableModels: ['models', 'available'] as const,
   presets: ['models', 'presets'] as const,
   usage: ['models', 'usage'] as const,
@@ -126,6 +127,27 @@ export function useSetDefaultModel() {
       queryClient.invalidateQueries({ queryKey: QUERY_KEYS.defaultModel });
       queryClient.invalidateQueries({ queryKey: QUERY_KEYS.availableModels });
       queryClient.invalidateQueries({ queryKey: QUERY_KEYS.usage });
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.taskRouting });
+    },
+  });
+}
+
+export function useTaskRouting() {
+  return useQuery({
+    queryKey: QUERY_KEYS.taskRouting,
+    queryFn: async () => (await adminApi.taskRouting.get()).tasks,
+  });
+}
+
+export function useSetTaskRouting() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (tasks: Record<string, { provider: string; model: string }>) =>
+      adminApi.taskRouting.set(tasks),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.taskRouting });
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.defaultModel });
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.availableModels });
     },
   });
 }

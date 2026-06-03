@@ -364,30 +364,10 @@ class ServiceManager:
             logger.warning("Variable initialization skipped", exc_info=True)
 
     async def _start_llm(self) -> None:
-        self._llm = {
-            "tier1": {
-                "endpoint": self.settings.llm.tier1_endpoint,
-                "model": self.settings.llm.tier1_model,
-                "max_tokens": self.settings.llm.tier1_max_tokens,
-                "temperature": self.settings.llm.tier1_temperature,
-                "timeout": self.settings.llm.tier1_timeout,
-            },
-            "tier2": {
-                "endpoint": self.settings.llm.tier2_endpoint,
-                "model": self.settings.llm.tier2_model,
-                "max_tokens": self.settings.llm.tier2_max_tokens,
-                "temperature": self.settings.llm.tier2_temperature,
-                "timeout": self.settings.llm.tier2_timeout,
-            },
-            "embedding": {
-                "endpoint": self.settings.llm.embedding_endpoint,
-                "model": self.settings.llm.embedding_model,
-                "dim": self.settings.llm.embedding_dim,
-            },
-        }
         try:
             from leagent.llm.service import LLMService
             self._llm_service = LLMService.from_settings()
+            self._llm = {"tasks": self._llm_service.list_tasks()}
             logger.info("LLMService initialised with %d provider(s)", len(self._llm_service.list_providers()))
         except Exception:
             logger.warning("LLMService initialisation skipped", exc_info=True)

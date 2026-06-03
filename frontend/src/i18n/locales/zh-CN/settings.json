@@ -105,8 +105,6 @@
     "tokensDashscopeBaseUrl": "DashScope 接入地址（DASHSCOPE_BASE_URL）",
     "tokensDashscopeEnableThinking": "DashScope 思考模式（DASHSCOPE_ENABLE_THINKING）",
     "tokensDashscopeEnableSearch": "DashScope 联网搜索（DASHSCOPE_ENABLE_SEARCH）",
-    "tokensLlmTier1": "LLM 一级路由（LLM_TIER1_API_KEY）",
-    "tokensLlmTier2": "LLM 二级路由（LLM_TIER2_API_KEY）",
     "tokensWebSearchProvider": "网页检索提供商（WEB_SEARCH_PROVIDER：duckduckgo_lite | searxng | bing）",
     "tokensWebSearchBing": "必应网页搜索 API 密钥（WEB_SEARCH_BING_API_KEY；与 provider=bing 配合）",
     "tokensWebSearchSearxng": "SearXNG 实例根地址（WEB_SEARCH_SEARXNG_BASE_URL；与 provider=searxng 配合）",
