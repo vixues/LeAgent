@@ -624,7 +624,7 @@ class LLMService:
 
                 pc = ProviderConfigService().get_provider(resolved_provider)
                 meta = pc.metadata if pc and isinstance(pc.metadata, dict) else {}
-                for key in ("enable_thinking", "enable_search", "thinking"):
+                for key in ("enable_thinking", "enable_search", "thinking", "think"):
                     if key in meta and key not in stream_kwargs:
                         stream_kwargs[key] = meta[key]
             except Exception:

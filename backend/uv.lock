@@ -825,6 +825,15 @@ wheels = [
 ]
 
 [[package]]
+name = "dill"
+version = "0.4.1"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/81/e1/56027a71e31b02ddc53c7d65b01e68edf64dea2932122fe7746a516f75d5/dill-0.4.1.tar.gz", hash = "sha256:423092df4182177d4d8ba8290c8a5b640c66ab35ec7da59ccfa00f6fa3eea5fa", size = 187315, upload-time = "2026-01-19T02:36:56.85Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/1e/77/dc8c558f7593132cf8fefec57c4f60c83b16941c574ac5f619abb3ae7933/dill-0.4.1-py3-none-any.whl", hash = "sha256:1e1ce33e978ae97fcfcff5638477032b801c46c7c65cf717f95fbc2248f79a9d", size = 120019, upload-time = "2026-01-19T02:36:55.663Z" },
+]
+
+[[package]]
 name = "distro"
 version = "1.9.0"
 source = { registry = "https://pypi.org/simple" }
@@ -1614,6 +1623,7 @@ dependencies = [
     { name = "structlog" },
     { name = "sympy" },
     { name = "tabulate" },
+    { name = "taichi" },
     { name = "tiktoken" },
     { name = "uvicorn", extra = ["standard"] },
     { name = "websockets" },
@@ -1728,6 +1738,7 @@ requires-dist = [
     { name = "structlog", specifier = ">=24.4.0" },
     { name = "sympy", specifier = ">=1.12" },
     { name = "tabulate", specifier = ">=0.9.0" },
+    { name = "taichi", specifier = ">=1.7.4" },
     { name = "tiktoken", specifier = ">=0.8.0" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.32.0" },
     { name = "websockets", specifier = ">=13.0" },
@@ -4716,6 +4727,28 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/46/58/8c37dea7bbf769b20d58e7ace7e5edfe65b849442b00ffcdd56be88697c6/tabulate-0.10.0.tar.gz", hash = "sha256:e2cfde8f79420f6deeffdeda9aaec3b6bc5abce947655d17ac662b126e48a60d", size = 91754, upload-time = "2026-03-04T18:55:34.402Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/99/55/db07de81b5c630da5cbf5c7df646580ca26dfaefa593667fc6f2fe016d2e/tabulate-0.10.0-py3-none-any.whl", hash = "sha256:f0b0622e567335c8fabaaa659f1b33bcb6ddfe2e496071b743aa113f8774f2d3", size = 39814, upload-time = "2026-03-04T18:55:31.284Z" },
+]
+
+[[package]]
+name = "taichi"
+version = "1.7.4"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "colorama" },
+    { name = "dill" },
+    { name = "numpy" },
+    { name = "rich" },
+]
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/23/89/3a920b880e058b4d8c5b0fe1e695481725707aab5ac35b3e91295903dda0/taichi-1.7.4-cp311-cp311-macosx_11_0_arm64.whl", hash = "sha256:4cbb5a16cac228862c5da2ec71ef722e637c7a5ebf636f8f11000c2f8a9b6693", size = 50437174, upload-time = "2025-07-31T14:49:20.548Z" },
+    { url = "https://files.pythonhosted.org/packages/bc/c6/90b110c26588e9c8f1f71d1485b176e547b581075102d54aeb38d2e48ae4/taichi-1.7.4-cp311-cp311-manylinux_2_27_x86_64.whl", hash = "sha256:5c3c1624daeb1554c1a2b6ee9f9b8398bd8392d7f89fc65395f94baecf049f89", size = 56180510, upload-time = "2025-07-31T14:48:47.605Z" },
+    { url = "https://files.pythonhosted.org/packages/45/35/0495da9f8f0afa801a8e2da262fb75814bf9a4d788946c40bfc9340bf088/taichi-1.7.4-cp311-cp311-win_amd64.whl", hash = "sha256:767d977f077efcc83eb746a8dd1ccd196db782f48eac07c495922b36f8828e2c", size = 83206769, upload-time = "2025-07-31T14:48:59.236Z" },
+    { url = "https://files.pythonhosted.org/packages/ef/5b/7c7d6b8259fba064a4b3908f67f2488efbc3104d2a2fbaba00d81d30bac2/taichi-1.7.4-cp312-cp312-macosx_11_0_arm64.whl", hash = "sha256:5c7d188f8a8a15f07b197aa881517ffc7459663ee25a0e36636ce347c0649353", size = 50345635, upload-time = "2025-07-31T14:49:27.27Z" },
+    { url = "https://files.pythonhosted.org/packages/74/74/c7aca2af38d38efe9ad8430864e97e87c0b0d4affa2ea6cc4aecbbcfdb0e/taichi-1.7.4-cp312-cp312-manylinux_2_27_x86_64.whl", hash = "sha256:6f1303aedae3ea25e33cef5f30259fc2f66c7f0287433c4e31bdb25fdcd4d81e", size = 56298504, upload-time = "2025-07-31T14:48:55.232Z" },
+    { url = "https://files.pythonhosted.org/packages/27/32/5882f3fafbd981fe060c7ee96355161b82c78e7624a4460eefaf2760ea64/taichi-1.7.4-cp312-cp312-win_amd64.whl", hash = "sha256:d078481d84032d9284a12a0b78672a4a2915786d9106791fad657c09352e9565", size = 83312702, upload-time = "2025-07-31T14:49:03.715Z" },
+    { url = "https://files.pythonhosted.org/packages/93/62/7a5c8562550e17054ea59e41de9b82680f19b5e45442f6967f442aeb8e60/taichi-1.7.4-cp313-cp313-macosx_11_0_arm64.whl", hash = "sha256:a907fc86029c4b5ba85352a77f48af14717711466def8d6d2b8b17d75311c30f", size = 50439402, upload-time = "2025-07-31T14:48:51.558Z" },
+    { url = "https://files.pythonhosted.org/packages/81/cd/3858352ede95ad71a8bec677da440011b42df0214ee675a3dd3f0dea607a/taichi-1.7.4-cp313-cp313-manylinux_2_27_x86_64.whl", hash = "sha256:001ff64725e58e25ff832facc4ff1ed5ded968c64d5cd46275795999f1cce4e0", size = 56298954, upload-time = "2025-07-31T14:49:17.104Z" },
+    { url = "https://files.pythonhosted.org/packages/10/43/0f4eac57b2eaee9e906139794eb12e752a7f8d077bbd1be695acdc9d117c/taichi-1.7.4-cp313-cp313-win_amd64.whl", hash = "sha256:ff9847a788c2193df61626266eb2df2ce679c372cb1669ffa806e7c45722ddc7", size = 83313386, upload-time = "2025-07-31T14:48:38.371Z" },
 ]
 
 [[package]]

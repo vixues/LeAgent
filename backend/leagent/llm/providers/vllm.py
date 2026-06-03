@@ -177,6 +177,19 @@ class VLLMProvider(CustomOpenAIProvider):
                 return value
         return await self._resolve_model_for_request(None)
 
+    async def health_check(self) -> bool:
+        """Verify vLLM is reachable using a resolved model id (not ``default``)."""
+        try:
+            test_model = await self.resolve_test_model()
+            response = await self.complete(
+                messages=[ChatMessage.user("ping")],
+                model=test_model,
+                max_tokens=5,
+            )
+            return response.content is not None
+        except Exception:
+            return False
+
     def _get_default_model(self) -> str:
         return self.default_model or "default"
 
@@ -265,6 +278,19 @@ class VLLMProvider(CustomOpenAIProvider):
                             "--enable-auto-tool-choice and --tool-call-parser, "
                             "or set metadata.enable_auto_tool_choice=false and omit "
                             "tool_choice='auto'."
+                        ),
+                    },
+                )
+            if "reasoning_content" in lowered:
+                logger.error(
+                    "vllm_reasoning_content_passback_error",
+                    extra={
+                        "model": model,
+                        "hint": (
+                            "Tool-call turns may require reasoning_content to be passed "
+                            "back in the assistant message. Ensure ChatMessage."
+                            "reasoning_content is preserved on assistant messages "
+                            "that contain tool_calls."
                         ),
                     },
                 )

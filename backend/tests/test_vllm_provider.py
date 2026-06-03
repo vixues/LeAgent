@@ -375,3 +375,136 @@ class TestVLLMRegistryWiring:
         assert registry.get_provider("tier1") is registry.get_provider("vllm")
         assert registry.get_provider_info("tier1").metadata["vendor"] == "vllm"
         assert registry.get_provider("vllm").enable_auto_tool_choice is True
+
+
+# ---------------------------------------------------------------------------
+# Response parsing
+# ---------------------------------------------------------------------------
+
+class TestVLLMResponseParsing:
+    def test_parse_tool_calls(self) -> None:
+        p = VLLMProvider(default_model="llama3")
+        data = {
+            "model": "llama3",
+            "choices": [{
+                "message": {
+                    "role": "assistant",
+                    "content": "",
+                    "tool_calls": [{
+                        "id": "call_abc",
+                        "type": "function",
+                        "function": {"name": "echo", "arguments": '{"text":"hi"}'},
+                    }],
+                },
+                "finish_reason": "tool_calls",
+            }],
+            "usage": {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15},
+        }
+        resp = p._parse_response(data)
+        assert len(resp.tool_calls) == 1
+        assert resp.tool_calls[0].name == "echo"
+        assert json.loads(resp.tool_calls[0].arguments) == {"text": "hi"}
+
+    def test_parse_reasoning_content(self) -> None:
+        p = VLLMProvider(default_model="llama3")
+        data = {
+            "model": "llama3",
+            "choices": [{
+                "message": {
+                    "role": "assistant",
+                    "content": "answer",
+                    "reasoning_content": "internal trace",
+                },
+                "finish_reason": "stop",
+            }],
+            "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
+        }
+        resp = p._parse_response(data)
+        assert resp.reasoning_content == "internal trace"
+        assert resp.content == "answer"
+
+    def test_parse_think_tags(self) -> None:
+        p = VLLMProvider(default_model="llama3", parse_think_tags=True)
+        data = {
+            "model": "llama3",
+            "choices": [{
+                "message": {
+                    "role": "assistant",
+                    "content": "<think>step by step</think>\nFinal",
+                },
+                "finish_reason": "stop",
+            }],
+            "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
+        }
+        resp = p._parse_response(data)
+        assert resp.reasoning_content == "step by step"
+        assert resp.content == "Final"
+
+
+# ---------------------------------------------------------------------------
+# Health check
+# ---------------------------------------------------------------------------
+
+class TestVLLMHealthCheck:
+    @pytest.mark.asyncio
+    async def test_health_check_uses_resolved_model(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        p = VLLMProvider(default_model="")
+        seen: dict[str, str] = {}
+
+        async def fake_resolve_test_model(**_kwargs: object) -> str:
+            return "detected-model"
+
+        async def fake_complete(*, model, **kwargs):  # type: ignore[no-untyped-def]
+            seen["model"] = model
+            from leagent.llm.base import LLMResponse
+            return LLMResponse(content="pong", model=model)
+
+        monkeypatch.setattr(p, "resolve_test_model", fake_resolve_test_model)
+        monkeypatch.setattr(p, "complete", fake_complete)
+
+        assert await p.health_check() is True
+        assert seen["model"] == "detected-model"
+
+    @pytest.mark.asyncio
+    async def test_health_check_returns_false_on_failure(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        p = VLLMProvider(default_model="")
+
+        async def fail_resolve(**_kwargs: object) -> str:
+            raise RuntimeError("no model")
+
+        monkeypatch.setattr(p, "resolve_test_model", fail_resolve)
+        assert await p.health_check() is False
+
+
+# ---------------------------------------------------------------------------
+# Stream reasoning
+# ---------------------------------------------------------------------------
+
+class TestVLLMStreamReasoning:
+    def test_thinking_delta_mapped_to_reasoning_content(self) -> None:
+        p = VLLMProvider(default_model="llama3")
+        chunk = p._parse_stream_chunk(
+            {
+                "model": "llama3",
+                "choices": [{"delta": {"thinking": "step 1"}, "finish_reason": None}],
+            },
+            "llama3",
+        )
+        assert chunk.raw_delta == {"reasoning_content": "step 1"}
+
+    def test_reasoning_content_delta(self) -> None:
+        p = VLLMProvider(default_model="llama3")
+        chunk = p._parse_stream_chunk(
+            {
+                "model": "llama3",
+                "choices": [{"delta": {"reasoning_content": "trace"}, "finish_reason": None}],
+            },
+            "llama3",
+        )
+        assert chunk.raw_delta == {"reasoning_content": "trace"}

@@ -14,6 +14,7 @@ import pytest
 from leagent.llm.base import ChatMessage, MessageRole, StreamChunk, TokenUsage, ToolCall, ToolDefinition
 from leagent.llm.providers.ollama import OllamaProvider
 from leagent.exceptions.llm import (
+    LLMRateLimitError,
     LLMServiceError,
     ModelNotFoundError,
 )
@@ -82,6 +83,31 @@ class TestOllamaMessageBuilding:
         assert result[0]["content"] == "result data"
         assert result[0]["tool_name"] == "echo"
 
+    def test_tool_result_prefers_name_over_tool_call_id(self) -> None:
+        p = OllamaProvider()
+        msgs = [
+            ChatMessage(
+                role=MessageRole.TOOL,
+                content="ok",
+                tool_call_id="call_abc123",
+                name="echo",
+            )
+        ]
+        result = p._build_messages(msgs)
+        assert result[0]["tool_name"] == "echo"
+
+    def test_assistant_thinking_echo(self) -> None:
+        p = OllamaProvider()
+        msgs = [
+            ChatMessage.assistant(
+                "The answer is 42.",
+                reasoning_content="step-by-step reasoning",
+            )
+        ]
+        result = p._build_messages(msgs)
+        assert result[0]["thinking"] == "step-by-step reasoning"
+        assert result[0]["content"] == "The answer is 42."
+
 
 # ---------------------------------------------------------------------------
 # Tool building
@@ -144,7 +170,7 @@ class TestOllamaResponseParsing:
         }
         resp = p._parse_response(data, "llama3.2")
         assert len(resp.tool_calls) == 2
-        assert resp.tool_calls[0].id == "call_0"
+        assert resp.tool_calls[0].id.startswith("call_")
         assert resp.tool_calls[0].name == "echo"
         assert json.loads(resp.tool_calls[0].arguments) == {"text": "hi"}
         assert resp.tool_calls[1].name == "add"
@@ -177,6 +203,50 @@ class TestOllamaResponseParsing:
         }
         resp = p._parse_response(data, "llama3.2")
         assert resp.finish_reason == "stop"
+
+    def test_parse_content_json_tool_call(self) -> None:
+        p = OllamaProvider()
+        payload = json.dumps({"name": "echo", "arguments": {"text": "hi"}})
+        data = {
+            "model": "llama3.2",
+            "message": {"role": "assistant", "content": payload},
+            "done": True,
+            "prompt_eval_count": 5,
+            "eval_count": 3,
+        }
+        resp = p._parse_response(data, "llama3.2")
+        assert resp.content is None
+        assert len(resp.tool_calls) == 1
+        assert resp.tool_calls[0].name == "echo"
+        assert json.loads(resp.tool_calls[0].arguments) == {"text": "hi"}
+
+
+# ---------------------------------------------------------------------------
+# Think settings
+# ---------------------------------------------------------------------------
+
+class TestOllamaThinkSettings:
+    def test_enable_thinking_maps_to_think(self) -> None:
+        merged = OllamaProvider._merge_ollama_settings({"enable_thinking": True})
+        assert merged["think"] is True
+
+    def test_thinking_true_maps_to_think(self) -> None:
+        merged = OllamaProvider._merge_ollama_settings({"thinking": True})
+        assert merged["think"] is True
+
+    def test_thinking_level_passthrough(self) -> None:
+        merged = OllamaProvider._merge_ollama_settings({"thinking": "medium"})
+        assert merged["think"] == "medium"
+
+    def test_explicit_think_not_overwritten(self) -> None:
+        merged = OllamaProvider._merge_ollama_settings(
+            {"think": False, "enable_thinking": True},
+        )
+        assert merged["think"] is False
+
+    def test_auto_enable_for_thinking_model(self) -> None:
+        merged = OllamaProvider._merge_ollama_settings({}, model="qwen3:8b")
+        assert merged["think"] is True
 
 
 # ---------------------------------------------------------------------------
@@ -214,8 +284,66 @@ class TestOllamaStreamParsing:
             "message": {"role": "assistant", "content": ""},
             "done": True,
             "done_reason": "stop",
+            "prompt_eval_count": 12,
+            "eval_count": 4,
         })
         assert chunk.finish_reason == "stop"
+        assert chunk.usage is not None
+        assert chunk.usage.prompt_tokens == 12
+        assert chunk.usage.completion_tokens == 4
+
+    def test_tool_call_delta_dedup_full_snapshot(self) -> None:
+        p = OllamaProvider()
+        tool_ids: dict[int, str] = {}
+        tool_args_sent: dict[int, str] = {}
+        payload = {
+            "model": "llama3.2",
+            "message": {
+                "role": "assistant",
+                "content": "",
+                "tool_calls": [
+                    {"function": {"name": "echo", "arguments": {"text": "hi"}}},
+                ],
+            },
+            "done": False,
+        }
+        first = p._parse_stream_chunk(
+            payload,
+            "llama3.2",
+            tool_ids=tool_ids,
+            tool_args_sent=tool_args_sent,
+        )
+        second = p._parse_stream_chunk(
+            payload,
+            "llama3.2",
+            tool_ids=tool_ids,
+            tool_args_sent=tool_args_sent,
+        )
+        assert len(first.tool_calls_delta) == 1
+        assert len(second.tool_calls_delta) == 0
+        assert tool_args_sent[0] == json.dumps({"text": "hi"}, ensure_ascii=False)
+
+    def test_tool_calls_delta_assigns_stable_id(self) -> None:
+        p = OllamaProvider()
+        tool_ids: dict[int, str] = {}
+        chunk = p._parse_stream_chunk(
+            {
+                "model": "llama3.2",
+                "message": {
+                    "role": "assistant",
+                    "content": "",
+                    "tool_calls": [
+                        {"function": {"name": "echo", "arguments": {"text": "hi"}}},
+                    ],
+                },
+                "done": False,
+            },
+            "llama3.2",
+            tool_ids=tool_ids,
+            tool_args_sent={},
+        )
+        assert chunk.tool_calls_delta[0]["id"].startswith("call_")
+        assert tool_ids[0] == chunk.tool_calls_delta[0]["id"]
 
     def test_tool_calls_delta_forwarded(self) -> None:
         p = OllamaProvider()
@@ -301,6 +429,11 @@ class TestOllamaErrorHandling:
         p = OllamaProvider()
         with pytest.raises(LLMServiceError, match="Ollama server error"):
             p._handle_error(500, "internal error", "llama3.2")
+
+    def test_429_rate_limit(self) -> None:
+        p = OllamaProvider()
+        with pytest.raises(LLMRateLimitError):
+            p._handle_error(429, "rate limited", "llama3.2")
 
     def test_generic_error(self) -> None:
         p = OllamaProvider()

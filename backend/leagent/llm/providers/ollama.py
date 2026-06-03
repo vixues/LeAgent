@@ -13,7 +13,9 @@ Supports Ollama's native ``/api/chat`` endpoint with:
 
 from __future__ import annotations
 
+import asyncio
 import json
+import uuid
 from typing import Any, AsyncIterator, Literal
 
 import httpx
@@ -21,6 +23,7 @@ import httpx
 from leagent.utils.httpx_proxy import httpx_trust_env
 
 from leagent.exceptions.llm import (
+    LLMRateLimitError,
     LLMServiceError,
     LLMTimeoutError,
     ModelNotFoundError,
@@ -35,6 +38,24 @@ from leagent.llm.base import (
     ToolCall,
     ToolDefinition,
 )
+from leagent.llm.providers.custom import (
+    _ContentToolCallBuffer,
+    _content_tool_call_delta_from_text,
+    _known_tool_names,
+    _tool_call_from_content_delta,
+)
+
+_THINKING_CAPABLE_PREFIXES = (
+    "qwen3",
+    "qwq",
+    "deepseek-r1",
+    "deepseek-v3.1",
+    "gpt-oss",
+)
+
+
+def _new_tool_call_id() -> str:
+    return f"call_{uuid.uuid4().hex[:12]}"
 
 
 def _arguments_to_ollama_object(raw: str) -> dict[str, Any]:
@@ -55,16 +76,42 @@ def _arguments_to_json_string(value: Any) -> str:
     return json.dumps(value, ensure_ascii=False)
 
 
-def _normalize_tool_call_delta(tc: dict[str, Any], index: int) -> dict[str, Any]:
+def _argument_delta_fragment(previous: str, new: str) -> str:
+    """Return only the new suffix when *new* is a full repeated snapshot."""
+    if not new:
+        return ""
+    if not previous:
+        return new
+    if new == previous:
+        return ""
+    if new.startswith(previous):
+        return new[len(previous) :]
+    if previous.startswith(new):
+        return ""
+    return new
+
+
+def _normalize_tool_call_delta(
+    tc: dict[str, Any],
+    index: int,
+    *,
+    tool_id: str | None = None,
+    argument_fragment: str | None = None,
+) -> dict[str, Any]:
     normalized = dict(tc)
     normalized.setdefault("index", index)
+    if tool_id:
+        normalized["id"] = tool_id
     fn = normalized.get("function")
     if isinstance(fn, dict):
         normalized_fn = dict(fn)
         if "arguments" in normalized_fn:
-            normalized_fn["arguments"] = _arguments_to_json_string(
-                normalized_fn.get("arguments"),
-            )
+            if argument_fragment is not None:
+                normalized_fn["arguments"] = argument_fragment
+            else:
+                normalized_fn["arguments"] = _arguments_to_json_string(
+                    normalized_fn.get("arguments"),
+                )
         normalized["function"] = normalized_fn
     return normalized
 
@@ -111,7 +158,12 @@ class OllamaProvider(LLMProvider):
     def _ensure_stream_client(self) -> httpx.AsyncClient:
         if self._http_stream_client is None:
             self._http_stream_client = httpx.AsyncClient(
-                timeout=self.timeout,
+                timeout=httpx.Timeout(
+                    connect=10.0,
+                    read=None,
+                    write=30.0,
+                    pool=30.0,
+                ),
                 trust_env=httpx_trust_env(),
             )
         return self._http_stream_client
@@ -240,6 +292,30 @@ class OllamaProvider(LLMProvider):
         except Exception:
             return False
 
+    @staticmethod
+    def _merge_ollama_settings(
+        kwargs: dict[str, Any],
+        *,
+        model: str = "",
+    ) -> dict[str, Any]:
+        """Map admin metadata (``thinking``, ``enable_thinking``) to Ollama ``think``."""
+        merged = dict(kwargs)
+        if "think" not in merged:
+            enable = merged.pop("enable_thinking", None)
+            thinking = merged.pop("thinking", None)
+            if enable is True or thinking is True:
+                merged["think"] = True
+            elif isinstance(thinking, str) and thinking in ("low", "medium", "high"):
+                merged["think"] = thinking
+            elif model and OllamaProvider._is_thinking_model(model):
+                merged.setdefault("think", True)
+        return merged
+
+    @staticmethod
+    def _is_thinking_model(model: str) -> bool:
+        model_lower = model.lower()
+        return any(model_lower.startswith(prefix) for prefix in _THINKING_CAPABLE_PREFIXES)
+
     def _build_messages(self, messages: list[ChatMessage]) -> list[dict[str, Any]]:
         """Convert ChatMessage list to Ollama message format.
 
@@ -261,10 +337,12 @@ class OllamaProvider(LLMProvider):
                     }
                     for tc in msg.tool_calls
                 ]
-            # Pass tool_name for tool-result messages so the model knows
-            # which tool produced the result
-            if msg.role.value == "tool" and msg.tool_call_id:
-                ollama_msg["tool_name"] = msg.tool_call_id
+            if msg.reasoning_content:
+                ollama_msg["thinking"] = msg.reasoning_content
+            if msg.role.value == "tool":
+                tool_name = (msg.name or "").strip() or (msg.tool_call_id or "")
+                if tool_name:
+                    ollama_msg["tool_name"] = tool_name
             result.append(ollama_msg)
         return result
 
@@ -290,11 +368,11 @@ class OllamaProvider(LLMProvider):
 
         tool_calls: list[ToolCall] = []
         if raw_tool_calls := message.get("tool_calls"):
-            for i, tc in enumerate(raw_tool_calls):
+            for tc in raw_tool_calls:
                 func = tc.get("function", {})
                 tool_calls.append(
                     ToolCall(
-                        id=f"call_{i}",
+                        id=_new_tool_call_id(),
                         name=func.get("name", ""),
                         arguments=_arguments_to_json_string(func.get("arguments")),
                     )
@@ -310,11 +388,24 @@ class OllamaProvider(LLMProvider):
         if data.get("done_reason"):
             finish_reason = data["done_reason"]
 
-        # Extract thinking content from thinking models
         reasoning_content: str | None = None
         thinking = message.get("thinking")
         if isinstance(thinking, str) and thinking.strip():
             reasoning_content = thinking
+
+        content = message.get("content")
+        if not tool_calls and content and isinstance(content, str) and content.strip():
+            delta = _content_tool_call_delta_from_text(content, known_tool_names=set())
+            if delta is not None:
+                return LLMResponse(
+                    content=None,
+                    tool_calls=[_tool_call_from_content_delta(delta)],
+                    finish_reason="tool_calls",
+                    model=data.get("model", model),
+                    usage=usage,
+                    raw_response=data,
+                    reasoning_content=reasoning_content,
+                )
 
         return LLMResponse(
             content=message.get("content"),
@@ -341,6 +432,8 @@ class OllamaProvider(LLMProvider):
                 model=model,
                 endpoint=self.base_url,
             )
+        if status_code == 429:
+            raise LLMRateLimitError(model=model)
         if status_code >= 500:
             raise LLMServiceError(
                 f"Ollama server error: {response_body}",
@@ -365,6 +458,7 @@ class OllamaProvider(LLMProvider):
         stop: list[str] | None = None,
         **kwargs: Any,
     ) -> LLMResponse:
+        kwargs = self._merge_ollama_settings(kwargs, model=model)
         body: dict[str, Any] = {
             "model": model,
             "messages": self._build_messages(messages),
@@ -412,7 +506,6 @@ class OllamaProvider(LLMProvider):
                     return self._parse_response(response.json(), model)
 
                 if attempt < self.max_retries and response.status_code >= 500:
-                    import asyncio
                     await asyncio.sleep(2 ** attempt)
                     continue
 
@@ -421,7 +514,6 @@ class OllamaProvider(LLMProvider):
             except httpx.TimeoutException as e:
                 last_error = e
                 if attempt < self.max_retries:
-                    import asyncio
                     await asyncio.sleep(2 ** attempt)
                     continue
                 raise LLMTimeoutError(model=model, timeout_sec=int(self.timeout)) from e
@@ -429,7 +521,6 @@ class OllamaProvider(LLMProvider):
             except httpx.RequestError as e:
                 last_error = e
                 if attempt < self.max_retries:
-                    import asyncio
                     await asyncio.sleep(2 ** attempt)
                     continue
                 raise LLMServiceError(
@@ -456,6 +547,7 @@ class OllamaProvider(LLMProvider):
         stop: list[str] | None = None,
         **kwargs: Any,
     ) -> AsyncIterator[StreamChunk]:
+        kwargs = self._merge_ollama_settings(kwargs, model=model)
         body: dict[str, Any] = {
             "model": model,
             "messages": self._build_messages(messages),
@@ -488,38 +580,81 @@ class OllamaProvider(LLMProvider):
             body["options"].update(kwargs.pop("options"))
 
         url = f"{self.base_url}/api/chat"
+        content_buffer = _ContentToolCallBuffer(_known_tool_names(tools))
+        tool_ids: dict[int, str] = {}
+        tool_args_sent: dict[int, str] = {}
+        last_error: Exception | None = None
 
-        try:
-            client = self._ensure_stream_client()
-            async with client.stream("POST", url, json=body) as response:
-                if response.status_code != 200:
-                    content = await response.aread()
-                    self._handle_error(response.status_code, content.decode(), model)
-
-                async for line in response.aiter_lines():
-                    if not line:
+        for attempt in range(self.max_retries + 1):
+            try:
+                client = self._ensure_stream_client()
+                async with client.stream("POST", url, json=body) as response:
+                    if response.status_code != 200:
+                        content = await response.aread()
+                        if attempt < self.max_retries and response.status_code >= 500:
+                            await asyncio.sleep(2 ** attempt)
+                        else:
+                            self._handle_error(response.status_code, content.decode(), model)
                         continue
 
-                    try:
-                        data = json.loads(line)
-                        chunk = self._parse_stream_chunk(data, model)
-                        yield chunk
+                    async for line in response.aiter_lines():
+                        if not line:
+                            continue
+
+                        try:
+                            data = json.loads(line)
+                        except json.JSONDecodeError:
+                            continue
+
+                        chunk = self._parse_stream_chunk(
+                            data,
+                            model,
+                            tool_ids=tool_ids,
+                            tool_args_sent=tool_args_sent,
+                        )
+                        for emitted in content_buffer.ingest(chunk, default_model=model):
+                            yield emitted
 
                         if data.get("done"):
-                            break
-                    except json.JSONDecodeError:
-                        continue
+                            tail = content_buffer.flush_tail(model=model)
+                            if tail is not None:
+                                yield tail
+                            return
 
-        except httpx.TimeoutException as e:
-            raise LLMTimeoutError(model=model, timeout_sec=int(self.timeout)) from e
-        except httpx.RequestError as e:
+                return
+
+            except httpx.TimeoutException as e:
+                last_error = e
+                if attempt < self.max_retries:
+                    await asyncio.sleep(2 ** attempt)
+                    continue
+                raise LLMTimeoutError(model=model, timeout_sec=int(self.timeout)) from e
+            except httpx.RequestError as e:
+                last_error = e
+                if attempt < self.max_retries:
+                    await asyncio.sleep(2 ** attempt)
+                    continue
+                raise LLMServiceError(
+                    f"Stream request failed: {e}",
+                    model=model,
+                    endpoint=self.base_url,
+                ) from e
+
+        if last_error is not None:
             raise LLMServiceError(
-                f"Stream request failed: {e}",
+                f"Max stream retries exceeded: {last_error}",
                 model=model,
                 endpoint=self.base_url,
-            ) from e
+            )
 
-    def _parse_stream_chunk(self, data: dict[str, Any], model: str) -> StreamChunk:
+    def _parse_stream_chunk(
+        self,
+        data: dict[str, Any],
+        model: str,
+        *,
+        tool_ids: dict[int, str] | None = None,
+        tool_args_sent: dict[int, str] | None = None,
+    ) -> StreamChunk:
         """Parse a single streaming chunk from Ollama."""
         message = data.get("message", {})
 
@@ -528,13 +663,42 @@ class OllamaProvider(LLMProvider):
             for i, tc in enumerate(raw_tc):
                 if not isinstance(tc, dict):
                     continue
-                tool_calls_delta.append(_normalize_tool_call_delta(tc, i))
+                ids = tool_ids if tool_ids is not None else {}
+                args_sent = tool_args_sent if tool_args_sent is not None else {}
+                if i not in ids:
+                    ids[i] = _new_tool_call_id()
+                fn = tc.get("function") if isinstance(tc.get("function"), dict) else {}
+                raw_args = _arguments_to_json_string(fn.get("arguments")) if fn else ""
+                previous = args_sent.get(i, "")
+                fragment = _argument_delta_fragment(previous, raw_args)
+                if not fragment and previous:
+                    continue
+                if fragment:
+                    args_sent[i] = previous + fragment
+                elif raw_args:
+                    args_sent[i] = raw_args
+                    fragment = raw_args
+                tool_calls_delta.append(
+                    _normalize_tool_call_delta(
+                        tc,
+                        i,
+                        tool_id=ids[i],
+                        argument_fragment=fragment,
+                    )
+                )
 
         finish_reason = None
+        usage: TokenUsage | None = None
         if data.get("done"):
             finish_reason = data.get("done_reason", "stop")
+            prompt_tokens = int(data.get("prompt_eval_count", 0) or 0)
+            completion_tokens = int(data.get("eval_count", 0) or 0)
+            usage = TokenUsage(
+                prompt_tokens=prompt_tokens,
+                completion_tokens=completion_tokens,
+                total_tokens=prompt_tokens + completion_tokens,
+            )
 
-        # Extract thinking content in stream
         raw_delta: dict[str, Any] | None = None
         thinking = message.get("thinking")
         if isinstance(thinking, str) and thinking:
@@ -546,6 +710,7 @@ class OllamaProvider(LLMProvider):
             finish_reason=finish_reason,
             model=data.get("model", model),
             raw_delta=raw_delta,
+            usage=usage,
         )
 
     async def embed(
