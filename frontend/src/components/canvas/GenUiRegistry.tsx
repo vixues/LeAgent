@@ -12,6 +12,7 @@ import { GenUiIcon } from '@/components/canvas/genUi/GenUiIcon';
 import { GenUiInlineMarkdown, GenUiMarkdown } from '@/components/canvas/genUi/GenUiMarkdown';
 import { GenUiChart } from '@/components/canvas/genUi/GenUiChart';
 import { GenUiHtmlFrame } from '@/components/canvas/genUi/GenUiHtmlFrame';
+import { GenUiThreeJsFrame } from '@/components/canvas/genUi/GenUiThreeJsFrame';
 import { IconGlyph } from '@/components/canvas/genUi/IconGlyph';
 import { SlideDeckPlayer } from '@/components/canvas/genUi/SlideDeckPlayer';
 import {
@@ -1055,6 +1056,9 @@ function renderNode(node: GenUiNode, depth: number, ctx: GenUiRenderContextValue
 
     case 'HtmlFrame':
       return <GenUiHtmlFrame key={node.nodeId} node={node} />;
+
+    case 'ThreeJsFrame':
+      return <GenUiThreeJsFrame key={node.nodeId} node={node} />;
 
     case 'JsonDebug':
       return (

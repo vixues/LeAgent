@@ -110,10 +110,16 @@ _GUIDE_PAYLOAD: dict[str, Any] = {
     ],
     "custom_javascript": [
         "Prefer built-in GenUI components and `props.action` dispatch for chat-side handlers.",
+        "For 3D / WebGL / Three.js scenes, use **`ThreeJsFrame`** with structured props: "
+        "`geometry` (icosahedron|octahedron|dodecahedron|tetrahedron|sphere|box|torus-knot), "
+        "`color`, `accentColor`, `background`, `particles`, `orbiters`, `wireframe`, `quality`, "
+        "`height`, `cameraZ`, `rotateSpeed`. The frontend renders it with the installed Three.js "
+        "package, resource cleanup, DPR caps, resize handling, and viewport pausing. Prefer these "
+        "props over `sceneScript`; `sceneScript` is treated as a legacy hint only.",
         "When you need arbitrary HTML/JS (custom widgets, third-party snippets), use **`HtmlFrame`** "
         "with `props.html` (fragment or full document). Scripts run in a sandboxed iframe only after "
         "the user enables JS from the preview toolbar.",
-        "Do not try to inject `<script>` into other component kinds — use `HtmlFrame` instead.",
+        "Do not try to inject `<script>` into other component kinds — use `ThreeJsFrame` or `HtmlFrame`.",
     ],
     "anti_patterns": [
         "Invalid `kind` strings (snake_case, lowercase, or invented component names) — must match `list_ui_components` exactly.",

@@ -101,7 +101,16 @@ _SCRIPT_SRC_ALLOWLIST: tuple[str, ...] = (
     "cdn.tailwindcss.com",
     "fonts.googleapis.com",
     "fonts.gstatic.com",
+    "cdn.jsdelivr.net",
+    "unpkg.com",
 )
+
+# Hosted HTML preview needs a synchronous global so normal inline scripts can
+# use ``window.THREE`` after the user enables JS. Three.js removed this global
+# build in r161, so HTML preview pins the last global-compatible release while
+# the React GenUI renderer uses the installed modern ``three`` package.
+_THREE_JS_GLOBAL_CDN = "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"
+_THREE_JS_BOOTSTRAP = f'<script src="{_THREE_JS_GLOBAL_CDN}"></script>\n'
 
 _SVG_TAGS: frozenset[str] = frozenset(
     {
@@ -321,7 +330,8 @@ def _validate_embed_url(url: str, *, allow_loopback: bool = False) -> str:
 
 
 # Shared Tailwind + base CSS for canvas preview (fragment wrap and full-document inject).
-_PREVIEW_HEAD_ASSETS = """
+_PREVIEW_HEAD_ASSETS = (
+    """
 <link rel="preconnect" href="https://fonts.googleapis.com"/>
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet"/>
@@ -340,6 +350,9 @@ tailwind.config = {
   darkMode: 'media',
 }
 </script>
+"""
+    + _THREE_JS_BOOTSTRAP
+    + """
 <style>
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
   html { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; height: 100%; }
@@ -368,6 +381,7 @@ tailwind.config = {
   }
 </style>
 """
+)
 
 _CANVAS_BODY_MARKER = "__LEAGENT_CANVAS_BODY__"
 

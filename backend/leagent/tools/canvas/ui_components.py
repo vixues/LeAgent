@@ -128,8 +128,10 @@ class EmitUiTreeTool(BaseTool):
         "(e.g. `{type:'send_message', payload:{content:'Summarize'}}`, "
         "`{type:'navigate', payload:{route:'/settings'}}`, "
         "`{type:'open_artifact', payload:{canvasId:'…'}}`); `actionId` alone remains supported for legacy controls. "
-        "For arbitrary HTML/JS use **`HtmlFrame`** (`props.html`, optional `height`/`title`); scripts run "
-        "only after the user enables JS in the preview toolbar."
+        "For 3D/Three.js scenes prefer **`ThreeJsFrame`** with structured props (`geometry`, `color`, "
+        "`accentColor`, `particles`, `orbiters`, `quality`, optional `height`/`title`/`background`/"
+        "`autoRotate`/`cameraZ`); for other arbitrary HTML/JS use **`HtmlFrame`** (`props.html`, optional "
+        "`height`/`title`). HtmlFrame scripts run only after the user enables JS in the preview toolbar."
     )
     category = ToolCategory.CANVAS
     is_read_only = True

@@ -47,6 +47,7 @@
     "remark-gfm": "^4.0.1",
     "remark-math": "^6.0.0",
     "tailwind-merge": "^2.5.0",
+    "three": "^0.184.0",
     "yaml": "^2.8.3",
     "zustand": "^5.0.0"
   },
@@ -60,6 +61,7 @@
     "@types/node": "^25.3.5",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
+    "@types/three": "^0.184.1",
     "@typescript-eslint/eslint-plugin": "^8.56.1",
     "@typescript-eslint/parser": "^8.56.1",
     "@vitejs/plugin-react": "^4.3.0",

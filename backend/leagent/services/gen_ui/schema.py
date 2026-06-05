@@ -111,6 +111,8 @@ UI_TREE_SCHEMA: dict[str, Any] = {
                         "Callout",
                         # Embed
                         "HostedCanvasFrame",
+                        "HtmlFrame",
+                        "ThreeJsFrame",
                         "JsonDebug",
                     ],
                 },
@@ -465,6 +467,32 @@ _COMPONENT_CATALOG: list[dict[str, Any]] = [
             "height": "number|string (px, default 320)",
             "title": "string (iframe aria-label)",
             "allowJs": "boolean (hint only; host preview JS toggle is authoritative)",
+        },
+    },
+    {
+        "kind": "ThreeJsFrame",
+        "description": (
+            "High-performance installed Three.js 3D scene card rendered by the frontend. "
+            "Prefer structured props (`geometry`, colors, particles, orbiters, quality) "
+            "over custom JavaScript; `sceneScript` is accepted only as a legacy hint."
+        ),
+        "props": {
+            "title": "string (accessible scene label, optional)",
+            "height": "number|string (px, default 360)",
+            "geometry": "string (box|sphere|icosahedron|octahedron|dodecahedron|tetrahedron|torus-knot)",
+            "color": "string|number (main material color, e.g. #38bdf8 or 0x38bdf8)",
+            "accentColor": "string|number (core/orbiter glow color)",
+            "background": "string (CSS color, default #0f172a)",
+            "particles": "number (0-1200 star particles)",
+            "orbiters": "number (0-24 small orbiting polyhedra)",
+            "wireframe": "boolean (edge overlay, default true)",
+            "detail": "number (geometry subdivision 0-4)",
+            "quality": "string (auto|high|low; controls DPR defaults)",
+            "dpr": "number (1-2 max device pixel ratio)",
+            "rotateSpeed": "number (0-3)",
+            "autoRotate": "boolean (default true)",
+            "cameraZ": "number (camera distance, default 5)",
+            "sceneScript": "string (legacy hint only; not executed in the React renderer)",
         },
     },
     {"kind": "JsonDebug", "description": "Collapsed JSON viewer (dev/debug)", "props": {"label": "string", "data": "object"}},

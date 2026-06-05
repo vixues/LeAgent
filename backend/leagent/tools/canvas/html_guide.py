@@ -37,10 +37,12 @@ _REFERENCE_TEMPLATE = """\
 
 _GUIDE_PAYLOAD: dict[str, Any] = {
     "shell": (
-        "The canvas HTML preview ships with Tailwind CSS (CDN), Inter font, a "
-        "professional CSS reset, dark-mode via prefers-color-scheme, and a few "
-        "utility classes. You only need to author the body fragment — the host "
-        "wraps it in <!DOCTYPE html> and injects the assets."
+        "The canvas HTML preview ships with Tailwind CSS (CDN), Inter font, "
+        "Three.js global build (CDN, `window.THREE`), a professional CSS reset, "
+        "dark-mode via prefers-color-scheme, and a few utility classes. You only "
+        "need to author the body fragment — the host wraps it in <!DOCTYPE html> "
+        "and injects the assets. Do not add a separate Three.js `<script src>` "
+        "unless you need a specific version."
     ),
     "design_principles": [
         "Generous whitespace: prefer p-6, gap-4, space-y-4 over tight layouts.",
@@ -85,6 +87,9 @@ _GUIDE_PAYLOAD: dict[str, Any] = {
         "preview toolbar (`js=1` on the preview URL).",
         "For multi-file bundles, local <script src=…> refs are inlined from "
         "`html_files` and follow the same preview-time JS toggle.",
+        "Three.js is preloaded as `window.THREE` for normal inline scripts. "
+        "Inline scene initialization still requires the user to enable JS "
+        "(`js=1`), but you do not need to import or load the Three.js library.",
         "SVG and the common chart primitives (svg, path, g, circle, rect, "
         "line, polyline, polygon, ellipse, defs, linearGradient, "
         "radialGradient, stop, text, tspan) are allowed.",
@@ -104,9 +109,10 @@ class GetHtmlCanvasGuideTool(BaseTool):
     description = (
         "Return the canvas HTML preview design system: shipped utility classes "
         "(wa-card, wa-gradient/wa-gradient-warm/wa-gradient-fresh), Tailwind "
-        "config (Inter font, primary/surface palettes, dark mode), authoring "
-        "rules (allowed tags/attributes, inline <style> ok, scripts/events "
-        "stored but off until preview JS toggle), and a reference HTML template. "
+        "config (Inter font, primary/surface palettes, dark mode), preloaded "
+        "Three.js (global THREE), authoring rules (allowed tags/attributes, "
+        "inline <style> ok, scripts/events stored but off until preview JS toggle), "
+        "and a reference HTML template. "
         "Call this before authoring "
         "`canvas_publish(mode=html)` so you do not have to memorise the "
         "details. Read-only, no side effects."

@@ -36,6 +36,17 @@ def test_merge_html_files_inlines_css_and_js() -> None:
     assert "console.log(1);" in out_enabled
 
 
+def test_sanitize_html_preserves_three_global_src_on_full_document() -> None:
+    full = """<!DOCTYPE html><html><head></head><body>
+<script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
+<script>runScene()</script>
+</body></html>"""
+    out = sanitize_html(full, max_bytes=256 * 1024, allow_js=False)
+    assert "cdn.jsdelivr.net/npm/three@" in out
+    assert "three.min.js" in out
+    assert "runScene()" not in out
+
+
 def test_merge_html_files_rejects_path_traversal() -> None:
     with pytest.raises(ValueError, match="Unsafe"):
         merge_html_files_to_document(

@@ -67,6 +67,8 @@ export type GenUiNodeKind =
   | 'Callout'
   // Embed
   | 'HostedCanvasFrame'
+  | 'HtmlFrame'
+  | 'ThreeJsFrame'
   | 'JsonDebug';
 
 export interface GenUiNode {

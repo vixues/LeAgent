@@ -625,6 +625,8 @@ def test_build_preview_html_professional_shell():
     html, mime = build_preview_html(doc, s)
     assert "<!DOCTYPE html>" in html
     assert "cdn.tailwindcss.com" in html
+    assert "cdn.jsdelivr.net/npm/three@" in html
+    assert "three.min.js" in html
     assert "Inter" in html
     assert "wa-card" in html
     assert "wa-gradient" in html
@@ -681,6 +683,20 @@ def test_sanitize_html_fragment_strips_inline_handlers_and_bad_scripts():
     assert "onclick" not in out.lower()
     assert "evil" not in out
     assert "ok" in out
+
+
+def test_sanitize_html_full_document_preserves_three_global_src_strips_inline_script():
+    full = """<!DOCTYPE html>
+<html><head></head>
+<body><div class="scene">3D</div>
+<script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
+<script>initScene()</script>
+</body></html>"""
+    out = sanitize_html(full, max_bytes=1024 * 1024)
+    assert "cdn.jsdelivr.net/npm/three@" in out
+    assert "three.min.js" in out
+    assert "initScene()" not in out
+    assert "scene" in out
 
 
 def test_sanitize_html_full_document_preserves_style_strips_inline_script():
@@ -760,6 +776,7 @@ async def test_get_html_canvas_guide_returns_payload():
     data = await GetHtmlCanvasGuideTool().execute({}, ToolContext(user_id="u1", session_id="s1"))
     assert "shipped_utility_classes" in data
     assert "wa-card" in data["shipped_utility_classes"]
+    assert "Three.js" in data["shell"]
     assert "reference_template" in data
 
 
@@ -771,6 +788,7 @@ async def test_get_genui_guide_returns_payload():
     assert "emoji_and_icons" in data
     assert "workflow_order" in data
     assert "custom_javascript" in data
+    assert any("ThreeJsFrame" in line for line in data["custom_javascript"])
 
 
 def test_list_component_catalog_returns_singleton_list():
@@ -784,6 +802,57 @@ def test_list_component_catalog_returns_singleton_list():
     assert "geek" in design_surface["props"]["preset"]
     html_frame = next(item for item in a if item["kind"] == "HtmlFrame")
     assert "html" in html_frame["props"]
+    three_frame = next(item for item in a if item["kind"] == "ThreeJsFrame")
+    assert "geometry" in three_frame["props"]
+    assert "sceneScript" in three_frame["props"]
+
+
+def test_validate_ui_tree_accepts_html_frame_node():
+    tree = {
+        "schemaVersion": "1",
+        "root": {
+            "nodeId": "html-root",
+            "kind": "HtmlFrame",
+            "props": {
+                "html": "<div class='p-4'>Hello</div>",
+                "height": 280,
+                "title": "Demo",
+            },
+        },
+    }
+    out = validate_ui_tree(tree, max_depth=10, max_nodes=20)
+    assert out["root"]["kind"] == "HtmlFrame"
+
+
+def test_validate_ui_tree_accepts_three_js_frame_node():
+    tree = {
+        "schemaVersion": "1",
+        "root": {
+            "nodeId": "three-root",
+            "kind": "ThreeJsFrame",
+            "props": {
+                "title": "Spinning cube",
+                "height": 400,
+                "background": "#0f172a",
+                "geometry": "icosahedron",
+                "particles": 320,
+                "orbiters": 8,
+                "quality": "high",
+                "cameraZ": 6,
+                "sceneScript": (
+                    "const geo = new THREE.BoxGeometry(1, 1, 1);"
+                    "const mat = new THREE.MeshNormalMaterial();"
+                    "const mesh = new THREE.Mesh(geo, mat);"
+                    "scene.add(mesh);"
+                    "onFrame = () => { mesh.rotation.y += 0.02; };"
+                ),
+            },
+        },
+    }
+    out = validate_ui_tree(tree, max_depth=10, max_nodes=20)
+    assert out["root"]["kind"] == "ThreeJsFrame"
+    assert out["root"]["props"]["geometry"] == "icosahedron"
+    assert "BoxGeometry" in out["root"]["props"]["sceneScript"]
 
 
 def test_validate_weather_card_tree():
