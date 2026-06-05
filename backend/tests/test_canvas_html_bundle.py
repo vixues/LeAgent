@@ -29,8 +29,11 @@ def test_merge_html_files_inlines_css_and_js() -> None:
     assert "body { color: red; }" in merged
     assert "console.log(1);" in merged
     assert '<link rel="stylesheet"' not in merged
-    out = sanitize_html(merged, max_bytes=256 * 1024)
-    assert "color: red" in out
+    out_disabled = sanitize_html(merged, max_bytes=256 * 1024, allow_js=False)
+    out_enabled = sanitize_html(merged, max_bytes=256 * 1024, allow_js=True)
+    assert "color: red" in out_disabled
+    assert "console.log(1);" not in out_disabled
+    assert "console.log(1);" in out_enabled
 
 
 def test_merge_html_files_rejects_path_traversal() -> None:

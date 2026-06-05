@@ -270,7 +270,7 @@ def _scrub_fragment_fallback(raw: str) -> str:
     return cleaned
 
 
-def sanitize_html(html: str, *, max_bytes: int) -> str:
+def sanitize_html(html: str, *, max_bytes: int, allow_js: bool = False) -> str:
     """Sanitise agent-supplied HTML for safe hosted preview.
 
     Two paths:
@@ -278,10 +278,15 @@ def sanitize_html(html: str, *, max_bytes: int) -> str:
         <body>, <style>, class/style attrs, SVG.
       * Body fragments — nh3.Cleaner with a relaxed allowlist that keeps
         Tailwind utility classes and inline styles.
+
+    When ``allow_js`` is True, scripts and inline event handlers are kept
+    (preview-time opt-in only; publish stores the raw HTML).
     """
     raw = html or ""
     if len(raw.encode("utf-8")) > max_bytes:
         raise ValueError(f"HTML exceeds max size ({max_bytes} bytes)")
+    if allow_js:
+        return raw
     if _has_full_doc(raw):
         return _scrub_full_document(raw)
     try:
@@ -473,6 +478,7 @@ def build_preview_html(
     settings: Settings,
     *,
     public_base: str | None = None,
+    allow_js: bool = False,
 ) -> tuple[str, str]:
     """Return (html_body, content_type mime).
 
@@ -509,7 +515,11 @@ def build_preview_html(
         return html, "text/html; charset=utf-8"
     body = doc.html_body or ""
     body = _inject_maps_key(body, (settings.canvas.google_maps_api_key or "").strip())
-    body = sanitize_html(body, max_bytes=settings.canvas.max_html_bytes)
+    body = sanitize_html(
+        body,
+        max_bytes=settings.canvas.max_html_bytes,
+        allow_js=allow_js,
+    )
     body = sign_managed_file_urls_in_html(
         body,
         settings=settings,
@@ -612,10 +622,12 @@ class CanvasService:
                         "html mode requires non-empty `html`, or `html_files` plus `html_bundle_entry`",
                     )
                 content_type = CanvasContentType.HTML.value
-                html_body = sanitize_html(
-                    html_out,
-                    max_bytes=self._settings.canvas.max_html_bytes,
-                )
+                # Store raw HTML; sanitisation runs at preview time (js=0/1).
+                if len(html_out.encode("utf-8")) > self._settings.canvas.max_html_bytes:
+                    raise ValueError(
+                        f"HTML exceeds max size ({self._settings.canvas.max_html_bytes} bytes)",
+                    )
+                html_body = html_out
                 emb = None
                 ui_json = None
 

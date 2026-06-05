@@ -54,7 +54,7 @@ class SkillScriptTool(BaseTool):
 
     def get_activity_description(self, params: dict[str, Any] | None = None) -> str | None:
         p = params or {}
-        skill = p.get("skill_name", "")
+        skill = p.get("name", "")
         path = p.get("script_path", "")
         return f"Running skill script: {skill}/{path}" if skill else "Running skill script"
 
@@ -63,9 +63,11 @@ class SkillScriptTool(BaseTool):
         return {
             "type": "object",
             "properties": {
-                "skill_name": {
+                "name": {
                     "type": "string",
-                    "description": "Name of the skill that owns the script.",
+                    "description": (
+                        "Skill id from the Available skills list (matches SKILL.md name: field)."
+                    ),
                 },
                 "script_path": {
                     "type": "string",
@@ -81,7 +83,7 @@ class SkillScriptTool(BaseTool):
                     "description": f"Optional timeout in seconds (default {DEFAULT_TIMEOUT_S}, max {MAX_TIMEOUT_S}).",
                 },
             },
-            "required": ["skill_name", "script_path"],
+            "required": ["name", "script_path"],
         }
 
     async def execute(self, params: dict[str, Any], context: ToolContext) -> Any:
@@ -96,7 +98,7 @@ class SkillScriptTool(BaseTool):
                 ),
             }
 
-        skill_name = params["skill_name"]
+        skill_name = params["name"]
         script_path = params["script_path"]
         raw_args = params.get("args") or []
         if not isinstance(raw_args, (list, tuple)):

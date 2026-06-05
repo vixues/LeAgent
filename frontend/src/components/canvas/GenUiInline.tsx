@@ -1,5 +1,6 @@
 import { useCallback, useRef, useState, type RefObject } from 'react';
-import { Sparkles } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
+import { Code2, Sparkles } from 'lucide-react';
 import { toPng } from 'html-to-image';
 import { genUiTreeKey, useGenUiStore } from '@/stores/genUi';
 import { GenUiTreeView } from './GenUiRegistry';
@@ -31,9 +32,11 @@ export function GenUiInline({
   messageId: string;
   className?: string;
 }) {
+  const { t } = useTranslation();
   const key = genUiTreeKey(sessionId, messageId);
   const tree = useGenUiStore((s) => s.trees[key]);
   const [expanded, setExpanded] = useState(false);
+  const [jsEnabled, setJsEnabled] = useState(false);
   const [screenshotting, setScreenshotting] = useState(false);
   const [cameraOpen, setCameraOpen] = useState(false);
   const [floatingOpen, setFloatingOpen] = useState(false);
@@ -126,20 +129,43 @@ export function GenUiInline({
             Generative UI
           </span>
         </div>
-        <GenUiInlineToolbar
-          showEnlarge
-          onEnlarge={() => setFloatingOpen(true)}
-          onExportPdf={handleExportPdf}
-          pdfExporting={pdfExporting}
-          onScreenshot={() => void runScreenshot(treeBodyRef)}
-          screenshotting={screenshotting}
-          onCameraOpen={() => setCameraOpen(true)}
-          expanded={expanded}
-          onToggleExpanded={() => setExpanded((e) => !e)}
-        />
+        <div className="flex items-center gap-1">
+          <button
+            type="button"
+            onClick={() => setJsEnabled((v) => !v)}
+            className={cn(
+              'p-0.5 rounded transition-colors',
+              jsEnabled
+                ? 'text-foreground bg-surface-sunken'
+                : 'text-muted-foreground hover:text-foreground hover:bg-surface-sunken',
+            )}
+            aria-label={jsEnabled ? t('chat.canvas.jsOn') : t('chat.canvas.jsOff')}
+            title={jsEnabled ? t('chat.canvas.jsOn') : t('chat.canvas.jsOff')}
+            aria-pressed={jsEnabled}
+          >
+            <Code2 className="w-3.5 h-3.5" aria-hidden />
+          </button>
+          <GenUiInlineToolbar
+            showEnlarge
+            onEnlarge={() => setFloatingOpen(true)}
+            onExportPdf={handleExportPdf}
+            pdfExporting={pdfExporting}
+            onScreenshot={() => void runScreenshot(treeBodyRef)}
+            screenshotting={screenshotting}
+            onCameraOpen={() => setCameraOpen(true)}
+            expanded={expanded}
+            onToggleExpanded={() => setExpanded((e) => !e)}
+          />
+        </div>
       </div>
       <div className={cn('overflow-auto transition-all duration-300', maxH)}>
-        <GenUiTreeView tree={tree} contentRef={treeBodyRef} sessionId={sessionId} messageId={messageId} />
+        <GenUiTreeView
+          tree={tree}
+          contentRef={treeBodyRef}
+          sessionId={sessionId}
+          messageId={messageId}
+          jsEnabled={jsEnabled}
+        />
       </div>
       <CameraCaptureModal open={cameraOpen} onOpenChange={setCameraOpen} />
 
@@ -157,6 +183,21 @@ export function GenUiInline({
             Generative UI
           </div>
           <div className="flex shrink-0 items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setJsEnabled((v) => !v)}
+              className={cn(
+                'p-0.5 rounded transition-colors',
+                jsEnabled
+                  ? 'text-foreground bg-surface-sunken'
+                  : 'text-muted-foreground hover:text-foreground hover:bg-surface-sunken',
+              )}
+              aria-label={jsEnabled ? t('chat.canvas.jsOn') : t('chat.canvas.jsOff')}
+              title={jsEnabled ? t('chat.canvas.jsOn') : t('chat.canvas.jsOff')}
+              aria-pressed={jsEnabled}
+            >
+              <Code2 className="w-3.5 h-3.5" aria-hidden />
+            </button>
             <GenUiInlineToolbar
               showEnlarge={false}
               showExpandToggle={false}
@@ -184,6 +225,7 @@ export function GenUiInline({
             contentRef={floatingBodyRef}
             sessionId={sessionId}
             messageId={messageId}
+            jsEnabled={jsEnabled}
           />
         </div>
       </Modal>

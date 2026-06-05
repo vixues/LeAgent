@@ -453,6 +453,20 @@ _COMPONENT_CATALOG: list[dict[str, Any]] = [
     {"kind": "Callout", "description": "Highlighted callout / tip / note block", "props": {"title": "string", "message": "string", "variant": "string (info|tip|warning|important)"}},
     # ── Embed ─────────────────────────────────────────────────────────────
     {"kind": "HostedCanvasFrame", "description": "Embed hosted HTML canvas by id", "props": {"canvasId": "string"}},
+    {
+        "kind": "HtmlFrame",
+        "description": (
+            "Sandboxed iframe for arbitrary HTML/JS snippets. Use when built-in "
+            "GenUI components cannot express the interaction; the host preview "
+            "toolbar JS toggle controls whether scripts run."
+        ),
+        "props": {
+            "html": "string (body fragment or full document)",
+            "height": "number|string (px, default 320)",
+            "title": "string (iframe aria-label)",
+            "allowJs": "boolean (hint only; host preview JS toggle is authoritative)",
+        },
+    },
     {"kind": "JsonDebug", "description": "Collapsed JSON viewer (dev/debug)", "props": {"label": "string", "data": "object"}},
 ]
 

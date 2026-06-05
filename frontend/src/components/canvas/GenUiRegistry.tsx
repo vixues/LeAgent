@@ -11,6 +11,7 @@ import { GenUiLiveCamera } from '@/components/canvas/genUi/GenUiLiveCamera';
 import { GenUiIcon } from '@/components/canvas/genUi/GenUiIcon';
 import { GenUiInlineMarkdown, GenUiMarkdown } from '@/components/canvas/genUi/GenUiMarkdown';
 import { GenUiChart } from '@/components/canvas/genUi/GenUiChart';
+import { GenUiHtmlFrame } from '@/components/canvas/genUi/GenUiHtmlFrame';
 import { IconGlyph } from '@/components/canvas/genUi/IconGlyph';
 import { SlideDeckPlayer } from '@/components/canvas/genUi/SlideDeckPlayer';
 import {
@@ -1052,6 +1053,9 @@ function renderNode(node: GenUiNode, depth: number, ctx: GenUiRenderContextValue
       );
     }
 
+    case 'HtmlFrame':
+      return <GenUiHtmlFrame key={node.nodeId} node={node} />;
+
     case 'JsonDebug':
       return (
         <pre key={node.nodeId} className="text-xs overflow-auto max-h-40 bg-surface-sunken p-3 rounded-lg font-mono">
@@ -1172,6 +1176,7 @@ export function GenUiTreeView({
   contentRef,
   sessionId,
   messageId,
+  jsEnabled = false,
 }: {
   tree: GenUiTreeV1 | null | undefined;
   /** When set (e.g. GenUiInline screenshot), points at the scrollable tree body only. */
@@ -1180,10 +1185,15 @@ export function GenUiTreeView({
   sessionId?: string;
   /** Assistant message id for GenUi actions (buttons / patches). */
   messageId?: string;
+  /** When true, ``HtmlFrame`` nodes may run scripts in sandboxed iframes. */
+  jsEnabled?: boolean;
 }) {
   const { t } = useTranslation();
   const root = tree?.root;
-  const renderCtx = useMemo(() => ({ sessionId, messageId }), [sessionId, messageId]);
+  const renderCtx = useMemo(
+    () => ({ sessionId, messageId, jsEnabled }),
+    [sessionId, messageId, jsEnabled],
+  );
   const el = useMemo(() => (root ? renderNode(root, 0, renderCtx) : null), [root, renderCtx]);
   /** Outer scroll (GenUiInline, CanvasPanel) supplies scrolling; slot frames use overflow-hidden so body scrolls here. */
   const bodyClass = 'px-4 py-3 min-h-0 text-foreground bg-background';
@@ -1226,7 +1236,7 @@ export function GenUiTreeView({
       </div>
     );
   return (
-    <GenUiRenderProvider sessionId={sessionId} messageId={messageId}>
+    <GenUiRenderProvider sessionId={sessionId} messageId={messageId} jsEnabled={jsEnabled}>
       {inner}
     </GenUiRenderProvider>
   );

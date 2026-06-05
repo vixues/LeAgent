@@ -90,7 +90,7 @@ class ToolResult(BaseModel):
         if isinstance(self.data, dict):
             import json
 
-            return json.dumps(self.data, ensure_ascii=False, indent=2)
+            return json.dumps(self.data, ensure_ascii=False, indent=2, default=str)
         return str(self.data)
 
     @classmethod

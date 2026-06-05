@@ -174,6 +174,10 @@ async def list_session_canvas_artifacts(
 async def preview_canvas(
     canvas: CanvasDep,
     token: str = Query(..., min_length=10),
+    js: bool = Query(
+        False,
+        description="When true, allow inline scripts and event handlers in HTML preview.",
+    ),
 ) -> HTMLResponse:
     settings = get_settings()
     doc = await canvas.load_verified_from_token(token)
@@ -182,7 +186,7 @@ async def preview_canvas(
             "<!DOCTYPE html><html><body>Invalid or expired preview token.</body></html>",
             status_code=status.HTTP_403_FORBIDDEN,
         )
-    html, _mime = build_preview_html(doc, settings)
+    html, _mime = build_preview_html(doc, settings, allow_js=js)
     csp = settings.canvas.preview_csp.strip()
     headers = {
         "X-Content-Type-Options": "nosniff",

@@ -173,7 +173,10 @@ class CapabilitiesSource:
             if tool_lines:
                 parts.append("Available tools:\n" + "\n".join(tool_lines))
             if skill_lines:
-                parts.append("Available skills:\n" + "\n".join(skill_lines))
+                parts.append(
+                    "Available skills (call load_skill with name=<id>):\n"
+                    + "\n".join(skill_lines)
+                )
 
             body = "\n\n".join(parts)
             if not body.strip():

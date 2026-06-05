@@ -108,6 +108,13 @@ _GUIDE_PAYLOAD: dict[str, Any] = {
         "4. Re-read **`layout_structure`**/**`typography`**/**`emoji_and_icons`** below if the tree is non-trivial — simplify before emitting.",
         "5. **`emit_ui_tree`** with a minimal valid tree; follow up with **`emit_ui_patch`** only for small deltas.",
     ],
+    "custom_javascript": [
+        "Prefer built-in GenUI components and `props.action` dispatch for chat-side handlers.",
+        "When you need arbitrary HTML/JS (custom widgets, third-party snippets), use **`HtmlFrame`** "
+        "with `props.html` (fragment or full document). Scripts run in a sandboxed iframe only after "
+        "the user enables JS from the preview toolbar.",
+        "Do not try to inject `<script>` into other component kinds — use `HtmlFrame` instead.",
+    ],
     "anti_patterns": [
         "Invalid `kind` strings (snake_case, lowercase, or invented component names) — must match `list_ui_components` exactly.",
         "Random keys on a node (e.g. `title` beside `kind` without being in that component's catalog props) — put them under `props`.",

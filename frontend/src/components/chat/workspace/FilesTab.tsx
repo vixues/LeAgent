@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import {
   BookPlus,
+  Code2,
   Download,
   FileArchive,
   FolderOpen,
@@ -26,6 +27,7 @@ import type { Attachment, Message } from '@/types/chat';
 import { normalizeAttachmentList } from '@/types/chat';
 import { collectSessionEditPaths } from '@/lib/sessionProjectEdits';
 import { DocGenerationLivePreview } from './DocGenerationLivePreview';
+import { canvasIframeSandbox, withCanvasPreviewJs } from '@/lib/canvasPreviewJs';
 
 const EMPTY_SESSION_MESSAGES: Message[] = [];
 
@@ -683,6 +685,96 @@ export function FilesTab() {
   );
 }
 
+function CanvasFilePreview({
+  fileName,
+  previewPath,
+  onInsert,
+  onOpen,
+}: {
+  fileName: string;
+  previewPath: string;
+  onInsert: () => void;
+  onOpen: () => void;
+}) {
+  const { t } = useTranslation();
+  const [jsEnabled, setJsEnabled] = useState(false);
+  const [iframeKey, setIframeKey] = useState(0);
+  const iframeSrcBase =
+    previewPath.startsWith('http://') || previewPath.startsWith('https://')
+      ? previewPath
+      : `${typeof window !== 'undefined' ? window.location.origin : ''}${previewPath.startsWith('/') ? previewPath : `/${previewPath}`}`;
+  const iframeSrc = previewPath ? withCanvasPreviewJs(iframeSrcBase, jsEnabled) : '';
+  const isApiPreview = iframeSrc.includes('/canvas/preview');
+
+  return (
+    <div className="flex flex-col h-full min-h-0">
+      <div className="flex items-start gap-2 px-3 py-2 border-b border-border-subtle/60">
+        <div className="w-8 h-8 rounded-lg bg-surface flex items-center justify-center flex-shrink-0">
+          {getFileExtensionIcon(fileName)}
+        </div>
+        <div className="min-w-0 flex-1">
+          <p className="text-xs font-semibold text-foreground truncate">{fileName}</p>
+          <p className="text-[11px] text-muted-foreground-tertiary tabular-nums">
+            {t('chat.workspace.files.canvasPreview', { defaultValue: 'Canvas preview' })}
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={() => {
+            setJsEnabled((v) => !v);
+            setIframeKey((k) => k + 1);
+          }}
+          className={cn(
+            'shrink-0 px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wide transition-colors',
+            jsEnabled
+              ? 'bg-amber-100 text-amber-800 dark:bg-amber-950/50 dark:text-amber-200'
+              : 'text-muted-foreground hover:text-foreground hover:bg-surface-sunken',
+          )}
+          title={jsEnabled ? t('chat.canvas.jsOn') : t('chat.canvas.jsOff')}
+        >
+          <span className="inline-flex items-center gap-0.5">
+            <Code2 className="w-3 h-3" aria-hidden />
+            {jsEnabled ? t('chat.canvas.jsOnShort') : t('chat.canvas.jsOffShort')}
+          </span>
+        </button>
+      </div>
+      <div className="flex flex-1 min-h-0 flex-col overflow-hidden bg-background">
+        {previewPath ? (
+          <iframe
+            key={`${iframeKey}-${jsEnabled ? 'js' : 'nojs'}`}
+            title={fileName}
+            src={iframeSrc}
+            className="h-full w-full min-h-[200px] border-0"
+            sandbox={canvasIframeSandbox(jsEnabled, isApiPreview) || undefined}
+          />
+        ) : (
+          <p className="p-3 text-xs text-muted-foreground">
+            {t('chat.workspace.files.canvasNoPreview', {
+              defaultValue: 'No preview path for this canvas.',
+            })}
+          </p>
+        )}
+      </div>
+      <div className="flex gap-2 p-2 border-t border-border-subtle/60">
+        <button
+          type="button"
+          onClick={onOpen}
+          className="flex-1 text-[11px] font-medium px-2 py-1.5 rounded-lg bg-primary-600 hover:bg-primary-700 text-white transition-colors"
+        >
+          {t('chat.workspace.files.openAction', { defaultValue: 'Open as tab' })}
+        </button>
+        <button
+          type="button"
+          disabled
+          className="flex-1 text-[11px] font-medium px-2 py-1.5 rounded-lg bg-surface text-muted-foreground-tertiary opacity-50 cursor-not-allowed"
+        >
+          {t('chat.workspace.files.insertAction', { defaultValue: 'Reference' })}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function FilePreview({
   file,
   onInsert,
@@ -695,59 +787,13 @@ function FilePreview({
   const { t } = useTranslation();
 
   if (file.source === 'workspace' && file.item.source === 'canvas') {
-    const item = file.item;
-    const previewPath = item.previewPath ?? '';
-    const iframeSrc =
-      previewPath.startsWith('http://') || previewPath.startsWith('https://')
-        ? previewPath
-        : `${typeof window !== 'undefined' ? window.location.origin : ''}${previewPath.startsWith('/') ? previewPath : `/${previewPath}`}`;
-
     return (
-      <div className="flex flex-col h-full min-h-0">
-        <div className="flex items-start gap-2 px-3 py-2 border-b border-border-subtle/60">
-          <div className="w-8 h-8 rounded-lg bg-surface flex items-center justify-center flex-shrink-0">
-            {getFileExtensionIcon(item.file_name)}
-          </div>
-          <div className="min-w-0 flex-1">
-            <p className="text-xs font-semibold text-foreground truncate">{item.file_name}</p>
-            <p className="text-[11px] text-muted-foreground-tertiary tabular-nums">
-              {t('chat.workspace.files.canvasPreview', { defaultValue: 'Canvas preview' })}
-            </p>
-          </div>
-        </div>
-        <div className="flex flex-1 min-h-0 flex-col overflow-hidden bg-background">
-          {previewPath ? (
-            <iframe
-              title={item.file_name}
-              src={iframeSrc}
-              className="h-full w-full min-h-[200px] border-0"
-              sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
-            />
-          ) : (
-            <p className="p-3 text-xs text-muted-foreground">
-              {t('chat.workspace.files.canvasNoPreview', {
-                defaultValue: 'No preview path for this canvas.',
-              })}
-            </p>
-          )}
-        </div>
-        <div className="flex gap-2 p-2 border-t border-border-subtle/60">
-          <button
-            type="button"
-            onClick={onOpen}
-            className="flex-1 text-[11px] font-medium px-2 py-1.5 rounded-lg bg-primary-600 hover:bg-primary-700 text-white transition-colors"
-          >
-            {t('chat.workspace.files.openAction', { defaultValue: 'Open as tab' })}
-          </button>
-          <button
-            type="button"
-            disabled
-            className="flex-1 text-[11px] font-medium px-2 py-1.5 rounded-lg bg-surface text-muted-foreground-tertiary opacity-50 cursor-not-allowed"
-          >
-            {t('chat.workspace.files.insertAction', { defaultValue: 'Reference' })}
-          </button>
-        </div>
-      </div>
+      <CanvasFilePreview
+        fileName={file.item.file_name}
+        previewPath={file.item.previewPath ?? ''}
+        onInsert={onInsert}
+        onOpen={onOpen}
+      />
     );
   }
 

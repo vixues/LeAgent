@@ -295,7 +295,11 @@
       "screenshotSaved": "Screenshot saved",
       "screenshotFailed": "Could not capture screenshot",
       "screenshotNoToken": "Preview link expired — refresh the canvas or open it again from chat",
-      "screenshotUnavailable": "Screenshot is not available for this canvas"
+      "screenshotUnavailable": "Screenshot is not available for this canvas",
+      "jsOn": "JavaScript enabled in preview",
+      "jsOff": "JavaScript disabled in preview",
+      "jsOnShort": "JS On",
+      "jsOffShort": "JS Off"
     },
     "camera": {
       "title": "Take a photo",

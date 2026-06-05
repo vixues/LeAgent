@@ -79,11 +79,12 @@ _GUIDE_PAYLOAD: dict[str, Any] = {
         "Author a body fragment OR a full <!DOCTYPE html> document — both work. "
         "Fragments are easier; only return a full document if you actually need "
         "<head>/<style> overrides.",
-        "Inline <style> is allowed and survives sanitisation. Inline <script> "
-        "tags written by the model are stripped — rely on the bundled Tailwind "
-        "CDN script instead.",
-        "Inline event handlers (onclick=, onload=, ...) are stripped for "
-        "security; do not author interactive JS.",
+        "Inline <style> is allowed. Inline <script> tags and event handlers "
+        "(onclick=, onload=, …) are stored at publish time but **disabled by "
+        "default** in the hosted preview — the user enables JS from the Canvas "
+        "preview toolbar (`js=1` on the preview URL).",
+        "For multi-file bundles, local <script src=…> refs are inlined from "
+        "`html_files` and follow the same preview-time JS toggle.",
         "SVG and the common chart primitives (svg, path, g, circle, rect, "
         "line, polyline, polygon, ellipse, defs, linearGradient, "
         "radialGradient, stop, text, tspan) are allowed.",
@@ -104,8 +105,9 @@ class GetHtmlCanvasGuideTool(BaseTool):
         "Return the canvas HTML preview design system: shipped utility classes "
         "(wa-card, wa-gradient/wa-gradient-warm/wa-gradient-fresh), Tailwind "
         "config (Inter font, primary/surface palettes, dark mode), authoring "
-        "rules (allowed tags/attributes, inline <style> ok, no <script>/on* "
-        "handlers), and a reference HTML template. Call this before authoring "
+        "rules (allowed tags/attributes, inline <style> ok, scripts/events "
+        "stored but off until preview JS toggle), and a reference HTML template. "
+        "Call this before authoring "
         "`canvas_publish(mode=html)` so you do not have to memorise the "
         "details. Read-only, no side effects."
     )

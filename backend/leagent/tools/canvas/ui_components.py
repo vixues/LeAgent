@@ -13,6 +13,44 @@ from leagent.services.gen_ui.schema import (
 from leagent.tools.base import BaseTool, ToolCategory, ToolContext
 
 
+def _try_parse_json_object(raw: str) -> dict[str, Any] | None:
+    """Parse a JSON object string, applying the same repair pipeline as tool-arg recovery."""
+    from leagent.tools.executor import (
+        _candidate_json_texts,
+        _loads_json_dict,
+        _recover_emit_ui_tree_args,
+        _try_json_dict_raw_decode_trailing_junk,
+        _try_repair_superfluous_closing_delimiter,
+    )
+
+    text = raw.strip()
+    if not text:
+        return None
+
+    if '"tree"' in text:
+        recovered = _recover_emit_ui_tree_args(text)
+        if recovered is not None:
+            inner = recovered.get("tree")
+            if isinstance(inner, dict):
+                return inner
+
+    parsers = (
+        _loads_json_dict,
+        _try_json_dict_raw_decode_trailing_junk,
+        _try_repair_superfluous_closing_delimiter,
+    )
+    for candidate in _candidate_json_texts(text):
+        for parser in parsers:
+            parsed = parser(candidate)
+            if not isinstance(parsed, dict):
+                continue
+            inner = parsed.get("tree")
+            if isinstance(inner, dict) and set(parsed.keys()) <= {"tree", "canvas_id"}:
+                return inner
+            return parsed
+    return None
+
+
 def _tree_string_json_decode_hint(raw: str, exc: json.JSONDecodeError) -> str:
     """Human- and model-actionable detail when the nested ``tree`` JSON string breaks."""
     pos = exc.pos if isinstance(getattr(exc, "pos", None), int) else 0
@@ -25,6 +63,7 @@ def _tree_string_json_decode_hint(raw: str, exc: json.JSONDecodeError) -> str:
     return (
         f"{exc.msg} at line {exc.lineno} column {exc.colno} (byte {pos}). "
         "Inside string fields use \\\" for quotes and \\n for line breaks; "
+        "avoid unescaped ASCII \" inside values (use \\\" or Chinese book-title quotes 「」); "
         "prefer passing `tree` as a JSON object (not a quoted string) to avoid double-escaping. "
         f"Near: …{snippet}…\n{pointer}"
     )
@@ -88,7 +127,9 @@ class EmitUiTreeTool(BaseTool):
         "Actions: set `props.action` to `{type, payload}` with snake_case `type` "
         "(e.g. `{type:'send_message', payload:{content:'Summarize'}}`, "
         "`{type:'navigate', payload:{route:'/settings'}}`, "
-        "`{type:'open_artifact', payload:{canvasId:'…'}}`); `actionId` alone remains supported for legacy controls."
+        "`{type:'open_artifact', payload:{canvasId:'…'}}`); `actionId` alone remains supported for legacy controls. "
+        "For arbitrary HTML/JS use **`HtmlFrame`** (`props.html`, optional `height`/`title`); scripts run "
+        "only after the user enables JS in the preview toolbar."
     )
     category = ToolCategory.CANVAS
     is_read_only = True
@@ -130,12 +171,16 @@ class EmitUiTreeTool(BaseTool):
             raw = tree.strip()
             if not raw:
                 raise ValueError("tree string is empty")
-            try:
-                tree = json.loads(raw)
-            except json.JSONDecodeError as exc:
-                raise ValueError(
-                    f"tree is not valid JSON: {_tree_string_json_decode_hint(raw, exc)}"
-                ) from exc
+            repaired = _try_parse_json_object(raw)
+            if repaired is not None:
+                tree = repaired
+            else:
+                try:
+                    tree = json.loads(raw)
+                except json.JSONDecodeError as exc:
+                    raise ValueError(
+                        f"tree is not valid JSON: {_tree_string_json_decode_hint(raw, exc)}"
+                    ) from exc
             params["tree"] = tree
         if not isinstance(tree, dict):
             raise ValueError("tree must be an object (or a JSON string of an object)")

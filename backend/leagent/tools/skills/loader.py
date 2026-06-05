@@ -51,7 +51,7 @@ class SkillTool(BaseTool):
     max_result_size_chars = 200_000
 
     def get_activity_description(self, params: dict[str, Any] | None = None) -> str | None:
-        skill = (params or {}).get("skill_name", "")
+        skill = (params or {}).get("name", "")
         return f"Loading skill{f': {skill}' if skill else ''}"
 
     @property
@@ -59,9 +59,11 @@ class SkillTool(BaseTool):
         return {
             "type": "object",
             "properties": {
-                "skill_name": {
+                "name": {
                     "type": "string",
-                    "description": "Name of the skill to load (as advertised in the Available Skills list).",
+                    "description": (
+                        "Skill id from the Available skills list (matches SKILL.md name: field)."
+                    ),
                 },
                 "query": {
                     "type": "string",
@@ -84,11 +86,11 @@ class SkillTool(BaseTool):
                     "description": "If false, skip inlining script sources under scripts/.",
                 },
             },
-            "required": ["skill_name"],
+            "required": ["name"],
         }
 
     async def execute(self, params: dict[str, Any], context: ToolContext) -> Any:
-        skill_name = params["skill_name"]
+        skill_name = params["name"]
         query = params.get("query") or ""
 
         try:
@@ -154,7 +156,7 @@ class SkillTool(BaseTool):
 
             result: dict[str, Any] = {
                 "found": True,
-                "skill_name": skill.name,
+                "name": skill.name,
                 "description": skill.description,
                 "version": skill.version,
                 "license": skill.manifest.license,

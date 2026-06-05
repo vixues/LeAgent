@@ -606,7 +606,7 @@ class TestProgressiveDisclosure:
         await mgr.load_all()
         monkeypatch.setattr(manager_mod, "get_skills_manager", lambda: mgr)
 
-        result = await SkillTool().execute({"skill_name": "probe"}, ToolContext(user_id=None, session_id=None))
+        result = await SkillTool().execute({"name": "probe"}, ToolContext(user_id=None, session_id=None))
         assert result["found"] is True
         assert "Instructions for the agent" in result["content"]
 
@@ -646,7 +646,7 @@ class TestProgressiveDisclosure:
 
         tool = SkillResourceTool()
         ctx = ToolContext(user_id=None, session_id=None)
-        p = {"skill_name": "res-cache", "resource_path": "references/note.md"}
+        p = {"name": "res-cache", "resource_path": "references/note.md"}
         r1 = await tool.execute(p, ctx)
         r2 = await tool.execute(p, ctx)
         assert r1["found"] and r2["found"]
@@ -689,7 +689,7 @@ class TestProgressiveDisclosure:
 
         tool = SkillTool()
         ctx = ToolContext(user_id=None, session_id=None)
-        params = {"skill_name": "bundle-cache", "include_bundled_content": True}
+        params = {"name": "bundle-cache", "include_bundled_content": True}
         await tool.execute(params, ctx)
         await tool.execute(params, ctx)
         assert len(builds) == 1
@@ -731,7 +731,7 @@ class TestProgressiveDisclosure:
         monkeypatch.setattr(manager_mod, "get_skills_manager", lambda: mgr)
 
         result = await SkillTool().execute(
-            {"skill_name": "packed", "include_bundled_content": True},
+            {"name": "packed", "include_bundled_content": True},
             ToolContext(user_id=None, session_id=None),
         )
         assert result["found"] is True
@@ -766,7 +766,7 @@ class TestProgressiveDisclosure:
         await mgr.load_all()
         monkeypatch.setattr(manager_mod, "get_skills_manager", lambda: mgr)
 
-        result = await SkillTool().execute({"skill_name": "meta-bundle"}, ToolContext(user_id=None, session_id=None))
+        result = await SkillTool().execute({"name": "meta-bundle"}, ToolContext(user_id=None, session_id=None))
         assert result["found"] is True
         assert result["include_bundled_content"] is True
         assert any("FROM_METADATA_BUNDLE" in r.get("content", "") for r in result["bundled_resources"])
@@ -795,7 +795,7 @@ class TestProgressiveDisclosure:
         monkeypatch.setattr(manager_mod, "get_skills_manager", lambda: mgr)
 
         result = await SkillTool().execute(
-            {"skill_name": "opt-out", "include_bundled_content": False},
+            {"name": "opt-out", "include_bundled_content": False},
             ToolContext(user_id=None, session_id=None),
         )
         assert result["found"] is True
@@ -840,7 +840,7 @@ class TestProgressiveDisclosure:
 
         tool = SkillTool()
         result = await tool.execute(
-            {"skill_name": "huge-body", "include_bundled_content": True},
+            {"name": "huge-body", "include_bundled_content": True},
             ToolContext(user_id=None, session_id=None),
         )
         assert result["found"] is True
@@ -881,7 +881,7 @@ class TestProgressiveDisclosure:
         monkeypatch.setattr(manager_mod, "get_skills_manager", lambda: mgr)
 
         result = await SkillTool().execute(
-            {"skill_name": "full-pack", "include_bundled_content": True},
+            {"name": "full-pack", "include_bundled_content": True},
             ToolContext(user_id=None, session_id=None),
         )
         assert result["found"] is True
@@ -917,7 +917,7 @@ class TestProgressiveDisclosure:
         monkeypatch.setattr(manager_mod, "get_skills_manager", lambda: mgr)
 
         result = await SkillTool().execute(
-            {"skill_name": "bin-pack", "include_bundled_content": True},
+            {"name": "bin-pack", "include_bundled_content": True},
             ToolContext(user_id=None, session_id=None),
         )
         assert result["found"] is True
@@ -947,7 +947,7 @@ class TestProgressiveDisclosure:
         monkeypatch.setattr(manager_mod, "get_skills_manager", lambda: mgr)
 
         result = await SkillTool().execute(
-            {"skill_name": "big-ref", "include_bundled_content": True},
+            {"name": "big-ref", "include_bundled_content": True},
             ToolContext(user_id=None, session_id=None),
         )
         assert result["found"] is True
@@ -956,7 +956,7 @@ class TestProgressiveDisclosure:
         assert entry.get("truncated") is True
         assert len(entry["content"]) <= 50_000
 
-    async def test_read_resource_returns_skill_name(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    async def test_read_resource_returns_name(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         from leagent.skills.manager import SkillsManager
         from leagent.skills import manager as manager_mod
         from leagent.tools.base import ToolContext
@@ -977,9 +977,9 @@ class TestProgressiveDisclosure:
 
         tool = SkillResourceTool()
         ctx = ToolContext(user_id=None, session_id=None)
-        ok = await tool.execute({"skill_name": "guarded", "resource_path": "references/note.md"}, ctx)
+        ok = await tool.execute({"name": "guarded", "resource_path": "references/note.md"}, ctx)
         assert ok["found"] is True
-        assert ok["skill_name"] == "guarded"
+        assert ok["name"] == "guarded"
 
     async def test_read_resource_rejects_escape(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         from leagent.skills.manager import SkillsManager
@@ -1003,12 +1003,12 @@ class TestProgressiveDisclosure:
         tool = SkillResourceTool()
         ctx = ToolContext(user_id=None, session_id=None)
         # Legitimate resource read.
-        ok = await tool.execute({"skill_name": "guarded", "resource_path": "references/note.md"}, ctx)
+        ok = await tool.execute({"name": "guarded", "resource_path": "references/note.md"}, ctx)
         assert ok["found"] is True
         assert ok["content"] == "hello"
 
         # Path escape attempts are denied.
-        bad = await tool.execute({"skill_name": "guarded", "resource_path": "../outside.md"}, ctx)
+        bad = await tool.execute({"name": "guarded", "resource_path": "../outside.md"}, ctx)
         assert bad["found"] is False
 
     async def test_run_script_requires_env_flag(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -1037,7 +1037,7 @@ class TestProgressiveDisclosure:
         monkeypatch.setenv(ENV_FLAG, "0")
         get_settings.cache_clear()
         denied = await tool.execute(
-            {"skill_name": "scripter", "script_path": "scripts/hi.py"},
+            {"name": "scripter", "script_path": "scripts/hi.py"},
             ctx,
         )
         assert denied["ok"] is False
@@ -1046,7 +1046,7 @@ class TestProgressiveDisclosure:
         monkeypatch.setenv(ENV_FLAG, "1")
         get_settings.cache_clear()
         allowed = await tool.execute(
-            {"skill_name": "scripter", "script_path": "scripts/hi.py"},
+            {"name": "scripter", "script_path": "scripts/hi.py"},
             ctx,
         )
         assert allowed.get("ok") is True

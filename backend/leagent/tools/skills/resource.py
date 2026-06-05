@@ -41,7 +41,7 @@ class SkillResourceTool(BaseTool):
 
     def get_activity_description(self, params: dict[str, Any] | None = None) -> str | None:
         p = params or {}
-        skill = p.get("skill_name", "")
+        skill = p.get("name", "")
         path = p.get("resource_path", "")
         return f"Reading skill resource: {skill}/{path}" if skill else "Reading skill resource"
 
@@ -50,9 +50,11 @@ class SkillResourceTool(BaseTool):
         return {
             "type": "object",
             "properties": {
-                "skill_name": {
+                "name": {
                     "type": "string",
-                    "description": "Name of the skill that owns the resource.",
+                    "description": (
+                        "Skill id from the Available skills list (matches SKILL.md name: field)."
+                    ),
                 },
                 "resource_path": {
                     "type": "string",
@@ -66,11 +68,11 @@ class SkillResourceTool(BaseTool):
                     "description": "Optional cap on bytes to return (default: 200000).",
                 },
             },
-            "required": ["skill_name", "resource_path"],
+            "required": ["name", "resource_path"],
         }
 
     async def execute(self, params: dict[str, Any], context: ToolContext) -> Any:
-        skill_name = params["skill_name"]
+        skill_name = params["name"]
         resource_path = params["resource_path"]
         max_bytes = int(params.get("max_bytes") or MAX_CHARS)
 
@@ -126,7 +128,7 @@ class SkillResourceTool(BaseTool):
                 abs_path,
                 max_bytes=max_bytes,
                 resource=resource,
-                skill_name=skill.name,
+                name=skill.name,
             )
             if ck is not None:
                 put_cached_resource_payload(ck, out)
@@ -142,7 +144,7 @@ def _read_resource_payload(
     *,
     max_bytes: int,
     resource: Any,
-    skill_name: str = "",
+    name: str = "",
 ) -> dict[str, Any]:
     """Return a dict payload suitable for a ``tool_result`` message."""
     try:
@@ -160,7 +162,7 @@ def _read_resource_payload(
         text = data.decode("utf-8")
         return {
             "found": True,
-            "skill_name": skill_name or "",
+            "name": name or "",
             "resource_path": resource.relative_path,
             "kind": resource.kind.value,
             "encoding": "utf-8",
@@ -173,7 +175,7 @@ def _read_resource_payload(
 
         return {
             "found": True,
-            "skill_name": skill_name or "",
+            "name": name or "",
             "resource_path": resource.relative_path,
             "kind": resource.kind.value,
             "encoding": "base64",

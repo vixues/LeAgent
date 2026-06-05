@@ -295,7 +295,11 @@
       "screenshotSaved": "截图已保存",
       "screenshotFailed": "无法截取画面",
       "screenshotNoToken": "预览链接已过期，请从对话中重新打开画布或刷新页面",
-      "screenshotUnavailable": "当前画布不支持截图"
+      "screenshotUnavailable": "当前画布不支持截图",
+      "jsOn": "预览已启用 JavaScript",
+      "jsOff": "预览已禁用 JavaScript",
+      "jsOnShort": "JS 开",
+      "jsOffShort": "JS 关"
     },
     "camera": {
       "title": "拍摄照片",

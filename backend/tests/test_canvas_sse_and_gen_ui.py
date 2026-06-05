@@ -1,5 +1,6 @@
 """Tests for canvas companion SSE events and generative UI schema validation."""
 
+from pathlib import Path
 from uuid import uuid4
 
 import pytest
@@ -476,6 +477,21 @@ def test_normalize_caller_props_win_over_flat():
 
 
 @pytest.mark.asyncio
+async def test_emit_ui_tree_repairs_malformed_json_string():
+    """Structural JSON issues (e.g. superfluous ``}``) are repaired like outer tool-arg recovery."""
+    raw = (Path(__file__).parent / "fixtures" / "emit_ui_tree_malformed_llm.json").read_text(
+        encoding="utf-8",
+    )
+    result = await EmitUiTreeTool().execute(
+        {"tree": raw}, ToolContext(user_id="u1", session_id="s1")
+    )
+    root = result["payload"]["tree"]["root"]
+    assert root["kind"] == "Stack"
+    kinds = [c.get("kind") for c in root.get("children", [])]
+    assert "Alert" in kinds
+
+
+@pytest.mark.asyncio
 async def test_emit_ui_tree_invalid_json_string_includes_decode_hint():
     """Malformed nested JSON string surfaces byte position so the model can fix escapes."""
     bad = '{"root":{"kind":"Text","props":{"value":"broken "inner" quote"}}}'
@@ -691,11 +707,38 @@ def test_sanitize_html_full_document_strips_javascript_href():
     assert "safe" in out
 
 
+def test_sanitize_html_allow_js_preserves_scripts_and_handlers():
+    raw = '<div onclick="go()" class="ok"><script>run()</script></div>'
+    out = sanitize_html(raw, max_bytes=1024 * 1024, allow_js=True)
+    assert "onclick" in out.lower()
+    assert "run()" in out
+
+
+def test_build_preview_html_allow_js_toggle():
+    s = _minimal_settings()
+    raw = '<button onclick="x()">Go</button><script>var a = 1</script>'
+    doc = CanvasDocument(
+        id=uuid4(),
+        canvas_id=uuid4(),
+        revision=1,
+        session_id=uuid4(),
+        user_id=uuid4(),
+        title="JsToggle",
+        content_type=CanvasContentType.HTML.value,
+        html_body=raw,
+    )
+    html_off, _mime = build_preview_html(doc, s, allow_js=False)
+    html_on, _mime2 = build_preview_html(doc, s, allow_js=True)
+    assert "onclick" not in html_off.lower()
+    assert "var a = 1" not in html_off
+    assert "onclick" in html_on.lower()
+    assert "var a = 1" in html_on
+
+
 def test_build_preview_html_uses_sanitized_body_classes():
-    """Simulate publish path: stored html_body is sanitize_html(agent_html)."""
+    """Publish stores raw HTML; preview sanitises unless allow_js."""
     s = _minimal_settings()
     raw = '<div class="rounded-xl p-6 shadow-md bg-slate-100 dark:bg-slate-800">Card</div>'
-    body = sanitize_html(raw, max_bytes=s.canvas.max_html_bytes)
     doc = CanvasDocument(
         id=uuid4(),
         canvas_id=uuid4(),
@@ -704,7 +747,7 @@ def test_build_preview_html_uses_sanitized_body_classes():
         user_id=uuid4(),
         title="Sanitized",
         content_type=CanvasContentType.HTML.value,
-        html_body=body,
+        html_body=raw,
     )
     html, _mime = build_preview_html(doc, s)
     assert "rounded-xl" in html
@@ -727,6 +770,7 @@ async def test_get_genui_guide_returns_payload():
     assert "layout_structure" in data
     assert "emoji_and_icons" in data
     assert "workflow_order" in data
+    assert "custom_javascript" in data
 
 
 def test_list_component_catalog_returns_singleton_list():
@@ -738,6 +782,8 @@ def test_list_component_catalog_returns_singleton_list():
     assert len(a) > 0
     design_surface = next(item for item in a if item["kind"] == "DesignSurface")
     assert "geek" in design_surface["props"]["preset"]
+    html_frame = next(item for item in a if item["kind"] == "HtmlFrame")
+    assert "html" in html_frame["props"]
 
 
 def test_validate_weather_card_tree():

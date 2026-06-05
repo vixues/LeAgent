@@ -15,6 +15,18 @@ from leagent.tools.base import SyncTool, ToolCategory, ToolContext, ValidationRe
 logger = structlog.get_logger(__name__)
 
 
+def _cell_to_json(value: Any) -> Any:
+    """Coerce openpyxl cell values to JSON-serializable primitives."""
+    if value is None or isinstance(value, (bool, int, float, str)):
+        return value
+    if hasattr(value, "isoformat"):
+        try:
+            return value.isoformat()
+        except Exception:  # noqa: BLE001
+            return str(value)
+    return str(value)
+
+
 class ExcelReaderTool(SyncTool):
     """Read and extract data from Excel files (.xlsx).
 
@@ -188,7 +200,7 @@ class ExcelReaderTool(SyncTool):
             for row in rows:
                 row_values = []
                 for cell in row:
-                    value = cell.value
+                    value = _cell_to_json(cell.value)
                     if value is None and not include_empty_cells:
                         continue
                     row_values.append(value)

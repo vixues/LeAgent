@@ -197,6 +197,29 @@ class TestExcelReaderTool:
         result = await run("excel_reader", {"file_path": "/nonexistent/data.xlsx"})
         assert not result.success
 
+    async def test_datetime_cells_are_json_serializable(self, tmp_path: Path) -> None:
+        from datetime import datetime
+
+        import openpyxl
+
+        path = tmp_path / "dates.xlsx"
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws.append(["submitted_at", "count"])
+        ws.append([datetime(2024, 6, 1, 12, 30, 0), 1])
+        wb.save(path)
+
+        result = await run(
+            "excel_reader",
+            {"file_path": str(path), "output_format": "records", "has_header": True},
+        )
+        assert result.success
+        assert isinstance(result.data, dict)
+        records = result.data.get("data")
+        assert isinstance(records, list) and records
+        assert records[0]["submitted_at"] == "2024-06-01T12:30:00"
+        json.dumps(result.data)
+
 
 # ===========================================================================
 # CSVProcessorTool

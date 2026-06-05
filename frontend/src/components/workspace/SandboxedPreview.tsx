@@ -1,7 +1,9 @@
 import { useMemo, useRef, useState } from 'react';
-import { RefreshCw, ExternalLink } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
+import { Code2, RefreshCw, ExternalLink } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { Artifact } from '@/types/artifact';
+import { srcDocIframeSandbox } from '@/lib/canvasPreviewJs';
 
 interface SandboxedPreviewProps {
   artifact: Artifact;
@@ -96,8 +98,10 @@ export default function SandboxedPreview({
   artifact,
   className,
 }: SandboxedPreviewProps) {
+  const { t } = useTranslation();
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const [key, setKey] = useState(0);
+  const [jsEnabled, setJsEnabled] = useState(false);
 
   const srcDoc = useMemo(() => {
     if (artifact.type === 'react') {
@@ -124,6 +128,26 @@ export default function SandboxedPreview({
         </span>
         <button
           type="button"
+          onClick={() => {
+            setJsEnabled((v) => !v);
+            setKey((k) => k + 1);
+          }}
+          className={cn(
+            'px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wide transition-colors',
+            jsEnabled
+              ? 'bg-amber-100 text-amber-800 dark:bg-amber-950/50 dark:text-amber-200'
+              : 'text-muted-foreground hover:text-foreground hover:bg-surface-sunken',
+          )}
+          aria-label={jsEnabled ? t('chat.canvas.jsOn') : t('chat.canvas.jsOff')}
+          title={jsEnabled ? t('chat.canvas.jsOn') : t('chat.canvas.jsOff')}
+        >
+          <span className="inline-flex items-center gap-0.5">
+            <Code2 className="w-3 h-3" aria-hidden />
+            {jsEnabled ? t('chat.canvas.jsOnShort') : t('chat.canvas.jsOffShort')}
+          </span>
+        </button>
+        <button
+          type="button"
           onClick={handleRefresh}
           className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-surface-sunken transition-colors"
           aria-label="Refresh preview"
@@ -144,9 +168,9 @@ export default function SandboxedPreview({
       <div className="flex min-h-0 min-w-0 flex-1 basis-0 flex-col bg-white dark:bg-zinc-950">
         <iframe
           ref={iframeRef}
-          key={key}
+          key={`${key}-${jsEnabled ? 'js' : 'nojs'}`}
           srcDoc={srcDoc}
-          sandbox="allow-scripts"
+          sandbox={srcDocIframeSandbox(jsEnabled) || undefined}
           className="min-h-0 min-w-0 w-full flex-1 border-0"
           title={artifact.title}
         />

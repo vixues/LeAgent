@@ -46,6 +46,8 @@ class CanvasPublishTool(BaseTool):
         "newlines as \\n. For multi-asset pages (HTML + CSS + JS) use "
         "`html_files` (map path → source) with `html_bundle_entry`; "
         "local <link>/<script> refs are inlined server-side. "
+        "Inline `<script>` and `on*` handlers are stored but **off by default** "
+        "in preview — the user enables JS from the Canvas preview toolbar. "
         "The host injects Tailwind, Inter, and shipped "
         "utility classes; call `get_html_canvas_guide` only when you need "
         "the reference template or exact class names. "

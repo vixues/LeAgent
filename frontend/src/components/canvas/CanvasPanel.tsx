@@ -4,6 +4,7 @@ import { toPng } from 'html-to-image';
 import {
   AlertCircle,
   Camera,
+  Code2,
   ExternalLink,
   Maximize2,
   Minimize2,
@@ -18,6 +19,7 @@ import {
   pickCanvasPreviewPathFromMetadata,
   resolveCanvasPreviewUrl,
 } from '@/lib/previewUrl';
+import { canvasIframeSandbox, withCanvasPreviewJs } from '@/lib/canvasPreviewJs';
 import {
   downloadImageBlob,
   extractCanvasPreviewToken,
@@ -70,6 +72,7 @@ function CanvasPanel({ artifact, className }: CanvasPanelProps) {
   const [tab, setTab] = useState<CanvasTab>('preview');
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [iframeKey, setIframeKey] = useState(0);
+  const [jsEnabled, setJsEnabled] = useState(false);
   const [screenshotting, setScreenshotting] = useState(false);
   const [previewFrameError, setPreviewFrameError] = useState(false);
   const [cameraOpen, setCameraOpen] = useState(false);
@@ -84,23 +87,24 @@ function CanvasPanel({ artifact, className }: CanvasPanelProps) {
     () => pickCanvasPreviewPathFromMetadata(meta),
     [meta],
   );
-  const hostedSrc = resolvedPreviewPath
+  const hostedSrcBase = resolvedPreviewPath
     ? resolveCanvasPreviewUrl(resolvedPreviewPath)
     : '';
+  const hostedSrc = hostedSrcBase ? withCanvasPreviewJs(hostedSrcBase, jsEnabled) : '';
   const showGenTab = Boolean(tree);
   const effectiveTab: CanvasTab = showGenTab ? tab : 'preview';
 
   const isApiCanvasPreview =
     Boolean(hostedSrc) &&
     (hostedSrc.includes('/canvas/preview') || hostedSrc.includes('canvas%2Fpreview'));
-  const iframeSandbox =
-    isApiCanvasPreview || ((meta?.trust as string) === 'hosted' && hostedSrc)
-      ? 'allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox'
-      : 'allow-scripts';
+  const iframeSandbox = canvasIframeSandbox(
+    jsEnabled,
+    isApiCanvasPreview || ((meta?.trust as string) === 'hosted' && Boolean(hostedSrc)),
+  );
 
   useEffect(() => {
     setPreviewFrameError(false);
-  }, [hostedSrc, iframeKey]);
+  }, [hostedSrc, iframeKey, jsEnabled]);
 
   const handleRefresh = useCallback(() => {
     setPreviewFrameError(false);
@@ -278,6 +282,24 @@ function CanvasPanel({ artifact, className }: CanvasPanelProps) {
           {/* Action buttons */}
           <button
             type="button"
+            onClick={() => {
+              setJsEnabled((v) => !v);
+              setIframeKey((k) => k + 1);
+            }}
+            className={cn(
+              'p-1 rounded-md transition-colors',
+              jsEnabled
+                ? 'text-foreground bg-surface-sunken'
+                : 'text-muted-foreground hover:text-foreground hover:bg-surface-sunken',
+            )}
+            aria-label={jsEnabled ? t('chat.canvas.jsOn') : t('chat.canvas.jsOff')}
+            title={jsEnabled ? t('chat.canvas.jsOn') : t('chat.canvas.jsOff')}
+            aria-pressed={jsEnabled}
+          >
+            <Code2 className="w-3.5 h-3.5" aria-hidden />
+          </button>
+          <button
+            type="button"
             onClick={handleRefresh}
             className="p-1 rounded-md text-muted-foreground hover:text-foreground hover:bg-surface-sunken transition-colors"
             aria-label="Refresh preview"
@@ -336,11 +358,11 @@ function CanvasPanel({ artifact, className }: CanvasPanelProps) {
               )}
               <div className="relative flex min-h-0 min-w-0 flex-1 basis-0 flex-col bg-white dark:bg-zinc-950">
                 <iframe
-                  key={`${hostedSrc}-${iframeKey}`}
+                  key={`${hostedSrc}-${iframeKey}-${jsEnabled ? 'js' : 'nojs'}`}
                   title={artifact.title}
                   src={hostedSrc}
                   className="min-h-0 w-full min-w-0 flex-1 border-0"
-                  sandbox={iframeSandbox}
+                  sandbox={iframeSandbox || undefined}
                   referrerPolicy="no-referrer"
                   onLoad={() => setPreviewFrameError(false)}
                   onError={() => setPreviewFrameError(true)}
@@ -355,6 +377,7 @@ function CanvasPanel({ artifact, className }: CanvasPanelProps) {
                 contentRef={genuiBodyRef}
                 sessionId={sessionId}
                 messageId={messageId || undefined}
+                jsEnabled={jsEnabled}
               />
             </div>
           )}

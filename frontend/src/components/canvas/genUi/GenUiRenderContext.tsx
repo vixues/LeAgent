@@ -8,6 +8,8 @@ export interface GenUiRenderContextValue {
   messageId?: string;
   /** Active ``DesignSurface`` preset — nested cards/panels inherit themed chrome. */
   themeId?: GenUiThemeId | null;
+  /** When true, ``HtmlFrame`` iframes and hosted canvas previews may run scripts. */
+  jsEnabled?: boolean;
 }
 
 const GenUiRenderContext = createContext<GenUiRenderContextValue | null>(null);
@@ -15,13 +17,18 @@ const GenUiRenderContext = createContext<GenUiRenderContextValue | null>(null);
 export function GenUiRenderProvider({
   sessionId,
   messageId,
+  jsEnabled = false,
   children,
 }: {
   sessionId?: string;
   messageId?: string;
+  jsEnabled?: boolean;
   children: ReactNode;
 }) {
-  const value = useMemo(() => ({ sessionId, messageId }), [sessionId, messageId]);
+  const value = useMemo(
+    () => ({ sessionId, messageId, jsEnabled }),
+    [sessionId, messageId, jsEnabled],
+  );
   return <GenUiRenderContext.Provider value={value}>{children}</GenUiRenderContext.Provider>;
 }
 
