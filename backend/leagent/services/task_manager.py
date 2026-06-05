@@ -231,20 +231,34 @@ class TaskManager:
             from leagent.services.database import get_database_service
 
             db = get_database_service()
-            async with db.session() as session:
-                task = await session.get(Task, UUID(task_id))
-                if task is None:
+            task_uuid = UUID(task_id)
+            deadline = asyncio.get_running_loop().time() + 2.0
+            task_snapshot: dict[str, Any] | None = None
+
+            while task_snapshot is None:
+                async with db.session() as session:
+                    task = await session.get(Task, task_uuid)
+                    if task is not None:
+                        task_snapshot = {
+                            "timeout_seconds": task.timeout_seconds,
+                            "user_id": str(task.user_id) if task.user_id else None,
+                            "session_id": str(task.session_id) if task.session_id else None,
+                        }
+                        break
+
+                if asyncio.get_running_loop().time() >= deadline:
                     await self._mark_failed(task_id, "Task row disappeared before execution")
                     return
+                await asyncio.sleep(0.02)
 
-                timeout = max(1, int(task.timeout_seconds or 300))
-                handler_params = dict(params)
-                handler_params.setdefault("__task_db_id", task_id)
-                handler_params.setdefault("__task_short_id", ctx.task_id)
-                if task.user_id:
-                    handler_params.setdefault("user_id", str(task.user_id))
-                if task.session_id:
-                    handler_params.setdefault("session_id", str(task.session_id))
+            timeout = max(1, int(task_snapshot["timeout_seconds"] or 300))
+            handler_params = dict(params)
+            handler_params.setdefault("__task_db_id", task_id)
+            handler_params.setdefault("__task_short_id", ctx.task_id)
+            if task_snapshot["user_id"]:
+                handler_params.setdefault("user_id", task_snapshot["user_id"])
+            if task_snapshot["session_id"]:
+                handler_params.setdefault("session_id", task_snapshot["session_id"])
 
             # Do not hold the manager's task-row transaction while a handler
             # runs; SQLite readers can otherwise block kill/cancel commits.

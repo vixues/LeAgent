@@ -688,12 +688,10 @@ export function FilesTab() {
 function CanvasFilePreview({
   fileName,
   previewPath,
-  onInsert,
   onOpen,
 }: {
   fileName: string;
   previewPath: string;
-  onInsert: () => void;
   onOpen: () => void;
 }) {
   const { t } = useTranslation();
@@ -791,7 +789,6 @@ function FilePreview({
       <CanvasFilePreview
         fileName={file.item.file_name}
         previewPath={file.item.previewPath ?? ''}
-        onInsert={onInsert}
         onOpen={onOpen}
       />
     );

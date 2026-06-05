@@ -22,9 +22,10 @@ from uuid import uuid4
 
 import pytest
 import pytest_asyncio
+from sqlalchemy import event
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker
-from sqlmodel import SQLModel
+from sqlalchemy.pool import NullPool
 
 import leagent.services.database.models  # noqa: F401 - populate metadata
 from leagent.services.database.models.task import (
@@ -41,6 +42,14 @@ from leagent.services.task_manager import TaskManager
 # ---------------------------------------------------------------------------
 
 
+def _sqlite_connect_pragma(dbapi_conn: object, _: object) -> None:
+    cursor = dbapi_conn.cursor()  # type: ignore[union-attr]
+    cursor.execute("PRAGMA journal_mode=WAL")
+    cursor.execute("PRAGMA synchronous=NORMAL")
+    cursor.execute("PRAGMA busy_timeout=15000")
+    cursor.close()
+
+
 class _InMemoryDB:
     def __init__(self) -> None:
         # A disk-backed temp DB is the simplest way to share state across
@@ -53,8 +62,10 @@ class _InMemoryDB:
         self._engine = create_async_engine(
             f"sqlite+aiosqlite:///{path}",
             echo=False,
-            connect_args={"timeout": 15},
+            poolclass=NullPool,
+            connect_args={"check_same_thread": False, "timeout": 15},
         )
+        event.listen(self._engine.sync_engine, "connect", _sqlite_connect_pragma)
         self._factory = sessionmaker(
             self._engine, class_=AsyncSession, expire_on_commit=False
         )
