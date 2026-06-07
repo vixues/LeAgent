@@ -303,11 +303,15 @@ class TieredSessionStore:
                     if mid in existing:
                         continue
                     role_enum = _role_to_enum(msg.role)
-                    # Assistant rows for chat HTTP/stream are persisted by
-                    # :class:`ChatService` (one merged body per turn). Session transcripts
-                    # often contain several assistant segments per turn (tool rounds);
-                    # inserting them duplicates ``messages`` rows vs ``add_message``.
-                    if role_enum == MessageRole.ASSISTANT:
+                    # User and assistant rows are persisted by :class:`ChatService`
+                    # (``add_message`` in the HTTP/stream handler) before the agent
+                    # runs.  Re-inserting them here would create duplicates whenever
+                    # the controller assigns a new UUID due to index drift after
+                    # trim / stub-injection.  The full transcript (including these
+                    # roles) is already durable in the ``session_state_v1`` JSON
+                    # blob written above; the ``messages`` table mirrors are for UI
+                    # history queries only.
+                    if role_enum in (MessageRole.ASSISTANT, MessageRole.USER):
                         continue
                     db.add(
                         Message(

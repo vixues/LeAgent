@@ -244,10 +244,23 @@ function usageFromMessageRow(row: MessageResponse): Message['usage'] | undefined
   };
 }
 
+function ensureChronologicalOrder(rows: MessageResponse[]): MessageResponse[] {
+  for (let i = 1; i < rows.length; i++) {
+    if (rows[i]!.created_at < rows[i - 1]!.created_at) {
+      return [...rows].sort((a, b) => {
+        const cmp = a.created_at < b.created_at ? -1 : a.created_at > b.created_at ? 1 : 0;
+        return cmp !== 0 ? cmp : a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
+      });
+    }
+  }
+  return rows;
+}
+
 export function normalizeMessageList(rows: MessageResponse[]): Message[] {
+  const sorted = ensureChronologicalOrder(rows);
   const messages: Message[] = [];
 
-  for (const row of rows) {
+  for (const row of sorted) {
     if (row.role === 'tool') {
       applyToolResult(messages, row);
       continue;

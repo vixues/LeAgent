@@ -64,6 +64,9 @@ class _InMemoryDatabase:
             await conn.run_sync(SQLModel.metadata.create_all)
         self._ready = True
 
+    async def dispose(self) -> None:
+        await self._engine.dispose()
+
     def session(self):  # noqa: ANN201 - async context manager
         return _SessionContext(self._session_factory)
 
@@ -111,7 +114,8 @@ def settings_for_session(tmp_path):
 async def database() -> _InMemoryDatabase:
     db = _InMemoryDatabase()
     await db.start()
-    return db
+    yield db
+    await db.dispose()
 
 
 @pytest.fixture()

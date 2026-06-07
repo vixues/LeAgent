@@ -6,7 +6,9 @@ import { genUiTreeKey, useGenUiStore } from '@/stores/genUi';
 import { GenUiTreeView } from './GenUiRegistry';
 import { CameraCaptureModal } from '@/components/chat/CameraCaptureModal';
 import { Modal } from '@/components/ui/Modal';
+import { useToast } from '@/components/ui/Toaster';
 import { cn } from '@/lib/utils';
+import { downloadImageBlob } from '@/lib/canvasScreenshot';
 import { exportGenUiTreeToPdf } from '@/components/canvas/genUi/useGenUiExportPdf';
 import { GenUiInlineToolbar } from '@/components/canvas/genUi/GenUiInlineToolbar';
 import {
@@ -33,6 +35,7 @@ export function GenUiInline({
   className?: string;
 }) {
   const { t } = useTranslation();
+  const { toast } = useToast();
   const key = genUiTreeKey(sessionId, messageId);
   const tree = useGenUiStore((s) => s.trees[key]);
   const [expanded, setExpanded] = useState(false);
@@ -68,20 +71,26 @@ export function GenUiInline({
           width: dims.width,
           height: dims.height,
         });
-        const a = document.createElement('a');
-        a.href = dataUrl;
-        a.download = `genui-${messageId.slice(0, 8)}.png`;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
+        const res = await fetch(dataUrl);
+        const blob = await res.blob();
+        downloadImageBlob(blob, `genui-${messageId.slice(0, 8)}.png`);
+        toast({
+          variant: 'success',
+          title: t('chat.canvas.screenshotSaved', { defaultValue: 'Screenshot saved' }),
+        });
       } catch {
-        // Best-effort: CORS images or unsupported nodes can fail capture
+        toast({
+          variant: 'error',
+          title: t('chat.canvas.screenshotFailed', {
+            defaultValue: 'Could not capture screenshot',
+          }),
+        });
       } finally {
         restoreDom();
         setScreenshotting(false);
       }
     },
-    [messageId, screenshotting, tree?.root?.kind],
+    [messageId, screenshotting, t, toast, tree?.root?.kind],
   );
 
   const handleExportPdf = useCallback(async () => {
@@ -97,12 +106,19 @@ export function GenUiInline({
         pageSize: rootKind === 'SlideDeck' ? 'Slide16x9' : 'A4',
         orientation: rootKind === 'SlideDeck' ? 'landscape' : 'portrait',
       });
+      toast({
+        variant: 'success',
+        title: t('chat.canvas.pdfSaved', { defaultValue: 'PDF exported' }),
+      });
     } catch {
-      /* best-effort */
+      toast({
+        variant: 'error',
+        title: t('chat.canvas.pdfFailed', { defaultValue: 'PDF export failed' }),
+      });
     } finally {
       setPdfExporting(false);
     }
-  }, [tree, sessionId, messageId, pdfExporting]);
+  }, [tree, sessionId, messageId, pdfExporting, t, toast]);
 
   if (!tree) return null;
 

@@ -160,6 +160,61 @@ describe('chat history normalization', () => {
     });
   });
 
+  it('sorts and correctly merges tool results when rows arrive out of order', () => {
+    const rows: MessageResponse[] = [
+      {
+        id: 'tool-1',
+        role: 'tool',
+        content: '{"success":true}',
+        tool_call_id: 'call-1',
+        created_at: '2026-04-28T00:00:02.000Z',
+      },
+      {
+        id: 'assistant-1',
+        role: 'assistant',
+        content: 'Working…',
+        tool_calls: [{ id: 'call-1', name: 'search', arguments: {}, status: 'running' }],
+        created_at: '2026-04-28T00:00:01.000Z',
+      },
+      {
+        id: 'user-1',
+        role: 'user',
+        content: 'Hello',
+        created_at: '2026-04-28T00:00:00.000Z',
+      },
+    ];
+
+    const messages = normalizeMessageList(rows);
+
+    expect(messages).toHaveLength(2);
+    expect(messages[0]?.role).toBe('user');
+    expect(messages[1]?.role).toBe('assistant');
+    expect(messages[1]?.toolCalls?.[0]).toMatchObject({
+      id: 'call-1',
+      status: 'success',
+      result: { success: true },
+    });
+  });
+
+  it('produces stable order for out-of-order rows with same timestamps', () => {
+    const ts = '2026-04-28T00:00:00.000Z';
+    const rowsA: MessageResponse[] = [
+      { id: 'user-1', role: 'user', content: 'Q', created_at: ts },
+      { id: 'asst-1', role: 'assistant', content: 'Earlier', created_at: '2026-04-28T00:00:01.000Z' },
+      { id: 'asst-2', role: 'assistant', content: 'Later', created_at: ts },
+    ];
+    const rowsB: MessageResponse[] = [
+      { id: 'asst-2', role: 'assistant', content: 'Later', created_at: ts },
+      { id: 'asst-1', role: 'assistant', content: 'Earlier', created_at: '2026-04-28T00:00:01.000Z' },
+      { id: 'user-1', role: 'user', content: 'Q', created_at: ts },
+    ];
+
+    const m1 = normalizeMessageList(rowsA);
+    const m2 = normalizeMessageList(rowsB);
+
+    expect(m1.map((m) => m.id)).toEqual(m2.map((m) => m.id));
+  });
+
   it('parses attachment JSON strings on reopened user messages', () => {
     const messages = normalizeMessageList([
       {

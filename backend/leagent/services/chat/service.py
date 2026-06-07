@@ -527,12 +527,11 @@ class ChatService(Service):
             count_stmt = select(sqlfunc.count()).select_from(base.subquery())
             total = (await db.execute(count_stmt)).scalar_one()
 
-            order_clause = (
-                col(Message.created_at).desc()
-                if order == "desc"
-                else col(Message.created_at).asc()
-            )
-            page_stmt = base.order_by(order_clause).offset((page - 1) * page_size).limit(page_size)
+            if order == "desc":
+                order_clauses = (col(Message.created_at).desc(), col(Message.id).asc())
+            else:
+                order_clauses = (col(Message.created_at).asc(), col(Message.id).asc())
+            page_stmt = base.order_by(*order_clauses).offset((page - 1) * page_size).limit(page_size)
             rows = (await db.execute(page_stmt)).scalars().all()
 
         return [MessageRead.model_validate(m) for m in rows], total
@@ -874,7 +873,7 @@ class ChatService(Service):
             stmt = (
                 select(Message)
                 .where(sid_eq)
-                .order_by(col(Message.created_at).asc())
+                .order_by(col(Message.created_at).asc(), col(Message.id).asc())
                 .limit(limit)
             )
 
@@ -1058,7 +1057,7 @@ class ChatService(Service):
                         sid_eq,
                         Message.created_at > last_check,
                     )
-                    .order_by(col(Message.created_at).asc())
+                    .order_by(col(Message.created_at).asc(), col(Message.id).asc())
                 )
                 result = await db.execute(stmt)
                 messages = list(result.scalars().all())

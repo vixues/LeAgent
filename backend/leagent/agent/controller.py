@@ -1153,23 +1153,45 @@ class AgentController:
 
             async with self.session_manager.locked(session_id) as state:
                 previous = list(state.messages)
+
+                # Content-based ID reuse: match by (role, content) so that
+                # stub injection / trim index shifts do not cause historical
+                # messages to receive new UUIDs (which then leak as duplicate
+                # rows in the messages table).
+                from collections import defaultdict
+
+                _content_id_map: dict[tuple[str, str], list[UUID]] = defaultdict(list)
+                for pm in previous:
+                    _content_id_map[(pm.role, pm.content)].append(pm.id)
+
                 session_messages: list[SessionMessage] = []
                 for i, msg in enumerate(conversation.messages):
-                    msg_id = None
-                    if i < len(previous) and previous[i].role == str(msg.role):
-                        msg_id = previous[i].id
+                    msg_id: UUID | None = None
+                    role_str = str(msg.role)
+                    content_str = str(msg.content or "")
+
                     if (
                         persisted_uid is not None
                         and append_idx is not None
                         and i == append_idx
-                        and str(msg.role) == "user"
+                        and role_str == "user"
                     ):
                         msg_id = persisted_uid
+
+                    if msg_id is None:
+                        key = (role_str, content_str)
+                        candidates = _content_id_map.get(key)
+                        if candidates:
+                            msg_id = candidates.pop(0)
+
+                    if msg_id is None and i < len(previous) and previous[i].role == role_str:
+                        msg_id = previous[i].id
+
                     session_messages.append(
                         SessionMessage(
                             id=msg_id or uuid4(),
-                            role=str(msg.role),
-                            content=str(msg.content or ""),
+                            role=role_str,
+                            content=content_str,
                             tool_call_id=getattr(msg, "tool_call_id", None),
                             tool_calls=getattr(msg, "tool_calls", None),
                             reasoning_content=getattr(msg, "reasoning_content", None),

@@ -583,7 +583,13 @@ body {{
 
 # Slide PDFs: full-bleed canvas; typography inherits from PRINT_CSS.
 PRINT_CSS_SLIDE = """
-@page { margin: 0; size: auto; }
+@page { margin: 0; size: 1280px 720px; }
+.slidepage {
+  width: 1280px;
+  height: 720px;
+  overflow: hidden;
+  box-sizing: border-box;
+}
 """ + PRINT_CSS.replace(
     "@page {\n  margin: 0;\n  size: auto;\n}\n",
     "",

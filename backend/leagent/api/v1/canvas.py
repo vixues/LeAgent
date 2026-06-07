@@ -345,28 +345,10 @@ async def genui_export_pdf(
 
         pdf_kwargs: dict[str, Any] = {"print_background": True}
         if body.page_size == "Slide16x9":
-            dims = await page.evaluate(
-                """() => {
-                    const de = document.documentElement;
-                    const b = document.body;
-                    return {
-                        h: Math.max(de.scrollHeight, b ? b.scrollHeight : 0),
-                        w: Math.max(de.scrollWidth, b ? b.scrollWidth : 0),
-                    };
-                }"""
-            )
-            try:
-                h_px = max(720, int(dims.get("h", 720)))
-                w_px = max(1280, int(dims.get("w", 1280)))
-            except (TypeError, ValueError):
-                h_px, w_px = 720, 1280
-            h_px = min(h_px, 32000)
-            w_px = min(w_px, 32000)
-            await page.set_viewport_size({"width": w_px, "height": h_px})
             pdf_kwargs.update(
                 {
-                    "width": f"{w_px}px",
-                    "height": f"{h_px}px",
+                    "width": "1280px",
+                    "height": "720px",
                     "margin": {"top": "0", "right": "0", "bottom": "0", "left": "0"},
                     "prefer_css_page_size": False,
                     "outline": True,
