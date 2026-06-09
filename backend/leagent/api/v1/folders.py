@@ -31,10 +31,9 @@ from leagent.services.database.models import (
     FolderRead,
     FolderUpdate,
 )
-from leagent.services.coding_projects import (
+from leagent.project.git import (
     GitCommandError,
     GitNotInstalledError,
-    ProjectPathSafetyError,
     git_diff_for_commit,
     git_diff_worktree,
     git_init,
@@ -42,10 +41,13 @@ from leagent.services.coding_projects import (
     git_show_file,
     git_status_porcelain,
     is_git_repo,
+)
+from leagent.project.paths import (
+    ProjectPathSafetyError,
     resolve_owned_project_folder,
     validate_project_path,
 )
-from leagent.tools.project._fs import (
+from leagent.project.fs import (
     MAX_TEXT_FILE_BYTES,
     IgnoreMatcher,
     format_lines_with_numbers,

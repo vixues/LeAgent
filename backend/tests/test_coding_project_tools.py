@@ -21,7 +21,7 @@ from leagent.services.database.models import (
     CodingProjectStatus,
 )
 from leagent.tools.base import ToolContext
-from leagent.tools.coding_project import (
+from leagent.project.scaffold.tools import (
     CodingProjectLogsTool,
     CodingProjectReadTool,
     CodingProjectRunTool,
@@ -70,7 +70,7 @@ def patched_manager(monkeypatch: pytest.MonkeyPatch) -> MagicMock:
     )
 
     monkeypatch.setattr(
-        "leagent.tools.coding_project.tools._get_manager",
+        "leagent.project.scaffold.tools._get_manager",
         lambda: manager,
     )
     return manager

@@ -8,7 +8,7 @@ import pytest
 
 from leagent.api.v1 import chat as chat_api
 from leagent.services.session.state import SessionAttachment
-from leagent.tools.session_attachment_context import (
+from leagent.file.attachment_context import (
     build_attachment_lookup,
     normalise_attachment_alias,
     normalize_attachment_paths,

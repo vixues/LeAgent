@@ -22,16 +22,19 @@ from uuid import uuid4
 
 import pytest
 
-from leagent.services.coding_projects import (
+from leagent.project.git import (
     GitCommandError,
-    ProjectPathSafetyError,
-    assert_folder_owner,
     git_diff_for_commit,
     git_init,
     git_log,
     git_show_file,
     git_status_porcelain,
     is_git_repo,
+    run_git,
+)
+from leagent.project.paths import (
+    ProjectPathSafetyError,
+    assert_folder_owner,
     resolve_owned_project_folder,
     validate_project_path,
 )
@@ -164,8 +167,6 @@ async def test_git_command_error_carries_streams(tmp_path: Path) -> None:
     """A plain (non-git) directory raises GitCommandError on rev-list."""
     # `is_git_repo` returns False here (check=False), so prove the error
     # surface separately by calling rev-list directly through run_git.
-    from leagent.services.coding_projects import run_git
-
     if not shutil.which("git"):
         pytest.skip("git is not available")
     with pytest.raises(GitCommandError) as exc:

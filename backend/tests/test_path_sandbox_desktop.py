@@ -13,7 +13,7 @@ from typing import Iterator
 
 import pytest
 
-from leagent.tools._sandbox.paths import PathSandbox, reset_roots
+from leagent.file.sandbox import PathSandbox, reset_roots
 from leagent.tools.base import ToolContext
 
 

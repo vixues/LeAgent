@@ -6,7 +6,7 @@ from pathlib import Path
 
 
 def test_sandbox_builtins_has_full_builtins(tmp_path: Path) -> None:
-    from leagent.services.code_execution.runner import _sandbox_builtins
+    from leagent.code.runner import _sandbox_builtins
 
     d = _sandbox_builtins(workspace_path=tmp_path)
     assert "open" in d
@@ -16,7 +16,7 @@ def test_sandbox_builtins_has_full_builtins(tmp_path: Path) -> None:
 
 
 def test_unrestricted_import_allows_os(tmp_path: Path) -> None:
-    from leagent.services.code_execution.runner import _sandbox_builtins
+    from leagent.code.runner import _sandbox_builtins
 
     imp = _sandbox_builtins(workspace_path=tmp_path)["__import__"]
     m = imp("os")
@@ -27,7 +27,7 @@ def test_unrestricted_import_allows_os(tmp_path: Path) -> None:
 def test_unrestricted_import_allows_json(tmp_path: Path) -> None:
     import json as json_stdlib
 
-    from leagent.services.code_execution.runner import _sandbox_builtins
+    from leagent.code.runner import _sandbox_builtins
 
     imp = _sandbox_builtins(workspace_path=tmp_path)["__import__"]
     m = imp("json")
@@ -35,7 +35,7 @@ def test_unrestricted_import_allows_json(tmp_path: Path) -> None:
 
 
 def test_open_allows_workspace_write(tmp_path: Path) -> None:
-    from leagent.services.code_execution.runner import _sandbox_builtins
+    from leagent.code.runner import _sandbox_builtins
 
     builtins_dict = _sandbox_builtins(workspace_path=tmp_path)
     scoped_open = builtins_dict["open"]
@@ -46,7 +46,7 @@ def test_open_allows_workspace_write(tmp_path: Path) -> None:
 
 
 def test_open_allows_outside_write(tmp_path: Path) -> None:
-    from leagent.services.code_execution.runner import _sandbox_builtins
+    from leagent.code.runner import _sandbox_builtins
 
     outside = tmp_path.parent / f"{tmp_path.name}-outside.txt"
     builtins_dict = _sandbox_builtins(workspace_path=tmp_path)
@@ -60,7 +60,7 @@ def test_open_allows_outside_write(tmp_path: Path) -> None:
 
 
 def test_open_allows_read_outside_workspace(tmp_path: Path) -> None:
-    from leagent.services.code_execution.runner import _sandbox_builtins
+    from leagent.code.runner import _sandbox_builtins
 
     outside = tmp_path.parent / f"{tmp_path.name}-input.txt"
     outside.write_text("readable", encoding="utf-8")

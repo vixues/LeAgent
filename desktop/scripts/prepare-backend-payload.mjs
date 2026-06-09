@@ -16,7 +16,6 @@ const ROOT_CONFIG = path.join(REPO, 'config');
 
 const INCLUDE = [
   'leagent',
-  'leagent_core',
   'alembic',
   'pyproject.toml',
   'uv.lock',

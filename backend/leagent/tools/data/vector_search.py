@@ -47,7 +47,7 @@ class VectorSearchTool(BaseTool):
         params: dict[str, Any],
         context: ToolContext,
     ) -> None:
-        from leagent.tools._sandbox.paths import PathSandbox
+        from leagent.file.sandbox import PathSandbox
 
         request_id = context.extra.get("request_id", context.session_id or "")
         ref = params.get("documents_artifact")

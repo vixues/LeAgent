@@ -110,7 +110,7 @@ dev = [
 leagent = "leagent.cli.main:cli"
 
 [tool.hatch.build.targets.wheel]
-packages = ["leagent", "leagent_core"]
+packages = ["leagent"]
 
 [tool.hatch.build.targets.wheel.force-include]
 "leagent/extensions/official_registry.json" = "leagent/extensions/official_registry.json"
@@ -134,7 +134,7 @@ select = [
 ignore = ["E501", "B008"]
 
 [tool.ruff.lint.isort]
-known-first-party = ["leagent", "leagent_core"]
+known-first-party = ["leagent"]
 
 [tool.mypy]
 python_version = "3.11"

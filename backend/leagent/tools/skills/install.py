@@ -181,7 +181,7 @@ class InstallSkillTool(BaseTool):
     async def _install_uploaded(
         self, manager: Any, params: dict[str, Any], context: ToolContext
     ) -> dict[str, Any]:
-        from leagent.tools._sandbox.paths import PathSandbox
+        from leagent.file.sandbox import PathSandbox
         from leagent.skills.url_install import SkillURLError
 
         fid = (params.get("file_id") or "").strip()

@@ -395,7 +395,7 @@ class ChatService(Service):
         label: str | None = None,
     ) -> list[dict[str, Any]]:
         """Append a resolved absolute directory to ``authorized_roots`` metadata."""
-        from leagent.services.coding_projects.paths import (
+        from leagent.project.paths import (
             ProjectPathSafetyError,
             validate_project_path,
         )

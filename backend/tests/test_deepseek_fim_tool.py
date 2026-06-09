@@ -11,7 +11,7 @@ from leagent.llm.registry import ProviderRegistry
 from leagent.llm.model_registry import ModelRegistry
 from leagent.llm.service import LLMService
 from leagent.tools.base import ToolContext
-from leagent.tools.code.deepseek_fim import DeepSeekFimTool, _resolve_deepseek_provider
+from leagent.code.fim import DeepSeekFimTool, _resolve_deepseek_provider
 
 
 class _StubDeepSeek(DeepSeekProvider):

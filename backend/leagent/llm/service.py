@@ -67,7 +67,7 @@ async def _with_transient_retries(
     operation_name: str,
 ) -> _T:
     last_exc: Exception | None = None
-    from leagent_core.telemetry.otel import get_tracer
+    from leagent.telemetry.otel import get_tracer
 
     tracer = get_tracer("leagent.llm.service")
     with tracer.start_as_current_span(operation_name) as span:

@@ -51,7 +51,7 @@ class SessionArtifactsSource:
 
             journal = ctx.operation_journal
             if journal is not None:
-                from leagent.tools.code.operations import OperationJournal
+                from leagent.code.operations import OperationJournal
 
                 if isinstance(journal, OperationJournal) and len(journal) > 0:
                     journal_text = journal.summary_text(limit=15)

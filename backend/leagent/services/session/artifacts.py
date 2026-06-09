@@ -18,6 +18,8 @@ from uuid import UUID
 
 import structlog
 
+from leagent.file.primitives import is_path_inside as _is_path_inside_multi
+
 logger = structlog.get_logger(__name__)
 
 _PREVIEWABLE_MIME_PREFIXES = ("image/", "application/pdf", "text/html")
@@ -117,7 +119,7 @@ def _resolve_workspace_root(raw: str | None) -> Path | None:
 def _path_is_inside(path: Path, root: Path) -> bool:
     try:
         resolved = path.expanduser().resolve()
-        return resolved == root or resolved.is_relative_to(root)
+        return _is_path_inside_multi(resolved, (root,))
     except OSError:
         return False
 
@@ -282,7 +284,7 @@ def _code_execution_allowed_roots(workspace_root: Path | None) -> tuple[str, ...
     if workspace_root is not None:
         roots.append(str(workspace_root))
     try:
-        from leagent.tools._sandbox.paths import _system_temp_roots
+        from leagent.file.sandbox import _system_temp_roots
 
         roots.extend(str(root) for root in _system_temp_roots())
     except ImportError:
@@ -418,11 +420,41 @@ class ArtifactRegistrar:
         data: Any,
         metadata: dict[str, Any] | None = None,
         seen_paths: set[str] | None = None,
+        produced_files: list[Any] | None = None,
     ) -> list[RegisteredArtifact]:
         if self._session_manager is None:
             return []
 
         registered: list[RegisteredArtifact] = []
+
+        if produced_files:
+            for ref in produced_files:
+                storage_path = (
+                    ref.metadata.get("storage_path", ref.storage_key)
+                    if hasattr(ref, "metadata")
+                    else str(ref)
+                )
+                try:
+                    key = str(Path(storage_path).expanduser().resolve())
+                except OSError:
+                    continue
+                if seen_paths is not None and key in seen_paths:
+                    continue
+                att_dict = {
+                    "id": str(ref.id) if hasattr(ref, "id") else str(ref),
+                    "filename": getattr(ref, "filename", Path(storage_path).name),
+                    "name": getattr(ref, "filename", Path(storage_path).name),
+                    "kind": getattr(ref, "category", "other"),
+                    "content_type": getattr(ref, "content_type", "application/octet-stream"),
+                    "size": getattr(ref, "size", 0),
+                    "sha256": getattr(ref, "checksum", ""),
+                }
+                if seen_paths is not None:
+                    seen_paths.add(key)
+                registered.append(RegisteredArtifact(path=key, attachment=att_dict))
+            if registered:
+                return registered
+
         for candidate in extract_produced_path_candidates(data, metadata=metadata):
             try:
                 key = str(Path(candidate.path).expanduser().resolve())

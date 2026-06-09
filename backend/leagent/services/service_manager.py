@@ -10,12 +10,13 @@ from leagent.services.base import ServiceState
 if TYPE_CHECKING:
     from leagent.config.settings import Settings
     from leagent.cron.manager import CronManager
+    from leagent.file.service import FileService
     from leagent.llm.service import LLMService
     from leagent.mcp.manager import MCPClientManager
     from leagent.memory.agent_memory import AgentMemory
     from leagent.services.canvas.service import CanvasService
     from leagent.services.chat.service import ChatService
-    from leagent.services.coding_projects.manager import CodingProjectManager
+    from leagent.project.manager import CodingProjectManager
     from leagent.services.database.service import DatabaseService
     from leagent.services.event.manager import EventManager
     from leagent.services.event.webhook import WebhookEventManager
@@ -50,6 +51,7 @@ class ServiceManager:
         self._mcp_manager: MCPClientManager | None = None
         self._cron: CronManager | None = None
         self._workflow_service: WorkflowService | None = None
+        self._file_service: "FileService | None" = None
         self._file_processing: FileProcessingService | None = None
         self._rule_engine: Any = None
         self._task_manager: TaskManager | None = None
@@ -159,6 +161,10 @@ class ServiceManager:
         return self._workflow_service
 
     @property
+    def file_service(self) -> "FileService | None":
+        return self._file_service
+
+    @property
     def file_processing(self) -> "FileProcessingService | None":
         return self._file_processing
 
@@ -200,6 +206,7 @@ class ServiceManager:
         await self._start_coding_projects()
         await self._start_variable()
         await self._start_llm()
+        await self._start_file_service()
         await self._start_session_manager()
         await self._start_agent_memory()
         await self._start_rules()
@@ -234,7 +241,7 @@ class ServiceManager:
 
         if self._coding_projects:
             try:
-                from leagent.services.coding_projects.manager import (
+                from leagent.project.manager import (
                     shutdown_coding_projects_service,
                 )
                 await shutdown_coding_projects_service()
@@ -346,7 +353,7 @@ class ServiceManager:
         if not self.settings.coding_projects.enabled:
             return
         try:
-            from leagent.services.coding_projects.manager import init_coding_projects_service
+            from leagent.project.manager import init_coding_projects_service
             if self._db is None:
                 return
             self._coding_projects = await init_coding_projects_service(self.settings, self._db)
@@ -503,6 +510,23 @@ class ServiceManager:
         except Exception:
             logger.warning("TaskManager initialization skipped", exc_info=True)
 
+    async def _start_file_service(self) -> None:
+        try:
+            from leagent.file.service import FileService
+            from leagent.file.storage.local import LocalStorageBackend
+
+            upload_dir = self.settings.files.upload_dir
+            backend = LocalStorageBackend(upload_dir)
+            self._file_service = FileService(
+                default_backend=backend,
+                default_backend_name="local",
+                cache=None,
+                database=self._db,
+            )
+            logger.info("FileService initialised (root=%s)", upload_dir)
+        except Exception:
+            logger.warning("FileService initialisation skipped", exc_info=True)
+
     async def _start_file_processing(self) -> None:
         try:
             from leagent.services.file_processing.service import FileProcessingService
@@ -516,7 +540,12 @@ class ServiceManager:
             from leagent.services.session.manager import SessionManager
             if self._db is None:
                 return
-            self._session_manager = SessionManager(self.settings, cache=None, database=self._db)
+            self._session_manager = SessionManager(
+                self.settings,
+                cache=None,
+                database=self._db,
+                file_service=self._file_service,
+            )
             logger.info("SessionManager initialised (SQLite-only)")
         except Exception:
             logger.warning("SessionManager initialisation skipped", exc_info=True)

@@ -231,7 +231,7 @@ async def _run(
     style: _Style,
 ) -> int:
     from leagent.agent.query_engine import QueryEngine, QueryEngineConfig
-    from leagent.tools._sandbox.paths import PathSandbox, _get_allowed_roots
+    from leagent.file.sandbox import PathSandbox, _get_allowed_roots
     from leagent.tools.executor import ToolExecutor
 
     llm, model = _build_llm_service()

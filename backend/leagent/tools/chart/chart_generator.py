@@ -261,7 +261,7 @@ class ChartGeneratorTool(SyncTool):
             matplotlib.use('Agg')
             import matplotlib.pyplot as plt
             try:
-                from leagent.services.code_execution.matplotlib_cjk import configure_matplotlib_cjk
+                from leagent.code.matplotlib_cjk import configure_matplotlib_cjk
                 configure_matplotlib_cjk()
             except Exception:
                 pass
@@ -395,7 +395,8 @@ class ChartGeneratorTool(SyncTool):
     def _run_in_sandbox(self, script: str, context: ToolContext) -> dict[str, Any]:
         """Execute the chart script via the code_execution subprocess sandbox."""
         try:
-            from leagent.services.code_execution import SubprocessSandbox, Workspace, WorkspaceManager
+            from leagent.code.sandbox import SubprocessSandbox
+            from leagent.code.workspace import Workspace, WorkspaceManager
 
             workspace_root = "/tmp/leagent-charts"
             Path(workspace_root).mkdir(parents=True, exist_ok=True)

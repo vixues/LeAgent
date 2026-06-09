@@ -66,8 +66,8 @@ async def test_subprocess_sandbox_passes_resolved_cjk_font_env(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path,
 ) -> None:
-    from leagent.services.code_execution import subprocess_sandbox as mod
-    from leagent.services.code_execution.workspace import Workspace
+    from leagent.code import sandbox as mod
+    from leagent.code.workspace import Workspace
 
     font_path = tmp_path / "NotoSansSC-Regular.otf"
     font_path.write_bytes(b"x")
@@ -103,7 +103,7 @@ async def test_subprocess_sandbox_passes_resolved_cjk_font_env(
 def test_configure_matplotlib_cjk_no_font_returns_false(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from leagent.services.code_execution import matplotlib_cjk as mpl_cjk
+    from leagent.code import matplotlib_cjk as mpl_cjk
 
     mpl_cjk.reset_matplotlib_cjk_configured_for_tests()
     # Patch where used: matplotlib_cjk binds resolve_cjk_regular_path at import time.
@@ -112,7 +112,7 @@ def test_configure_matplotlib_cjk_no_font_returns_false(
 
 
 def test_configure_matplotlib_cjk_sets_rcparams(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
-    from leagent.services.code_execution import matplotlib_cjk as mpl_cjk
+    from leagent.code import matplotlib_cjk as mpl_cjk
 
     mpl_cjk.reset_matplotlib_cjk_configured_for_tests()
     font_path = tmp_path / "fake.otf"

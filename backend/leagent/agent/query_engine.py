@@ -16,9 +16,9 @@ from typing import TYPE_CHECKING, Any, AsyncIterator
 from uuid import UUID, uuid4
 
 from leagent.agent.deps import QueryDeps, production_deps
-from leagent.tools.code.artifact import CodeArtifactRegistry, SessionArtifactStore
-from leagent.tools.code.operations import JOURNAL_CONTEXT_KEY, OperationJournal
-from leagent.tools.code.pipeline import _CONTEXT_ARTIFACT_STORE_KEY, _CONTEXT_REGISTRY_KEY
+from leagent.code.artifacts import CodeArtifactRegistry, SessionArtifactStore
+from leagent.code.operations import JOURNAL_CONTEXT_KEY, OperationJournal
+from leagent.code.pipeline import _CONTEXT_ARTIFACT_STORE_KEY, _CONTEXT_REGISTRY_KEY
 from leagent.agent.query import (
     AssistantMessage,
     QueryParams,
@@ -434,7 +434,7 @@ class QueryEngine:
             model_name=self.config.model_name,
         )
 
-        from leagent_core.telemetry.otel import get_tracer
+        from leagent.telemetry.otel import get_tracer
 
         tracer = get_tracer("leagent.agent.query_engine")
         started = time.perf_counter()

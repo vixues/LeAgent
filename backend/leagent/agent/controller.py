@@ -63,7 +63,7 @@ from leagent.services.session.artifacts import (
 from leagent.tools.base import ToolPermissionContext, check_tool_permission
 from leagent.tools.context import build_tool_context
 from leagent.tools.executor import parse_tool_arguments_str, strict_json_loads_error
-from leagent.tools.session_attachment_context import build_tool_extra_for_attachment_paths
+from leagent.file.attachment_context import build_tool_extra_for_attachment_paths
 
 if TYPE_CHECKING:
     from leagent.agent.hooks import HookManager
@@ -1704,9 +1704,11 @@ class AgentController:
 
     @staticmethod
     def _path_is_inside(path: Path, root: Path) -> bool:
+        from leagent.file.primitives import is_path_inside
+
         try:
             resolved = path.expanduser().resolve()
-            return resolved == root or resolved.is_relative_to(root)
+            return is_path_inside(resolved, (root,))
         except OSError:
             return False
 

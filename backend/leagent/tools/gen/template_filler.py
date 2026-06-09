@@ -53,7 +53,7 @@ class TemplateFillerTool(SyncTool):
     ) -> None:
         super()._enforce_path_sandbox(params, context)
 
-        from leagent.tools._sandbox.paths import PathSandbox
+        from leagent.file.sandbox import PathSandbox
 
         request_id = context.extra.get("request_id", context.session_id or "")
         for inc in params.get("include_paths") or []:

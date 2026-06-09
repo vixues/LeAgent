@@ -53,7 +53,7 @@ class TenantMixin(SQLModel):
     ``workspace_id`` is intentionally nullable + indexed: existing rows carry
     ``NULL`` and are implicitly owned by the user's personal workspace; new
     rows populate it from the ``TenantContext`` contextvar. All repository
-    queries that extend :class:`leagent_core.db.repository.TenantScopedRepository`
+    queries that extend the tenant-scoped repository pattern
     filter on this column automatically.
     """
 

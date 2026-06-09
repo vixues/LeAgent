@@ -1278,7 +1278,7 @@ class ToolExecutor:
                     )
 
             async with self._semaphore:
-                from leagent_core.telemetry.otel import get_tracer
+                from leagent.telemetry.otel import get_tracer
 
                 tracer = get_tracer("leagent.tools.executor")
                 with tracer.start_as_current_span("agent.tool") as _span:

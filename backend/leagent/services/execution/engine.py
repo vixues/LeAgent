@@ -104,7 +104,7 @@ def _sandbox_argv(
     isolation_mode: str,
 ) -> list[str]:
     """Build the Python runner argv — direct execution, no namespace isolation."""
-    return [python, "-m", "leagent.services.code_execution.runner"]
+    return [python, "-m", "leagent.code.runner"]
 
 
 def _truncate(text: str, limit: int) -> tuple[str, bool]:
@@ -253,7 +253,7 @@ class ExecutionEngine:
             "import_tier": import_tier,
             "extra_scan_roots": list(extra_scan_roots),
         }
-        from leagent.services.code_execution.runner import build_runner_stdin
+        from leagent.code.runner import build_runner_stdin
 
         payload_bytes = build_runner_stdin(payload)
 

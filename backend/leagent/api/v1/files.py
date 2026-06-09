@@ -25,6 +25,7 @@ from starlette.background import BackgroundTask
 
 from leagent.config.constants import MAX_UPLOAD_SIZE_BYTES
 from leagent.config.settings import get_settings
+from leagent.file.primitives import classify_file_kind
 from leagent.services.auth import (
     CurrentUserId,
     OptionalUserId,
@@ -139,42 +140,22 @@ class FileUploadResponse(BaseModel):
     checksum: str
 
 
-MIME_TYPE_MAP = {
-    "application/pdf": FileType.DOCUMENT,
-    "application/msword": FileType.DOCUMENT,
-    "application/vnd.openxmlformats-officedocument.wordprocessingml.document": FileType.DOCUMENT,
-    "application/vnd.ms-excel": FileType.DATA,
-    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": FileType.DATA,
-    "application/zip": FileType.ARCHIVE,
-    "application/x-tar": FileType.ARCHIVE,
-    "application/gzip": FileType.ARCHIVE,
-    "text/plain": FileType.DOCUMENT,
-    "text/csv": FileType.DATA,
-    "text/markdown": FileType.DOCUMENT,
-    "text/html": FileType.CODE,
-    "text/css": FileType.CODE,
-    "text/javascript": FileType.CODE,
-    "application/javascript": FileType.CODE,
-    "application/json": FileType.DATA,
-    "application/xml": FileType.DATA,
-    "image/png": FileType.IMAGE,
-    "image/jpeg": FileType.IMAGE,
-    "image/gif": FileType.IMAGE,
-    "image/webp": FileType.IMAGE,
-    "image/svg+xml": FileType.IMAGE,
-    "audio/mpeg": FileType.AUDIO,
-    "audio/wav": FileType.AUDIO,
-    "audio/ogg": FileType.AUDIO,
-    "video/mp4": FileType.VIDEO,
-    "video/webm": FileType.VIDEO,
+_FILE_KIND_TO_TYPE = {
+    "image": FileType.IMAGE,
+    "document": FileType.DOCUMENT,
+    "data": FileType.DATA,
+    "audio": FileType.AUDIO,
+    "video": FileType.VIDEO,
+    "archive": FileType.ARCHIVE,
+    "code": FileType.CODE,
+    "text": FileType.DOCUMENT,
 }
 
 
-def get_file_type(mime_type: str | None) -> FileType:
-    """Determine file type from MIME type."""
-    if not mime_type:
-        return FileType.OTHER
-    return MIME_TYPE_MAP.get(mime_type, FileType.OTHER)
+def get_file_type(mime_type: str | None, filename: str | None = None) -> FileType:
+    """Determine :class:`FileType` via the canonical :func:`classify_file_kind`."""
+    kind = classify_file_kind(filename or "", mime_type)
+    return _FILE_KIND_TO_TYPE.get(kind.value, FileType.OTHER)
 
 
 async def _background_process_file(file_id: str, storage_path: str, mime_type: str | None, original_name: str | None) -> None:
@@ -230,7 +211,7 @@ async def persist_uploaded_file(
     with open(storage_path, "wb") as f:
         f.write(content)
 
-    file_type = get_file_type(upload.content_type)
+    file_type = get_file_type(upload.content_type, upload.filename)
 
     async with db.session() as session:
         db_file = FileModel(
@@ -304,7 +285,7 @@ async def persist_pet_space_file(
         f.write(content)
 
     resolved_mime = resolve_pet_space_upload_mime_type(upload.filename, upload.content_type, content)
-    file_type = get_file_type(resolved_mime)
+    file_type = get_file_type(resolved_mime, upload.filename)
 
     async with db.session() as session:
         if _session_dialect_name(session) == "sqlite":

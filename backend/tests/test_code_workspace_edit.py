@@ -6,8 +6,8 @@ import pytest
 @pytest.mark.asyncio
 async def test_code_workspace_edit_patches_last_source(tmp_path) -> None:
     from leagent.tools.base import ToolContext
-    from leagent.tools.code.execution import CodeExecutionConfig, CodeExecutionTool
-    from leagent.tools.code.workspace_edit import CodeWorkspaceEditTool
+    from leagent.code.execution import CodeExecutionConfig, CodeExecutionTool
+    from leagent.code.workspace_edit import CodeWorkspaceEditTool
 
     ws_root = tmp_path / "ws"
     cfg = CodeExecutionConfig(workspace_root=str(ws_root))
@@ -41,8 +41,8 @@ async def test_code_workspace_edit_patches_last_source(tmp_path) -> None:
 async def test_code_execution_syntax_error_exposes_repair_envelope(tmp_path) -> None:
     """Syntax failures must persist source and expose repair_workflow."""
     from leagent.tools.base import ToolContext
-    from leagent.tools.code.execution import CodeExecutionConfig, CodeExecutionTool
-    from leagent.tools.code.workspace_edit import CodeWorkspaceEditTool
+    from leagent.code.execution import CodeExecutionConfig, CodeExecutionTool
+    from leagent.code.workspace_edit import CodeWorkspaceEditTool
 
     ws_root = tmp_path / "ws"
     cfg = CodeExecutionConfig(workspace_root=str(ws_root))
@@ -79,8 +79,8 @@ async def test_code_execution_syntax_error_exposes_repair_envelope(tmp_path) -> 
 @pytest.mark.asyncio
 async def test_code_workspace_edit_no_match_returns_patch_hint(tmp_path) -> None:
     from leagent.tools.base import ToolContext
-    from leagent.tools.code.execution import CodeExecutionConfig, CodeExecutionTool
-    from leagent.tools.code.workspace_edit import CodeWorkspaceEditTool
+    from leagent.code.execution import CodeExecutionConfig, CodeExecutionTool
+    from leagent.code.workspace_edit import CodeWorkspaceEditTool
 
     ws_root = tmp_path / "ws"
     cfg = CodeExecutionConfig(workspace_root=str(ws_root))

@@ -219,7 +219,7 @@ class ConfigFileTool(SyncTool):
         OpenClaw config paths such as ``~/.openclaw/openclaw.json`` are
         authorised by the shared PathSandbox default roots.
         """
-        from leagent.tools._sandbox.paths import PathSandbox
+        from leagent.file.sandbox import PathSandbox
 
         request_id = context.extra.get("request_id", context.session_id or "")
 

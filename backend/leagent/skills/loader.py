@@ -610,10 +610,13 @@ def _discover_scripts(skill_path: Path, options: LoaderOptions) -> list[SkillScr
 
 
 def is_path_inside(parent: Path, child: Path) -> bool:
-    """Return True if ``child`` resolves to a location inside ``parent``."""
+    """Return True if ``child`` resolves to a location inside ``parent``.
+
+    Delegates to :func:`leagent.file.primitives.is_path_inside`.
+    """
+    from leagent.file.primitives import is_path_inside as _canonical
+
     try:
-        parent_r = parent.resolve()
-        child_r = child.resolve()
-        return os.path.commonpath([str(parent_r), str(child_r)]) == str(parent_r)
-    except (OSError, ValueError):
+        return _canonical(child.resolve(), (parent.resolve(),))
+    except OSError:
         return False

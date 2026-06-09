@@ -9,7 +9,7 @@ from typing import Any
 
 import pytest
 
-from leagent.tools._sandbox.paths import reset_roots
+from leagent.file.sandbox import reset_roots
 from leagent.tools.base import ToolContext, ToolResult
 
 

@@ -11,8 +11,8 @@ import pytest
 async def test_uv_pip_install_disabled(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     from leagent.config import settings as settings_module
     from leagent.tools.base import ToolContext
-    from leagent.tools.code.execution import CodeExecutionConfig
-    from leagent.tools.code.uv_pip_install import UvPipInstallTool
+    from leagent.code.execution import CodeExecutionConfig
+    from leagent.code.packages import UvPipInstallTool
 
     settings = settings_module.get_settings()
     monkeypatch.setattr(settings, "agent_uv_pip_install_enabled", False)
@@ -32,8 +32,8 @@ async def test_uv_pip_install_requires_packages_or_file(
 ) -> None:
     from leagent.config import settings as settings_module
     from leagent.tools.base import ToolContext
-    from leagent.tools.code.execution import CodeExecutionConfig
-    from leagent.tools.code.uv_pip_install import UvPipInstallTool
+    from leagent.code.execution import CodeExecutionConfig
+    from leagent.code.packages import UvPipInstallTool
 
     settings = settings_module.get_settings()
     monkeypatch.setattr(settings, "agent_uv_pip_install_enabled", True)
@@ -53,9 +53,9 @@ async def test_uv_pip_install_invokes_run_uv(
 ) -> None:
     from leagent.config import settings as settings_module
     from leagent.tools.base import ToolContext
-    from leagent.tools.code.execution import CodeExecutionConfig
-    from leagent.tools.code import uv_pip_install as mod
-    from leagent.tools.code.uv_pip_install import UvPipInstallTool
+    from leagent.code.execution import CodeExecutionConfig
+    from leagent.code import packages as mod
+    from leagent.code.packages import UvPipInstallTool
 
     settings = settings_module.get_settings()
     monkeypatch.setattr(settings, "agent_uv_pip_install_enabled", True)
@@ -86,8 +86,8 @@ async def test_uv_pip_install_invokes_run_uv(
 def test_code_execution_tool_uses_resolved_python(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    from leagent.tools.code import execution as mod
-    from leagent.tools.code.execution import CodeExecutionConfig, CodeExecutionTool
+    from leagent.code import execution as mod
+    from leagent.code.execution import CodeExecutionConfig, CodeExecutionTool
 
     monkeypatch.setattr(mod, "resolve_backend_python_executable", lambda: "/venv/bin/python")
 

@@ -25,7 +25,7 @@ from leagent.agent.base import (
 
 if TYPE_CHECKING:
     from leagent.memory import AgentMemory
-    from leagent.tools.code.artifact import CodeArtifact
+    from leagent.code.artifacts import CodeArtifact
 
 logger = structlog.get_logger(__name__)
 

@@ -4,7 +4,7 @@ from pathlib import Path
 
 from leagent.services.syntax_validation import detect_language, validate_syntax
 from leagent.tools.base import ToolContext
-from leagent.tools.code.syntax_validator import SyntaxValidatorTool
+from leagent.code.syntax import SyntaxValidatorTool
 
 
 def test_validate_json_reports_line_column_and_patch_frame() -> None:

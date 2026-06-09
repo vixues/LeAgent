@@ -19,18 +19,21 @@ LeAgent/
 │   │   ├── channels/     # Outbound integrations (IM, console)
 │   │   ├── chat_workflow/ # Chat-workflow orchestration
 │   │   ├── cli/          # Click CLI (23 modules)
+│   │   ├── code/         # Code execution layer (sandbox, workspace, runner)
 │   │   ├── config/       # pydantic-settings
 │   │   ├── context/      # Source-driven prompt assembly
+│   │   ├── file/         # Unified file layer (primitives, FileService, storage)
 │   │   ├── llm/          # LLM service + providers
 │   │   ├── mcp/          # Model Context Protocol
 │   │   ├── memory/       # AgentMemory (episodic/semantic/procedural)
+│   │   ├── project/      # Coding project layer (fs, tools, manager, templates)
 │   │   ├── prompts/      # PromptBuilder, registry, templates
 │   │   ├── rules/        # Rule engine + YAML definitions
-│   │   ├── services/     # DB, auth, chat, session, code execution, ...
+│   │   ├── services/     # DB, auth, chat, session, ...
 │   │   ├── skills/       # Agent Skills v1.0
+│   │   ├── telemetry/    # OTel tracing, structured logging, trace propagation
 │   │   ├── tools/        # 80+ tool implementations by category
 │   │   └── workflow/     # Engine, nodes, templates
-│   ├── leagent_core/     # Shared primitives (DB, auth, telemetry)
 │   └── tests/
 ├── deploy/               # Dockerfile + SQLite-only Compose
 ├── frontend/             # React 19 + TypeScript SPA
@@ -43,6 +46,42 @@ LeAgent/
 ```
 
 Default database is **SQLite** (zero-config). Optional PostgreSQL via `DATABASE_URL`, optional Milvus for vector memory.
+
+### Layered Domain Model: File → Code → Project
+
+The backend uses a strict three-layer architecture. Dependencies flow downward only.
+
+| Layer | Package | Responsibility |
+|---|---|---|
+| **File** | `leagent/file/` | Unified blob storage, metadata, lifecycle. `FileService` is the single ingress for all managed files. `primitives.py` holds shared utilities (`sanitize_filename`, `detect_mime`, `classify_file_kind`, `is_path_inside`, `FileScope`, `FileKind`). |
+| **Code** | `leagent/code/` | Code execution sandbox, workspace management, artifact handling. Builds on File layer for artifact registration. |
+| **Project** | `leagent/project/` | Coding project workspaces: file editing, project scaffold, dev server, templates. Never imports from File layer (`FileService`/`FileRef`). |
+
+**Key rules:**
+- `leagent/project/` must never import `FileService` or `FileRef` (enforced by `test_file/test_invariants.py`).
+- All managed blob writes go through `FileService.register()` — no direct `open(..., 'wb')` in blob paths.
+- Path containment checks should use `leagent.file.primitives.is_path_inside()`, not inline `relative_to`/`commonpath`.
+- Legacy shim modules have been removed. All imports must use canonical paths (`leagent.file.*`, `leagent.code.*`, `leagent.project.*`).
+
+### Adding a New Tool That Produces Files
+
+Tools that produce output files should return `FileRef` objects via `ToolResult.produced_files`:
+
+```python
+from leagent.file.service import FileRef
+
+async def execute(self, context: ToolContext, **kwargs) -> ToolResult:
+    output_bytes = await self._generate(...)
+    ref = await context.file_service.register(
+        output_bytes,
+        filename="output.png",
+        scope=FileScope.OUTPUT,
+        session_id=context.session_id,
+    )
+    return ToolResult(success=True, data={"path": ref.storage_key}, produced_files=[ref])
+```
+
+The `ArtifactRegistrar` will automatically pick up `produced_files` from the result — no path scraping needed.
 
 ## Code Style
 

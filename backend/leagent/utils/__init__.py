@@ -20,8 +20,6 @@ from leagent.utils.metrics import (
 from leagent.utils.validators import (
     detect_prompt_injection,
     sanitize_input,
-    validate_file_size,
-    validate_file_type,
     validate_uuid,
 )
 
@@ -39,8 +37,6 @@ __all__ = [
     "sanitize_input",
     "setup_logging",
     "track_metrics",
-    "validate_file_size",
-    "validate_file_type",
     "validate_uuid",
     "verify_password",
     "LeAgentMetrics",

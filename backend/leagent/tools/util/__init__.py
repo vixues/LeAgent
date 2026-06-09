@@ -13,14 +13,15 @@ This module provides general-purpose utility tools including:
 Domain-specific tools have been moved to dedicated packages:
 - Canvas tools: :mod:`leagent.tools.canvas`
 - Workflow tools: :mod:`leagent.tools.workflow`
-- Code execution: :mod:`leagent.tools.code`
+- Code execution: :mod:`leagent.code`
+- Project tools: :mod:`leagent.project`
 - Skills tools: :mod:`leagent.tools.skills`
 """
 
 from leagent.tools.util.cache_manager import CacheManagerTool
 from leagent.tools.util.cron_tools import CronCreateTool, CronDeleteTool, CronListTool
 from leagent.tools.util.date_calculator import DateCalculatorTool
-from leagent.tools.util.file_manager import FileManagerTool
+from leagent.tools.util.file_ops import FileOpsTool as FileManagerTool
 from leagent.tools.util.folder_tool import FolderOperationsTool
 from leagent.tools.util.json_parser import JsonParserTool
 from leagent.tools.util.pet_bubble import EmitPetBubbleTool

@@ -30,6 +30,10 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, AsyncIterator, Iterable
 from uuid import UUID, uuid4
 
+from leagent.file.primitives import (
+    classify_file_kind,
+    sanitize_filename,
+)
 from leagent.services.auth.signed_url import (
     build_download_url,
     build_preview_url,
@@ -37,7 +41,6 @@ from leagent.services.auth.signed_url import (
 from leagent.services.session.state import (
     ATTACHMENT_KIND_DOCUMENT,
     ATTACHMENT_KIND_IMAGE,
-    ATTACHMENT_KIND_OTHER,
     ATTACHMENT_KIND_TEXT,
     SessionAttachment,
     SessionMessage,
@@ -55,26 +58,6 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-_IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".gif", ".bmp", ".tiff", ".webp"}
-_DOCUMENT_EXTS = {".pdf", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx", ".csv"}
-_TEXT_EXTS = {".txt", ".md", ".rst", ".json", ".yaml", ".yml", ".log"}
-
-
-def _classify_kind(filename: str, content_type: str | None) -> str:
-    ext = Path(filename).suffix.lower()
-    if ext in _IMAGE_EXTS:
-        return ATTACHMENT_KIND_IMAGE
-    if ext in _DOCUMENT_EXTS:
-        return ATTACHMENT_KIND_DOCUMENT
-    if ext in _TEXT_EXTS:
-        return ATTACHMENT_KIND_TEXT
-    if content_type:
-        if content_type.startswith("image/"):
-            return ATTACHMENT_KIND_IMAGE
-        if content_type.startswith("text/"):
-            return ATTACHMENT_KIND_TEXT
-    return ATTACHMENT_KIND_OTHER
-
 
 class SessionManager:
     """Process-wide owner of :class:`SessionState` objects.
@@ -90,11 +73,13 @@ class SessionManager:
         *,
         cache: CacheService | None,
         database: DatabaseService | None,
+        file_service: Any | None = None,
     ) -> None:
         self._settings = settings
         self._paths = SessionPathRegistry(settings)
         self._cache = cache
         self._database = database
+        self._file_service = file_service
         self._store = TieredSessionStore(settings, cache=cache, database=database)
         self._locks: dict[UUID, asyncio.Lock] = {}
         self._locks_mutex = asyncio.Lock()
@@ -278,7 +263,7 @@ class SessionManager:
             if upload is None:
                 continue
             filename = upload.filename or f"attachment-{uuid4().hex}"
-            safe_name = _safe_filename(filename)
+            safe_name = sanitize_filename(filename, default="attachment")
             attachment_id = uuid4()
             storage_path = upload_root / f"{_attachment_storage_prefix(attachment_id)}_{safe_name}"
 
@@ -314,7 +299,7 @@ class SessionManager:
                 or mimetypes.guess_type(filename)[0]
                 or "application/octet-stream"
             )
-            kind = _classify_kind(filename, content_type)
+            kind = classify_file_kind(filename, content_type).value
             attachment = SessionAttachment(
                 id=attachment_id,
                 session_id=session_id,
@@ -337,7 +322,10 @@ class SessionManager:
             for att in persisted:
                 state.upsert_attachment(att)
 
-        await self._persist_attachment_rows(persisted, user_id=user_id)
+        if self._file_service is not None:
+            await self._persist_via_file_service(persisted, user_id=user_id)
+        else:
+            await self._persist_attachment_rows(persisted, user_id=user_id)
         return persisted
 
     async def register_external_file(
@@ -355,7 +343,7 @@ class SessionManager:
         the file is added like an upload, with DB rows and signed URLs, so the
         chat workspace and ``/api/v1/files`` stay consistent.
         """
-        from leagent.tools._sandbox.paths import _get_allowed_roots, _is_inside
+        from leagent.file.sandbox import _get_allowed_roots, _is_inside
 
         try:
             src = Path(source_path).expanduser().resolve()
@@ -396,7 +384,13 @@ class SessionManager:
             )
             return None
 
-        label = _safe_filename(display_name or src.name)
+        label = sanitize_filename(display_name or src.name, default="attachment")
+
+        if self._file_service is not None:
+            return await self._register_external_via_service(
+                session_id, user_id, src, label=label,
+            )
+
         attachment_id = uuid4()
         upload_root = self._paths.ensure_uploads_dir(session_id)
         storage_path = upload_root / f"{_attachment_storage_prefix(attachment_id)}_{label}"
@@ -415,7 +409,7 @@ class SessionManager:
                 digest.update(chunk)
 
         content_type = mimetypes.guess_type(label)[0] or "application/octet-stream"
-        kind = _classify_kind(label, content_type)
+        kind = classify_file_kind(label, content_type).value
         attachment = SessionAttachment(
             id=attachment_id,
             session_id=session_id,
@@ -529,6 +523,91 @@ class SessionManager:
         except Exception as exc:  # noqa: BLE001
             logger.debug("signed_url_generation_failed: %s", exc)
 
+    async def _persist_via_file_service(
+        self,
+        attachments: Iterable[SessionAttachment],
+        *,
+        user_id: UUID | None,
+    ) -> None:
+        """Persist attachment DB rows via FileService instead of direct inserts."""
+        from leagent.file.primitives import FileScope
+
+        for att in attachments:
+            try:
+                from leagent.file.service import FileRef
+                ref = FileRef(
+                    id=att.id,
+                    filename=att.filename,
+                    storage_key=att.storage_path or "",
+                    backend_name="local",
+                    content_type=att.content_type or "application/octet-stream",
+                    size=att.size,
+                    checksum=att.sha256 or "",
+                    user_id=user_id,
+                    session_id=att.session_id,
+                    scope=FileScope.SESSION,
+                    category="upload",
+                    metadata={"storage_path": att.storage_path or ""},
+                )
+                await self._file_service._persist_db_row(ref)
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("file_service_persist_failed: %s", exc)
+
+    async def _register_external_via_service(
+        self,
+        session_id: UUID,
+        user_id: UUID | None,
+        src: Path,
+        *,
+        label: str,
+    ) -> dict[str, Any] | None:
+        """Register an external file using FileService.register()."""
+        from leagent.file.primitives import FileScope
+
+        try:
+            ref = await self._file_service.register(
+                data=src,
+                filename=label,
+                scope=FileScope.OUTPUT,
+                session_id=session_id,
+                user_id=user_id,
+                category="tool_output",
+            )
+        except Exception as exc:
+            logger.warning("register_external_via_service_failed: %s", exc)
+            return None
+
+        kind = classify_file_kind(label, ref.content_type).value
+        attachment = SessionAttachment(
+            id=ref.id,
+            session_id=session_id,
+            filename=label,
+            storage_path=ref.metadata.get("storage_path", ref.storage_key),
+            content_type=ref.content_type,
+            kind=kind,
+            size=ref.size,
+            sha256=ref.checksum,
+            extra={"source_tool_path": str(src)},
+        )
+        self._populate_urls(attachment, user_id=user_id)
+
+        async with self.locked(session_id) as state:
+            if state.user_id is None and user_id is not None:
+                state.user_id = user_id
+            state.upsert_attachment(attachment)
+
+        return {
+            "id": str(ref.id),
+            "filename": label,
+            "name": label,
+            "kind": kind,
+            "content_type": ref.content_type,
+            "size": ref.size,
+            "sha256": ref.checksum,
+            "preview_url": attachment.preview_url,
+            "download_url": attachment.download_url,
+        }
+
     async def _persist_attachment_rows(
         self,
         attachments: Iterable[SessionAttachment],
@@ -595,17 +674,8 @@ def _attachment_storage_prefix(attachment_id: UUID) -> str:
     return str(attachment_id)
 
 
-def _safe_filename(filename: str) -> str:
-    """Return a filesystem-safe version of a filename (no path traversal)."""
-    base = os.path.basename(filename).strip() or "attachment"
-    sanitised: list[str] = []
-    for ch in base:
-        if ch.isalnum() or ch in {".", "_", "-"}:
-            sanitised.append(ch)
-        elif ch.isspace():
-            sanitised.append("_")
-    result = "".join(sanitised) or "attachment"
-    return result[:180]
+
+# _safe_filename removed – use leagent.file.primitives.sanitize_filename
 
 
 __all__ = ["SessionManager"]

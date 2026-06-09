@@ -24,18 +24,18 @@ from sqlmodel import SQLModel
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from leagent.config.settings import Settings, get_settings
-from leagent.services.coding_projects.manager import CodingProjectManager
-from leagent.services.coding_projects.ports import (
+from leagent.project.manager import CodingProjectManager
+from leagent.project.ports import (
     PortAllocationError,
     PortAllocator,
 )
-from leagent.services.coding_projects.preview_tokens import (
+from leagent.project.preview_tokens import (
     PREVIEW_AUDIENCE,
     decode_preview_token,
     mint_preview_token,
     preview_query_path,
 )
-from leagent.services.coding_projects.templates import (
+from leagent.project.templates import (
     TemplateNotFoundError,
     list_templates,
     load_template,

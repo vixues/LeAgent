@@ -15,7 +15,6 @@ services:
     volumes:
       - ../backend/leagent:/app/leagent:cached
       - ../backend/tests:/app/tests:cached
-      - ../backend/leagent_core:/app/leagent_core:cached
       - ../backend/pyproject.toml:/app/pyproject.toml:ro
       - ../backend/alembic.ini:/app/alembic.ini:ro
       - leagent-data:/app/data

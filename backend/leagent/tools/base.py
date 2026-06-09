@@ -78,15 +78,22 @@ class ToolResult:
     error: str | None = None
     duration_ms: int = 0
     metadata: dict[str, Any] = field(default_factory=dict)
+    produced_files: list[Any] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
-        return {
+        result = {
             "success": self.success,
             "data": self.data,
             "error": self.error,
             "duration_ms": self.duration_ms,
             "metadata": self.metadata,
         }
+        if self.produced_files:
+            result["produced_files"] = [
+                ref.to_dict() if hasattr(ref, "to_dict") else ref
+                for ref in self.produced_files
+            ]
+        return result
 
     @classmethod
     def ok(cls, data: Any, duration_ms: int = 0, **metadata: Any) -> ToolResult:
@@ -349,7 +356,7 @@ class BaseTool(ABC):
 
         Raises :class:`PermissionError` on escape.
         """
-        from leagent.tools._sandbox.paths import PathSandbox
+        from leagent.file.sandbox import PathSandbox
 
         request_id = context.extra.get("request_id", context.session_id or "")
 

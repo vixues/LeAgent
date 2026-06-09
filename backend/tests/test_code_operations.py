@@ -11,7 +11,7 @@ from uuid import uuid4
 
 import pytest
 
-from leagent.tools.code.operations import (
+from leagent.code.operations import (
     CodeExecOp,
     FileEditOp,
     FilePatchOp,
@@ -214,7 +214,7 @@ class TestOperationJournal:
 class TestResolveContent:
     @pytest.mark.asyncio
     async def test_inline_content(self) -> None:
-        from leagent.tools.project._fs import resolve_content
+        from leagent.project.fs import resolve_content
 
         ctx = SimpleNamespace(extra={})
         text = await resolve_content(
@@ -224,7 +224,7 @@ class TestResolveContent:
 
     @pytest.mark.asyncio
     async def test_empty_raises(self) -> None:
-        from leagent.tools.project._fs import resolve_content
+        from leagent.project.fs import resolve_content
 
         ctx = SimpleNamespace(extra={})
         with pytest.raises(ValueError, match="non-empty"):
@@ -232,7 +232,7 @@ class TestResolveContent:
 
     @pytest.mark.asyncio
     async def test_allow_empty(self) -> None:
-        from leagent.tools.project._fs import resolve_content
+        from leagent.project.fs import resolve_content
 
         ctx = SimpleNamespace(extra={})
         text = await resolve_content(
@@ -242,7 +242,7 @@ class TestResolveContent:
 
     @pytest.mark.asyncio
     async def test_custom_keys(self) -> None:
-        from leagent.tools.project._fs import resolve_content
+        from leagent.project.fs import resolve_content
 
         ctx = SimpleNamespace(extra={})
         text = await resolve_content(
@@ -253,7 +253,7 @@ class TestResolveContent:
 
     @pytest.mark.asyncio
     async def test_missing_both_raises(self) -> None:
-        from leagent.tools.project._fs import resolve_content
+        from leagent.project.fs import resolve_content
 
         ctx = SimpleNamespace(extra={})
         with pytest.raises(ValueError):
@@ -267,7 +267,7 @@ class TestResolveContent:
 
 class TestRecordOperation:
     def test_records_to_journal(self) -> None:
-        from leagent.tools.code.pipeline import record_operation
+        from leagent.code.pipeline import record_operation
 
         journal = OperationJournal()
         ctx = SimpleNamespace(extra={JOURNAL_CONTEXT_KEY: journal})
@@ -284,7 +284,7 @@ class TestRecordOperation:
         assert entry.path == "src/app.py"
 
     def test_noop_without_journal(self) -> None:
-        from leagent.tools.code.pipeline import record_operation
+        from leagent.code.pipeline import record_operation
 
         ctx = SimpleNamespace(extra={})
         record_operation(ctx, tool="x", kind="y")

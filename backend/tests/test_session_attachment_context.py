@@ -11,7 +11,7 @@ import pytest
 
 @pytest.mark.asyncio
 async def test_tool_extra_for_chat_session_includes_normalized_paths(tmp_path: Path) -> None:
-    from leagent.tools.session_attachment_context import tool_extra_for_chat_session
+    from leagent.file.attachment_context import tool_extra_for_chat_session
 
     f = tmp_path / "doc.txt"
     f.write_text("hello")
@@ -36,7 +36,7 @@ async def test_tool_extra_for_chat_session_includes_normalized_paths(tmp_path: P
 
 @pytest.mark.asyncio
 async def test_tool_extra_for_chat_session_merges_extra_paths(tmp_path: Path) -> None:
-    from leagent.tools.session_attachment_context import tool_extra_for_chat_session
+    from leagent.file.attachment_context import tool_extra_for_chat_session
 
     a = tmp_path / "a.txt"
     a.write_text("a")

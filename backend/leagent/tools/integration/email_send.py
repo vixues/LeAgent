@@ -114,7 +114,7 @@ class EmailSendTool(BaseTool):
         params: dict[str, Any],
         context: "ToolContext",
     ) -> None:
-        from leagent.tools._sandbox.paths import PathSandbox
+        from leagent.file.sandbox import PathSandbox
 
         request_id = context.extra.get("request_id", context.session_id or "")
         for att in params.get("attachments") or []:

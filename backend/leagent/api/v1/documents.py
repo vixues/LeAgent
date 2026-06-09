@@ -15,6 +15,7 @@ from sqlalchemy import or_
 from sqlmodel import col, func, select
 
 from leagent.config.settings import get_settings
+from leagent.file.primitives import classify_file_kind
 from leagent.schema.api import PaginatedResponse
 from leagent.services.auth import CurrentUserId
 from leagent.services.database import DatabaseService, get_database_service
@@ -89,20 +90,15 @@ def _upload_dir() -> str:
 MAX_FILE_SIZE = 100 * 1024 * 1024  # 100MB
 MAX_PROMOTE_FILES = 50
 
-MIME_TYPE_MAP = {
-    "application/pdf": FileType.DOCUMENT,
-    "application/msword": FileType.DOCUMENT,
-    "application/vnd.openxmlformats-officedocument.wordprocessingml.document": FileType.DOCUMENT,
-    "application/vnd.ms-excel": FileType.DATA,
-    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": FileType.DATA,
-    "text/plain": FileType.DOCUMENT,
-    "text/csv": FileType.DATA,
-    "text/markdown": FileType.DOCUMENT,
-    "image/png": FileType.IMAGE,
-    "image/jpeg": FileType.IMAGE,
-    "image/gif": FileType.IMAGE,
-    "image/webp": FileType.IMAGE,
-    "application/json": FileType.DATA,
+_FILE_KIND_TO_TYPE = {
+    "image": FileType.IMAGE,
+    "document": FileType.DOCUMENT,
+    "data": FileType.DATA,
+    "audio": FileType.AUDIO,
+    "video": FileType.VIDEO,
+    "archive": FileType.ARCHIVE,
+    "code": FileType.CODE,
+    "text": FileType.DOCUMENT,
 }
 
 
@@ -169,11 +165,10 @@ class PromoteToKnowledgeResponse(BaseModel):
     skipped: list[SkippedPromoteFile]
 
 
-def get_file_type(mime_type: str | None) -> FileType:
-    """Determine file type from MIME type."""
-    if not mime_type:
-        return FileType.OTHER
-    return MIME_TYPE_MAP.get(mime_type, FileType.OTHER)
+def get_file_type(mime_type: str | None, filename: str | None = None) -> FileType:
+    """Determine :class:`FileType` via the canonical :func:`classify_file_kind`."""
+    kind = classify_file_kind(filename or "", mime_type)
+    return _FILE_KIND_TO_TYPE.get(kind.value, FileType.OTHER)
 
 
 @router.post("/upload", response_model=DocumentUploadResponse)
@@ -219,7 +214,7 @@ async def upload_document(
     with open(storage_path, "wb") as f:
         f.write(content)
 
-    file_type = get_file_type(file.content_type)
+    file_type = get_file_type(file.content_type, file.filename)
 
     async with db.session() as session:
         db_file = FileModel(

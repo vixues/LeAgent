@@ -234,21 +234,15 @@ backend/
         └── server/              Workflow-specific API + WebSocket
 ```
 
-### Shared primitives — `leagent_core/`
+### Telemetry — `leagent/telemetry/`
 
-Cross-cutting primitives live in the sibling [`leagent_core/`](leagent_core/) package:
+Cross-cutting observability utilities live in [`leagent/telemetry/`](leagent/telemetry/):
 
 | Module | Purpose |
 |--------|---------|
-| `auth/` | JWT helpers, request context |
-| `cache/` | Cache abstractions |
-| `circuit/` | Async circuit breaker |
-| `db/` | Async engine factory + repository helpers |
-| `events/` | In-process event bus |
-| `queue/` | Queue abstractions |
-| `ratelimit/` | Token-bucket limiter |
-| `schema/` | Shared Pydantic schemas |
-| `telemetry/` | OTel setup + structlog + traceparent |
+| `otel.py` | OTel SDK bootstrap, `get_tracer`, `_NullTracer` fallback |
+| `logging.py` | Structured JSON logging via structlog, context vars |
+| `propagation.py` | W3C traceparent inject / extract across transports |
 
 ### API routers (v1)
 

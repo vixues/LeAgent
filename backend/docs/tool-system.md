@@ -235,7 +235,7 @@ Set `LEAGENT_TOOL_FILE_ROOTS` to include your test `tmp_path`:
 
 ```python
 os.environ["LEAGENT_TOOL_FILE_ROOTS"] = str(tmp_path)
-reset_roots()  # from leagent.tools._sandbox.paths
+reset_roots()  # from leagent.file.sandbox
 ```
 
 The shared `conftest.py` fixture `_widen_sandbox_for_tests` does this

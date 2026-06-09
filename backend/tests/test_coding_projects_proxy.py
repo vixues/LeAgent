@@ -22,7 +22,7 @@ import pytest
 from fastapi import FastAPI
 from starlette.requests import Request
 
-from leagent.services.coding_projects.proxy import forward_http
+from leagent.project.proxy import forward_http
 
 
 def _free_port() -> int:

@@ -8,7 +8,7 @@ from typing import Any
 
 import pytest
 
-from leagent.tools.code.artifact import (
+from leagent.code.artifacts import (
     ArtifactKind,
     CodeArtifact,
     CodeArtifactRegistry,
@@ -139,7 +139,7 @@ class TestCodeArtifactRegistry:
 
     def test_eviction_on_max(self) -> None:
         reg = CodeArtifactRegistry()
-        from leagent.tools.code.artifact import _MAX_ARTIFACTS_PER_SESSION
+        from leagent.code.artifacts import _MAX_ARTIFACTS_PER_SESSION
 
         first_ids: list[str] = []
         for i in range(_MAX_ARTIFACTS_PER_SESSION + 5):
@@ -179,7 +179,7 @@ class _FakeToolContext:
 class TestCodeGenerationPipeline:
     @pytest.mark.asyncio
     async def test_prepare_creates_artifact(self) -> None:
-        from leagent.tools.code.pipeline import CodeGenerationPipeline
+        from leagent.code.pipeline import CodeGenerationPipeline
 
         reg = CodeArtifactRegistry()
         pipe = CodeGenerationPipeline(reg)
@@ -200,7 +200,7 @@ class TestCodeGenerationPipeline:
 
     @pytest.mark.asyncio
     async def test_prepare_detects_syntax_error(self) -> None:
-        from leagent.tools.code.pipeline import CodeGenerationPipeline
+        from leagent.code.pipeline import CodeGenerationPipeline
 
         reg = CodeArtifactRegistry()
         pipe = CodeGenerationPipeline(reg)
@@ -218,7 +218,7 @@ class TestCodeGenerationPipeline:
 
     @pytest.mark.asyncio
     async def test_should_block_execute_with_syntax_error(self) -> None:
-        from leagent.tools.code.pipeline import CodeGenerationPipeline
+        from leagent.code.pipeline import CodeGenerationPipeline
 
         reg = CodeArtifactRegistry()
         pipe = CodeGenerationPipeline(reg)
@@ -235,7 +235,7 @@ class TestCodeGenerationPipeline:
 
     @pytest.mark.asyncio
     async def test_should_not_block_file_write_with_syntax_error(self) -> None:
-        from leagent.tools.code.pipeline import CodeGenerationPipeline
+        from leagent.code.pipeline import CodeGenerationPipeline
 
         reg = CodeArtifactRegistry()
         pipe = CodeGenerationPipeline(reg)
@@ -254,7 +254,7 @@ class TestCodeGenerationPipeline:
 
     @pytest.mark.asyncio
     async def test_skip_validation(self) -> None:
-        from leagent.tools.code.pipeline import CodeGenerationPipeline
+        from leagent.code.pipeline import CodeGenerationPipeline
 
         reg = CodeArtifactRegistry()
         pipe = CodeGenerationPipeline(reg)
@@ -273,7 +273,7 @@ class TestCodeGenerationPipeline:
 
     @pytest.mark.asyncio
     async def test_auto_language_detection(self) -> None:
-        from leagent.tools.code.pipeline import CodeGenerationPipeline
+        from leagent.code.pipeline import CodeGenerationPipeline
 
         reg = CodeArtifactRegistry()
         pipe = CodeGenerationPipeline(reg)
@@ -292,7 +292,7 @@ class TestCodeGenerationPipeline:
 
     @pytest.mark.asyncio
     async def test_auto_language_unknown_extension(self) -> None:
-        from leagent.tools.code.pipeline import CodeGenerationPipeline
+        from leagent.code.pipeline import CodeGenerationPipeline
 
         reg = CodeArtifactRegistry()
         pipe = CodeGenerationPipeline(reg)
@@ -310,7 +310,7 @@ class TestCodeGenerationPipeline:
 
     @pytest.mark.asyncio
     async def test_metadata_passed_through(self) -> None:
-        from leagent.tools.code.pipeline import CodeGenerationPipeline
+        from leagent.code.pipeline import CodeGenerationPipeline
 
         reg = CodeArtifactRegistry()
         pipe = CodeGenerationPipeline(reg)
@@ -330,7 +330,7 @@ class TestCodeGenerationPipeline:
 
     @pytest.mark.asyncio
     async def test_hook_fires_when_available(self) -> None:
-        from leagent.tools.code.pipeline import CodeGenerationPipeline
+        from leagent.code.pipeline import CodeGenerationPipeline
 
         reg = CodeArtifactRegistry()
         pipe = CodeGenerationPipeline(reg)
@@ -355,7 +355,7 @@ class TestCodeGenerationPipeline:
 
     @pytest.mark.asyncio
     async def test_hook_error_does_not_crash(self) -> None:
-        from leagent.tools.code.pipeline import CodeGenerationPipeline
+        from leagent.code.pipeline import CodeGenerationPipeline
 
         reg = CodeArtifactRegistry()
         pipe = CodeGenerationPipeline(reg)
@@ -384,7 +384,7 @@ class TestCodeGenerationPipeline:
 
 class TestGetPipeline:
     def test_returns_pipeline_when_registry_present(self) -> None:
-        from leagent.tools.code.pipeline import get_pipeline, _CONTEXT_REGISTRY_KEY
+        from leagent.code.pipeline import get_pipeline, _CONTEXT_REGISTRY_KEY
 
         reg = CodeArtifactRegistry()
         ctx = _FakeToolContext(extra={_CONTEXT_REGISTRY_KEY: reg})
@@ -392,13 +392,13 @@ class TestGetPipeline:
         assert pipe is not None
 
     def test_returns_none_when_no_registry(self) -> None:
-        from leagent.tools.code.pipeline import get_pipeline
+        from leagent.code.pipeline import get_pipeline
 
         ctx = _FakeToolContext(extra={})
         assert get_pipeline(ctx) is None
 
     def test_returns_none_when_no_extra(self) -> None:
-        from leagent.tools.code.pipeline import get_pipeline
+        from leagent.code.pipeline import get_pipeline
 
         @dataclass
         class _MinimalContext:

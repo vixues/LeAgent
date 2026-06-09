@@ -19,7 +19,7 @@ import uuid
 from pathlib import Path
 from typing import Any
 
-from leagent.tools._sandbox.paths import PathSandbox, reset_roots
+from leagent.file.sandbox import PathSandbox, reset_roots
 from leagent.tools.base import ToolContext, ToolResult
 
 
@@ -282,7 +282,7 @@ class TestPathSandbox:
         """Bare original name matches ``<uuid>_原名`` when lookup built like AgentController."""
         from unittest.mock import MagicMock
 
-        from leagent.tools.session_attachment_context import build_attachment_lookup
+        from leagent.file.attachment_context import build_attachment_lookup
 
         os.environ["LEAGENT_TOOL_FILE_ROOTS"] = str(tmp_path)
         reset_roots()
@@ -393,8 +393,8 @@ class TestPathSandbox:
 
 
 async def _run_file_manager(params: dict[str, Any], ctx: ToolContext) -> ToolResult:
-    from leagent.tools.util.file_manager import FileManagerTool
-    tool = FileManagerTool()
+    from leagent.tools.util.file_ops import FileOpsTool
+    tool = FileOpsTool()
     return await tool.run(params, ctx)
 
 

@@ -52,6 +52,6 @@ If probe finds nothing, suggest installing **`fonts-noto-cjk`** or **`fonts-wqy-
 
 ### Matplotlib
 
-- **`code_execution` subprocess** (`leagent.services.code_execution.runner`) auto-configures matplotlib when the user script references matplotlib/pyplot (`matplotlib`, `pyplot`, `plt.`, `font_manager`, `mpl.`, `pylab`): it registers a pan-Unicode font from **`LEAGENT_CJK_FONT`** (if the file exists) or the same **system scan** as PDF (`Noto Sans SC`, Noto CJK TTC, WenQuanYi, `msyh.ttc` under `%WINDIR%/Fonts` on Windows, etc.), sets **`font.sans-serif`** and **`axes.unicode_minus = False`**. **`chart_generator`** injects the same hook into generated scripts.
+- **`code_execution` subprocess** (`leagent.code.runner`) auto-configures matplotlib when the user script references matplotlib/pyplot (`matplotlib`, `pyplot`, `plt.`, `font_manager`, `mpl.`, `pylab`): it registers a pan-Unicode font from **`LEAGENT_CJK_FONT`** (if the file exists) or the same **system scan** as PDF (`Noto Sans SC`, Noto CJK TTC, WenQuanYi, `msyh.ttc` under `%WINDIR%/Fonts` on Windows, etc.), sets **`font.sans-serif`** and **`axes.unicode_minus = False`**. **`chart_generator`** injects the same hook into generated scripts.
 - If Chinese still renders as boxes, install **`fonts-noto-cjk`** or **`fonts-wqy-microhei`** (Debian/Ubuntu) or set **`LEAGENT_CJK_FONT`** to an absolute path to a **`.otf` / `.ttf`** (preferred over ambiguous TTC subfaces for matplotlib).
 - You may still override per-plot with `FontProperties(fname=...)` when you need a specific face.

@@ -21,7 +21,7 @@ from leagent.services.auth.tokens import mint_token
 
 from leagent.config.settings import get_settings
 from leagent.services.auth.deps import get_current_user_id
-from leagent.services.coding_projects.preview_tokens import (
+from leagent.project.preview_tokens import (
     PREVIEW_AUDIENCE,
     mint_preview_token,
 )
@@ -85,7 +85,7 @@ def fake_manager(
     manager.get_template = _get_template
 
     monkeypatch.setattr(
-        "leagent.services.coding_projects.manager.get_coding_projects_service",
+        "leagent.project.manager.get_coding_projects_service",
         lambda: manager,
     )
 

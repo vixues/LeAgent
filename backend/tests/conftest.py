@@ -80,7 +80,7 @@ TEST_DB_URL = "sqlite+aiosqlite:///./test.db"
 @pytest.fixture(autouse=True, scope="session")
 def _widen_sandbox_for_tests():
     """Allow /tmp and system temp during tests so tmp_path works with the sandbox."""
-    from leagent.tools._sandbox.paths import reset_roots
+    from leagent.file.sandbox import reset_roots
 
     old = os.environ.get("LEAGENT_TOOL_FILE_ROOTS")
     system_tmp = str(Path(tempfile.gettempdir()).resolve())

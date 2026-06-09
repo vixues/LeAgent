@@ -295,9 +295,9 @@ class TestCSVProcessorTool:
         tmp_path: Path,
     ) -> None:
         """Bare filename resolves when path is merged like chat ``file_ids`` / knowledge."""
-        from leagent.tools._sandbox.paths import reset_roots
+        from leagent.file.sandbox import reset_roots
         from leagent.tools.doc.csv_processor import CSVProcessorTool
-        from leagent.tools.session_attachment_context import build_attachment_lookup
+        from leagent.file.attachment_context import build_attachment_lookup
 
         prev_roots = os.environ.get("LEAGENT_TOOL_FILE_ROOTS")
         os.environ["LEAGENT_TOOL_FILE_ROOTS"] = str(tmp_path)
@@ -547,7 +547,7 @@ class TestConfigFileTool:
         tmp_path: Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        from leagent.tools._sandbox.paths import reset_roots
+        from leagent.file.sandbox import reset_roots
         from leagent.tools.doc.config_file_tool import ConfigFileTool
 
         allowed_root = tmp_path / "allowed"

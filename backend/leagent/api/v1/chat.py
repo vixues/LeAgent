@@ -834,7 +834,7 @@ async def _resolve_project_folder_path(
 
     from leagent.services.database.models import Folder
     from leagent.services.database.sqlite_compat import load_entity_by_id
-    from leagent.services.coding_projects import (
+    from leagent.project.paths import (
         ProjectPathSafetyError,
         resolve_owned_project_folder,
     )
@@ -2709,7 +2709,7 @@ async def run_chat_workflow_step(
     from leagent.tools.context import build_tool_context
     from leagent.tools.executor import get_executor
     from leagent.tools.registry import get_registry
-    from leagent.tools.session_attachment_context import tool_extra_for_chat_session
+    from leagent.file.attachment_context import tool_extra_for_chat_session
 
     msg = await chat_svc.get_session_message(session_id, body.message_id, user_id=user_id)
     if not msg:

@@ -21,8 +21,8 @@ if TYPE_CHECKING:
     from leagent.services.session import SessionManager
     from leagent.skills.manager import SkillsManager
     from leagent.tools.base import ToolPermissionContext
-    from leagent.tools.code.artifact import SessionArtifactStore
-    from leagent.tools.code.operations import OperationJournal
+    from leagent.code.artifacts import SessionArtifactStore
+    from leagent.code.operations import OperationJournal
     from leagent.tools.registry import ToolRegistry
 
 

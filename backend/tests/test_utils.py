@@ -104,47 +104,6 @@ class TestValidators:
         is_suspicious, _ = detect_prompt_injection(clean)
         assert is_suspicious is False
 
-    def test_validate_file_type_valid(self) -> None:
-        from leagent.utils.validators import validate_file_type
-
-        valid, reason = validate_file_type("report.pdf")
-        assert valid is True
-        assert reason == ""
-
-    def test_validate_file_type_invalid(self) -> None:
-        from leagent.utils.validators import validate_file_type
-
-        valid, reason = validate_file_type("malware.exe")
-        assert valid is False
-        assert "exe" in reason or "not supported" in reason
-
-    def test_validate_file_type_no_extension(self) -> None:
-        from leagent.utils.validators import validate_file_type
-
-        valid, reason = validate_file_type("no_extension_file")
-        assert valid is False
-        assert "extension" in reason.lower()
-
-    def test_validate_file_size_valid(self) -> None:
-        from leagent.utils.validators import validate_file_size
-
-        valid, reason = validate_file_size(1024)
-        assert valid is True
-
-    def test_validate_file_size_empty(self) -> None:
-        from leagent.utils.validators import validate_file_size
-
-        valid, reason = validate_file_size(0)
-        assert valid is False
-        assert "empty" in reason.lower()
-
-    def test_validate_file_size_exceeds(self) -> None:
-        from leagent.utils.validators import validate_file_size
-
-        valid, reason = validate_file_size(999_999_999_999, max_bytes=1024)
-        assert valid is False
-        assert "exceeds" in reason.lower()
-
     def test_validate_uuid_valid(self) -> None:
         from leagent.utils.validators import validate_uuid
         import uuid

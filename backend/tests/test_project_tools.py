@@ -62,7 +62,7 @@ def project(tmp_path: Path) -> Path:
 
 @pytest.mark.asyncio
 async def test_project_read_returns_line_numbered_content(project: Path) -> None:
-    from leagent.tools.project.read import ProjectReadTool
+    from leagent.project.tools.read import ProjectReadTool
 
     tool = ProjectReadTool()
     result = await _run(tool, {"path": "src/app.py"}, _ctx(project))
@@ -77,7 +77,7 @@ async def test_project_read_returns_line_numbered_content(project: Path) -> None
 
 @pytest.mark.asyncio
 async def test_project_read_rejects_escape(project: Path) -> None:
-    from leagent.tools.project.read import ProjectReadTool
+    from leagent.project.tools.read import ProjectReadTool
 
     outside = project.parent / "outside.txt"
     outside.write_text("nope", encoding="utf-8")
@@ -89,9 +89,9 @@ async def test_project_read_rejects_escape(project: Path) -> None:
 
 @pytest.mark.asyncio
 async def test_project_write_then_edit_then_read(project: Path) -> None:
-    from leagent.tools.project.edit import ProjectEditTool
-    from leagent.tools.project.read import ProjectReadTool
-    from leagent.tools.project.write import ProjectWriteTool
+    from leagent.project.tools.edit import ProjectEditTool
+    from leagent.project.tools.read import ProjectReadTool
+    from leagent.project.tools.write import ProjectWriteTool
 
     write = ProjectWriteTool()
     edit = ProjectEditTool()
@@ -129,8 +129,8 @@ async def test_project_write_then_edit_then_read(project: Path) -> None:
 @pytest.mark.asyncio
 async def test_project_edit_requires_uniqueness(project: Path) -> None:
     """Multiple matches without ``replace_all`` must fail loudly."""
-    from leagent.tools.project.edit import ProjectEditTool
-    from leagent.tools.project.write import ProjectWriteTool
+    from leagent.project.tools.edit import ProjectEditTool
+    from leagent.project.tools.write import ProjectWriteTool
 
     await _run(
         ProjectWriteTool(),
@@ -160,7 +160,7 @@ async def test_project_edit_requires_uniqueness(project: Path) -> None:
 
 @pytest.mark.asyncio
 async def test_project_edit_no_match_includes_patch_hint(project: Path) -> None:
-    from leagent.tools.project.edit import ProjectEditTool
+    from leagent.project.tools.edit import ProjectEditTool
 
     res = await _run(
         ProjectEditTool(),
@@ -179,7 +179,7 @@ async def test_project_edit_no_match_includes_patch_hint(project: Path) -> None:
 
 @pytest.mark.asyncio
 async def test_project_grep_finds_match(project: Path) -> None:
-    from leagent.tools.project.grep import ProjectGrepTool
+    from leagent.project.tools.grep import ProjectGrepTool
 
     tool = ProjectGrepTool()
     result = await _run(tool, {"pattern": "def greet"}, _ctx(project))
@@ -195,7 +195,7 @@ async def test_project_grep_finds_match(project: Path) -> None:
 
 @pytest.mark.asyncio
 async def test_project_glob_lists_python_files(project: Path) -> None:
-    from leagent.tools.project.glob import ProjectGlobTool
+    from leagent.project.tools.glob import ProjectGlobTool
 
     result = await _run(
         ProjectGlobTool(),
@@ -211,7 +211,7 @@ async def test_project_glob_lists_python_files(project: Path) -> None:
 
 @pytest.mark.asyncio
 async def test_project_tree_renders_layout(project: Path) -> None:
-    from leagent.tools.project.tree import ProjectTreeTool
+    from leagent.project.tools.tree import ProjectTreeTool
 
     result = await _run(ProjectTreeTool(), {"max_depth": 3}, _ctx(project))
     assert result.success, result.error
@@ -223,7 +223,7 @@ async def test_project_tree_renders_layout(project: Path) -> None:
 
 @pytest.mark.asyncio
 async def test_project_tree_missing_root_is_not_retried() -> None:
-    from leagent.tools.project.tree import ProjectTreeTool
+    from leagent.project.tools.tree import ProjectTreeTool
 
     result = await _run(
         ProjectTreeTool(),
@@ -238,7 +238,7 @@ async def test_project_tree_missing_root_is_not_retried() -> None:
 
 @pytest.mark.asyncio
 async def test_project_apply_patch_creates_and_modifies(project: Path) -> None:
-    from leagent.tools.project.patch import ProjectApplyPatchTool
+    from leagent.project.tools.patch import ProjectApplyPatchTool
 
     diff = (
         "--- /dev/null\n"
@@ -265,7 +265,7 @@ async def test_project_apply_patch_creates_and_modifies(project: Path) -> None:
 @pytest.mark.asyncio
 async def test_project_shell_runs_python(project: Path) -> None:
     """Curated shell can execute ``python -c`` inside the project root."""
-    from leagent.tools.project.shell import ProjectShellTool
+    from leagent.project.tools.shell import ProjectShellTool
 
     result = await _run(
         ProjectShellTool(),
@@ -290,7 +290,7 @@ async def test_project_shell_blocks_unknown_binary(
 ) -> None:
     """Curated argv rejects unknown binaries when free-shell mode is off."""
     monkeypatch.setenv("LEAGENT_CODING_AGENT_FREE_SHELL", "0")
-    from leagent.tools.project.shell import ProjectShellTool
+    from leagent.project.tools.shell import ProjectShellTool
 
     result = await _run(
         ProjectShellTool(),
@@ -306,7 +306,7 @@ async def test_project_shell_blocks_unknown_binary(
 
 @pytest.mark.asyncio
 async def test_project_outline_single_file(project: Path) -> None:
-    from leagent.tools.project.outline import ProjectOutlineTool
+    from leagent.project.tools.outline import ProjectOutlineTool
 
     result = await _run(
         ProjectOutlineTool(),
@@ -325,7 +325,7 @@ async def test_project_outline_single_file(project: Path) -> None:
 
 @pytest.mark.asyncio
 async def test_project_outline_syntax_error(project: Path) -> None:
-    from leagent.tools.project.outline import ProjectOutlineTool
+    from leagent.project.tools.outline import ProjectOutlineTool
 
     (project / "broken.py").write_text("def x(\n", encoding="utf-8")
     result = await _run(
@@ -340,7 +340,7 @@ async def test_project_outline_syntax_error(project: Path) -> None:
 
 @pytest.mark.asyncio
 async def test_project_outline_root_glob(project: Path) -> None:
-    from leagent.tools.project.outline import ProjectOutlineTool
+    from leagent.project.tools.outline import ProjectOutlineTool
 
     result = await _run(
         ProjectOutlineTool(),
@@ -355,7 +355,7 @@ async def test_project_outline_root_glob(project: Path) -> None:
 
 @pytest.mark.asyncio
 async def test_project_write_content_blob_id(project: Path) -> None:
-    from leagent.tools.project.write import ProjectWriteTool
+    from leagent.project.tools.write import ProjectWriteTool
     from leagent.tools.util.tool_argument_blob import ToolArgumentBlobTool
 
     ctx = _ctx(project)
@@ -384,7 +384,7 @@ async def test_project_write_content_blob_id(project: Path) -> None:
 
 @pytest.mark.asyncio
 async def test_project_edit_old_string_blob_id(project: Path) -> None:
-    from leagent.tools.project.edit import ProjectEditTool
+    from leagent.project.tools.edit import ProjectEditTool
     from leagent.tools.util.tool_argument_blob import ToolArgumentBlobTool
 
     ctx = _ctx(project)
@@ -414,7 +414,7 @@ async def test_project_edit_old_string_blob_id(project: Path) -> None:
 
 @pytest.mark.asyncio
 async def test_project_apply_patch_diff_blob_id(project: Path) -> None:
-    from leagent.tools.project.patch import ProjectApplyPatchTool
+    from leagent.project.tools.patch import ProjectApplyPatchTool
     from leagent.tools.util.tool_argument_blob import ToolArgumentBlobTool
 
     diff = (
@@ -441,7 +441,7 @@ async def test_project_apply_patch_diff_blob_id(project: Path) -> None:
 async def test_tool_argument_blob_append_chunk_base64_html(project: Path) -> None:
     import base64
 
-    from leagent.tools.project.write import ProjectWriteTool
+    from leagent.project.tools.write import ProjectWriteTool
     from leagent.tools.util.tool_argument_blob import ToolArgumentBlobTool
 
     ctx = _ctx(project)
@@ -469,7 +469,7 @@ async def test_tool_argument_blob_append_chunk_base64_html(project: Path) -> Non
 async def test_tool_argument_blob_chunk_base64_wins_over_chunk(project: Path) -> None:
     import base64
 
-    from leagent.tools.project.write import ProjectWriteTool
+    from leagent.project.tools.write import ProjectWriteTool
     from leagent.tools.util.tool_argument_blob import ToolArgumentBlobTool
 
     ctx = _ctx(project)
@@ -522,7 +522,7 @@ async def test_tool_argument_blob_append_invalid_base64(project: Path) -> None:
 
 def test_validate_project_path_accepts_existing_dir(project: Path) -> None:
     """A real directory resolves cleanly when no allow-list is set."""
-    from leagent.services.coding_projects import validate_project_path
+    from leagent.project.paths import validate_project_path
 
     resolved = validate_project_path(str(project))
     assert resolved == project.resolve()
@@ -530,7 +530,7 @@ def test_validate_project_path_accepts_existing_dir(project: Path) -> None:
 
 def test_validate_project_path_rejects_missing(tmp_path: Path) -> None:
     """A path that doesn't exist must not pass."""
-    from leagent.services.coding_projects import (
+    from leagent.project.paths import (
         ProjectPathSafetyError,
         validate_project_path,
     )
@@ -541,7 +541,7 @@ def test_validate_project_path_rejects_missing(tmp_path: Path) -> None:
 
 
 def test_validate_project_path_rejects_relative(tmp_path: Path) -> None:
-    from leagent.services.coding_projects import (
+    from leagent.project.paths import (
         ProjectPathSafetyError,
         validate_project_path,
     )
@@ -556,8 +556,8 @@ def test_validate_project_path_honours_allowed_roots(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A path outside ``FILES_PROJECTS_ALLOWED_ROOTS`` is rejected."""
-    from leagent.services.coding_projects import paths as safety_mod
-    from leagent.services.coding_projects import (
+    from leagent.project import paths as safety_mod
+    from leagent.project.paths import (
         ProjectPathSafetyError,
         validate_project_path,
     )
@@ -625,7 +625,7 @@ async def test_tool_argument_blob_blob_disk_path_and_discard(
 
 def _ctx_with_journal(project: Path) -> ToolContext:
     """Build a tool context with an OperationJournal attached."""
-    from leagent.tools.code.operations import JOURNAL_CONTEXT_KEY, OperationJournal
+    from leagent.code.operations import JOURNAL_CONTEXT_KEY, OperationJournal
 
     return ToolContext(
         user_id="u1",
@@ -640,8 +640,8 @@ def _ctx_with_journal(project: Path) -> ToolContext:
 @pytest.mark.asyncio
 async def test_project_write_result_validates_as_file_write_op(project: Path) -> None:
     """project_write return dict must be a valid FileWriteOp."""
-    from leagent.tools.code.operations import FileWriteOp
-    from leagent.tools.project.write import ProjectWriteTool
+    from leagent.code.operations import FileWriteOp
+    from leagent.project.tools.write import ProjectWriteTool
 
     ctx = _ctx_with_journal(project)
     res = await _run(ProjectWriteTool(), {
@@ -658,8 +658,8 @@ async def test_project_write_result_validates_as_file_write_op(project: Path) ->
 @pytest.mark.asyncio
 async def test_project_edit_result_validates_as_file_edit_op(project: Path) -> None:
     """project_edit return dict must be a valid FileEditOp."""
-    from leagent.tools.code.operations import FileEditOp
-    from leagent.tools.project.edit import ProjectEditTool
+    from leagent.code.operations import FileEditOp
+    from leagent.project.tools.edit import ProjectEditTool
 
     ctx = _ctx_with_journal(project)
     res = await _run(ProjectEditTool(), {
@@ -676,8 +676,8 @@ async def test_project_edit_result_validates_as_file_edit_op(project: Path) -> N
 @pytest.mark.asyncio
 async def test_project_write_records_journal_entry(project: Path) -> None:
     """project_write must append a JournalEntry to the operation journal."""
-    from leagent.tools.code.operations import JOURNAL_CONTEXT_KEY, OperationJournal
-    from leagent.tools.project.write import ProjectWriteTool
+    from leagent.code.operations import JOURNAL_CONTEXT_KEY, OperationJournal
+    from leagent.project.tools.write import ProjectWriteTool
 
     ctx = _ctx_with_journal(project)
     journal: OperationJournal = ctx.extra[JOURNAL_CONTEXT_KEY]
@@ -697,8 +697,8 @@ async def test_project_write_records_journal_entry(project: Path) -> None:
 @pytest.mark.asyncio
 async def test_project_edit_records_journal_entry(project: Path) -> None:
     """project_edit must append a JournalEntry to the operation journal."""
-    from leagent.tools.code.operations import JOURNAL_CONTEXT_KEY, OperationJournal
-    from leagent.tools.project.edit import ProjectEditTool
+    from leagent.code.operations import JOURNAL_CONTEXT_KEY, OperationJournal
+    from leagent.project.tools.edit import ProjectEditTool
 
     ctx = _ctx_with_journal(project)
     journal: OperationJournal = ctx.extra[JOURNAL_CONTEXT_KEY]

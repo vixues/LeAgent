@@ -37,22 +37,18 @@ from sse_starlette.sse import EventSourceResponse
 
 from leagent.config.settings import Settings, get_settings
 from leagent.services.auth import CurrentUserId
-from leagent.services.coding_projects import (
-    CodingBinaryNotAllowedError,
+from leagent.project.binaries import CodingBinaryNotAllowedError
+from leagent.project.manager import (
     CodingProjectManager,
     CodingProjectNotFoundError,
     CodingProjectQuotaError,
-    ProjectPathSafetyError,
-    StartTimeoutError,
-    decode_preview_token,
-    list_templates,
-    mint_preview_token,
 )
-from leagent.services.coding_projects.proxy import (
-    forward_http,
-    forward_websocket,
-)
-from leagent.services.coding_projects.workspace import (
+from leagent.project.paths import ProjectPathSafetyError
+from leagent.project.preview_tokens import decode_preview_token, mint_preview_token
+from leagent.project.proxy import forward_http, forward_websocket
+from leagent.project.runtime import StartTimeoutError
+from leagent.project.templates import list_templates
+from leagent.project.workspace import (
     UnsafePathError,
     build_tree,
     git_snapshot,
@@ -76,7 +72,7 @@ def get_coding_projects(
     so callers see a clear error instead of an obscure ``RuntimeError``.
     """
     try:
-        from leagent.services.coding_projects.manager import (
+        from leagent.project.manager import (
             get_coding_projects_service,
         )
 

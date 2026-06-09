@@ -33,8 +33,8 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from tests.test_coding_projects_manager import FakeDB  # type: ignore[no-redef]
 
 from leagent.config.settings import Settings, get_settings
-from leagent.services.coding_projects.manager import CodingProjectManager
-from leagent.services.coding_projects.runtime import DevServerSupervisor
+from leagent.project.manager import CodingProjectManager
+from leagent.project.runtime import DevServerSupervisor
 
 
 def _free_port() -> int:

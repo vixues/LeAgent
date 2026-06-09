@@ -3,9 +3,6 @@
 from __future__ import annotations
 
 import re
-from pathlib import Path
-
-from leagent.config.constants import ALL_SUPPORTED_TYPES, MAX_UPLOAD_SIZE_BYTES
 
 _DANGEROUS_PATTERNS: list[re.Pattern[str]] = [
     re.compile(r"ignore\s+(all\s+)?(previous|prior|above)\s+(instructions|prompts)", re.IGNORECASE),
@@ -40,37 +37,6 @@ def detect_prompt_injection(text: str) -> tuple[bool, str]:
         if match:
             return True, f"Matched pattern: {pattern.pattern!r} at position {match.start()}"
     return False, ""
-
-
-def validate_file_type(filename: str, allowed: set[str] | None = None) -> tuple[bool, str]:
-    """Validate that the file extension is in the allowed set.
-
-    Returns:
-        (is_valid, reason)
-    """
-    allowed_types = allowed or ALL_SUPPORTED_TYPES
-    ext = Path(filename).suffix.lower()
-    if not ext:
-        return False, "File has no extension"
-    if ext not in allowed_types:
-        return False, f"File type '{ext}' not supported. Allowed: {sorted(allowed_types)}"
-    return True, ""
-
-
-def validate_file_size(size_bytes: int, max_bytes: int | None = None) -> tuple[bool, str]:
-    """Validate that the file size is within limits.
-
-    Returns:
-        (is_valid, reason)
-    """
-    limit = max_bytes or MAX_UPLOAD_SIZE_BYTES
-    if size_bytes <= 0:
-        return False, "File is empty"
-    if size_bytes > limit:
-        limit_mb = limit / (1024 * 1024)
-        actual_mb = size_bytes / (1024 * 1024)
-        return False, f"File size ({actual_mb:.1f} MB) exceeds limit ({limit_mb:.0f} MB)"
-    return True, ""
 
 
 def validate_uuid(value: str) -> bool:
