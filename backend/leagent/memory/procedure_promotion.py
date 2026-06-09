@@ -3,7 +3,7 @@
 Calls :meth:`AgentMemory.record_procedure`, which delegates to
 :class:`~leagent.memory.procedural.ProceduralStore` — the same stack as
 historical ``TaskHistoryHook`` writes: upsert ``agent_procedures`` (SQL
-database :class:`~leagent.services.database.models.agent_memory.AgentProcedure`)
+database :class:`~leagent.db.models.agent_memory.AgentProcedure`)
 plus embedding upsert to Milvus ``agent_memory_procedures`` (see
 ``procedural.COLLECTION_NAME``). Milvus failures are handled inside the store;
 the database remains the source of truth for text, signature, and counters.
@@ -21,7 +21,7 @@ from leagent.memory.agent_memory import AgentMemory
 from leagent.memory.procedural import build_signature
 from leagent.memory.types import Procedure
 from leagent.services.chat.service import ChatService
-from leagent.services.database.models.message import MessageRole, MessageStatus
+from leagent.db.models.message import MessageRole, MessageStatus
 
 logger = logging.getLogger(__name__)
 

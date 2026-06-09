@@ -28,7 +28,7 @@ from sqlalchemy.orm import sessionmaker
 from sqlmodel import SQLModel
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-import leagent.services.database.models  # noqa: F401 - ensure metadata is loaded
+import leagent.db.models  # noqa: F401 - ensure metadata is loaded
 from leagent.config.settings import get_settings
 from leagent.services.session.manager import SessionManager
 from leagent.services.session.state import (

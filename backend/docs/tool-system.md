@@ -207,7 +207,7 @@ allowed directories.
 |---|---|---|
 | Global | `LEAGENT_TOOL_FILE_ROOTS` (comma-separated abs paths) | Process-wide read/write roots for every tool call. When unset, defaults to `FilesSettings.upload_dir` (see `leagent/config/settings.py`). |
 | Global | `FilesSettings.resolved_knowledge_storage_dir()` | Knowledge / indexed document blobs (`…/knowledge/documents`). Always merged into the sandbox allow-list so `@knowledge:` paths resolve even when `LEAGENT_TOOL_FILE_ROOTS` is narrowed. |
-| Global (single-machine) | Desktop / local profile | When `LEAGENT_TOOL_FILE_ROOTS` is **not** set, `LEAGENT_HOME` and `WORKING_DIR` are also appended (`leagent/tools/_sandbox/paths.py`). **Production tip:** set `LEAGENT_TOOL_FILE_ROOTS` explicitly instead of relying on this wide default. |
+| Global (single-machine) | Desktop / local profile | When `LEAGENT_TOOL_FILE_ROOTS` is **not** set, `LEAGENT_HOME` and `WORKING_DIR` are also appended (`leagent/file/sandbox.py`). **Production tip:** set `LEAGENT_TOOL_FILE_ROOTS` explicitly instead of relying on this wide default. |
 | Per request (files) | `ToolContext.extra["attachments"]` | Absolute storage paths for chat uploads, merged knowledge files, etc. |
 | Per request (lookup) | `ToolContext.extra["attachment_lookup"]` | `by_id` / `by_name` maps for `@file:` / `@knowledge:` and UUID-prefixed filenames (`session_attachment_context.py`). |
 | Per request (dirs) | `ToolContext.extra["project_roots"]` | Code-project / Folder `project_path` directories for `project_*` and `coding_agent` (`AgentController._run_via_query_engine`). |

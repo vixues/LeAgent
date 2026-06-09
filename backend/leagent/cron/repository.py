@@ -20,7 +20,7 @@ import structlog
 from .base import CronExecution, CronHeartbeat, CronJob, CronExecutionStatus
 
 if TYPE_CHECKING:
-    from leagent.services.database.service import DatabaseService
+    from leagent.db.service import DatabaseService
 
 logger = structlog.get_logger(__name__)
 
@@ -548,7 +548,7 @@ class DatabaseJobRepository:
     async def save(self, job: CronJob) -> None:
         """Upsert a cron job to the database."""
         from sqlmodel import select
-        from leagent.services.database.models.cron import CronJobModel
+        from leagent.db.models.cron import CronJobModel
 
         async with self._db.session() as session:
             existing = await session.get(CronJobModel, job.id)
@@ -567,7 +567,7 @@ class DatabaseJobRepository:
 
     async def delete(self, job_id: UUID) -> bool:
         """Delete a cron job from the database."""
-        from leagent.services.database.models.cron import CronJobModel
+        from leagent.db.models.cron import CronJobModel
 
         async with self._db.session() as session:
             obj = await session.get(CronJobModel, job_id)
@@ -579,7 +579,7 @@ class DatabaseJobRepository:
 
     async def get(self, job_id: UUID) -> CronJob | None:
         """Get a cron job by ID."""
-        from leagent.services.database.models.cron import CronJobModel
+        from leagent.db.models.cron import CronJobModel
 
         async with self._db.session() as session:
             obj = await session.get(CronJobModel, job_id)
@@ -590,7 +590,7 @@ class DatabaseJobRepository:
     async def load_all(self) -> list[CronJob]:
         """Load all cron jobs from the database."""
         from sqlmodel import select
-        from leagent.services.database.models.cron import CronJobModel
+        from leagent.db.models.cron import CronJobModel
 
         async with self._db.session() as session:
             result = await session.exec(select(CronJobModel))
@@ -601,7 +601,7 @@ class DatabaseJobRepository:
 
     async def save_execution(self, execution: CronExecution) -> None:
         """Persist a cron execution record."""
-        from leagent.services.database.models.cron import CronExecutionModel
+        from leagent.db.models.cron import CronExecutionModel
 
         async with self._db.session() as session:
             existing = await session.get(CronExecutionModel, execution.id)
@@ -625,7 +625,7 @@ class DatabaseJobRepository:
     ) -> list[CronExecution]:
         """Get execution history for a job."""
         from sqlmodel import col, select
-        from leagent.services.database.models.cron import CronExecutionModel
+        from leagent.db.models.cron import CronExecutionModel
 
         async with self._db.session() as session:
             q = select(CronExecutionModel).where(

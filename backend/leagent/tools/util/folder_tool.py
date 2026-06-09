@@ -130,7 +130,7 @@ class FolderOperationsTool(BaseTool):
         return UUID(ctx.user_id) if ctx.user_id else None
 
     async def _create_folder(self, sm: Any, params: dict[str, Any], ctx: ToolContext) -> dict[str, Any]:
-        from leagent.services.database.models.folder import Folder
+        from leagent.db.models.folder import Folder
 
         name = params.get("name")
         if not name:
@@ -157,7 +157,7 @@ class FolderOperationsTool(BaseTool):
 
     async def _list_folders(self, sm: Any, params: dict[str, Any], ctx: ToolContext) -> dict[str, Any]:
         from sqlmodel import select
-        from leagent.services.database.models.folder import Folder
+        from leagent.db.models.folder import Folder
 
         parent_id = UUID(params["parent_id"]) if params.get("parent_id") else None
         uid = self._user_id(ctx)
@@ -190,7 +190,7 @@ class FolderOperationsTool(BaseTool):
 
     async def _get_tree(self, sm: Any, params: dict[str, Any], ctx: ToolContext) -> dict[str, Any]:
         from sqlmodel import select
-        from leagent.services.database.models.folder import Folder
+        from leagent.db.models.folder import Folder
 
         uid = self._user_id(ctx)
 
@@ -226,7 +226,7 @@ class FolderOperationsTool(BaseTool):
         if not folder_id:
             return {"error": "'folder_id' is required"}
 
-        from leagent.services.database.models.folder import Folder
+        from leagent.db.models.folder import Folder
 
         new_parent = UUID(params["parent_id"]) if params.get("parent_id") else None
 
@@ -244,7 +244,7 @@ class FolderOperationsTool(BaseTool):
             return {"error": "'folder_id' is required"}
 
         from datetime import datetime
-        from leagent.services.database.models.folder import Folder
+        from leagent.db.models.folder import Folder
 
         async with sm.db.session() as session:
             folder = await session.get(Folder, UUID(folder_id))
@@ -261,7 +261,7 @@ class FolderOperationsTool(BaseTool):
         if not folder_id or not file_id:
             return {"error": "'folder_id' and 'file_id' are required"}
 
-        from leagent.services.database.models.file import File
+        from leagent.db.models.file import File
 
         async with sm.db.session() as session:
             f = await session.get(File, UUID(file_id))
@@ -276,7 +276,7 @@ class FolderOperationsTool(BaseTool):
         if not file_id:
             return {"error": "'file_id' is required"}
 
-        from leagent.services.database.models.file import File
+        from leagent.db.models.file import File
 
         async with sm.db.session() as session:
             f = await session.get(File, UUID(file_id))
@@ -292,7 +292,7 @@ class FolderOperationsTool(BaseTool):
             return {"error": "'query' is required for search"}
 
         from sqlmodel import select
-        from leagent.services.database.models.folder import Folder
+        from leagent.db.models.folder import Folder
 
         uid = self._user_id(ctx)
 
@@ -321,7 +321,7 @@ class FolderOperationsTool(BaseTool):
             return {"error": "'folder_id' is required"}
 
         from sqlmodel import select
-        from leagent.services.database.models.file import File
+        from leagent.db.models.file import File
 
         uid = self._user_id(ctx)
 
@@ -358,7 +358,7 @@ class FolderOperationsTool(BaseTool):
         if not file_id:
             return {"error": "'file_id' is required"}
 
-        from leagent.services.database.models.file import File
+        from leagent.db.models.file import File
 
         uid = self._user_id(ctx)
 

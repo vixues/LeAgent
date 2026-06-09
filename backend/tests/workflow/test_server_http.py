@@ -19,7 +19,7 @@ from leagent.workflow.server.router import router as workflow_router
 @pytest.fixture
 def app_with_stubs():
     from leagent.services.auth.deps import get_current_user_id
-    from leagent.services.database import get_database_service
+    from leagent.db import get_database_service
 
     app = FastAPI()
     app.include_router(workflow_router, prefix="/api/v1")

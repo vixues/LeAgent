@@ -391,7 +391,7 @@ Implementations live under `leagent/cli/` — one module per command group (e.g.
 
 ## Database & migrations
 
-Models are SQLModel subclasses under `leagent/services/database/`. The project uses **Alembic** for schema migrations.
+Models are SQLModel subclasses under `leagent/db/`. The project uses **Alembic** for schema migrations.
 
 ```bash
 # Apply all migrations (runs automatically on container start via entrypoint.sh)

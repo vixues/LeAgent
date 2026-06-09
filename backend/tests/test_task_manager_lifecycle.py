@@ -1,7 +1,7 @@
 """Smoke coverage for :class:`TaskManager` + the bundled handlers.
 
 We spin up an in-memory SQLite DB, monkeypatch
-``leagent.services.database.get_database_service`` so the background
+``leagent.db.get_database_service`` so the background
 task coroutine can open its own session, and then drive a fake handler
 end-to-end (pending -> running -> completed) and a never-returning one
 to verify kill flips the task to ``KILLED``.
@@ -27,8 +27,8 @@ from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import NullPool
 
-import leagent.services.database.models  # noqa: F401 - populate metadata
-from leagent.services.database.models.task import (
+import leagent.db.models  # noqa: F401 - populate metadata
+from leagent.db.models.task import (
     Task,
     TaskContext,
     TaskStatus,
@@ -75,7 +75,7 @@ class _InMemoryDB:
         # Build only the subset of tables/indexes we need. Using the full
         # ``SQLModel.metadata.create_all`` trips over duplicate-index
         # definitions in unrelated models (e.g. ``todos``) on SQLite.
-        from leagent.services.database.models.task import Task
+        from leagent.db.models.task import Task
 
         async with self._engine.begin() as conn:
             await conn.run_sync(
@@ -109,7 +109,7 @@ async def fake_db(monkeypatch: pytest.MonkeyPatch) -> AsyncIterator[_InMemoryDB]
 
     # TaskManager imports the singleton lazily inside ``_run_task``; patch
     # the symbol where it is looked up.
-    from leagent.services import database as db_pkg
+    from leagent import db as db_pkg
 
     monkeypatch.setattr(db_pkg, "get_database_service", lambda: db, raising=True)
     yield db

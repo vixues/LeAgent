@@ -6,11 +6,11 @@ from uuid import UUID
 
 from sqlmodel import Field, Relationship, SQLModel
 
-from leagent.services.database.models.base import BaseModel, SoftDeleteMixin
+from leagent.db.models.base import BaseModel, SoftDeleteMixin
 
 if TYPE_CHECKING:
-    from leagent.services.database.models.file import File
-    from leagent.services.database.models.flow import Flow
+    from leagent.db.models.file import File
+    from leagent.db.models.flow import Flow
 
 
 class FolderBase(SQLModel):

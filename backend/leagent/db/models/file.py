@@ -7,7 +7,7 @@ from uuid import UUID
 
 from sqlmodel import Column, Field, Relationship, SQLModel, Text
 
-from leagent.services.database.models.base import BaseModel, SoftDeleteMixin
+from leagent.db.models.base import BaseModel, SoftDeleteMixin
 
 
 class FileType(str, Enum):

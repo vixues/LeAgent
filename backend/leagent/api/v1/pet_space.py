@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 from typing import Annotated, Any, Mapping, Optional
 from uuid import UUID, uuid4
 
-from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, UploadFile, status
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 from pydantic import BaseModel, Field
 from sqlalchemy import text
 from sqlmodel import col, select
@@ -18,13 +18,13 @@ from leagent.api.v1.files import (
     persist_pet_space_file,
 )
 from leagent.services.auth import CurrentUserId
-from leagent.services.database import DatabaseService, get_database_service
-from leagent.services.database.models import (
+from leagent.db import DatabaseService, get_database_service
+from leagent.db.models import (
     File as FileModel,
     PetProject,
     PetProjectFile,
 )
-from leagent.services.database.sqlite_compat import (
+from leagent.db.sqlite_compat import (
     load_entity_by_id,
     load_user_by_id,
     parse_uuid_stored,
@@ -486,7 +486,6 @@ async def upload_project_file(
     project_id: UUID,
     user_id: CurrentUserId,
     db: Annotated[DatabaseService, Depends(get_database_service)],
-    background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
 ) -> FileUploadResponse:
     proj = await _require_project(project_id, user_id, db)
@@ -507,7 +506,6 @@ async def upload_project_file(
             user_id,
             db,
             workspace_id=proj.workspace_id,
-            background_tasks=background_tasks,
         )
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc

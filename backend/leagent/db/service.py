@@ -12,15 +12,14 @@ import asyncio
 import logging
 import time
 from contextlib import asynccontextmanager
-from pathlib import Path
 from typing import TYPE_CHECKING, Any, AsyncIterator, TypeVar
 
 from fastapi import HTTPException, status
-from sqlalchemy import event
-from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
-from sqlalchemy.pool import NullPool
+from sqlalchemy.ext.asyncio import async_sessionmaker
 from sqlmodel import SQLModel, select
 from sqlmodel.ext.asyncio.session import AsyncSession
+
+from leagent.db.engine import make_async_engine
 
 if TYPE_CHECKING:
     from leagent.config.settings import Settings
@@ -30,49 +29,28 @@ logger = logging.getLogger(__name__)
 T = TypeVar("T", bound=SQLModel)
 
 
-def _sqlite_connect_pragma(dbapi_conn: object, _: object) -> None:
-    """Apply SQLite pragmas on each new DBAPI connection."""
-    cursor = dbapi_conn.cursor()  # type: ignore[union-attr]
-    cursor.execute("PRAGMA journal_mode=WAL")
-    cursor.execute("PRAGMA synchronous=NORMAL")
-    cursor.execute("PRAGMA foreign_keys=ON")
-    cursor.execute("PRAGMA busy_timeout=5000")
-    cursor.close()
-
-
 class DatabaseService:
     """Service for managing database connections and operations."""
 
     def __init__(self, settings: "Settings") -> None:
         self.settings = settings
-        db_cfg = settings.database
-        url = db_cfg.url
-
-        if db_cfg.is_postgresql:
-            self._engine = create_async_engine(
-                url,
-                echo=db_cfg.echo,
-                pool_size=db_cfg.pool_size,
-                max_overflow=db_cfg.max_overflow,
-                pool_pre_ping=True,
-            )
-            logger.info("DatabaseService initialized (PostgreSQL)")
-        else:
-            Path(db_cfg._sqlite_file_path()).parent.mkdir(parents=True, exist_ok=True)
-            self._engine = create_async_engine(
-                url,
-                echo=db_cfg.echo,
-                poolclass=NullPool,
-                connect_args={"check_same_thread": False},
-            )
-            event.listen(self._engine.sync_engine, "connect", _sqlite_connect_pragma)
-            logger.info("DatabaseService initialized (SQLite WAL: %s)", db_cfg._sqlite_file_path())
+        self._engine = make_async_engine(settings.database)
 
         self._session_factory = async_sessionmaker(
             self._engine,
             class_=AsyncSession,
             expire_on_commit=False,
         )
+        self._repositories: Any | None = None
+
+    @property
+    def repositories(self) -> Any:
+        """Lazy per-domain repository accessor (files, tasks, chat, …)."""
+        if self._repositories is None:
+            from leagent.db.repositories import Repositories
+
+            self._repositories = Repositories(self)
+        return self._repositories
 
     @asynccontextmanager
     async def session(self) -> AsyncIterator[AsyncSession]:
@@ -108,7 +86,7 @@ class DatabaseService:
     async def create_tables(self) -> None:
         # Ensure all SQLModel classes are imported before create_all() so
         # metadata contains every table.
-        from leagent.services.database import models as _models  # noqa: F401
+        from leagent.db import models as _models  # noqa: F401
 
         async with self._engine.begin() as conn:
             await conn.run_sync(SQLModel.metadata.create_all)
@@ -118,7 +96,7 @@ class DatabaseService:
     async def ensure_identity_stubs(self) -> None:
         """Insert minimal ``users`` / ``workspaces`` rows for FK targets (messages, pet_projects, …)."""
         from leagent.services.auth.service import LOCAL_USER_ID
-        from leagent.services.database.models.identity_stub import UserStub, WorkspaceStub
+        from leagent.db.models.identity_stub import UserStub, WorkspaceStub
 
         async with self.session() as session:
             existing_user = await session.get(UserStub, LOCAL_USER_ID)

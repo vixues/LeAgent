@@ -75,8 +75,8 @@ async def _run(
     from sqlmodel import select
 
     from leagent.config import get_settings
-    from leagent.services.database.service import init_database_service
-    from leagent.services.database.models.flow import Flow
+    from leagent.db.service import init_database_service
+    from leagent.db.models.flow import Flow
     from leagent.workflow.io import load, to_json, validate
     from leagent.workflow.layout import layout_document
     from leagent.workflow.nodes import bootstrap as bootstrap_nodes

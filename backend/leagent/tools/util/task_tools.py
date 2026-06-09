@@ -81,8 +81,8 @@ class TaskCreateTool(BaseTool):
 
     async def execute(self, params: dict[str, Any], context: ToolContext) -> Any:
         try:
-            from leagent.services.database import get_database_service
-            from leagent.services.database.models import TaskType
+            from leagent.db import get_database_service
+            from leagent.db.models import TaskType
             from leagent.services.task_manager import get_task_manager
 
             task_type_map = {
@@ -154,8 +154,8 @@ class TaskGetTool(BaseTool):
 
     async def execute(self, params: dict[str, Any], context: ToolContext) -> Any:
         try:
-            from leagent.services.database import get_database_service
-            from leagent.services.database.models import Task, is_terminal_task_status
+            from leagent.db import get_database_service
+            from leagent.db.models import Task, is_terminal_task_status
             from leagent.services.task_manager import get_task_manager
 
             db = get_database_service()
@@ -238,8 +238,8 @@ class TaskListTool(BaseTool):
     async def execute(self, params: dict[str, Any], context: ToolContext) -> Any:
         try:
             from sqlmodel import select
-            from leagent.services.database import get_database_service
-            from leagent.services.database.models import Task, TaskStatus, TaskType, is_terminal_task_status
+            from leagent.db import get_database_service
+            from leagent.db.models import Task, TaskStatus, TaskType, is_terminal_task_status
             from leagent.services.task_manager import get_task_manager
 
             db = get_database_service()
@@ -322,8 +322,8 @@ class TaskUpdateTool(BaseTool):
 
     async def execute(self, params: dict[str, Any], context: ToolContext) -> Any:
         try:
-            from leagent.services.database import get_database_service
-            from leagent.services.database.models import Task, TaskStatus, is_terminal_task_status
+            from leagent.db import get_database_service
+            from leagent.db.models import Task, TaskStatus, is_terminal_task_status
 
             db = get_database_service()
             task_id = UUID(params["task_id"])
@@ -399,7 +399,7 @@ class TaskKillTool(BaseTool):
 
     async def execute(self, params: dict[str, Any], context: ToolContext) -> Any:
         try:
-            from leagent.services.database import get_database_service
+            from leagent.db import get_database_service
             from leagent.services.task_manager import get_task_manager
 
             db = get_database_service()
@@ -458,8 +458,8 @@ class TaskOutputTool(BaseTool):
 
     async def execute(self, params: dict[str, Any], context: ToolContext) -> Any:
         try:
-            from leagent.services.database import get_database_service
-            from leagent.services.database.models import Task, is_terminal_task_status
+            from leagent.db import get_database_service
+            from leagent.db.models import Task, is_terminal_task_status
             from leagent.services.task_manager import get_task_manager
 
             db = get_database_service()

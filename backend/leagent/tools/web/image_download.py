@@ -5,7 +5,7 @@ from __future__ import annotations
 import mimetypes
 from pathlib import Path
 from typing import Any
-from uuid import UUID, uuid4
+from uuid import UUID
 
 import httpx
 import structlog
@@ -105,29 +105,15 @@ class WebImageDownloadTool(BaseTool):
         hint = params.get("filename")
         safe_name = Path(hint.strip()).name if isinstance(hint, str) and hint.strip() else f"download{ext}"
 
-        from leagent.services.session.paths import get_session_path_registry
+        from leagent.file.tool_output import register_tool_artifact
 
-        upload_root = get_session_path_registry().ensure_uploads_dir(session_id)
-        staging = upload_root / f"_webdl_{uuid4().hex}{ext}"
-        staging.write_bytes(data)
-
-        from leagent.main import get_service_manager
-
-        sm = get_service_manager()
-        mgr = sm.session_manager
-        if mgr is None:
-            staging.unlink(missing_ok=True)
-            raise RuntimeError("session manager unavailable")
-
-        try:
-            out = await mgr.register_external_file(
-                session_id,
-                user_uuid,
-                str(staging),
-                display_name=safe_name,
-            )
-        finally:
-            staging.unlink(missing_ok=True)
+        out = await register_tool_artifact(
+            data,
+            filename=safe_name,
+            content_type=ctype,
+            session_id=session_id,
+            user_id=user_uuid,
+        )
 
         if out is None:
             raise RuntimeError("failed to register downloaded image")

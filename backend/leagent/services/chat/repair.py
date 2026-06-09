@@ -17,7 +17,7 @@ from sqlalchemy import delete, func, text
 from sqlmodel import col, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from leagent.services.database.models.message import (
+from leagent.db.models.message import (
     ChatSession,
     Message,
     MessageRole,

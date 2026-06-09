@@ -300,8 +300,8 @@ class CronExecutor:
         """
         from uuid import UUID
 
-        from leagent.services.database import get_database_service
-        from leagent.services.database.models import (
+        from leagent.db import get_database_service
+        from leagent.db.models import (
             Task,
             TaskStatus,
             TaskType,

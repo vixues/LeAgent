@@ -1,31 +1,31 @@
 """Database models for LeAgent (standalone local deployment)."""
 
-from leagent.services.database.models.agent_memory import (
+from leagent.db.models.agent_memory import (
     AgentEpisode,
     AgentFact,
     AgentProcedure,
 )
-from leagent.services.database.models.identity_stub import (
+from leagent.db.models.identity_stub import (
     UserStub,
     WorkspaceStub,
 )
-from leagent.services.database.models.cron import (
+from leagent.db.models.cron import (
     CronExecutionModel,
     CronJobModel,
     CronJobRead,
 )
-from leagent.services.database.models.workflow_execution import (
+from leagent.db.models.workflow_execution import (
     WorkflowExecution,
     WorkflowExecutionRead,
 )
-from leagent.services.database.models.base import (
+from leagent.db.models.base import (
     BaseModel,
     SoftDeleteMixin,
     TimestampMixin,
     UUIDMixin,
     utc_now,
 )
-from leagent.services.database.models.file import (
+from leagent.db.models.file import (
     File,
     FileCreate,
     FileRead,
@@ -33,11 +33,11 @@ from leagent.services.database.models.file import (
     FileType,
     FileUpdate,
 )
-from leagent.services.database.models.pet_project import (
+from leagent.db.models.pet_project import (
     PetProject,
     PetProjectFile,
 )
-from leagent.services.database.models.flow import (
+from leagent.db.models.flow import (
     Flow,
     FlowCreate,
     FlowRead,
@@ -46,14 +46,14 @@ from leagent.services.database.models.flow import (
     FlowUpdate,
     FlowVersion,
 )
-from leagent.services.database.models.folder import (
+from leagent.db.models.folder import (
     Folder,
     FolderCreate,
     FolderProjectUpdate,
     FolderRead,
     FolderUpdate,
 )
-from leagent.services.database.models.coding_project import (
+from leagent.db.models.coding_project import (
     CodingProject,
     CodingProjectCreate,
     CodingProjectRead,
@@ -61,11 +61,11 @@ from leagent.services.database.models.coding_project import (
     CodingProjectStatus,
     CodingProjectUpdate,
 )
-from leagent.services.database.models.canvas import (
+from leagent.db.models.canvas import (
     CanvasContentType,
     CanvasDocument,
 )
-from leagent.services.database.models.message import (
+from leagent.db.models.message import (
     ChatSession,
     Message,
     MessageCreate,
@@ -75,8 +75,8 @@ from leagent.services.database.models.message import (
     SessionCreate,
     SessionRead,
 )
-from leagent.services.database.models.llm_request_log import LLMRequestLog
-from leagent.services.database.models.task import (
+from leagent.db.models.llm_request_log import LLMRequestLog
+from leagent.db.models.task import (
     Task,
     TaskContext,
     TaskCreate,

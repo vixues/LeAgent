@@ -1,6 +1,22 @@
 """Tiered persistence backend for :class:`SessionState`.
 
-Two-tier store: in-process LRU + database.
+Two-tier store: in-process LRU (L1) + database (durable).
+
+**Single source of truth (SSOT).** The durable session state is the
+``session_state_v1`` JSON blob stored on ``chat_sessions.session_metadata``.
+:meth:`TieredSessionStore.load` materialises from that blob first and only
+rehydrates from the ``messages`` table when the blob is absent (legacy rows).
+
+The ``messages`` table is a **projection** for UI history queries, not the
+authoritative transcript:
+
+* User and assistant rows are written exactly once by
+  ``ChatService.add_message`` (from the HTTP/stream handler) — the store never
+  re-inserts them, eliminating the historical double-write.
+* Only tool/system projection rows (which ``ChatService`` does not own) are
+  written here, and only when missing (keyed on the stable message UUID).
+
+The LRU is a read-through cache; it never holds state the JSON blob does not.
 """
 
 from __future__ import annotations
@@ -15,14 +31,14 @@ from uuid import UUID
 from sqlalchemy import String, cast, text as sa_text
 from sqlmodel import select
 
-from leagent.services.database.models.base import naive_utc_for_db_column
-from leagent.services.database.sqlite_compat import (
+from leagent.db.models.base import naive_utc_for_db_column
+from leagent.db.sqlite_compat import (
     load_chat_session_by_id,
     parse_uuid_stored,
     session_dialect_name,
     sqlite_parent_id_text,
 )
-from leagent.services.database.models.message import ChatSession, Message, MessageRole
+from leagent.db.models.message import ChatSession, Message, MessageRole
 from leagent.services.session.state import (
     SessionAttachment,
     SessionMessage,
@@ -32,7 +48,7 @@ from leagent.services.session.state import (
 
 if TYPE_CHECKING:
     from leagent.config.settings import Settings
-    from leagent.services.database.service import DatabaseService
+    from leagent.db.service import DatabaseService
 
 logger = logging.getLogger(__name__)
 

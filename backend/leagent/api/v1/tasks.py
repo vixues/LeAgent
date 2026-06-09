@@ -19,9 +19,9 @@ from sqlmodel import col, func, select
 
 from leagent.schema.api import PaginatedResponse
 from leagent.services.auth import CurrentUserId
-from leagent.services.database import DatabaseService, get_database_service
-from leagent.services.database.sqlite_compat import load_entity_by_id
-from leagent.services.database.models import (
+from leagent.db import DatabaseService, get_database_service
+from leagent.db.sqlite_compat import load_entity_by_id
+from leagent.db.models import (
     File,
     FileRead,
     Task,
@@ -230,7 +230,7 @@ async def list_tasks(
     Also surfaces workflow executions as virtual task rows (type=workflow)
     so the dashboard task monitor table is never empty after running a flow.
     """
-    from leagent.services.database.models.workflow_execution import WorkflowExecution
+    from leagent.db.models.workflow_execution import WorkflowExecution
 
     # Map workflow execution status strings to TaskStatus
     _WF_STATUS_MAP: dict[str, TaskStatus] = {
@@ -291,7 +291,7 @@ async def list_tasks(
                 return "Workflow"
             if fid in flow_name_cache:
                 return flow_name_cache[fid]
-            from leagent.services.database.models import Flow
+            from leagent.db.models import Flow
 
             flow = await session.get(Flow, fid)
             name = flow.name if flow else "Workflow"

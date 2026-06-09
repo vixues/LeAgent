@@ -13,8 +13,8 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from leagent.services.auth import CurrentUserId
-from leagent.services.database import DatabaseService, get_database_service
-from leagent.services.database.models import Flow, FlowStatus, FlowType
+from leagent.db import DatabaseService, get_database_service
+from leagent.db.models import Flow, FlowStatus, FlowType
 from leagent.workflow.layout import layout_document
 from leagent.workflow.template_service import TemplateService, get_template_service
 

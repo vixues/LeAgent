@@ -20,11 +20,9 @@ writes) lives in the agent runtime.
 from __future__ import annotations
 
 import asyncio
-import hashlib
 import logging
 import mimetypes
 import os
-import shutil
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, AsyncIterator, Iterable
@@ -39,9 +37,6 @@ from leagent.services.auth.signed_url import (
     build_preview_url,
 )
 from leagent.services.session.state import (
-    ATTACHMENT_KIND_DOCUMENT,
-    ATTACHMENT_KIND_IMAGE,
-    ATTACHMENT_KIND_TEXT,
     SessionAttachment,
     SessionMessage,
     SessionState,
@@ -54,7 +49,7 @@ if TYPE_CHECKING:
 
     from leagent.config.settings import Settings
     from leagent.services.cache.service import CacheService
-    from leagent.services.database.service import DatabaseService
+    from leagent.db.service import DatabaseService
 
 logger = logging.getLogger(__name__)
 
@@ -255,62 +250,32 @@ class SessionManager:
         when ``append_user`` records the first turn.
         """
         persisted: list[SessionAttachment] = []
-        upload_root = self._paths.ensure_uploads_dir(session_id)
-
         max_bytes = max(0, int(self._settings.files.max_upload_bytes))
 
         for upload in uploads:
             if upload is None:
                 continue
             filename = upload.filename or f"attachment-{uuid4().hex}"
-            safe_name = sanitize_filename(filename, default="attachment")
-            attachment_id = uuid4()
-            storage_path = upload_root / f"{_attachment_storage_prefix(attachment_id)}_{safe_name}"
-
-            sha = hashlib.sha256()
-            size = 0
+            content_type = (
+                upload.content_type
+                or mimetypes.guess_type(filename)[0]
+                or "application/octet-stream"
+            )
             try:
-                with open(storage_path, "wb") as fh:
-                    while True:
-                        chunk = await upload.read(1024 * 1024)
-                        if not chunk:
-                            break
-                        sha.update(chunk)
-                        size += len(chunk)
-                        if max_bytes and size > max_bytes:
-                            fh.close()
-                            try:
-                                storage_path.unlink()
-                            except OSError:
-                                pass
-                            raise ValueError(
-                                f"Attachment {filename!r} exceeds the "
-                                f"{max_bytes} byte upload limit"
-                            )
-                        fh.write(chunk)
+                raw = await self._read_upload_limited(upload, max_bytes, filename)
             finally:
                 try:
                     await upload.close()
                 except Exception:  # noqa: BLE001
                     pass
 
-            content_type = (
-                upload.content_type
-                or mimetypes.guess_type(filename)[0]
-                or "application/octet-stream"
-            )
-            kind = classify_file_kind(filename, content_type).value
-            attachment = SessionAttachment(
-                id=attachment_id,
-                session_id=session_id,
+            attachment = await self._persist_attachment_blob(
+                session_id,
+                raw,
                 filename=filename,
-                storage_path=str(storage_path),
                 content_type=content_type,
-                kind=kind,
-                size=size,
-                sha256=sha.hexdigest(),
+                user_id=user_id,
             )
-            self._populate_urls(attachment, user_id=user_id)
             persisted.append(attachment)
 
         if not persisted:
@@ -322,11 +287,86 @@ class SessionManager:
             for att in persisted:
                 state.upsert_attachment(att)
 
-        if self._file_service is not None:
-            await self._persist_via_file_service(persisted, user_id=user_id)
-        else:
-            await self._persist_attachment_rows(persisted, user_id=user_id)
         return persisted
+
+    @staticmethod
+    async def _read_upload_limited(
+        upload: "UploadFile", max_bytes: int, filename: str
+    ) -> bytes:
+        """Read an upload fully into memory, enforcing the size limit."""
+        buf = bytearray()
+        while True:
+            chunk = await upload.read(1024 * 1024)
+            if not chunk:
+                break
+            buf.extend(chunk)
+            if max_bytes and len(buf) > max_bytes:
+                raise ValueError(
+                    f"Attachment {filename!r} exceeds the "
+                    f"{max_bytes} byte upload limit"
+                )
+        return bytes(buf)
+
+    def _ensure_file_service(self) -> Any:
+        """Return the injected FileService, lazily building a local one.
+
+        ``FileService.register`` is the single managed-blob ingress, so the
+        manager never writes attachment bytes directly. When no service was
+        injected (lightweight test contexts) we construct a local-backed one
+        rooted at the configured upload directory.
+        """
+        if self._file_service is None:
+            from leagent.file.service import FileService
+            from leagent.file.storage.local import LocalStorageBackend
+
+            backend = LocalStorageBackend(self._settings.files.upload_dir)
+            self._file_service = FileService(
+                default_backend=backend,
+                default_backend_name="local",
+                database=self._database,
+            )
+        return self._file_service
+
+    async def _persist_attachment_blob(
+        self,
+        session_id: UUID,
+        raw: bytes,
+        *,
+        filename: str,
+        content_type: str,
+        user_id: UUID | None,
+    ) -> SessionAttachment:
+        """Persist a single attachment blob via the FileService ingress.
+
+        Returns a :class:`SessionAttachment` built from the resulting
+        :class:`~leagent.file.service.FileRef`. The DB ``File`` row is written
+        by ``FileService.register`` itself, so no separate insert is needed.
+        """
+        from leagent.file.primitives import FileScope
+
+        file_service = self._ensure_file_service()
+        ref = await file_service.register(
+            raw,
+            filename=filename,
+            content_type=content_type,
+            user_id=user_id,
+            session_id=session_id,
+            scope=FileScope.SESSION,
+            category="upload",
+        )
+        kind = classify_file_kind(filename, content_type).value
+        attachment = SessionAttachment(
+            id=ref.id,
+            session_id=session_id,
+            filename=filename,
+            storage_path=ref.metadata.get("storage_path", ref.storage_key),
+            content_type=content_type,
+            kind=kind,
+            size=ref.size,
+            sha256=ref.checksum,
+        )
+        self._populate_urls(attachment, user_id=user_id)
+        return attachment
 
     async def register_external_file(
         self,
@@ -386,61 +426,9 @@ class SessionManager:
 
         label = sanitize_filename(display_name or src.name, default="attachment")
 
-        if self._file_service is not None:
-            return await self._register_external_via_service(
-                session_id, user_id, src, label=label,
-            )
-
-        attachment_id = uuid4()
-        upload_root = self._paths.ensure_uploads_dir(session_id)
-        storage_path = upload_root / f"{_attachment_storage_prefix(attachment_id)}_{label}"
-
-        try:
-            shutil.copy2(src, storage_path)
-        except OSError as exc:
-            logger.warning("register_external_file_copy_failed: %s", exc)
-            return None
-
-        st = storage_path.stat()
-        size = int(st.st_size)
-        digest = hashlib.sha256()
-        with open(storage_path, "rb") as fh:
-            for chunk in iter(lambda: fh.read(1024 * 1024), b""):
-                digest.update(chunk)
-
-        content_type = mimetypes.guess_type(label)[0] or "application/octet-stream"
-        kind = classify_file_kind(label, content_type).value
-        attachment = SessionAttachment(
-            id=attachment_id,
-            session_id=session_id,
-            filename=label,
-            storage_path=str(storage_path),
-            content_type=content_type,
-            kind=kind,
-            size=size,
-            sha256=digest.hexdigest(),
-            extra={"source_tool_path": str(src)},
+        return await self._register_external_via_service(
+            session_id, user_id, src, label=label,
         )
-        self._populate_urls(attachment, user_id=user_id)
-
-        async with self.locked(session_id) as state:
-            if state.user_id is None and user_id is not None:
-                state.user_id = user_id
-            state.upsert_attachment(attachment)
-
-        await self._persist_attachment_rows((attachment,), user_id=user_id)
-
-        return {
-            "id": str(attachment_id),
-            "filename": label,
-            "name": label,
-            "kind": kind,
-            "content_type": content_type,
-            "size": size,
-            "sha256": attachment.sha256,
-            "preview_url": attachment.preview_url,
-            "download_url": attachment.download_url,
-        }
 
     async def list_attachments(
         self, session_id: UUID, *, user_id: UUID | None = None
@@ -523,36 +511,6 @@ class SessionManager:
         except Exception as exc:  # noqa: BLE001
             logger.debug("signed_url_generation_failed: %s", exc)
 
-    async def _persist_via_file_service(
-        self,
-        attachments: Iterable[SessionAttachment],
-        *,
-        user_id: UUID | None,
-    ) -> None:
-        """Persist attachment DB rows via FileService instead of direct inserts."""
-        from leagent.file.primitives import FileScope
-
-        for att in attachments:
-            try:
-                from leagent.file.service import FileRef
-                ref = FileRef(
-                    id=att.id,
-                    filename=att.filename,
-                    storage_key=att.storage_path or "",
-                    backend_name="local",
-                    content_type=att.content_type or "application/octet-stream",
-                    size=att.size,
-                    checksum=att.sha256 or "",
-                    user_id=user_id,
-                    session_id=att.session_id,
-                    scope=FileScope.SESSION,
-                    category="upload",
-                    metadata={"storage_path": att.storage_path or ""},
-                )
-                await self._file_service._persist_db_row(ref)
-            except Exception as exc:  # noqa: BLE001
-                logger.warning("file_service_persist_failed: %s", exc)
-
     async def _register_external_via_service(
         self,
         session_id: UUID,
@@ -564,8 +522,9 @@ class SessionManager:
         """Register an external file using FileService.register()."""
         from leagent.file.primitives import FileScope
 
+        file_service = self._ensure_file_service()
         try:
-            ref = await self._file_service.register(
+            ref = await file_service.register(
                 data=src,
                 filename=label,
                 scope=FileScope.OUTPUT,
@@ -577,6 +536,59 @@ class SessionManager:
             logger.warning("register_external_via_service_failed: %s", exc)
             return None
 
+        return await self._attach_ref(
+            ref,
+            session_id,
+            user_id,
+            label=label,
+            extra={"source_tool_path": str(src)},
+        )
+
+    async def register_artifact_bytes(
+        self,
+        session_id: UUID,
+        user_id: UUID | None,
+        data: bytes,
+        *,
+        filename: str,
+        content_type: str | None = None,
+    ) -> dict[str, Any] | None:
+        """Register an in-memory tool artifact as a session attachment.
+
+        The single managed-blob ingress (``FileService.register``) persists the
+        bytes and the ``File`` row; tools must call this instead of writing the
+        artifact to disk and then re-registering it.
+        """
+        from leagent.file.primitives import FileScope
+
+        label = sanitize_filename(filename, default="artifact")
+        file_service = self._ensure_file_service()
+        try:
+            ref = await file_service.register(
+                data,
+                filename=label,
+                content_type=content_type,
+                scope=FileScope.OUTPUT,
+                session_id=session_id,
+                user_id=user_id,
+                category="tool_output",
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("register_artifact_bytes_failed: %s", exc)
+            return None
+
+        return await self._attach_ref(ref, session_id, user_id, label=label)
+
+    async def _attach_ref(
+        self,
+        ref: Any,
+        session_id: UUID,
+        user_id: UUID | None,
+        *,
+        label: str,
+        extra: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Build a :class:`SessionAttachment` from *ref* and upsert it."""
         kind = classify_file_kind(label, ref.content_type).value
         attachment = SessionAttachment(
             id=ref.id,
@@ -587,7 +599,7 @@ class SessionManager:
             kind=kind,
             size=ref.size,
             sha256=ref.checksum,
-            extra={"source_tool_path": str(src)},
+            extra=extra or {},
         )
         self._populate_urls(attachment, user_id=user_id)
 
@@ -604,76 +616,10 @@ class SessionManager:
             "content_type": ref.content_type,
             "size": ref.size,
             "sha256": ref.checksum,
+            "storage_path": attachment.storage_path,
             "preview_url": attachment.preview_url,
             "download_url": attachment.download_url,
         }
-
-    async def _persist_attachment_rows(
-        self,
-        attachments: Iterable[SessionAttachment],
-        *,
-        user_id: UUID | None,
-    ) -> None:
-        """Insert ``File`` rows linking each attachment to its session.
-
-        Done after the lock is released so Redis writes stay fast. Failures
-        are logged but don't roll back the in-memory attachment state —
-        worst case, the file is on disk and in the session JSON but not in
-        the ``files`` table.
-        """
-        if self._database is None:
-            return
-        try:
-            from leagent.services.database.models.file import (
-                File,
-                FileStatus,
-                FileType,
-            )
-        except Exception:  # noqa: BLE001
-            return
-
-        try:
-            async with self._database.session() as db:
-                for att in attachments:
-                    if att.kind == ATTACHMENT_KIND_IMAGE:
-                        file_type = FileType.IMAGE
-                    elif att.kind == ATTACHMENT_KIND_DOCUMENT:
-                        file_type = FileType.DOCUMENT
-                    elif att.kind == ATTACHMENT_KIND_TEXT:
-                        file_type = FileType.DOCUMENT
-                    else:
-                        file_type = FileType.OTHER
-                    db.add(
-                        File(
-                            id=att.id,
-                            session_id=att.session_id,
-                            name=att.filename,
-                            original_name=att.filename,
-                            file_type=file_type,
-                            mime_type=att.content_type,
-                            size=att.size,
-                            checksum=att.sha256,
-                            storage_path=att.storage_path,
-                            status=FileStatus.PROCESSED,
-                            user_id=user_id,
-                        )
-                    )
-        except Exception as exc:  # noqa: BLE001
-            logger.warning("attach_files_row_insert_failed: %s", exc)
-
-
-def _attachment_storage_prefix(attachment_id: UUID) -> str:
-    """Filesystem prefix for stored uploads (short on single-machine installs)."""
-    try:
-        from leagent.config.settings import get_settings
-
-        if get_settings().is_single_machine_profile:
-            return str(attachment_id).replace("-", "")[:8]
-    except Exception:  # noqa: BLE001
-        pass
-    return str(attachment_id)
-
-
 
 # _safe_filename removed – use leagent.file.primitives.sanitize_filename
 

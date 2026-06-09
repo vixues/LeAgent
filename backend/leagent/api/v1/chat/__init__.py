@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-import re
 import time
 from collections.abc import AsyncIterator  # noqa: TC003
 from contextlib import suppress
@@ -31,7 +30,6 @@ from fastapi import (
     WebSocketDisconnect,
     status,
 )
-from pydantic import BaseModel, ConfigDict, Field, model_validator
 from sse_starlette.sse import EventSourceResponse
 
 from leagent.api.v1.chat_deps import ChatSvc, build_agent_controller
@@ -40,9 +38,9 @@ from leagent.apps.gateway.infrastructure.ws_fanout import (
 )
 from leagent.schema.api import PaginatedResponse
 from leagent.services.auth import CurrentUserId  # noqa: TC001
-from leagent.services.database import DatabaseService, get_database_service
+from leagent.db import DatabaseService, get_database_service
 from leagent.services.chat.service import ChatService
-from leagent.services.database.models.message import (
+from leagent.db.models.message import (
     MessageRead,
     MessageRole,
     SessionCreate,
@@ -55,1001 +53,84 @@ logger = structlog.get_logger(__name__)
 router = APIRouter()
 
 
-def _tokens_from_stream_usage(token_usage: dict[str, Any] | None) -> tuple[int | None, int | None]:
-    """Extract persisted DB token columns from agent ``token_usage`` (SSE / completion metadata)."""
-    if not isinstance(token_usage, dict) or not token_usage:
-        return None, None
-
-    def _as_int(v: Any) -> int | None:
-        if v is None:
-            return None
-        try:
-            return int(v)
-        except (TypeError, ValueError):
-            return None
-
-    return _as_int(token_usage.get("prompt_tokens")), _as_int(token_usage.get("completion_tokens"))
-
-
 # ---------------------------------------------------------------------------
-# Request/Response Models
+# Request/Response Models — defined in ``leagent.api.schemas.chat`` and
+# re-exported here for backward compatibility.
 # ---------------------------------------------------------------------------
 
-
-class ChatCompletionMessage(BaseModel):
-    role: MessageRole
-    content: str
-    name: str | None = None
-
-
-class ChatCompletionRequest(BaseModel):
-    model: str = Field(default="default", description="Model to use for completion")
-    messages: list[ChatCompletionMessage]
-    session_id: UUID | None = None
-    stream: bool = Field(default=True, description="Whether to stream the response")
-    temperature: float = Field(default=0.7, ge=0.0, le=2.0)
-    max_tokens: int | None = Field(default=None, ge=1, le=128000)
-    tools: list[dict[str, Any]] | None = None
-    tool_choice: str | dict[str, Any] | None = None
-
-
-class ChatCompletionChoice(BaseModel):
-    index: int = 0
-    message: ChatCompletionMessage
-    finish_reason: str | None = None
-
-
-class ChatCompletionUsage(BaseModel):
-    prompt_tokens: int = 0
-    completion_tokens: int = 0
-    total_tokens: int = 0
-
-
-class ChatCompletionResponse(BaseModel):
-    id: str
-    object: str = "chat.completion"
-    created: int
-    model: str
-    choices: list[ChatCompletionChoice]
-    usage: ChatCompletionUsage
-
-
-class SessionAttachmentsResponse(BaseModel):
-    """Session-scoped files (user uploads and agent-registered outputs)."""
-
-    session_id: UUID
-    attachments: list[dict[str, Any]] = Field(default_factory=list)
-
-
-class AuthorizedPathEntry(BaseModel):
-    """One user-granted directory for tool filesystem access in this chat session."""
-
-    path: str
-    label: str | None = None
-
-
-class AuthorizedPathsResponse(BaseModel):
-    session_id: UUID
-    paths: list[AuthorizedPathEntry] = Field(default_factory=list)
-
-
-class AuthorizedPathCreateBody(BaseModel):
-    path: str = Field(..., min_length=1, max_length=4096)
-    label: str | None = Field(default=None, max_length=200)
-
-
-class ChatCompletionChunk(BaseModel):
-    id: str
-    object: str = "chat.completion.chunk"
-    created: int
-    model: str
-    choices: list[dict[str, Any]]
-
-
-class SendMessageRequest(BaseModel):
-    """User turn: non-empty text and/or persisted attachment ids."""
-
-    content: str = Field(default="", max_length=100000)
-    role: MessageRole = MessageRole.USER
-    stream: bool = True
-    model: str | None = None
-    attachments: list[str] | None = None
-
-    @model_validator(mode="after")
-    def require_text_or_attachments(self) -> SendMessageRequest:
-        text = (self.content or "").strip()
-        has_att = bool(self.attachments)
-        if not text and not has_att:
-            raise ValueError("content cannot be empty unless attachments are provided")
-        return self
-
-
-class SessionUpdateRequest(BaseModel):
-    name: str | None = None
-    is_active: bool | None = None
-    metadata_patch: dict[str, Any] | None = Field(
-        default=None,
-        description="Shallow-merged into chat_sessions.session_metadata (merge_session_metadata).",
-    )
-
-
-class ChatWorkflowStepRunRequest(BaseModel):
-    """Run one step from a persisted chat workflow card."""
-
-    message_id: UUID
-    workflow_digest: str = Field(..., min_length=16, max_length=128)
-    user_input: str = Field(default="", max_length=50_000)
-
-
-class ChatWorkflowTemplateRead(BaseModel):
-    """Built-in chat workflow card for demos and regression testing."""
-
-    id: str
-    title: str
-    description: str = ""
-    spec: dict[str, Any]
-    digest: str
-
-
-class MaterializedTemplateRow(BaseModel):
-    template_id: str
-    message_id: UUID
-
-
-class MaterializeWorkflowTemplatesResponse(BaseModel):
-    session_id: UUID
-    templates: list[MaterializedTemplateRow]
-
-
-class AgentMemoryEpisodeRead(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-
-    id: str
-    session_id: str
-    user_id: str | None = None
-    summary: str
-    tags: list[str] = Field(default_factory=list)
-    importance: float = 0.0
-    token_count: int | None = None
-    recall_count: int = 0
-    last_recalled_at: datetime | None = None
-    created_at: datetime | None = None
-
-
-class AgentMemoryFactRead(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-
-    id: str
-    key: str
-    value: str
-    confidence: float = 0.8
-    source: str | None = None
-    workspace_id: str | None = None
-    created_at: datetime | None = None
-
-
-class AgentMemoryProcedureRead(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-
-    id: str
-    name: str
-    signature: str
-    description: str
-    run_count: int = 0
-    success_count: int = 0
-    success_rate: float = 0.0
-    last_outcome: str | None = None
-    last_run_at: datetime | None = None
-    created_at: datetime | None = None
-
-
-class AgentMemorySnapshotRead(BaseModel):
-    enabled: bool
-    episodes: list[AgentMemoryEpisodeRead]
-    facts: list[AgentMemoryFactRead]
-    procedures: list[AgentMemoryProcedureRead]
-
-
-class PromptLayerRead(BaseModel):
-    name: str
-    body: str
-    tokens: int = 0
-    truncated: bool = False
-
-
-class PromptPreviewRead(BaseModel):
-    """On-demand assembled system prompt (debug / inspector)."""
-
-    query_used: str
-    system_text: str
-    total_chars: int
-    stable_hash: str
-    full_hash: str
-    variant_key: str
-    layers: list[PromptLayerRead]
-    approx_transcript_tokens: int = 0
-    approx_context_tokens: int = 0
-
-
-class StreamEvent(BaseModel):
-    event: str
-    data: dict[str, Any]
-
-
-TASK_STATUS_RANK: dict[str, int] = {
-    "pending": 0,
-    "in_progress": 1,
-    "completed": 2,
-    "failed": 2,
-}
-
-
-# ---------------------------------------------------------------------------
-# Shared agent-event helpers
-# ---------------------------------------------------------------------------
-
-
-def _format_openai_chunk(
-    completion_id: str, created: int, model: str, delta: dict[str, Any], finish_reason: str | None = None,
-) -> dict[str, Any]:
-    return {
-        "event": "message",
-        "data": json.dumps({
-            "id": completion_id,
-            "object": "chat.completion.chunk",
-            "created": created,
-            "model": model,
-            "choices": [{"index": 0, "delta": delta, "finish_reason": finish_reason}],
-        }),
-    }
-
-
-def _format_frontend_event(event_type: str, data: Any) -> dict[str, Any]:
-    return {
-        "event": "message",
-        "data": json.dumps({"type": event_type, "data": data}),
-    }
-
-
-def _companion_sse_events(etype: str, edata: dict[str, Any]) -> list[tuple[str, dict[str, Any]]]:
-    """Extra frontend SSE events derived from tool results (canvas / generative UI)."""
-    out: list[tuple[str, dict[str, Any]]] = []
-    if etype != "tool_result" or not isinstance(edata, dict):
-        return out
-
-    td_any = edata.get("data")
-    if isinstance(td_any, dict):
-        _artifact_id = td_any.get("artifact_id")
-        if _artifact_id:
-            artifact_payload: dict[str, Any] = {
-                "artifact_id": str(_artifact_id),
-                "origin_tool": str(edata.get("name") or ""),
-                "syntax_valid": td_any.get("syntax_valid"),
-                "kind": td_any.get("kind"),
-                "language": td_any.get("language"),
-                "target_path": td_any.get("target_path"),
-                "diagnostics": td_any.get("syntax_diagnostics"),
-                "source_length": td_any.get("source_length"),
-                "error_type": td_any.get("error_type"),
-            }
-            artifact_payload = {k: v for k, v in artifact_payload.items() if v is not None}
-            out.append(("code_artifact", artifact_payload))
-
-    if not edata.get("success"):
-        return out
-    name = str(edata.get("name") or "")
-    td = edata.get("data")
-    if not isinstance(td, dict):
-        return out
-    tool_call_id = str(edata.get("tool_call_id") or "")
-    if name == "canvas_publish" and td.get("preview_path"):
-        cid = str(td.get("canvas_id", ""))
-        rev = int(td.get("revision") or 0)
-        out.append(
-            (
-                "canvas",
-                {
-                    "id": f"{cid}-{rev}" if cid and rev else str(uuid4()),
-                    "title": str(td.get("title") or "Canvas"),
-                    "type": "html",
-                    "preview_path": str(td["preview_path"]),
-                    "canvas_id": cid,
-                    "revision": rev,
-                    "content_type": str(td.get("content_type") or "html"),
-                    "trust": str(td.get("trust") or "hosted"),
-                    "open_in_panel": bool(td.get("open_in_panel", True)),
-                    **({"tool_call_id": tool_call_id} if tool_call_id else {}),
-                },
-            )
-        )
-    if name == "emit_ui_tree" and isinstance(td.get("payload"), dict):
-        payload = dict(td["payload"])
-        if tool_call_id:
-            payload["tool_call_id"] = tool_call_id
-        out.append(("ui_tree", payload))
-    if name == "emit_ui_patch" and isinstance(td.get("payload"), dict):
-        patch_payload = dict(td["payload"])
-        if tool_call_id:
-            patch_payload["tool_call_id"] = tool_call_id
-        out.append(("ui_patch", patch_payload))
-    if name == "emit_pet_bubble":
-        text = str(td.get("text") or "").strip()
-        if text:
-            bubble: dict[str, Any] = {"text": text[:120]}
-            em = td.get("emoji")
-            if em is not None:
-                es = str(em).strip()
-                if es:
-                    bubble["emoji"] = es[:16]
-            out.append(("pet_bubble", bubble))
-
-    return out
-
-
-def _openai_tool_call_from_stream_edata(edata: dict[str, Any]) -> dict[str, Any] | None:
-    """Normalize SSE ``tool_call`` payload to OpenAI-shaped dict for ``Message.tool_calls`` JSON."""
-    tid = str(edata.get("id") or "").strip()
-    if not tid:
-        return None
-    name = str(edata.get("name") or "")
-    args = edata.get("arguments", {})
-    if isinstance(args, dict):
-        arg_str = json.dumps(args, ensure_ascii=False)
-    else:
-        arg_str = str(args or "")
-    return {
-        "id": tid,
-        "type": "function",
-        "function": {"name": name, "arguments": arg_str},
-    }
-
-
-def _merge_message_extensions_json(
-    workflow_json: str | None,
-    *,
-    thinking: str | None = None,
-    task_progress: list[dict[str, Any]] | None = None,
-    gen_ui: dict[str, Any] | None = None,
-    pet_bubble: dict[str, Any] | None = None,
-) -> str | None:
-    """Merge workflow/embed JSON with UI replay fields (thinking, task_progress, gen_ui, pet_bubble)."""
-    merged: dict[str, Any] = {}
-    if workflow_json:
-        try:
-            parsed = json.loads(workflow_json)
-            if isinstance(parsed, dict):
-                merged.update(parsed)
-        except (json.JSONDecodeError, TypeError):
-            pass
-    if thinking and str(thinking).strip():
-        merged["thinking"] = str(thinking).strip()
-    if task_progress:
-        merged["task_progress"] = task_progress
-    if gen_ui:
-        merged["gen_ui"] = gen_ui
-    if pet_bubble:
-        merged["pet_bubble"] = pet_bubble
-    return json.dumps(merged, ensure_ascii=False) if merged else None
-
-
-def _merge_stream_thinking_for_persist(prev: str | None, raw_thought: str) -> str | None:
-    """Fold successive ``thinking`` stream fragments for DB persistence.
-
-    Cumulative fragments (each new string starts with the previous full text)
-    replace the stored value; discrete fragments append with newlines.
-    """
-    if not isinstance(raw_thought, str) or not raw_thought.strip():
-        return prev
-    t = raw_thought.strip()
-    base = (prev or "").strip()
-    if not base:
-        return t
-    if t.startswith(base):
-        return t
-    return f"{base}\n{t}"
-
-
-def _parse_tool_replies_json(raw: str | None) -> list[dict[str, Any]]:
-    if not raw or not str(raw).strip():
-        return []
-    try:
-        data = json.loads(raw)
-    except json.JSONDecodeError:
-        return []
-    if not isinstance(data, list):
-        return []
-    out: list[dict[str, Any]] = []
-    for item in data:
-        if not isinstance(item, dict):
-            continue
-        tid = item.get("tool_call_id") or item.get("tool_use_id") or item.get("id")
-        content = item.get("content")
-        if tid is not None and content is not None:
-            out.append({"tool_call_id": str(tid), "content": str(content)})
-    return out
-
-
-async def _run_agent_stream(
-    agent: Any,
-    message: str,
-    session_id: UUID,
-    user_id: UUID,
-    *,
-    attachments: list[str] | None = None,
-    project_roots: list[str] | None = None,
-    authorized_roots: list[str] | None = None,
-    skip_append_user: bool = False,
-    persisted_user_message_id: UUID | None = None,
-    conversation_timeout_sec: int = 600,
-    agent_task_id: UUID | None = None,
-) -> AsyncIterator[tuple[str, dict[str, Any], str]]:
-    """Iterate agent events. Yields ``(event_type, event_data, accumulated_text)``."""
-    response_content = ""
-    todo_status_by_id: dict[str, str] = {}
-    todo_order_by_id: dict[str, int] = {}
-    _stream_start = time.monotonic()
-
-    def _normalize_task_status(raw: str | None) -> str:
-        value = (raw or "").strip().lower()
-        if value in {"in_progress", "running"}:
-            return "in_progress"
-        if value in {"completed", "success", "done"}:
-            return "completed"
-        if value in {"failed", "error"}:
-            return "failed"
-        return "pending"
-
-    def _next_progress_events(event_type: str, data: dict[str, Any]) -> list[dict[str, Any]]:
-        if event_type == "tool_call" and data.get("name") == "todo_write":
-            return [{
-                "task_id": data.get("id") or f"todo-write-{uuid4().hex}",
-                "label": "Updating task list",
-                "status": "in_progress",
-            }]
-        if event_type != "tool_result" or data.get("name") != "todo_write":
-            return []
-
-        payload_data = data.get("data")
-        todo_items: list[dict[str, Any]] = []
-        if isinstance(payload_data, dict) and isinstance(payload_data.get("todos"), list):
-            todo_items = [item for item in payload_data["todos"] if isinstance(item, dict)]
-        else:
-            raw_content = data.get("content")
-            if isinstance(raw_content, str) and raw_content.strip():
-                try:
-                    parsed = json.loads(raw_content)
-                except json.JSONDecodeError:
-                    parsed = None
-                if isinstance(parsed, dict) and isinstance(parsed.get("todos"), list):
-                    todo_items = [item for item in parsed["todos"] if isinstance(item, dict)]
-
-        progress_events: list[dict[str, Any]] = []
-        for index, item in enumerate(todo_items):
-            task_id = str(item.get("id") or "").strip() or f"todo-{index}"
-            label = str(item.get("content") or task_id)
-            status = _normalize_task_status(item.get("status"))
-            prev_status = todo_status_by_id.get(task_id)
-            if prev_status is not None:
-                if TASK_STATUS_RANK[status] < TASK_STATUS_RANK[prev_status]:
-                    continue
-                if status == prev_status:
-                    continue
-            todo_status_by_id[task_id] = status
-            order = todo_order_by_id.setdefault(task_id, len(todo_order_by_id))
-            progress_events.append({
-                "task_id": task_id,
-                "label": label,
-                "status": status,
-                "order": order,
-            })
-        return progress_events
-
-    try:
-        async for event in agent.run_stream(
-            message,
-            session_id,
-            user_id=user_id,
-            attachments=attachments,
-            project_roots=project_roots,
-            authorized_roots=authorized_roots,
-            skip_append_user=skip_append_user,
-            persisted_user_message_id=persisted_user_message_id,
-            agent_task_id=agent_task_id,
-        ):
-            elapsed = time.monotonic() - _stream_start
-            if elapsed > conversation_timeout_sec:
-                logger.warning(
-                    "conversation_timeout",
-                    session_id=str(session_id),
-                    elapsed_sec=int(elapsed),
-                    limit_sec=conversation_timeout_sec,
-                )
-                if hasattr(agent, "abort"):
-                    agent.abort()
-                yield (
-                    "error",
-                    {"error": f"Conversation exceeded {conversation_timeout_sec}s time limit"},
-                    response_content,
-                )
-                return
-            if event.type == "token":
-                token = event.data.get("token", "")
-                response_content += token
-                yield event.type, event.data, response_content
-            elif event.type == "complete":
-                if not response_content:
-                    response_content = event.data.get("text", "")
-                yield event.type, event.data, response_content
-            elif event.type in (
-                "thinking",
-                "tool_call",
-                "tool_call_delta",
-                "tool_result",
-                "error",
-                "workspace_attachments",
-                "user_input_request",
-                "nested_agent_preview",
-            ):
-                yield event.type, event.data, response_content
-                for progress_event in _next_progress_events(event.type, event.data):
-                    yield "task_progress", progress_event, response_content
-                if event.type == "tool_result" and event.data.get("success"):
-                    inner = event.data.get("data")
-                    tname = event.data.get("name")
-                    if tname == "chat_workflow_emit" and isinstance(inner, dict) and inner.get("workflow"):
-                        yield (
-                            "workflow",
-                            {
-                                "spec": inner["workflow"],
-                                "digest": inner.get("digest"),
-                                "partial": False,
-                            },
-                            response_content,
-                        )
-                    elif tname == "chat_workflow_embed_emit" and isinstance(inner, dict) and inner.get("flow_data"):
-                        yield (
-                            "workflow",
-                            {
-                                "embed": {
-                                    "data": inner["flow_data"],
-                                    "digest": inner.get("digest"),
-                                    "title": inner.get("title"),
-                                    "summary": inner.get("summary"),
-                                    "flow_id": inner.get("flow_id"),
-                                },
-                                "partial": False,
-                            },
-                            response_content,
-                        )
-    except asyncio.CancelledError:
-        logger.warning("agent_stream_cancelled session_id=%s", session_id)
-        yield "error", {"error": "Stream cancelled"}, response_content
-    except Exception as exc:
-        logger.exception("agent_stream_error session_id=%s", session_id)
-        yield "error", {"error": str(exc)}, response_content
-
-
-# ---------------------------------------------------------------------------
-# File attachment helpers
-# ---------------------------------------------------------------------------
-
-
-async def _attach_chat_files(
-    user_id: UUID,
-    session_id: UUID,
-    files: list[UploadFile],
-) -> tuple[list[dict[str, Any]], list[str], list[dict[str, str]]]:
-    """Persist uploads via :class:`SessionManager.attach_files`."""
-    from leagent.main import get_service_manager
-
-    attachments_out: list[dict[str, Any]] = []
-    stored_paths: list[str] = []
-    errors: list[dict[str, str]] = []
-
-    if not files:
-        return attachments_out, stored_paths, errors
-
-    try:
-        sm = get_service_manager()
-    except Exception:  # noqa: BLE001
-        sm = None
-
-    if sm is None or sm.session_manager is None:
-        for upload in files:
-            errors.append({
-                "file": upload.filename or "unnamed",
-                "error": "Session manager unavailable; file rejected",
-            })
-        return attachments_out, stored_paths, errors
-
-    try:
-        persisted = await sm.session_manager.attach_files(
-            session_id, files, user_id=user_id,
-        )
-    except ValueError as exc:
-        errors.append({"file": "(batch)", "error": str(exc)})
-        return attachments_out, stored_paths, errors
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("session_attach_files_failed: %s", exc)
-        errors.append({"file": "(batch)", "error": str(exc)})
-        return attachments_out, stored_paths, errors
-
-    for att in persisted:
-        if att.storage_path:
-            stored_paths.append(att.storage_path)
-        row: dict[str, Any] = {
-            "id": str(att.id),
-            "filename": att.filename,
-            "kind": att.kind,
-            "content_type": att.content_type,
-            "size": att.size,
-            "preview_url": att.preview_url,
-            "download_url": att.download_url,
-        }
-        lp = _attachment_local_path_for_sse(att.storage_path)
-        if lp:
-            row["local_path"] = lp
-        attachments_out.append(row)
-    return attachments_out, stored_paths, errors
-
-
-async def _resolve_folder_context(
-    user_id: UUID,
-    db: DatabaseService,
-    folder_id: str | None = None,
-    file_ids_csv: str | None = None,
-) -> list[tuple[str, str, str | None]]:
-    """Fetch File rows by folder_id / explicit file_ids (user-scoped)."""
-    from sqlmodel import select as sel
-
-    from leagent.services.database.models.file import File as FileModel
-
-    results: list[tuple[str, str, str | None]] = []
-    raw_ids: list[UUID] = []
-    if file_ids_csv:
-        for part in file_ids_csv.split(","):
-            part = part.strip()
-            if part:
-                with suppress(ValueError):
-                    raw_ids.append(UUID(part))
-
-    async with db.session() as session:
-        if folder_id:
-            try:
-                fid = UUID(folder_id)
-            except ValueError:
-                fid = None
-            if fid:
-                stmt = sel(FileModel).where(
-                    FileModel.folder_id == fid,
-                    FileModel.user_id == user_id,
-                    FileModel.is_deleted == False,  # noqa: E712
-                )
-                rows = (await session.exec(stmt)).all()
-                for f in rows:
-                    preview = (f.extracted_text or "")[:1500] if f.extracted_text else None
-                    results.append((f.storage_path, f.original_name, preview))
-
-        if raw_ids:
-            stmt = sel(FileModel).where(
-                FileModel.id.in_(raw_ids),
-                FileModel.user_id == user_id,
-                FileModel.is_deleted == False,  # noqa: E712
-            )
-            rows = (await session.exec(stmt)).all()
-            for f in rows:
-                preview = (f.extracted_text or "")[:1500] if f.extracted_text else None
-                results.append((f.storage_path, f.original_name, preview))
-
-    return results
-
-
-def _context_item_paths(
-    context_items: list[tuple[str, str, str | None]],
-) -> list[str]:
-    return [path for path, _name, _preview in context_items]
-
-
-async def _resolve_folder_context_note(
-    user_id: UUID,
-    db: DatabaseService,
-    folder_id: str | None,
-    *,
-    attached_file_count: int,
-) -> str | None:
-    """Return a short prompt note naming the selected UI folder."""
-    if not folder_id or not str(folder_id).strip():
-        return None
-    try:
-        fid = UUID(str(folder_id))
-    except ValueError:
-        return None
-
-    from sqlmodel import select
-
-    from leagent.services.database.models import Folder
-
-    async with db.session() as session:
-        folder = (
-            await session.exec(
-                select(Folder).where(
-                    Folder.id == fid,
-                    Folder.user_id == user_id,
-                    Folder.is_deleted == False,  # noqa: E712
-                ),
-            )
-        ).first()
-        if not folder:
-            return None
-
-        names = [folder.name]
-        parent_id = folder.parent_id
-        seen = {folder.id}
-        while parent_id and parent_id not in seen:
-            seen.add(parent_id)
-            parent = (
-                await session.exec(
-                    select(Folder).where(
-                        Folder.id == parent_id,
-                        Folder.user_id == user_id,
-                        Folder.is_deleted == False,  # noqa: E712
-                    ),
-                )
-            ).first()
-            if not parent:
-                break
-            names.insert(0, parent.name)
-            parent_id = parent.parent_id
-
-    folder_path = " / ".join(name for name in names if name)
-    lines = [
-        "\n\nSelected folder context:",
-        f"- Folder: {folder_path or str(fid)}",
-        f"- Folder ID: {fid}",
-        f"- Attached files from this folder: {attached_file_count}",
-        "When the user says \"this folder\", interpret it as this selected folder.",
-    ]
-    return "\n".join(lines)
-
-
-async def _resolve_project_folder_path(
-    user_id: UUID,
-    db: DatabaseService,
-    project_folder_id: str | None,
-) -> str | None:
-    """Resolve a folder id to its on-disk ``project_path`` (or None).
-
-    Returns ``None`` silently when the id is empty / malformed, the
-    folder doesn't exist, the caller doesn't own it, or project mode
-    is off — chat should not 4xx for an invalid project pointer; the
-    LLM just runs without project context and tools will refuse on
-    their own if asked to touch a forbidden path.
-    """
-    if not project_folder_id or not str(project_folder_id).strip():
-        return None
-    try:
-        fid = UUID(str(project_folder_id))
-    except ValueError:
-        return None
-
-    from leagent.services.database.models import Folder
-    from leagent.services.database.sqlite_compat import load_entity_by_id
-    from leagent.project.paths import (
-        ProjectPathSafetyError,
-        resolve_owned_project_folder,
-    )
-
-    async with db.session() as session:
-        folder = await load_entity_by_id(session, Folder, fid, parent_table="folders")
-        if not folder or folder.is_deleted or folder.user_id != user_id:
-            return None
-        try:
-            resolved = resolve_owned_project_folder(folder, user_id)
-        except ProjectPathSafetyError as exc:
-            logger.info(
-                "chat_project_folder_rejected",
-                folder_id=str(fid),
-                error=str(exc),
-            )
-            return None
-    return str(resolved)
-
-
-def _dedupe_resolved_paths(paths: list[str]) -> list[str]:
-    """Return de-duplicated absolute paths while preserving order."""
-    out: list[str] = []
-    seen: set[str] = set()
-    for raw in paths:
-        if not raw:
-            continue
-        try:
-            resolved = str(Path(raw).expanduser().resolve())
-        except Exception:  # noqa: BLE001
-            continue
-        if resolved in seen:
-            continue
-        seen.add(resolved)
-        out.append(resolved)
-    return out
-
-
-def _attachment_local_path_for_sse(storage_path: str | None) -> str | None:
-    """Absolute path for UI when running in desktop/local single-machine mode."""
-    if not storage_path or not str(storage_path).strip():
-        return None
-    try:
-        from leagent.config.settings import get_settings
-
-        if not get_settings().is_single_machine_profile:
-            return None
-        return str(Path(storage_path).expanduser().resolve(strict=False))
-    except Exception:  # noqa: BLE001
-        return str(storage_path).strip()
-
-
-async def _authorized_root_paths_for_session(
-    chat_svc: ChatService,
-    session_id: UUID,
-    user_id: UUID,
-) -> list[str] | None:
-    """Resolved directory paths from session ``authorized_roots`` metadata."""
-    items = await chat_svc.list_authorized_roots(session_id, user_id=user_id)
-    paths: list[str] = []
-    for it in items:
-        if isinstance(it, dict):
-            p = it.get("path")
-            if isinstance(p, str) and p.strip():
-                paths.append(p.strip())
-    deduped = _dedupe_resolved_paths(paths)
-    return deduped if deduped else None
-
-
-async def _resolve_request_attachment_paths(
-    session_id: UUID,
-    attachment_refs: list[str] | None,
-) -> list[str]:
-    """Resolve mixed attachment refs (id/path/name) to concrete storage paths."""
-    if not attachment_refs:
-        return []
-
-    from leagent.main import get_service_manager
-
-    try:
-        sm = get_service_manager()
-    except Exception:  # noqa: BLE001
-        sm = None
-
-    if sm is None or sm.session_manager is None:
-        return _dedupe_resolved_paths(attachment_refs)
-
-    try:
-        session_attachments = await sm.session_manager.list_attachments(session_id)
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("resolve_request_attachment_paths_failed: %s", exc)
-        return _dedupe_resolved_paths(attachment_refs)
-
-    by_id: dict[str, str] = {}
-    by_name: dict[str, str] = {}
-    by_basename: dict[str, str] = {}
-    for att in session_attachments:
-        if not att.storage_path:
-            continue
-        spath = str(Path(att.storage_path).expanduser().resolve())
-        by_id[str(att.id)] = spath
-        if att.filename:
-            by_name[att.filename.casefold()] = spath
-        by_basename[Path(spath).name.casefold()] = spath
-
-    resolved: list[str] = []
-    passthrough: list[str] = []
-    for ref in attachment_refs:
-        if not ref:
-            continue
-        key = str(ref).strip()
-        if not key:
-            continue
-        mapped = (
-            by_id.get(key)
-            or by_name.get(key.casefold())
-            or by_basename.get(Path(key).name.casefold())
-        )
-        if mapped:
-            resolved.append(mapped)
-        else:
-            passthrough.append(key)
-
-    return _dedupe_resolved_paths(resolved + passthrough)
-
-
-_KNOWLEDGE_LINE_RE = re.compile(r"@knowledge:([^\n]+)", re.UNICODE)
-_UUID_36_RE = re.compile(r"^[0-9a-fA-F-]{36}$", re.IGNORECASE)
-
-
-def _parse_knowledge_line_payload(raw: str) -> tuple[UUID | None, str | None]:
-    """Return (file_id, original_name) from text after @knowledge: (one line).
-
-    If ``#<uuid>`` is present, the name is the segment before the last ``#`` and
-    the tail must be a valid UUID; otherwise the whole string is a display name.
-    """
-    s = raw.strip()
-    if not s:
-        return None, None
-    if "#" in s:
-        name, tail = s.rsplit("#", 1)
-        tid = tail.strip()
-        if _UUID_36_RE.match(tid):
-            with suppress(ValueError):
-                return UUID(tid), (name.strip() or None)
-    return None, s or None
-
-
-async def _resolve_knowledge_message_paths(
-    user_id: UUID,
-    db: DatabaseService,
-    message: str,
-) -> list[str]:
-    """Resolve ``@knowledge:…`` mentions in *message* to indexed document storage paths.
-
-    When ``#<file_uuid>`` is omitted, matches :attr:`File.original_name` for the
-    user (``is_deleted == False``); if multiple rows match, the newest is used
-    and a warning is logged.
-    """
-    from sqlmodel import col, select
-
-    from leagent.services.database.models.file import File as FileModel
-
-    refs: list[tuple[UUID | None, str | None]] = []
-    for m in _KNOWLEDGE_LINE_RE.finditer(message or ""):
-        file_id, name = _parse_knowledge_line_payload(m.group(1) or "")
-        if file_id is not None or (name and name.strip()):
-            refs.append((file_id, name))
-    if not refs:
-        return []
-
-    out: list[str] = []
-    async with db.session() as session:
-        for file_id, name in refs:
-            row = None
-            if file_id is not None:
-                stmt = select(FileModel).where(
-                    FileModel.id == file_id,
-                    FileModel.user_id == user_id,
-                    FileModel.is_deleted == False,  # noqa: E712
-                )
-                row = (await session.exec(stmt)).first()
-            elif name:
-                stmt = (
-                    select(FileModel)
-                    .where(
-                        FileModel.user_id == user_id,
-                        FileModel.is_deleted == False,  # noqa: E712
-                        FileModel.original_name == name,
-                    )
-                    .order_by(col(FileModel.created_at).desc())
-                )
-                rows = list((await session.exec(stmt)).all())
-                if len(rows) > 1:
-                    logger.warning(
-                        "knowledge_ref_ambiguous_name: user_id=%s name=%r count=%s",
-                        user_id,
-                        name,
-                        len(rows),
-                    )
-                row = rows[0] if rows else None
-            if row and row.storage_path:
-                with suppress(OSError, RuntimeError, ValueError):
-                    out.append(str(Path(row.storage_path).expanduser().resolve()))
-    return out
-
-
-def _merge_agent_attachment_paths(
-    base: list[str] | None,
-    extra: list[str],
-) -> list[str] | None:
-    combined = (base or []) + extra
-    if not combined:
-        return None
-    return _dedupe_resolved_paths(combined) or None
+from leagent.api.schemas.chat import (  # noqa: E402
+    AgentMemoryEpisodeRead,
+    AgentMemoryFactRead,
+    AgentMemoryProcedureRead,
+    AgentMemorySnapshotRead,
+    AgentTaskItem,
+    AgentTasksListResponse,
+    AuthorizedPathCreateBody,
+    AuthorizedPathEntry,
+    AuthorizedPathsResponse,
+    BrowseResponse as _BrowseResponse,
+    ChatCompletionChoice,
+    ChatCompletionMessage,
+    ChatCompletionRequest,
+    ChatCompletionResponse,
+    ChatCompletionUsage,
+    ChatWorkflowStepRunRequest,
+    ChatWorkflowTemplateRead,
+    CompactContextRequest,
+    CompactContextResponse,
+    DailyGreetingsResponse,
+    DirEntry as _DirEntry,
+    MaterializedTemplateRow,
+    MaterializeWorkflowTemplatesResponse,
+    MessageFeedbackBody,
+    PromptLayerRead,
+    PromptPreviewRead,
+    SendMessageRequest,
+    SessionAttachmentsResponse,
+    SessionCancelResponse,
+    SessionUpdateRequest,
+)
+
+# Business-logic helpers live in ``helpers.py``; re-exported for callers/tests.
+# Cohesive, independently-reusable submodules replace the former ``helpers.py``
+# junk drawer. The route-handler body and existing tests reference the legacy
+# leading-underscore names, so we alias the public functions on import. New code
+# should import the public names directly from their submodule, e.g.
+# ``from leagent.api.v1.chat.sse import format_openai_chunk``.
+from leagent.api.v1.chat.agent_stream import (  # noqa: E402,F401
+    TASK_STATUS_RANK,
+    run_agent_stream as _run_agent_stream,
+)
+from leagent.api.v1.chat.attachments import (  # noqa: E402,F401
+    attach_chat_files as _attach_chat_files,
+    merge_agent_attachment_paths as _merge_agent_attachment_paths,
+    resolve_request_attachment_paths as _resolve_request_attachment_paths,
+)
+from leagent.api.v1.chat.context_sources import (  # noqa: E402,F401
+    authorized_root_paths_for_session as _authorized_root_paths_for_session,
+    context_item_paths as _context_item_paths,
+    parse_knowledge_line_payload as _parse_knowledge_line_payload,
+    resolve_folder_context as _resolve_folder_context,
+    resolve_folder_context_note as _resolve_folder_context_note,
+    resolve_knowledge_message_paths as _resolve_knowledge_message_paths,
+    resolve_project_folder_path as _resolve_project_folder_path,
+)
+from leagent.api.v1.chat.message_persistence import (  # noqa: E402,F401
+    merge_message_extensions_json as _merge_message_extensions_json,
+    merge_stream_thinking_for_persist as _merge_stream_thinking_for_persist,
+    parse_tool_replies_json as _parse_tool_replies_json,
+)
+from leagent.api.v1.chat.paths import (  # noqa: E402,F401
+    attachment_local_path_for_sse as _attachment_local_path_for_sse,
+    dedupe_resolved_paths as _dedupe_resolved_paths,
+)
+from leagent.api.v1.chat.sse import (  # noqa: E402,F401
+    companion_sse_events as _companion_sse_events,
+    format_frontend_event as _format_frontend_event,
+    format_openai_chunk as _format_openai_chunk,
+    openai_tool_call_from_stream_edata as _openai_tool_call_from_stream_edata,
+    tokens_from_stream_usage as _tokens_from_stream_usage,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -2039,19 +1120,6 @@ async def remove_session_authorized_path(
 # ---------------------------------------------------------------------------
 
 
-class _DirEntry(BaseModel):
-    name: str
-    path: str
-    is_dir: bool
-
-
-class _BrowseResponse(BaseModel):
-    path: str
-    parent: str | None
-    entries: list[_DirEntry]
-    quick_access: list[_DirEntry]
-
-
 def _quick_access_dirs() -> list[_DirEntry]:
     """Well-known directories for the current OS user."""
     home = Path.home()
@@ -2349,45 +1417,6 @@ async def get_session_prompt_preview(
     )
 
 
-class SessionCancelResponse(BaseModel):
-    session_id: str
-    cancelled: bool
-    processes_killed: int = 0
-    message: str
-
-
-class AgentTaskItem(BaseModel):
-    task_id: str
-    session_id: str
-    started_at: str
-    updated_at: str
-    phase: str
-    tool_name: str | None = None
-    status: str = "running"
-
-
-class AgentTasksListResponse(BaseModel):
-    session_id: str
-    tasks: list[AgentTaskItem]
-    scope_note: str = (
-        "This process only. Multiple gateway workers each maintain an independent task list."
-    )
-
-
-class CompactContextRequest(BaseModel):
-    force_llm: bool = False
-
-
-class CompactContextResponse(BaseModel):
-    applied: bool
-    approx_tokens_before: int
-    approx_tokens_after: int
-    stages_applied: list[str]
-    #: Hypothetical row reduction if the same compression were written to the transcript.
-    removed_messages: int
-    llm_autocompact_applied: bool
-
-
 @router.post("/sessions/{session_id}/compact-context", response_model=CompactContextResponse)
 async def compact_session_context(
     session_id: UUID,
@@ -2604,13 +1633,6 @@ async def get_session_messages(
         has_next=(page * page_size) < total,
         has_prev=page > 1,
     )
-
-
-class MessageFeedbackBody(BaseModel):
-    """Thumbs feedback: ``5`` = like, ``1`` = dislike, ``null`` = clear."""
-
-    model_config = ConfigDict(extra="forbid")
-    rating: int | None
 
 
 @router.patch("/sessions/{session_id}/messages/{message_id}/feedback")
@@ -3016,6 +2038,26 @@ class ConnectionManager(DistributedConnectionManager):
 manager = ConnectionManager()
 
 
+def _resolve_ws_token(websocket: WebSocket) -> str | None:
+    """Resolve the WS auth token.
+
+    Prefers header-based transports that don't leak into access/proxy logs:
+    ``Authorization: Bearer`` then ``Sec-WebSocket-Protocol`` (``bearer,<token>``),
+    falling back to the legacy ``?token=`` query parameter for compatibility.
+    """
+    auth = websocket.headers.get("authorization") or ""
+    if auth.lower().startswith("bearer "):
+        tok = auth[7:].strip()
+        if tok:
+            return tok
+    proto = websocket.headers.get("sec-websocket-protocol") or ""
+    if proto:
+        parts = [p.strip() for p in proto.split(",") if p.strip()]
+        if len(parts) >= 2 and parts[0].lower() in {"bearer", "authorization"}:
+            return parts[1]
+    return websocket.query_params.get("token")
+
+
 @router.websocket("/ws/{session_id}")
 async def websocket_endpoint(
     websocket: WebSocket,
@@ -3024,7 +2066,7 @@ async def websocket_endpoint(
     db: Annotated[DatabaseService, Depends(get_database_service)],
 ):
     """WebSocket endpoint for real-time chat."""
-    token_str = websocket.query_params.get("token")
+    token_str = _resolve_ws_token(websocket)
     if not token_str:
         await websocket.close(code=4001, reason="Authentication required")
         return
@@ -3157,19 +2199,6 @@ async def websocket_endpoint(
 # ---------------------------------------------------------------------------
 
 
-class DailyGreetingsResponse(BaseModel):
-    """Ten rotating welcome lines for the empty chat hero + pet bubble acknowledgments."""
-
-    date: str = Field(..., description="UTC calendar day (YYYY-MM-DD) this set is valid for")
-    greetings: list[str] = Field(..., min_length=1, max_length=16)
-    pet_bubbles: list[str] = Field(
-        default_factory=list,
-        min_length=0,
-        max_length=16,
-        description="Short post-reply pet speech-bubble lines (refreshed daily).",
-    )
-
-
 @router.get("/daily-greetings", response_model=DailyGreetingsResponse)
 async def get_daily_greetings(
     user_id: CurrentUserId,
@@ -3195,12 +2224,6 @@ async def get_daily_greetings(
     return DailyGreetingsResponse(date=day, greetings=lines, pet_bubbles=pet_lines)
 
 
-# ---------------------------------------------------------------------------
-# Health Check
-# ---------------------------------------------------------------------------
-
-
-@router.get("/health")
-async def health_check() -> dict[str, str]:
-    """Health check endpoint for the chat service."""
-    return {"status": "healthy", "service": "chat"}
+# Chat-service health is intentionally NOT exposed here. Health/liveness/
+# readiness are consolidated on the dedicated ``/api/v1/health`` router and the
+# root ``GET /health`` probe (see ``api/v1/health.py``).

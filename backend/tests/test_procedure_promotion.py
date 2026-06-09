@@ -12,7 +12,7 @@ from leagent.memory.procedure_promotion import (
     PROCEDURAL_PROMOTED_KEY,
     record_procedure_for_liked_assistant,
 )
-from leagent.services.database.models.message import MessageRole, MessageStatus
+from leagent.db.models.message import MessageRole, MessageStatus
 
 
 @pytest.mark.asyncio

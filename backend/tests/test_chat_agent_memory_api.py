@@ -12,7 +12,7 @@ import pytest
 from leagent.memory.types import Episode, Fact, Procedure
 from leagent.services.auth.deps import get_current_user_id
 from leagent.services.chat.service import get_chat_service
-from leagent.services.database.models.message import ChatSession
+from leagent.db.models.message import ChatSession
 
 
 def _session_for_user(session_id: UUID, user_id: UUID) -> ChatSession:

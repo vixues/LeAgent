@@ -8,10 +8,9 @@ and various output formats.
 from __future__ import annotations
 
 import base64
-import os
 from pathlib import Path
 from typing import Any
-from uuid import UUID, uuid4
+from uuid import uuid4
 
 import structlog
 
@@ -260,51 +259,34 @@ class WebScreenshotTool(BaseTool):
                 result["image_base64"] = base64.b64encode(screenshot_bytes).decode("utf-8")
                 result["size_bytes"] = len(screenshot_bytes)
             else:
-                if not file_path:
-                    if context.session_id:
-                        from leagent.services.session.paths import get_session_path_registry
-
-                        root = get_session_path_registry().ensure_uploads_dir(context.session_id)
-                        file_path = str(root / f"screenshot_{uuid4().hex}.{image_type}")
-                    else:
-                        temp_dir = context.temp_dir or "/tmp"
-                        file_path = os.path.join(temp_dir, f"screenshot_{context.task_id or 'temp'}.{image_type}")
-
-                os.makedirs(os.path.dirname(file_path) or ".", exist_ok=True)
-                with open(file_path, "wb") as f:
-                    f.write(screenshot_bytes)
-
-                result["file_path"] = file_path
+                display_name = (
+                    Path(file_path).name
+                    if file_path
+                    else f"screenshot_{uuid4().hex[:8]}.{image_type}"
+                )
                 result["size_bytes"] = len(screenshot_bytes)
+                try:
+                    from leagent.file.tool_output import register_tool_artifact
 
-                user_supplied_path = bool(params.get("file_path"))
-                if context.session_id:
-                    try:
-                        from leagent.main import get_service_manager
+                    reg = await register_tool_artifact(
+                        screenshot_bytes,
+                        filename=display_name,
+                        content_type=f"image/{image_type}",
+                        session_id=context.session_id,
+                        user_id=context.user_id,
+                    )
+                except Exception:  # noqa: BLE001
+                    logger.warning("web_screenshot_register_failed", exc_info=True)
+                    reg = None
 
-                        sm = get_service_manager()
-                        mgr = sm.session_manager if sm else None
-                        if mgr is not None:
-                            session_uuid = UUID(str(context.session_id))
-                            user_uuid = UUID(str(context.user_id)) if context.user_id else None
-                            resolved = Path(file_path).expanduser().resolve()
-                            reg = await mgr.register_external_file(
-                                session_uuid,
-                                user_uuid,
-                                str(resolved),
-                                display_name=resolved.name,
-                            )
-                            if reg:
-                                fid = str(reg.get("id") or "")
-                                result["file_id"] = fid
-                                result["preview_path"] = f"/api/v1/files/{fid}/preview"
-                                result["preview_url"] = reg.get("preview_url")
-                                result["download_url"] = reg.get("download_url")
-                                if not user_supplied_path:
-                                    resolved.unlink(missing_ok=True)
-                                    result.pop("file_path", None)
-                    except (ValueError, TypeError, RuntimeError):
-                        logger.warning("web_screenshot_session_register_failed", exc_info=True)
+                if reg:
+                    fid = str(reg.get("id") or "")
+                    result["file_id"] = fid
+                    if fid:
+                        result["preview_path"] = f"/api/v1/files/{fid}/preview"
+                    result["preview_url"] = reg.get("preview_url")
+                    result["download_url"] = reg.get("download_url")
+                    result["file_path"] = reg.get("storage_path")
 
         logger.info("Screenshot captured", url=url, size_bytes=result.get("size_bytes", 0))
         return result

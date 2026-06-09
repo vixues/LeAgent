@@ -15,12 +15,12 @@ from pydantic import BaseModel, Field
 from sqlmodel import Column, SQLModel, Text, col, select
 
 from leagent.services.base import Service, ServiceType, service_factory
-from leagent.services.database.models.base import BaseModel as DBBaseModel
+from leagent.db.models.base import BaseModel as DBBaseModel
 
 if TYPE_CHECKING:
     from leagent.config.settings import Settings
     from leagent.services.cache.service import CacheService
-    from leagent.services.database.service import DatabaseService
+    from leagent.db.service import DatabaseService
 
 logger = logging.getLogger(__name__)
 

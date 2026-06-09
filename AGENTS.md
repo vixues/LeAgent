@@ -56,12 +56,15 @@ The backend uses a strict three-layer architecture. Dependencies flow downward o
 | **File** | `leagent/file/` | Unified blob storage, metadata, lifecycle. `FileService` is the single ingress for all managed files. `primitives.py` holds shared utilities (`sanitize_filename`, `detect_mime`, `classify_file_kind`, `is_path_inside`, `FileScope`, `FileKind`). |
 | **Code** | `leagent/code/` | Code execution sandbox, workspace management, artifact handling. Builds on File layer for artifact registration. |
 | **Project** | `leagent/project/` | Coding project workspaces: file editing, project scaffold, dev server, templates. Never imports from File layer (`FileService`/`FileRef`). |
+| **Persistence** | `leagent/db/` | Infrastructure persistence: `DatabaseService`, `engine.make_async_engine` (SQLite-WAL / PG-pool), SQLModel `models/`, sqlite compat, and per-domain `repositories/` (`ChatRepository`, `FileRepository`, `TaskRepository`, `WorkflowExecutionRepository`, modeled on `cron/repository.py`). Exposed lazily via `DatabaseService.repositories`. |
 
 **Key rules:**
 - `leagent/project/` must never import `FileService` or `FileRef` (enforced by `test_file/test_invariants.py`).
-- All managed blob writes go through `FileService.register()` — no direct `open(..., 'wb')` in blob paths.
-- Path containment checks should use `leagent.file.primitives.is_path_inside()`, not inline `relative_to`/`commonpath`.
-- Legacy shim modules have been removed. All imports must use canonical paths (`leagent.file.*`, `leagent.code.*`, `leagent.project.*`).
+- All managed-blob writes go through `FileService.register()` — no direct `open(..., 'wb')`/`write_bytes`/`write_text` in blob paths (INV-1, hard-asserted). Genuinely non-managed writes (CLI, app/provider/cron config, workflow-definition exports, Tier-B sandbox/output-path tool writes) live in `_INV1_ALLOWLIST` in `test_file/test_invariants.py` with a written justification + CODEOWNERS review.
+- Path containment checks must use `leagent.file.primitives.is_path_inside()`, not inline `relative_to`/`commonpath` (INV-7, hard-asserted).
+- Persistence lives in `leagent/db/` (canonical). There is no `leagent.services.database` package or shim; all imports use `leagent.db.*`.
+- Tools persist output bytes via `leagent.file.tool_output.register_tool_artifact()` (or `SessionManager.register_artifact_bytes`) rather than writing a temp file and re-registering it.
+- Legacy shim modules have been removed. All imports must use canonical paths (`leagent.file.*`, `leagent.code.*`, `leagent.project.*`, `leagent.db.*`).
 
 ### Adding a New Tool That Produces Files
 

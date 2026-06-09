@@ -493,7 +493,7 @@ async def list_revisions(
     sm = get_service_manager()
     if sm.db is None:
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, detail="Database unavailable")
-    from leagent.services.database.models.canvas import CanvasDocument
+    from leagent.db.models.canvas import CanvasDocument
 
     async with sm.db.session() as db:
         stmt = (

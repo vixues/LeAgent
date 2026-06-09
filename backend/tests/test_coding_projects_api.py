@@ -25,7 +25,7 @@ from leagent.project.preview_tokens import (
     PREVIEW_AUDIENCE,
     mint_preview_token,
 )
-from leagent.services.database.models import (
+from leagent.db.models import (
     CodingProject,
     CodingProjectRuntimeKind,
     CodingProjectStatus,

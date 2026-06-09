@@ -24,11 +24,11 @@ from sqlmodel import select
 from leagent.memory.lexical_backend import or_text_match, session_dialect
 from leagent.memory.types import MemoryKind, Procedure, RecallEntry
 from leagent.memory.vector import MilvusCollection, MilvusConnectionConfig, VectorWriteResult
-from leagent.services.database.models.agent_memory import AgentProcedure
+from leagent.db.models.agent_memory import AgentProcedure
 
 if TYPE_CHECKING:
     from leagent.memory.embeddings import EmbeddingProvider
-    from leagent.services.database.service import DatabaseService
+    from leagent.db.service import DatabaseService
 
 logger = logging.getLogger(__name__)
 
@@ -36,7 +36,7 @@ COLLECTION_NAME = "agent_memory_procedures"
 
 
 def _utc_now() -> datetime:
-    """Naive UTC for :class:`~leagent.services.database.models.base.BaseModel` timestamps."""
+    """Naive UTC for :class:`~leagent.db.models.base.BaseModel` timestamps."""
     return datetime.now(timezone.utc).replace(tzinfo=None)
 
 

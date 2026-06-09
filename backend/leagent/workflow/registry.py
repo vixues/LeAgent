@@ -25,7 +25,7 @@ class FlowWorkflowRegistry:
 
     async def get(self, workflow_id: str) -> WorkflowDocument | None:
         from sqlmodel import select
-        from leagent.services.database.models.flow import Flow
+        from leagent.db.models.flow import Flow
 
         async with self._db.session() as session:
             try:

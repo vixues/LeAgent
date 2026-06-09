@@ -277,6 +277,9 @@ class TemplateFillerTool(SyncTool):
         }
 
         if output_path:
+            # Tier B: write to the sandbox-validated, user-directed output path.
+            # The managed-store copy (chat file workspace) is registered by the
+            # artifact pipeline (ArtifactRegistrar) from ``output_path``.
             output_file = Path(output_path)
             output_file.parent.mkdir(parents=True, exist_ok=True)
             output_file.write_text(rendered, encoding="utf-8")

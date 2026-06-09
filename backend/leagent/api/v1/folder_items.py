@@ -11,10 +11,10 @@ from pydantic import BaseModel, Field
 from sqlmodel import select
 
 from leagent.services.auth import CurrentUserId
-from leagent.services.database import DatabaseService, get_database_service
-from leagent.services.database.sqlite_compat import load_entity_by_id
-from leagent.services.database.models.file import File
-from leagent.services.database.models.folder import Folder
+from leagent.db import DatabaseService, get_database_service
+from leagent.db.sqlite_compat import load_entity_by_id
+from leagent.db.models.file import File
+from leagent.db.models.folder import Folder
 
 router = APIRouter()
 

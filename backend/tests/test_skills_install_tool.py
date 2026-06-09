@@ -65,7 +65,7 @@ async def test_install_skill_url_mocked(
 @pytest.mark.asyncio
 async def test_package_skill_tool(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
-        "leagent.tools._sandbox.paths._get_allowed_roots",
+        "leagent.file.sandbox._get_allowed_roots",
         lambda: (tmp_path.resolve(),),
     )
 
@@ -122,7 +122,7 @@ async def test_install_skill_uploaded_archive_tool_context(
         fake_resolve,
     )
     monkeypatch.setattr(
-        "leagent.tools._sandbox.paths._get_allowed_roots",
+        "leagent.file.sandbox._get_allowed_roots",
         lambda: (tmp_path.resolve(),),
     )
 

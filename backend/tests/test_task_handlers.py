@@ -15,7 +15,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from leagent.services.database.models.task import (
+from leagent.db.models.task import (
     TaskContext,
     TaskStatus,
     TaskType,
@@ -350,7 +350,7 @@ async def test_batch_handler_spawns_children(tmp_path) -> None:
     with patch(
         "leagent.services.task_manager.get_task_manager", return_value=mgr
     ), patch(
-        "leagent.services.database.get_database_service", return_value=_DB()
+        "leagent.db.get_database_service", return_value=_DB()
     ):
         result = await handler.spawn(
             ctx,

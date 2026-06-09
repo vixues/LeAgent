@@ -19,9 +19,9 @@ from sqlmodel import col, func, select
 
 from leagent.schema.api import PaginatedResponse
 from leagent.services.auth import PermissionChecker
-from leagent.services.database import DatabaseService, get_database_service
-from leagent.services.database.sqlite_compat import load_entity_by_id
-from leagent.services.database.models import (
+from leagent.db import DatabaseService, get_database_service
+from leagent.db.sqlite_compat import load_entity_by_id
+from leagent.db.models import (
     Task,
     TaskPriority,
     TaskRead,

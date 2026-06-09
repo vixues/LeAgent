@@ -15,7 +15,7 @@ import os
 import shlex
 from typing import TYPE_CHECKING, Any
 
-from leagent.services.database.models.task import TaskContext, TaskType
+from leagent.db.models.task import TaskContext, TaskType
 
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession

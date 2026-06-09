@@ -245,7 +245,7 @@ async def get_health_metrics() -> dict[str, Any]:
     return out
 
 
-@router.get("/memory")
+@router.get("/memory", dependencies=_admin_panel)
 async def memory_write_health(
     sm: Annotated[ServiceManager, Depends(get_service_manager)],
 ) -> dict[str, Any]:

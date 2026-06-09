@@ -15,11 +15,11 @@ from sqlmodel import select
 
 from leagent.memory.formation import retention_score
 from leagent.memory.types import Fact
-from leagent.services.database.models.agent_memory import AgentEpisode, AgentFact
+from leagent.db.models.agent_memory import AgentEpisode, AgentFact
 
 if TYPE_CHECKING:
     from leagent.memory.agent_memory import AgentMemory
-    from leagent.services.database.service import DatabaseService
+    from leagent.db.service import DatabaseService
 
 logger = logging.getLogger(__name__)
 

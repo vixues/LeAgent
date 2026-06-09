@@ -23,7 +23,7 @@ from leagent.api.v1.chat import (
     _run_agent_stream,
 )
 from leagent.services.chat.service import ChatService
-from leagent.services.database.models.message import (
+from leagent.db.models.message import (
     ChatSession,
     Message,
     MessageRead,
@@ -204,7 +204,7 @@ class TestSessionEndpointsDelegation:
     @pytest.mark.asyncio
     async def test_create_session_delegates(self) -> None:
         from leagent.api.v1.chat import create_session
-        from leagent.services.database.models.message import SessionCreate
+        from leagent.db.models.message import SessionCreate
 
         svc = _mock_chat_service()
         uid = uuid4()
@@ -268,7 +268,7 @@ class TestSessionEndpointsDelegation:
     @pytest.mark.asyncio
     async def test_update_session_delegates(self) -> None:
         from leagent.api.v1.chat import update_session
-        from leagent.services.database.models.message import chat_session_to_read
+        from leagent.db.models.message import chat_session_to_read
 
         svc = _mock_chat_service()
         svc.sanitize_metadata_patch = AsyncMock()

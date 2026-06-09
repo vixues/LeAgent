@@ -24,7 +24,7 @@ from .prompt_map import InMemoryPromptMap, PromptExecutionMap
 from .registry import FlowWorkflowRegistry
 
 if TYPE_CHECKING:
-    from leagent.services.database.service import DatabaseService
+    from leagent.db.service import DatabaseService
 
     from .engine.executor import WorkflowExecutor
     from .queue.base import PromptItem, PromptQueue
@@ -67,7 +67,7 @@ class WorkflowService:
         extra_data: dict[str, Any] | None = None,
     ) -> Any:
         """Persist a ``pending`` execution row and enqueue the job."""
-        from leagent.services.database.models.workflow_execution import WorkflowExecution
+        from leagent.db.models.workflow_execution import WorkflowExecution
 
         execution_id = uuid4()
         async with self._db.session() as session:
@@ -132,7 +132,7 @@ class WorkflowService:
 
     async def get_by_prompt_id(self, prompt_id: str) -> dict[str, Any] | None:
         from sqlmodel import select
-        from leagent.services.database.models.workflow_execution import WorkflowExecution
+        from leagent.db.models.workflow_execution import WorkflowExecution
 
         async with self._db.session() as session:
             result = await session.exec(
@@ -188,7 +188,7 @@ class WorkflowService:
         trigger_type: str = "manual",
         cron_job_id: UUID | None = None,
     ) -> WorkflowResult:
-        from leagent.services.database.models.workflow_execution import WorkflowExecution
+        from leagent.db.models.workflow_execution import WorkflowExecution
 
         execution_id = uuid4()
         prompt_id = str(uuid4())
@@ -216,7 +216,7 @@ class WorkflowService:
         )
 
     async def get_execution(self, execution_id: UUID) -> dict[str, Any] | None:
-        from leagent.services.database.models.workflow_execution import WorkflowExecution
+        from leagent.db.models.workflow_execution import WorkflowExecution
         async with self._db.session() as session:
             record = await session.get(WorkflowExecution, execution_id)
             if not record:
@@ -230,7 +230,7 @@ class WorkflowService:
         offset: int = 0,
     ) -> list[dict[str, Any]]:
         from sqlmodel import col, select
-        from leagent.services.database.models.workflow_execution import WorkflowExecution
+        from leagent.db.models.workflow_execution import WorkflowExecution
 
         async with self._db.session() as session:
             q = (
@@ -244,7 +244,7 @@ class WorkflowService:
             return [self._record_to_dict(r) for r in result.all()]
 
     async def cancel_execution(self, execution_id: UUID) -> bool:
-        from leagent.services.database.models.workflow_execution import WorkflowExecution
+        from leagent.db.models.workflow_execution import WorkflowExecution
         async with self._db.session() as session:
             record = await session.get(WorkflowExecution, execution_id)
             if not record or record.status not in ("queued", "running", "pending", "paused", "waiting_human"):
@@ -255,7 +255,7 @@ class WorkflowService:
         return True
 
     async def pause_execution(self, execution_id: UUID) -> bool:
-        from leagent.services.database.models.workflow_execution import WorkflowExecution
+        from leagent.db.models.workflow_execution import WorkflowExecution
         async with self._db.session() as session:
             record = await session.get(WorkflowExecution, execution_id)
             if not record or record.status != "running":
@@ -271,7 +271,7 @@ class WorkflowService:
         flow_id: UUID,
         resume_data: dict[str, Any] | None = None,
     ) -> WorkflowResult | None:
-        from leagent.services.database.models.workflow_execution import WorkflowExecution
+        from leagent.db.models.workflow_execution import WorkflowExecution
         async with self._db.session() as session:
             record = await session.get(WorkflowExecution, execution_id)
             if not record or record.status not in ("paused", "waiting_human"):
@@ -366,7 +366,7 @@ class WorkflowService:
         return result
 
     async def _fetch_execution_record(self, execution_id: UUID) -> Any:
-        from leagent.services.database.models.workflow_execution import WorkflowExecution
+        from leagent.db.models.workflow_execution import WorkflowExecution
         async with self._db.session() as session:
             return await session.get(WorkflowExecution, execution_id)
 
@@ -384,7 +384,7 @@ class WorkflowService:
         workflow_state_id: UUID | None = None,
         graph_hash: str | None = None,
     ) -> None:
-        from leagent.services.database.models.workflow_execution import WorkflowExecution
+        from leagent.db.models.workflow_execution import WorkflowExecution
         async with self._db.session() as session:
             record = await session.get(WorkflowExecution, execution_id)
             if not record:
@@ -425,7 +425,7 @@ class WorkflowService:
     ) -> None:
         """Update execution row by prompt id (used by queue workers)."""
         from sqlmodel import select
-        from leagent.services.database.models.workflow_execution import WorkflowExecution
+        from leagent.db.models.workflow_execution import WorkflowExecution
 
         async with self._db.session() as session:
             result = await session.exec(

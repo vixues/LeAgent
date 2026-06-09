@@ -4,7 +4,7 @@ import json
 from datetime import datetime
 from uuid import uuid4
 
-from leagent.services.database.models.message import Message, MessageRead, MessageRole
+from leagent.db.models.message import Message, MessageRead, MessageRole
 
 
 def test_message_read_parses_json_text_fields() -> None:

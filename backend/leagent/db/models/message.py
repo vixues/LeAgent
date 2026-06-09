@@ -9,10 +9,10 @@ from uuid import UUID
 from pydantic import field_validator
 from sqlmodel import Column, Field, Relationship, SQLModel, Text
 
-from leagent.services.database.models.base import BaseModel
+from leagent.db.models.base import BaseModel
 
 if TYPE_CHECKING:
-    from leagent.services.database.models.flow import Flow
+    from leagent.db.models.flow import Flow
 
 
 def _parse_json_text(value: Any) -> Any:

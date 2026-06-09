@@ -8,6 +8,7 @@ from typing import Any
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
+from leagent.api.schemas.errors import build_error_payload
 from leagent.exceptions.base import LeAgentError
 from leagent.exceptions.llm import LLMRateLimitError, LLMServiceError
 from leagent.exceptions.tool import ToolExecutionError
@@ -78,13 +79,13 @@ def register_exception_handlers(app: FastAPI) -> None:
         )
         return JSONResponse(
             status_code=exc.status_code,
-            content={
-                "error": True,
-                "error_code": exc.error_code,
-                "message": exc.message,
-                "details": exc.details,
-                "recovery": get_recovery_strategy(exc.error_code),
-            },
+            content=build_error_payload(
+                error_code=exc.error_code,
+                message=exc.message,
+                details=exc.details,
+                recovery=get_recovery_strategy(exc.error_code),
+                request=request,
+            ),
         )
 
     @app.exception_handler(ToolExecutionError)
@@ -97,13 +98,13 @@ def register_exception_handlers(app: FastAPI) -> None:
         )
         return JSONResponse(
             status_code=exc.status_code,
-            content={
-                "error": True,
-                "error_code": exc.error_code,
-                "message": exc.message,
-                "details": exc.details,
-                "recovery": get_recovery_strategy(exc.error_code),
-            },
+            content=build_error_payload(
+                error_code=exc.error_code,
+                message=exc.message,
+                details=exc.details,
+                recovery=get_recovery_strategy(exc.error_code),
+                request=request,
+            ),
         )
 
     @app.exception_handler(LLMServiceError)
@@ -119,13 +120,13 @@ def register_exception_handlers(app: FastAPI) -> None:
         )
         return JSONResponse(
             status_code=exc.status_code,
-            content={
-                "error": True,
-                "error_code": exc.error_code,
-                "message": exc.message,
-                "details": exc.details,
-                "recovery": get_recovery_strategy(exc.error_code),
-            },
+            content=build_error_payload(
+                error_code=exc.error_code,
+                message=exc.message,
+                details=exc.details,
+                recovery=get_recovery_strategy(exc.error_code),
+                request=request,
+            ),
             headers=headers,
         )
 
@@ -139,13 +140,13 @@ def register_exception_handlers(app: FastAPI) -> None:
         )
         return JSONResponse(
             status_code=exc.status_code,
-            content={
-                "error": True,
-                "error_code": exc.error_code,
-                "message": exc.message,
-                "details": exc.details,
-                "recovery": get_recovery_strategy(exc.error_code),
-            },
+            content=build_error_payload(
+                error_code=exc.error_code,
+                message=exc.message,
+                details=exc.details,
+                recovery=get_recovery_strategy(exc.error_code),
+                request=request,
+            ),
         )
 
     from fastapi.exceptions import RequestValidationError
@@ -162,24 +163,34 @@ def register_exception_handlers(app: FastAPI) -> None:
         )
         return JSONResponse(
             status_code=422,
-            content={
-                "error": True,
-                "error_code": "VALIDATION_ERROR",
-                "message": "Request validation failed",
-                "details": {"errors": errors},
-            },
+            content=build_error_payload(
+                error_code="VALIDATION_ERROR",
+                message="Request validation failed",
+                details={"errors": errors},
+                request=request,
+            ),
         )
 
     @app.exception_handler(StarletteHTTPException)
     async def http_exception_handler(request: Request, exc: StarletteHTTPException) -> JSONResponse:
+        # ``HTTPException(detail=...)`` may carry a string or a structured dict.
+        # Preserve dict details under ``details`` instead of stringifying them.
+        detail = exc.detail
+        if isinstance(detail, dict):
+            message = str(detail.get("message") or detail.get("detail") or "Request failed")
+            details = detail
+        else:
+            message = str(detail)
+            details = {}
         return JSONResponse(
             status_code=exc.status_code,
-            content={
-                "error": True,
-                "error_code": f"HTTP_{exc.status_code}",
-                "message": str(exc.detail),
-                "details": {},
-            },
+            content=build_error_payload(
+                error_code=f"HTTP_{exc.status_code}",
+                message=message,
+                details=details,
+                request=request,
+            ),
+            headers=getattr(exc, "headers", None),
         )
 
     @app.exception_handler(Exception)
@@ -191,10 +202,9 @@ def register_exception_handlers(app: FastAPI) -> None:
         )
         return JSONResponse(
             status_code=500,
-            content={
-                "error": True,
-                "error_code": "INTERNAL_ERROR",
-                "message": "An unexpected error occurred",
-                "details": {},
-            },
+            content=build_error_payload(
+                error_code="INTERNAL_ERROR",
+                message="An unexpected error occurred",
+                request=request,
+            ),
         )

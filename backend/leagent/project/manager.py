@@ -48,20 +48,20 @@ from leagent.project.templates import (
     list_templates,
     load_template,
 )
-from leagent.services.database.models import (
+from leagent.db.models import (
     CodingProject,
     CodingProjectRuntimeKind,
     CodingProjectStatus,
     Folder,
 )
-from leagent.services.database.sqlite_compat import load_entity_by_id
+from leagent.db.sqlite_compat import load_entity_by_id
 from leagent.project.paths import (
     ProjectPathSafetyError,
     validate_project_path,
 )
 
 if TYPE_CHECKING:  # pragma: no cover
-    from leagent.services.database.service import DatabaseService
+    from leagent.db.service import DatabaseService
 
 logger = structlog.get_logger(__name__)
 

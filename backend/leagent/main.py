@@ -18,7 +18,9 @@ from leagent.api.middleware import (
     APIVersionMiddleware,
     AccessLogMiddleware,
     ContentSizeLimitMiddleware,
+    RateLimitMiddleware,
     RequestIDMiddleware,
+    SecurityHeadersMiddleware,
 )
 from leagent import __version__ as leagent_version
 from leagent.api.router import api_router
@@ -64,9 +66,16 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     _service_manager = ServiceManager(settings)
     await _service_manager.start_all()
 
+    # Expose the running services on ``app.state`` so request dependencies resolve
+    # them without reaching for a module-global (testable, no import-time coupling).
+    app.state.service_manager = _service_manager
+
     try:
         await _run_db_migrations()
     except Exception:
+        if settings.database.fail_fast_migrations:
+            logger.error("Database migration failed; aborting startup (fail-fast)", exc_info=True)
+            raise
         logger.warning("Database migration skipped (non-fatal)", exc_info=True)
 
     # Tool registry must be populated before accepting HTTP traffic; deferred
@@ -96,6 +105,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         logger.debug("ws manager close failed", exc_info=True)
     await _service_manager.stop_all()
     _service_manager = None
+    app.state.service_manager = None
     logger.info("LeAgent stopped")
 
 
@@ -111,24 +121,19 @@ async def _post_startup_warmup(app: FastAPI, sm: "ServiceManager") -> None:
     is_desktop = os.environ.get("LEAGENT_DESKTOP") == "1"
     ev: asyncio.Event = app.state.post_startup_warmup
     try:
-        # ``tests/conftest.py`` sets ``LEAGENT_SKIP_LIFESPAN_DEFERRED_ROUTES`` and
-        # mounts the same deferred routers synchronously. Skip registering them again
-        # here — duplicate paths can produce spurious 405 Method Not Allowed.
-        if os.environ.get("LEAGENT_SKIP_LIFESPAN_DEFERRED_ROUTES") != "1":
-            from fastapi import APIRouter
-            from leagent.api.router_deferred import (
-                mount_v1_deferred_routes,
-                mount_v2_deferred_routes,
-            )
-
-            deferred_v1_router = APIRouter(prefix="/api/v1")
-            deferred_v2_router = APIRouter(prefix="/api/v2")
-            mount_v1_deferred_routes(deferred_v1_router)
-            mount_v2_deferred_routes(deferred_v2_router)
-            app.include_router(deferred_v1_router)
-            app.include_router(deferred_v2_router)
-
+        # Routers are registered eagerly in ``create_app`` (see
+        # ``leagent.api.router``); warmup only performs heavy *initialization*.
         await _load_skills()
+
+        # Durable background-job recovery: re-enqueue jobs left non-terminal by a
+        # previous process so persisted work survives restarts.
+        try:
+            from leagent.tasks.jobs import recover_pending_jobs
+
+            if sm.db is not None:
+                await recover_pending_jobs(sm.db)
+        except Exception:
+            logger.warning("Background job recovery skipped (non-fatal)", exc_info=True)
 
         mount_frontend_spa_if_configured(app)
 
@@ -238,9 +243,10 @@ async def _load_skills() -> None:
 def mount_frontend_spa_if_configured(app: FastAPI) -> None:
     """Serve the built SPA from ``/`` **after** all API routers are registered.
 
-    Mounting ``StaticFiles`` at ``/`` too early shadows later ``include_router``
-    calls (deferred v1 routes), producing 404/405 on paths like
-    ``POST /api/v1/streams/rtsp/token``. A bare ``LEAGENT_FRONTEND_DIST`` must
+    Mounting ``StaticFiles`` at ``/`` too early shadows ``include_router`` calls,
+    producing 404/405 on paths like ``POST /api/v1/streams/rtsp/token``; it runs
+    in warmup after ``create_app`` has registered every router. A bare
+    ``LEAGENT_FRONTEND_DIST`` must
     not be treated as a path: ``Path('').resolve()`` is the process cwd, which
     is always a directory and would incorrectly mount the cwd as the SPA.
     """
@@ -275,6 +281,8 @@ def create_app() -> FastAPI:
 
     from leagent.utils.metrics import MetricsMiddleware
 
+    sec = settings.security
+
     app.add_middleware(RequestIDMiddleware)
     app.add_middleware(
         APIVersionMiddleware,
@@ -286,18 +294,43 @@ def create_app() -> FastAPI:
     app.add_middleware(
         ContentSizeLimitMiddleware,
         max_content_size=max(1, settings.files.max_upload_bytes),
+        max_streaming_size=sec.max_streaming_body_bytes,
     )
+
+    if sec.security_headers_enabled:
+        app.add_middleware(SecurityHeadersMiddleware, hsts_enabled=sec.hsts_enabled)
+
+    if sec.rate_limit_enabled:
+        app.add_middleware(
+            RateLimitMiddleware,
+            per_minute=sec.rate_limit_per_minute,
+            burst=sec.rate_limit_burst,
+        )
+
+    # CORS: ``*`` origins are incompatible with credentials per the CORS spec —
+    # browsers reject credentialed wildcard responses, so disable credentials then.
+    cors_origins = sec.cors_origins_list()
+    allow_credentials = sec.cors_allow_credentials and cors_origins != ["*"]
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["*"],
-        allow_credentials=True,
+        allow_origins=cors_origins,
+        allow_credentials=allow_credentials,
         allow_methods=["*"],
         allow_headers=["*"],
     )
+
+    trusted_hosts = sec.trusted_hosts_list()
+    if trusted_hosts != ["*"]:
+        from starlette.middleware.trustedhost import TrustedHostMiddleware
+
+        app.add_middleware(TrustedHostMiddleware, allowed_hosts=trusted_hosts)
+
     app.add_middleware(MetricsMiddleware)
     app.add_middleware(GZipMiddleware, minimum_size=500)
 
-    app.include_router(api_router, prefix="/api")
+    from leagent.api.schemas.errors import default_error_responses
+
+    app.include_router(api_router, prefix="/api", responses=default_error_responses)
 
     register_exception_handlers(app)
 

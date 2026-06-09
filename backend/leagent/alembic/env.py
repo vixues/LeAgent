@@ -6,11 +6,10 @@ import asyncio
 from logging.config import fileConfig
 
 from alembic import context
-from sqlalchemy import pool
 from sqlalchemy.engine import Connection
-from sqlalchemy.ext.asyncio import async_engine_from_config
 
 from leagent.config.settings import get_settings
+from leagent.db.engine import make_async_engine
 
 config = context.config
 
@@ -20,7 +19,7 @@ if config.config_file_name is not None:
 # Import all models so Alembic can detect them for autogenerate.
 # Each model module registers its tables on SQLModel.metadata.
 try:
-    from leagent.services.database import models as _models  # noqa: F401
+    from leagent.db import models as _models  # noqa: F401
 except ImportError:
     pass
 
@@ -66,14 +65,7 @@ def do_run_migrations(connection: Connection) -> None:
 async def run_async_migrations() -> None:
     """Run migrations using an async engine."""
     settings = get_settings()
-    configuration = config.get_section(config.config_ini_section, {})
-    configuration["sqlalchemy.url"] = settings.database.url
-
-    connectable = async_engine_from_config(
-        configuration,
-        prefix="sqlalchemy.",
-        poolclass=pool.NullPool,
-    )
+    connectable = make_async_engine(settings.database)
 
     async with connectable.connect() as connection:
         await connection.run_sync(do_run_migrations)

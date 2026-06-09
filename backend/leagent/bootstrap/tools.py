@@ -92,6 +92,7 @@ _CURATED_UTIL_TOOL_PATHS: tuple[tuple[str, str], ...] = (
     ("leagent.code.workspace_edit", "CodeWorkspaceEditTool"),
     ("leagent.code.fim", "DeepSeekFimTool"),
     ("leagent.code.packages", "UvPipInstallTool"),
+    ("leagent.code.syntax", "SyntaxValidatorTool"),
     # --- project (multi-file coding agent toolbox) ---
     ("leagent.project.tools.read", "ProjectReadTool"),
     ("leagent.project.tools.write", "ProjectWriteTool"),

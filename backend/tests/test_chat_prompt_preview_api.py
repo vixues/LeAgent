@@ -11,7 +11,7 @@ import pytest
 
 from leagent.services.auth.deps import get_current_user_id
 from leagent.services.chat.service import get_chat_service
-from leagent.services.database.models.message import ChatSession
+from leagent.db.models.message import ChatSession
 
 
 class _FakeSessionLock:

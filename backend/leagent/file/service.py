@@ -26,7 +26,7 @@ from leagent.file.storage.local import LocalStorageBackend
 
 if TYPE_CHECKING:
     from leagent.services.cache.service import CacheService
-    from leagent.services.database.service import DatabaseService
+    from leagent.db.service import DatabaseService
 
 logger = logging.getLogger(__name__)
 
@@ -139,10 +139,15 @@ class FileService:
         category: str = "upload",
         backend_name: str | None = None,
         metadata: dict[str, Any] | None = None,
+        persist_db_row: bool = True,
     ) -> FileRef:
         """Ingest a file from any source and return a :class:`FileRef` handle.
 
-        This is the **single ingress** for all managed blobs.
+        This is the **single ingress** for all managed blobs. Set
+        ``persist_db_row=False`` when the caller owns a richer ``File`` row
+        (e.g. with folder/workspace linkage) and only needs the blob persisted
+        through the storage backend; the caller is then responsible for writing
+        the structured-data row keyed on ``FileRef.id``.
         """
         backend_key = backend_name or self._default_backend_name
         backend = self.get_backend(backend_key)
@@ -214,7 +219,8 @@ class FileService:
             except Exception as exc:
                 logger.debug("fileref cache write failed: %s", exc)
 
-        await self._persist_db_row(ref)
+        if persist_db_row:
+            await self._persist_db_row(ref)
         return ref
 
     async def resolve(self, file_id: UUID) -> FileRef | None:
@@ -331,7 +337,7 @@ class FileService:
             return
         try:
             from leagent.file.primitives import classify_file_kind
-            from leagent.services.database.models.file import (
+            from leagent.db.models.file import (
                 File,
                 FileStatus,
                 FileType,
@@ -374,7 +380,7 @@ class FileService:
         if self._database is None:
             return None
         try:
-            from leagent.services.database.models.file import File
+            from leagent.db.models.file import File
 
             async with self._database.session() as db:
                 from sqlmodel import select

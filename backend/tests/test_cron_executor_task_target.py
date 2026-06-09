@@ -222,7 +222,7 @@ class _FakeDB:
 @pytest.mark.asyncio
 async def test_execute_task_routes_through_task_manager() -> None:
     """Cron ``task`` jobs must invoke ``TaskManager.create_task + start_task``."""
-    from leagent.services.database.models.task import TaskStatus
+    from leagent.db.models.task import TaskStatus
 
     fake_task = _FakeTask()
     fake_task.status = TaskStatus.COMPLETED
@@ -247,7 +247,7 @@ async def test_execute_task_routes_through_task_manager() -> None:
     with patch(
         "leagent.services.task_manager.get_task_manager", return_value=mgr
     ), patch(
-        "leagent.services.database.get_database_service", return_value=fake_db
+        "leagent.db.get_database_service", return_value=fake_db
     ):
         result = await executor._execute_task(job, execution)
 
@@ -266,7 +266,7 @@ async def test_execute_task_routes_through_task_manager() -> None:
 
 @pytest.mark.asyncio
 async def test_execute_task_propagates_failure() -> None:
-    from leagent.services.database.models.task import TaskStatus
+    from leagent.db.models.task import TaskStatus
 
     fake_task = _FakeTask()
     fake_task.status = TaskStatus.FAILED
@@ -290,7 +290,7 @@ async def test_execute_task_propagates_failure() -> None:
     with patch(
         "leagent.services.task_manager.get_task_manager", return_value=mgr
     ), patch(
-        "leagent.services.database.get_database_service", return_value=fake_db
+        "leagent.db.get_database_service", return_value=fake_db
     ):
         with pytest.raises(RuntimeError, match="failed"):
             await executor._execute_task(job, execution)

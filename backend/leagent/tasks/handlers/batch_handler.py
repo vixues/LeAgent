@@ -8,7 +8,7 @@ import logging
 from typing import TYPE_CHECKING, Any
 from uuid import UUID
 
-from leagent.services.database.models.task import (
+from leagent.db.models.task import (
     TaskContext,
     TaskStatus,
     TaskType,
@@ -44,8 +44,8 @@ class BatchTaskHandler:
         params: dict[str, Any],
         session: "AsyncSession",
     ) -> dict[str, Any]:
-        from leagent.services.database import get_database_service
-        from leagent.services.database.models import Task
+        from leagent.db import get_database_service
+        from leagent.db.models import Task
         from leagent.services.task_manager import get_task_manager
 
         children = params.get("children") or params.get("items") or []

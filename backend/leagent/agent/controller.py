@@ -1211,7 +1211,7 @@ class AgentController:
         """Persist a lightweight snapshot so the user can resume with 'continue'."""
         try:
             from leagent.services.chat.service import ChatService
-            from leagent.services.database import get_database_service
+            from leagent.db import get_database_service
 
             partial_response = ""
             for msg in reversed(conversation.messages):
@@ -1228,7 +1228,7 @@ class AgentController:
 
             db = get_database_service()
             async with db.session() as session:
-                from leagent.services.database.models.message import ChatSession
+                from leagent.db.models.message import ChatSession
                 chat_session = await session.get(ChatSession, session_id)
                 if chat_session:
                     import json as _json

@@ -12,7 +12,7 @@ from leagent.services.auth.signed_url import (
     verify_signed_token,
 )
 from leagent.services.canvas.service import build_preview_html, playwright_document_base
-from leagent.services.database.models.canvas import CanvasContentType, CanvasDocument
+from leagent.db.models.canvas import CanvasContentType, CanvasDocument
 
 
 @pytest.fixture()

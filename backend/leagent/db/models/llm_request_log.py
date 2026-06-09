@@ -6,7 +6,7 @@ from typing import Optional
 
 from sqlmodel import Field
 
-from leagent.services.database.models.base import BaseModel
+from leagent.db.models.base import BaseModel
 
 
 class LLMRequestLog(BaseModel, table=True):

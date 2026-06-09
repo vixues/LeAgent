@@ -16,7 +16,7 @@ from datetime import datetime
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 from uuid import UUID
 
-from leagent.services.database.models.task import (
+from leagent.db.models.task import (
     Task,
     TaskContext,
     TaskStatus,
@@ -138,7 +138,7 @@ class TaskManager:
         timeout_seconds: int = 300,
     ) -> Task:
         """Create a task DB row and prepare its context."""
-        from leagent.services.database.models.task import TaskPriority
+        from leagent.db.models.task import TaskPriority
 
         short_id = generate_task_id(task_type)
         output_dir = None
@@ -228,7 +228,7 @@ class TaskManager:
     ) -> None:
         """Background coroutine wrapping the handler's spawn."""
         try:
-            from leagent.services.database import get_database_service
+            from leagent.db import get_database_service
 
             db = get_database_service()
             task_uuid = UUID(task_id)
@@ -421,7 +421,7 @@ class TaskManager:
 
     async def _mark_killed(self, task_id: str) -> None:
         try:
-            from leagent.services.database import get_database_service
+            from leagent.db import get_database_service
 
             db = get_database_service()
             async with db.session() as session:
@@ -440,7 +440,7 @@ class TaskManager:
 
     async def _mark_timeout(self, task_id: str) -> None:
         try:
-            from leagent.services.database import get_database_service
+            from leagent.db import get_database_service
             from leagent.services.execution.engine import get_execution_engine
 
             await get_execution_engine().cancel_session(task_id)
@@ -464,7 +464,7 @@ class TaskManager:
 
     async def _mark_failed(self, task_id: str, error: str) -> None:
         try:
-            from leagent.services.database import get_database_service
+            from leagent.db import get_database_service
 
             db = get_database_service()
             async with db.session() as session:

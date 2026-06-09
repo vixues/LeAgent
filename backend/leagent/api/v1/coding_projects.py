@@ -54,7 +54,7 @@ from leagent.project.workspace import (
     git_snapshot,
     read_text_file,
 )
-from leagent.services.database.models import (
+from leagent.db.models import (
     CodingProjectRead,
     CodingProjectRuntimeKind,
     CodingProjectStatus,

@@ -8,7 +8,7 @@ from uuid import UUID
 
 from sqlmodel import Column, Field, SQLModel, Text, UniqueConstraint
 
-from leagent.services.database.models.base import BaseModel
+from leagent.db.models.base import BaseModel
 
 
 class CanvasContentType(str, Enum):

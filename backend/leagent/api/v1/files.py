@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-import hashlib
 import logging
 import mimetypes
 import os
@@ -13,14 +12,13 @@ import tempfile
 import zipfile
 from datetime import datetime
 from typing import Annotated, Optional
-from uuid import UUID, uuid4
+from uuid import UUID
 
-from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, Query, Request, UploadFile, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile, status
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 from sse_starlette.sse import EventSourceResponse
 from sqlalchemy import text
-from sqlmodel import select
 from starlette.background import BackgroundTask
 
 from leagent.config.constants import MAX_UPLOAD_SIZE_BYTES
@@ -32,22 +30,22 @@ from leagent.services.auth import (
     SignedUrlError,
     verify_signed_token,
 )
-from leagent.services.database import DatabaseService, get_database_service
-from leagent.services.database.models import (
+from leagent.db import DatabaseService, get_database_service
+from leagent.db.models import (
     File as FileModel,
 )
-from leagent.services.database.models import (
+from leagent.db.models import (
     FileRead,
     FileStatus,
     FileType,
 )
-from leagent.services.database.sqlite_compat import (
+from leagent.db.sqlite_compat import (
     file_model_from_sqlite_row,
     same_user_id,
     sqlite_parent_id_text,
 )
-from leagent.services.database.sqlite_compat import session_dialect_name as _session_dialect_name
-from leagent.services.session.paths import get_session_path_registry
+from leagent.tasks.jobs import enqueue_file_processing
+from leagent.db.sqlite_compat import session_dialect_name as _session_dialect_name
 
 _logger = logging.getLogger(__name__)
 
@@ -60,6 +58,47 @@ def _upload_dir() -> str:
 
 
 MAX_FILE_SIZE = MAX_UPLOAD_SIZE_BYTES
+
+
+async def _store_blob(
+    content: bytes,
+    *,
+    filename: str,
+    content_type: str | None,
+    user_id: UUID | None,
+    session_id: UUID | None,
+):
+    """Persist *content* through the single managed-blob ingress.
+
+    Returns the resulting :class:`~leagent.file.service.FileRef`. The DB row is
+    written separately by the caller (``persist_db_row=False``) because the
+    ``files`` endpoint owns a richer row (folder/workspace linkage, processing
+    state).
+    """
+    from leagent.file.primitives import FileScope
+    from leagent.services.service_manager import get_service_manager
+
+    sm = get_service_manager()
+    fs = sm.file_service
+    if fs is None:
+        from leagent.file.service import FileService
+        from leagent.file.storage.local import LocalStorageBackend
+
+        fs = FileService(
+            default_backend=LocalStorageBackend(_upload_dir()),
+            default_backend_name="local",
+            database=sm.db,
+        )
+    return await fs.register(
+        content,
+        filename=filename,
+        content_type=content_type,
+        user_id=user_id,
+        session_id=session_id,
+        scope=FileScope.SESSION,
+        category="upload",
+        persist_db_row=False,
+    )
 
 # Multi-file ZIP download (POST /files/bundle/download)
 MAX_BUNDLE_FILE_COUNT = 80
@@ -181,7 +220,6 @@ async def persist_uploaded_file(
     *,
     session_id: UUID,
     folder_id: UUID | None = None,
-    background_tasks: BackgroundTasks | None = None,
 ) -> FileModel:
     """Save an UploadFile to disk + DB and schedule text extraction.
 
@@ -201,15 +239,17 @@ async def persist_uploaded_file(
             f"File too large ({file_size} bytes). Maximum is {MAX_FILE_SIZE // (1024 * 1024)}MB"
         )
 
-    checksum = hashlib.sha256(content).hexdigest()
-
-    upload_root = get_session_path_registry().ensure_uploads_dir(session_id)
-    file_id = uuid4()
-    safe_name = f"{file_id}_{upload.filename.replace('/', '_')}"
-    storage_path = str(upload_root / safe_name)
-
-    with open(storage_path, "wb") as f:
-        f.write(content)
+    ref = await _store_blob(
+        content,
+        filename=upload.filename,
+        content_type=upload.content_type,
+        user_id=user_id,
+        session_id=session_id,
+    )
+    file_id = ref.id
+    safe_name = os.path.basename(ref.storage_key)
+    storage_path = ref.metadata.get("storage_path", ref.storage_key)
+    checksum = ref.checksum
 
     file_type = get_file_type(upload.content_type, upload.filename)
 
@@ -232,20 +272,15 @@ async def persist_uploaded_file(
         await session.flush()
         await session.refresh(db_file)
 
-    if background_tasks is not None:
-        background_tasks.add_task(
-            _background_process_file,
-            str(file_id),
-            storage_path,
-            upload.content_type,
-            upload.filename,
-        )
-    else:
-        asyncio.ensure_future(
-            _background_process_file(
-                str(file_id), storage_path, upload.content_type, upload.filename
-            )
-        )
+    await enqueue_file_processing(
+        db,
+        file_id=str(file_id),
+        storage_path=storage_path,
+        mime_type=upload.content_type,
+        original_name=upload.filename,
+        user_id=user_id,
+        session_id=session_id,
+    )
 
     return db_file
 
@@ -256,7 +291,6 @@ async def persist_pet_space_file(
     db: DatabaseService,
     *,
     workspace_id: Optional[UUID],
-    background_tasks: BackgroundTasks | None = None,
 ) -> FileModel:
     """Save an upload to disk + DB for Pet Space (no chat session).
 
@@ -273,18 +307,20 @@ async def persist_pet_space_file(
             f"File too large ({file_size} bytes). Maximum is {MAX_FILE_SIZE // (1024 * 1024)}MB"
         )
 
-    checksum = hashlib.sha256(content).hexdigest()
-
-    upload_root = _upload_dir()
-    os.makedirs(upload_root, exist_ok=True)
-    file_id = uuid4()
-    safe_name = f"{file_id}_{upload.filename.replace('/', '_')}"
-    storage_path = os.path.join(upload_root, safe_name)
-
-    with open(storage_path, "wb") as f:
-        f.write(content)
-
     resolved_mime = resolve_pet_space_upload_mime_type(upload.filename, upload.content_type, content)
+
+    ref = await _store_blob(
+        content,
+        filename=upload.filename,
+        content_type=resolved_mime,
+        user_id=user_id,
+        session_id=None,
+    )
+    file_id = ref.id
+    safe_name = os.path.basename(ref.storage_key)
+    storage_path = ref.metadata.get("storage_path", ref.storage_key)
+    checksum = ref.checksum
+
     file_type = get_file_type(resolved_mime, upload.filename)
 
     async with db.session() as session:
@@ -378,20 +414,15 @@ async def persist_pet_space_file(
             await session.flush()
             await session.refresh(db_file)
 
-    if background_tasks is not None:
-        background_tasks.add_task(
-            _background_process_file,
-            str(file_id),
-            storage_path,
-            resolved_mime,
-            upload.filename,
-        )
-    else:
-        asyncio.ensure_future(
-            _background_process_file(
-                str(file_id), storage_path, resolved_mime, upload.filename
-            )
-        )
+    await enqueue_file_processing(
+        db,
+        file_id=str(file_id),
+        storage_path=storage_path,
+        mime_type=resolved_mime,
+        original_name=upload.filename,
+        user_id=user_id,
+        session_id=None,
+    )
 
     return db_file
 
@@ -400,7 +431,6 @@ async def persist_pet_space_file(
 async def upload_file(
     user_id: CurrentUserId,
     db: Annotated[DatabaseService, Depends(get_database_service)],
-    background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
     session_id: UUID = Form(...),
     folder_id: Optional[UUID] = Form(default=None),
@@ -425,7 +455,6 @@ async def upload_file(
             db,
             session_id=session_id,
             folder_id=folder_id,
-            background_tasks=background_tasks,
         )
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
@@ -455,14 +484,7 @@ async def download_file_bundle(
     unique_ids = list(dict.fromkeys(body.file_ids))
     out_name = _sanitize_bundle_download_filename(body.filename)
 
-    async with db.session() as session:
-        stmt = select(FileModel).where(
-            FileModel.id.in_(unique_ids),
-            FileModel.user_id == user_id,
-            FileModel.is_deleted == False,  # noqa: E712
-        )
-        result = await session.exec(stmt)
-        rows = list(result.all())
+    rows = await db.repositories.files.get_many_for_user(unique_ids, user_id)
 
     found = {f.id for f in rows}
     missing = [str(i) for i in unique_ids if i not in found]

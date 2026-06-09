@@ -14,14 +14,14 @@ from leagent.services.auth.tokens import mint_token, decode_token, TokenError
 
 from leagent.services.auth.signed_url import sign_managed_file_urls_in_html
 from leagent.services.canvas.html_bundle import merge_html_files_to_document
-from leagent.services.database.models.canvas import CanvasContentType, CanvasDocument
-from leagent.services.database.models.message import ChatSession
+from leagent.db.models.canvas import CanvasContentType, CanvasDocument
+from leagent.db.models.message import ChatSession
 from leagent.services.gen_ui.schema import validate_ui_tree, ui_tree_from_json_bytes
 
 if TYPE_CHECKING:
     from leagent.config.settings import Settings
     from leagent.services.chat.service import ChatService
-    from leagent.services.database.service import DatabaseService
+    from leagent.db.service import DatabaseService
 
 logger = logging.getLogger(__name__)
 

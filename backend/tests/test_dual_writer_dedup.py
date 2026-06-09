@@ -15,9 +15,9 @@ from sqlalchemy.orm import sessionmaker
 from sqlmodel import SQLModel, col, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-import leagent.services.database.models  # noqa: F401 — register metadata
+import leagent.db.models  # noqa: F401 — register metadata
 from leagent.config.settings import get_settings
-from leagent.services.database.models.message import (
+from leagent.db.models.message import (
     ChatSession,
     Message,
     MessageRole,

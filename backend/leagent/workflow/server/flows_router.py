@@ -20,8 +20,8 @@ from sqlmodel import col, func, select
 
 from leagent.schema.api import PaginatedResponse
 from leagent.services.auth import CurrentUserId
-from leagent.services.database import DatabaseService, get_database_service
-from leagent.services.database.models import (
+from leagent.db import DatabaseService, get_database_service
+from leagent.db.models import (
     Flow,
     FlowRead,
     FlowStatus,

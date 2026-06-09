@@ -80,7 +80,14 @@ def _default_builders() -> List[HandlerBuilder]:
 
         return BatchTaskHandler(service_manager=sm)
 
-    return [_agent, _shell, _workflow, _tool, _batch]
+    def _file_processing(sm: "ServiceManager") -> "TaskHandler | None":
+        from leagent.tasks.handlers.file_processing_handler import (
+            FileProcessingTaskHandler,
+        )
+
+        return FileProcessingTaskHandler(service_manager=sm)
+
+    return [_agent, _shell, _workflow, _tool, _batch, _file_processing]
 
 
 async def register_default_handlers(

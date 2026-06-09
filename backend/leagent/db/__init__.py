@@ -1,6 +1,6 @@
 """Database module for LeAgent."""
 
-from leagent.services.database.models import (
+from leagent.db.models import (
     BaseModel,
     ChatSession,
     File,
@@ -10,12 +10,12 @@ from leagent.services.database.models import (
     Message,
     Task,
 )
-from leagent.services.database.service import (
+from leagent.db.service import (
     DatabaseService,
     get_database_service,
     init_database_service,
 )
-from leagent.services.database.sqlite_compat import (
+from leagent.db.sqlite_compat import (
     file_model_from_sqlite_row,
     file_status_from_db,
     file_type_from_db,

@@ -16,7 +16,7 @@ from typing import TYPE_CHECKING, Any
 from uuid import UUID
 
 from leagent.agent.runtime_profile import resolve_runtime_budget
-from leagent.services.database.models.task import (
+from leagent.db.models.task import (
     Task,
     TaskContext,
     TaskType,

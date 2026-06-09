@@ -24,11 +24,11 @@ from sqlmodel import select
 from leagent.memory.lexical_backend import column_text_match, session_dialect
 from leagent.memory.types import Episode, MemoryKind, RecallEntry
 from leagent.memory.vector import MilvusCollection, MilvusConnectionConfig
-from leagent.services.database.models.agent_memory import AgentEpisode
+from leagent.db.models.agent_memory import AgentEpisode
 
 if TYPE_CHECKING:
     from leagent.memory.embeddings import EmbeddingProvider
-    from leagent.services.database.service import DatabaseService
+    from leagent.db.service import DatabaseService
 
 logger = logging.getLogger(__name__)
 

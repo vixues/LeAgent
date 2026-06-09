@@ -26,7 +26,7 @@ def test_column_match_sqlite_is_ilike() -> None:
 
 
 def test_column_match_postgres_is_tsvector() -> None:
-    from leagent.services.database.models.agent_memory import AgentEpisode
+    from leagent.db.models.agent_memory import AgentEpisode
 
     expr = column_text_match(AgentEpisode.summary, "budget report", "postgresql")
     assert isinstance(expr, ColumnElement)

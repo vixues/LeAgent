@@ -21,7 +21,7 @@ from uuid import UUID
 
 from sqlmodel import Field, SQLModel
 
-from leagent.services.database.models.base import BaseModel, SoftDeleteMixin
+from leagent.db.models.base import BaseModel, SoftDeleteMixin
 
 if TYPE_CHECKING:  # pragma: no cover
     pass

@@ -14,9 +14,11 @@ def test_meta_returns_standalone_edition(client: TestClient) -> None:
     assert "desktop_mode" in body and "local_mode" in body
 
 
-def test_v1_responses_advertise_version_policy(client: TestClient) -> None:
+def test_v1_responses_advertise_version(client: TestClient) -> None:
     r = client.get("/api/v1/meta")
 
     assert r.headers["API-Version"] == "1"
-    assert r.headers["Deprecation"] == "false"
-    assert "rel=\"deprecation\"" in r.headers["Link"]
+    # v1 is the current (only) version: no successor exists, so no deprecation or
+    # sunset signalling is emitted unless an operator explicitly schedules it.
+    assert "Deprecation" not in r.headers
+    assert "Sunset" not in r.headers

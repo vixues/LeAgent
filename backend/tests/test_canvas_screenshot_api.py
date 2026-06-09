@@ -17,7 +17,7 @@ from leagent.api.v1.canvas import (
     _ascii_filename_fallback,
     _content_disposition,
 )
-from leagent.services.database.models.canvas import CanvasContentType, CanvasDocument
+from leagent.db.models.canvas import CanvasContentType, CanvasDocument
 
 SCREENSHOT_PATH = "/api/v1/canvas/preview/screenshot"
 VALID_TOKEN = "dummy-token-value-32chars!!"

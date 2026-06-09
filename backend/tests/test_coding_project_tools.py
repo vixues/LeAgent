@@ -15,7 +15,7 @@ from uuid import UUID, uuid4
 
 import pytest
 
-from leagent.services.database.models import (
+from leagent.db.models import (
     CodingProject,
     CodingProjectRuntimeKind,
     CodingProjectStatus,

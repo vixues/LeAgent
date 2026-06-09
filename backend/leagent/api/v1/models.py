@@ -23,8 +23,8 @@ from leagent.llm.provider_config import (
     get_provider_config_service,
 )
 from leagent.services.auth import CurrentUserId
-from leagent.services.database import DatabaseService, get_database_service
-from leagent.services.database.models import LLMRequestLog, Message
+from leagent.db import DatabaseService, get_database_service
+from leagent.db.models import LLMRequestLog, Message
 
 _logger = logging.getLogger(__name__)
 

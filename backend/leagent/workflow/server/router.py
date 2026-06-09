@@ -27,8 +27,8 @@ from fastapi import APIRouter, Depends, HTTPException, Query, WebSocket, status
 from sqlmodel import col, select
 
 from leagent.services.auth import CurrentUserId
-from leagent.services.database import DatabaseService, get_database_service
-from leagent.services.database.models import Flow
+from leagent.db import DatabaseService, get_database_service
+from leagent.db.models import Flow
 
 from ..io import export as io_export
 from ..io import graph_hash, load

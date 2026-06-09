@@ -188,7 +188,7 @@ async def test_resolve_project_folder_path_rejects_unowned() -> None:
 
     # The function imports the helper inside its body, so monkeypatch the
     # reference on the source module the import resolves to.
-    from leagent.services.database import sqlite_compat
+    from leagent.db import sqlite_compat
 
     original = sqlite_compat.load_entity_by_id
     sqlite_compat.load_entity_by_id = _fake_load  # type: ignore[assignment]

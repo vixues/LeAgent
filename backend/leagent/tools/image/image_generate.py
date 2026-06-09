@@ -10,7 +10,7 @@ import base64
 import time
 from pathlib import Path
 from typing import Any
-from uuid import UUID, uuid4
+from uuid import uuid4
 
 import structlog
 
@@ -142,60 +142,33 @@ class ImageGenerateTool(BaseTool):
 
         elapsed_ms = int((time.perf_counter() - start) * 1000)
 
-        user_owned_file = bool(write_path)
-
-        if not write_path and context.session_id and result.get("b64_json"):
-            from leagent.config.settings import get_settings
-
-            from leagent.services.session.paths import get_session_path_registry
-
-            sid = str(context.session_id).strip()
-            dest_dir = get_session_path_registry(get_settings()).ensure_uploads_dir(sid)
-            write_path = str(dest_dir / f"_genimg_{uuid4().hex}.png")
-
-        if write_path and result.get("b64_json"):
-            out = Path(write_path)
-            out.parent.mkdir(parents=True, exist_ok=True)
-            out.write_bytes(base64.b64decode(result["b64_json"]))
-            result["saved_path"] = str(out)
-            result["output_path"] = str(out)
-            result["file_size_bytes"] = out.stat().st_size
-
-        if (
-            context.session_id
-            and write_path
-            and Path(write_path).is_file()
-            and result.get("success")
-            and result.get("b64_json")
-        ):
+        if result.get("success") and result.get("b64_json"):
+            image_bytes = base64.b64decode(result["b64_json"])
+            display_name = Path(write_path).name if write_path else f"image_{uuid4().hex[:8]}.png"
             try:
-                from leagent.main import get_service_manager
+                from leagent.file.tool_output import register_tool_artifact
 
-                sm = get_service_manager()
-                mgr = sm.session_manager if sm else None
-                if mgr is not None:
-                    session_uuid = UUID(str(context.session_id))
-                    user_uuid = UUID(str(context.user_id)) if context.user_id else None
-                    wp = Path(write_path)
-                    reg = await mgr.register_external_file(
-                        session_uuid,
-                        user_uuid,
-                        str(wp),
-                        display_name=wp.name,
-                    )
-                    if reg:
-                        fid = str(reg.get("id") or "")
-                        result["file_id"] = fid
-                        result["preview_path"] = f"/api/v1/files/{fid}/preview"
-                        result["preview_url"] = reg.get("preview_url")
-                        result["download_url"] = reg.get("download_url")
-                        if not user_owned_file:
-                            wp.unlink(missing_ok=True)
-                        # Avoid duplicate attachment ingest via controller path hooks.
-                        result.pop("saved_path", None)
-                        result.pop("output_path", None)
-            except (ValueError, TypeError, RuntimeError):
-                logger.warning("image_generate_session_register_failed", exc_info=True)
+                reg = await register_tool_artifact(
+                    image_bytes,
+                    filename=display_name,
+                    content_type=result.get("mime") or "image/png",
+                    session_id=context.session_id,
+                    user_id=context.user_id,
+                )
+            except Exception:  # noqa: BLE001
+                logger.warning("image_generate_register_failed", exc_info=True)
+                reg = None
+
+            if reg:
+                fid = str(reg.get("id") or "")
+                result["file_id"] = fid
+                result["file_size_bytes"] = reg.get("size")
+                if fid:
+                    result["preview_path"] = f"/api/v1/files/{fid}/preview"
+                result["preview_url"] = reg.get("preview_url")
+                result["download_url"] = reg.get("download_url")
+                # Path scraping skips entries that already carry a file_id.
+                result["output_path"] = reg.get("storage_path")
 
         result["elapsed_ms"] = elapsed_ms
         model = str(result.get("model") or model or "")

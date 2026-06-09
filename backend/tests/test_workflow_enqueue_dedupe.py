@@ -11,7 +11,7 @@ import pytest
 from sqlmodel import select
 
 from leagent.services.auth.service import LOCAL_USER_ID
-from leagent.services.database.models.workflow_execution import WorkflowExecution
+from leagent.db.models.workflow_execution import WorkflowExecution
 from leagent.workflow.services import WorkflowService
 
 

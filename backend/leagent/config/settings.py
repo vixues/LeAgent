@@ -42,6 +42,11 @@ class DatabaseSettings(BaseSettings):
     database_url: str = ""
     pool_size: int = 5
     max_overflow: int = 10
+    # When true, a failed Alembic migration at startup aborts boot instead of
+    # logging a warning and continuing on a potentially stale schema. Recommended
+    # for production/PostgreSQL; defaults off to preserve the zero-config SQLite
+    # dev experience.
+    fail_fast_migrations: bool = False
 
     @property
     def is_postgresql(self) -> bool:
@@ -406,6 +411,49 @@ class WorkflowEngineSettings(BaseSettings):
     event_bus_prefix: str = "workflow:events"
 
 
+class SecuritySettings(BaseSettings):
+    """HTTP security hardening knobs.
+
+    Defaults are tuned for the local single-user profile (permissive CORS, no
+    auth enforcement). Tighten these for any network-exposed / multi-user
+    deployment via ``LEAGENT_SECURITY_*`` env vars.
+    """
+
+    model_config = SettingsConfigDict(env_prefix="LEAGENT_SECURITY_")
+
+    #: Comma-separated list of allowed CORS origins. ``*`` allows any origin
+    #: (credentials are then automatically disabled per the CORS spec).
+    cors_allow_origins: str = "*"
+    cors_allow_credentials: bool = True
+    #: Comma-separated allowed Host header values for ``TrustedHostMiddleware``.
+    #: ``*`` disables host checking.
+    trusted_hosts: str = "*"
+    security_headers_enabled: bool = True
+    #: Send HSTS (only meaningful behind HTTPS). Off by default for local http.
+    hsts_enabled: bool = False
+    rate_limit_enabled: bool = False
+    rate_limit_per_minute: int = Field(default=300, ge=1)
+    rate_limit_burst: int = Field(default=60, ge=1)
+    #: Enforce authentication on protected routes. When ``False`` (default for
+    #: single-user local mode) auth dependencies are permissive pass-throughs.
+    enforce_auth: bool = False
+    #: Hard cap on streamed request bodies (defends against header-less / chunked
+    #: uploads that bypass a ``Content-Length`` check). 0 disables the streaming cap.
+    max_streaming_body_bytes: int = Field(default=0, ge=0)
+
+    def cors_origins_list(self) -> list[str]:
+        raw = (self.cors_allow_origins or "").strip()
+        if not raw or raw == "*":
+            return ["*"]
+        return [o.strip() for o in raw.split(",") if o.strip()]
+
+    def trusted_hosts_list(self) -> list[str]:
+        raw = (self.trusted_hosts or "").strip()
+        if not raw or raw == "*":
+            return ["*"]
+        return [h.strip() for h in raw.split(",") if h.strip()]
+
+
 class Settings(BaseSettings):
     """Root settings for standalone single-node deployment."""
 
@@ -441,6 +489,7 @@ class Settings(BaseSettings):
     prompt: PromptSettings = Field(default_factory=PromptSettings)
     context: "ContextSettings" = Field(default_factory=ContextSettings)
     workflow: WorkflowEngineSettings = Field(default_factory=WorkflowEngineSettings)
+    security: SecuritySettings = Field(default_factory=SecuritySettings)
 
     rules_directory: str = ""
     workflows_directory: str = ""

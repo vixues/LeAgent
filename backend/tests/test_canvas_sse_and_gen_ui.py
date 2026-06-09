@@ -20,7 +20,7 @@ from leagent.services.canvas.service import (
     sanitize_html,
 )
 from leagent.config.settings import CanvasSettings, Settings
-from leagent.services.database.models.canvas import CanvasContentType, CanvasDocument
+from leagent.db.models.canvas import CanvasContentType, CanvasDocument
 from leagent.tools.base import ToolContext
 from leagent.tools.canvas.canvas_publish import CanvasPublishTool
 from leagent.tools.canvas.genui_guide import GetGenuiGuideTool

@@ -569,8 +569,8 @@ class LLMService:
 
             async def _insert() -> None:
                 try:
-                    from leagent.services.database import get_database_service
-                    from leagent.services.database.models import LLMRequestLog
+                    from leagent.db import get_database_service
+                    from leagent.db.models import LLMRequestLog
 
                     db = get_database_service()
                     async with db.session() as session:

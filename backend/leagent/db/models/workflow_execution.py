@@ -8,7 +8,7 @@ from uuid import UUID
 
 from sqlmodel import Column, Field, SQLModel, Text
 
-from leagent.services.database.models.base import UUIDMixin
+from leagent.db.models.base import UUIDMixin
 
 
 class WorkflowExecution(UUIDMixin, SQLModel, table=True):

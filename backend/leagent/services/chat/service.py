@@ -14,7 +14,7 @@ from sqlalchemy import String, and_, cast, delete, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import col, select
 
-from leagent.services.database.sqlite_compat import (
+from leagent.db.sqlite_compat import (
     load_chat_session_by_id,
     parse_uuid_stored,
     same_user_id,
@@ -23,11 +23,11 @@ from leagent.services.database.sqlite_compat import (
 )
 
 from leagent.services.base import Service, ServiceType, service_factory
-from leagent.services.database.models.agent_memory import AgentEpisode
-from leagent.services.database.models.base import naive_utc_for_db_column, utc_now
-from leagent.services.database.models.canvas import CanvasDocument
-from leagent.services.database.models.file import File
-from leagent.services.database.models.message import (
+from leagent.db.models.agent_memory import AgentEpisode
+from leagent.db.models.base import naive_utc_for_db_column, utc_now
+from leagent.db.models.canvas import CanvasDocument
+from leagent.db.models.file import File
+from leagent.db.models.message import (
     AUTHORIZED_ROOTS_META_KEY,
     ChatSession,
     Message,
@@ -44,7 +44,7 @@ from leagent.services.database.models.message import (
 if TYPE_CHECKING:
     from leagent.config.settings import Settings
     from leagent.services.cache.service import CacheService
-    from leagent.services.database.service import DatabaseService
+    from leagent.db.service import DatabaseService
 
 logger = logging.getLogger(__name__)
 

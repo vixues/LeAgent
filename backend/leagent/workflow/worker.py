@@ -219,7 +219,7 @@ def make_db_flow_loader(db_service: Any) -> FlowLoader:
     async def _loader(flow_id: str) -> WorkflowDocument | None:
         import json
         from sqlmodel import select
-        from leagent.services.database.models.flow import Flow
+        from leagent.db.models.flow import Flow
         try:
             from uuid import UUID
             flow_uuid = UUID(flow_id)

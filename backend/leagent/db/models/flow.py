@@ -7,11 +7,11 @@ from uuid import UUID
 
 from sqlmodel import Column, Field, Relationship, SQLModel, Text
 
-from leagent.services.database.models.base import BaseModel, SoftDeleteMixin
+from leagent.db.models.base import BaseModel, SoftDeleteMixin
 
 if TYPE_CHECKING:
-    from leagent.services.database.models.folder import Folder
-    from leagent.services.database.models.message import Message
+    from leagent.db.models.folder import Folder
+    from leagent.db.models.message import Message
 
 
 class FlowStatus(str, Enum):

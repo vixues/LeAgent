@@ -8,7 +8,7 @@ from uuid import UUID, uuid4
 
 from sqlmodel import Column, Field, SQLModel, Text
 
-from leagent.services.database.models.base import BaseModel, SoftDeleteMixin, utc_now
+from leagent.db.models.base import BaseModel, SoftDeleteMixin, utc_now
 
 
 class PetProject(BaseModel, SoftDeleteMixin, table=True):

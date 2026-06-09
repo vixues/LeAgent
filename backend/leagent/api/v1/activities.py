@@ -9,9 +9,9 @@ from pydantic import BaseModel
 from sqlmodel import col, select
 
 from leagent.services.auth import CurrentUserId
-from leagent.services.database import DatabaseService, get_database_service
-from leagent.services.database.models import Task, TaskStatus
-from leagent.services.database.models.workflow_execution import WorkflowExecution
+from leagent.db import DatabaseService, get_database_service
+from leagent.db.models import Task, TaskStatus
+from leagent.db.models.workflow_execution import WorkflowExecution
 
 router = APIRouter()
 
@@ -138,7 +138,7 @@ async def get_activities(
             # Resolve the flow name for a better title
             flow_name = f"Workflow {str(wf.id)[:8]}"
             if wf.flow_id:
-                from leagent.services.database.models import Flow
+                from leagent.db.models import Flow
 
                 flow = await session.get(Flow, wf.flow_id)
                 if flow:

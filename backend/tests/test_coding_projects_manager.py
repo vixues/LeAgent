@@ -40,7 +40,7 @@ from leagent.project.templates import (
     list_templates,
     load_template,
 )
-from leagent.services.database.models import (
+from leagent.db.models import (
     CodingProject,
     CodingProjectStatus,
     Folder,

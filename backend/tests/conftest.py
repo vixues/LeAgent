@@ -22,10 +22,8 @@ _backend_root = Path(__file__).resolve().parent.parent
 _wa_pytest = _backend_root / ".pytest_leagent_home"
 _wa_pytest.mkdir(parents=True, exist_ok=True)
 os.environ.setdefault("LEAGENT_HOME", str(_wa_pytest.resolve()))
-# Force skip duplicate deferred mounts in lifespan (``setdefault`` would not override a user shell env).
-os.environ["LEAGENT_SKIP_LIFESPAN_DEFERRED_ROUTES"] = "1"
 # Deterministic routing: a developer ``LEAGENT_FRONTEND_DIST`` would mount StaticFiles
-# before deferred routes (405/404). Tests mount SPA last via ``mount_frontend_spa_if_configured``.
+# before API routes (405/404). Tests mount SPA last via ``mount_frontend_spa_if_configured``.
 os.environ.pop("LEAGENT_FRONTEND_DIST", None)
 
 pytest_plugins = [
@@ -57,7 +55,7 @@ from leagent.main import create_app, mount_frontend_spa_if_configured
 # (the test DB is created via ``SQLModel.metadata.create_all``). Forgetting a
 # model here leads to confusing "no such table" failures in tests that only
 # indirectly touch the missing entity — explicit is better than implicit.
-import leagent.services.database.models  # noqa: F401
+import leagent.db.models  # noqa: F401
 from leagent.tools.base import ToolCategory, ToolContext
 from leagent.tools.registry import ToolRegistry
 
@@ -110,27 +108,12 @@ def test_settings() -> Settings:
 def app(test_settings: Settings):  # type: ignore[no-untyped-def]
     """Create a FastAPI application instance for testing.
 
-    The production ``create_app()`` registers deferred routers inside
-    ``main._post_startup_warmup``. ``TestClient`` runs lifespan; we still mount
-    deferred routes here when ``LEAGENT_SKIP_LIFESPAN_DEFERRED_ROUTES=1`` so
-    warmup does not double-register paths (405). SPA static files mount last via
+    ``create_app()`` registers every router eagerly (see ``leagent.api.router``),
+    so no deferred mounting is needed. SPA static files mount last via
     ``mount_frontend_spa_if_configured`` so they cannot shadow API routes.
     """
-    from fastapi import APIRouter
-
     application = create_app()
 
-    from leagent.api.router_deferred import (
-        mount_v1_deferred_routes,
-        mount_v2_deferred_routes,
-    )
-
-    deferred_v1 = APIRouter(prefix="/api/v1")
-    deferred_v2 = APIRouter(prefix="/api/v2")
-    mount_v1_deferred_routes(deferred_v1)
-    mount_v2_deferred_routes(deferred_v2)
-    application.include_router(deferred_v1)
-    application.include_router(deferred_v2)
     mount_frontend_spa_if_configured(application)
 
     ev = asyncio.Event()

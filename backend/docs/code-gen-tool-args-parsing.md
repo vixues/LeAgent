@@ -14,7 +14,7 @@ This note maps where LLM tool arguments are parsed, why JSON errors appear unrel
 
 4. **Executor recovery** — [`leagent/tools/executor.py`](../leagent/tools/executor.py) `normalize_tool_parameters`: if parameters contain `__raw__`, calls `_try_parse_raw_tool_args` (fences, trailing commas, control-char repair, tool-specific recovery). `ToolExecutor.execute` logs `tool_args_parse_failed` with `tool=` and optional JSON position metadata.
 
-5. **Subprocess runner (code execution)** — [`leagent/services/code_execution/runner.py`](../leagent/services/code_execution/runner.py): after tool args are parsed, the execution engine may send a **framed stdin** payload (see `LEAGENT_RUNNER_V2` in runner) so Python `source` is not embedded as a giant JSON string value on that hop.
+5. **Subprocess runner (code execution)** — [`leagent/code/runner.py`](../leagent/code/runner.py): after tool args are parsed, the execution engine may send a **framed stdin** payload (see `LEAGENT_RUNNER_V2` in runner) so Python `source` is not embedded as a giant JSON string value on that hop.
 
 ## Tools that commonly carry large string fields (high JSON-fragility)
 

@@ -274,7 +274,7 @@ def _session_uploads_dir(session_id: str) -> Path | None:
 
 def _path_under_uploads(path: Path, uploads: Path) -> bool:
     try:
-        return path.resolve().is_relative_to(uploads.resolve())
+        return _is_path_inside_multi(path.resolve(), (uploads.resolve(),))
     except (OSError, ValueError):
         return False
 

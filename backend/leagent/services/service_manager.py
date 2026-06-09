@@ -17,7 +17,7 @@ if TYPE_CHECKING:
     from leagent.services.canvas.service import CanvasService
     from leagent.services.chat.service import ChatService
     from leagent.project.manager import CodingProjectManager
-    from leagent.services.database.service import DatabaseService
+    from leagent.db.service import DatabaseService
     from leagent.services.event.manager import EventManager
     from leagent.services.event.webhook import WebhookEventManager
     from leagent.services.file_processing.service import FileProcessingService
@@ -309,7 +309,7 @@ class ServiceManager:
 
     async def _start_database(self) -> None:
         try:
-            from leagent.services.database.service import init_database_service
+            from leagent.db.service import init_database_service
             self._db = init_database_service(self.settings)
             await self._db.create_tables()
             logger.info("Database service initialized (SQLite)")

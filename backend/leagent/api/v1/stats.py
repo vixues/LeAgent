@@ -14,9 +14,9 @@ from pydantic import BaseModel
 from sqlmodel import func, select
 
 from leagent.services.auth import CurrentUserId
-from leagent.services.database import DatabaseService, get_database_service
-from leagent.services.database.models import Flow, Task, TaskStatus
-from leagent.services.database.models.workflow_execution import WorkflowExecution
+from leagent.db import DatabaseService, get_database_service
+from leagent.db.models import Flow, Task, TaskStatus
+from leagent.db.models.workflow_execution import WorkflowExecution
 
 router = APIRouter()
 

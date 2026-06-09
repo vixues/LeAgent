@@ -190,7 +190,7 @@ class FileProcessingService:
         from uuid import UUID
         from datetime import datetime
         from leagent.services.service_manager import get_service_manager
-        from leagent.services.database.models.file import FileStatus
+        from leagent.db.models.file import FileStatus
 
         result = await self.process_file(file_path, mime_type, original_name)
 
@@ -200,8 +200,8 @@ class FileProcessingService:
 
         try:
             from sqlalchemy import text
-            from leagent.services.database.models.file import File
-            from leagent.services.database.sqlite_compat import sqlite_parent_id_text
+            from leagent.db.models.file import File
+            from leagent.db.sqlite_compat import sqlite_parent_id_text
 
             async with sm.db.session() as session:
                 bind = session.get_bind()

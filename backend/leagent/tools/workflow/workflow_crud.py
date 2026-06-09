@@ -41,7 +41,7 @@ class WorkflowListTool(BaseTool):
     async def _execute(self, context: ToolContext, **kwargs: Any) -> ToolResult:
         from sqlmodel import select
 
-        from leagent.services.database.models.flow import Flow
+        from leagent.db.models.flow import Flow
         from leagent.tools.workflow import get_workflow_service, workflow_error_result
 
         try:

@@ -16,7 +16,7 @@ from typing import TYPE_CHECKING
 
 from sqlalchemy import text
 
-from leagent.services.database.sqlite_compat import (
+from leagent.db.sqlite_compat import (
     session_dialect_name,
     sqlite_parent_id_text,
 )
@@ -24,7 +24,7 @@ from leagent.services.database.sqlite_compat import (
 if TYPE_CHECKING:
     from uuid import UUID
 
-    from leagent.services.database import DatabaseService
+    from leagent.db import DatabaseService
 
 logger = logging.getLogger(__name__)
 

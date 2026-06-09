@@ -2,14 +2,11 @@
 
 from __future__ import annotations
 
-import hashlib
-import json
 import os
-from datetime import datetime
 from typing import Annotated, Any, Optional
-from uuid import UUID, uuid4
+from uuid import UUID
 
-from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, Query, UploadFile, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
 from pydantic import BaseModel, Field
 from sqlalchemy import or_
 from sqlmodel import col, func, select
@@ -18,8 +15,8 @@ from leagent.config.settings import get_settings
 from leagent.file.primitives import classify_file_kind
 from leagent.schema.api import PaginatedResponse
 from leagent.services.auth import CurrentUserId
-from leagent.services.database import DatabaseService, get_database_service
-from leagent.services.database.models import (
+from leagent.db import DatabaseService, get_database_service
+from leagent.db.models import (
     ChatSession,
     File as FileModel,
     FileRead,
@@ -203,16 +200,19 @@ async def upload_document(
     content = await file.read()
     file_size = len(content)
 
-    checksum = hashlib.sha256(content).hexdigest()
+    from leagent.api.v1.files import _store_blob
 
-    upload_root = _upload_dir()
-    os.makedirs(upload_root, exist_ok=True)
-    file_id = uuid4()
-    safe_name = f"{file_id}_{file.filename.replace('/', '_')}"
-    storage_path = os.path.join(upload_root, safe_name)
-
-    with open(storage_path, "wb") as f:
-        f.write(content)
+    ref = await _store_blob(
+        content,
+        filename=file.filename,
+        content_type=file.content_type,
+        user_id=user_id,
+        session_id=session_id,
+    )
+    file_id = ref.id
+    safe_name = os.path.basename(ref.storage_key)
+    storage_path = ref.metadata.get("storage_path", ref.storage_key)
+    checksum = ref.checksum
 
     file_type = get_file_type(file.content_type, file.filename)
 
@@ -250,7 +250,6 @@ async def upload_document(
 async def promote_to_knowledge(
     user_id: CurrentUserId,
     db: Annotated[DatabaseService, Depends(get_database_service)],
-    background_tasks: BackgroundTasks,
     body: PromoteToKnowledgeRequest,
 ) -> PromoteToKnowledgeResponse:
     """Copy owned chat/workspace files into the system knowledge directory.
@@ -260,7 +259,7 @@ async def promote_to_knowledge(
     chat uploads). Sources that already live in the system knowledge store are
     skipped.
     """
-    from leagent.api.v1.files import _background_process_file  # noqa: PLC0415
+    from leagent.tasks.jobs import enqueue_file_processing  # noqa: PLC0415
 
     promoted: list[DocumentUploadResponse] = []
     skipped: list[SkippedPromoteFile] = []
@@ -272,9 +271,6 @@ async def promote_to_knowledge(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Invalid session_id for the current user",
             )
-
-    dest_root = _upload_dir()
-    os.makedirs(dest_root, exist_ok=True)
 
     for raw_id in body.file_ids:
         async with db.session() as session:
@@ -307,13 +303,20 @@ async def promote_to_knowledge(
 
             with open(src.storage_path, "rb") as rf:
                 content = rf.read()
-            checksum = hashlib.sha256(content).hexdigest()
-            file_id = uuid4()
-            safe_name = f"{file_id}_{src.original_name.replace('/', '_')}"
-            storage_path = os.path.join(dest_root, safe_name)
 
-            with open(storage_path, "wb") as wf:
-                wf.write(content)
+            from leagent.api.v1.files import _store_blob
+
+            ref = await _store_blob(
+                content,
+                filename=src.original_name,
+                content_type=src.mime_type,
+                user_id=user_id,
+                session_id=body.session_id,
+            )
+            file_id = ref.id
+            safe_name = os.path.basename(ref.storage_key)
+            storage_path = ref.metadata.get("storage_path", ref.storage_key)
+            checksum = ref.checksum
 
             db_new = FileModel(
                 id=file_id,
@@ -345,12 +348,13 @@ async def promote_to_knowledge(
                 )
             )
 
-            background_tasks.add_task(
-                _background_process_file,
-                str(file_id),
-                storage_path,
-                db_new.mime_type,
-                db_new.original_name,
+            await enqueue_file_processing(
+                db,
+                file_id=str(file_id),
+                storage_path=storage_path,
+                mime_type=db_new.mime_type,
+                original_name=db_new.original_name,
+                user_id=user_id,
             )
 
     return PromoteToKnowledgeResponse(promoted=promoted, skipped=skipped)
