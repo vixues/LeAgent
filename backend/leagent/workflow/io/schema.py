@@ -32,7 +32,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from .hidden import Hidden
-from .types import InputBase, OutputBase
+from .types import InputBase, OutputBase, socket_color, widget_kind
 
 
 @dataclass
@@ -136,11 +136,16 @@ class Schema:
 
         for inp in self.inputs:
             spec = inp.as_dict()
-            entry: Any
-            if isinstance(spec["type"], list):
-                entry = (spec["type"], spec["options"])
-            else:
-                entry = (spec["type"], spec["options"])
+            options = dict(spec["options"])
+            # Editor rendering hints: socket colour (by wire type) + the
+            # inline widget kind the litegraph editor should render. The
+            # frontend reads these from each input's options blob.
+            io_type = inp.get_io_type()
+            options.setdefault("color", socket_color(io_type))
+            wkind = widget_kind(io_type)
+            if wkind and "widget" not in options:
+                options["widget"] = wkind
+            entry = (spec["type"], options)
             bucket = optional if inp.optional else required
             bucket[inp.id] = entry
 
@@ -160,6 +165,7 @@ class Schema:
             "output": [o.get_io_type() for o in self.outputs],
             "output_name": list(self.return_names()),
             "output_is_list": [bool(o.is_list) for o in self.outputs],
+            "output_colors": [socket_color(o.get_io_type()) for o in self.outputs],
             "output_tooltips": list(self.output_tooltips),
             "output_matchtypes": list(self.output_matchtypes),
             "control_flow": self.control_flow,

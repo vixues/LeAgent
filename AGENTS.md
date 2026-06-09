@@ -13,6 +13,7 @@ LeAgent/
 ├── backend/
 │   ├── leagent/
 │   │   ├── agent/        # QueryEngine, controller, planner, subagents
+│   │   ├── sdk/          # Agent SDK: public surface, protocols, kernel
 │   │   ├── alembic/      # Alembic migration scripts
 │   │   ├── api/          # FastAPI routers (v1, v2)
 │   │   ├── bootstrap/    # Tool + workflow-node startup
@@ -23,7 +24,7 @@ LeAgent/
 │   │   ├── config/       # pydantic-settings
 │   │   ├── context/      # Source-driven prompt assembly
 │   │   ├── file/         # Unified file layer (primitives, FileService, storage)
-│   │   ├── llm/          # LLM service + providers
+│   │   ├── llm/          # LLM service + providers + transport + streaming
 │   │   ├── mcp/          # Model Context Protocol
 │   │   ├── memory/       # AgentMemory (episodic/semantic/procedural)
 │   │   ├── project/      # Coding project layer (fs, tools, manager, templates)
@@ -120,6 +121,40 @@ export function ChatMessage({ message, isStreaming = false }: ChatMessageProps) 
   // ...
 }
 ```
+
+## Agent SDK (`leagent.sdk`)
+
+The **Agent SDK** (`leagent/sdk/`) is the single, versioned public surface for all agent interactions. See `docs/technical/agent_sdk.md` for the full reference.
+
+**Quick start:**
+
+```python
+from leagent.sdk import AgentRuntime, AgentBuilder
+
+runtime = AgentRuntime.from_service_manager(service_manager)
+result = await runtime.run("default_agent", "Summarise this PDF")
+
+# Multi-turn session:
+session = runtime.session("default_agent", session_id=sid, user_id=uid)
+result = await session.turn("Hello")
+
+# Resume a paused turn from a durable checkpoint (Codex RolloutRecorder /
+# Claude SessionStore analogue):
+async for event in runtime.resume("default_agent", checkpoint_id, "my answer"):
+    ...
+```
+
+Chat **and** every background path drive through the one think-act loop
+(`leagent.sdk.kernel.run_loop`): it maps `SDKMessage → AgentEvent` (identical
+`{type, data}` wire shape), snapshots `RunState.messages`, dispatches the
+single-site hook lifecycle (tool/subagent/pre_compact), and saves a checkpoint
+on `awaiting_user_input`. The store is `InMemoryCheckpointStore` by default and
+the durable `SQLCheckpointStore` (table `agent_checkpoints`) when a database is
+present — wired via `RuntimeContext.from_service_manager`.
+
+**Key exports:** `AgentRuntime` (`run`/`stream`/`delegate`/`resume`/`session`), `AgentSession`, `AgentDefinition`, `AgentBuilder`, `AgentRegistry`, `AgentEvent`, `AgentResult`, `RunContext`, `ToolContext`, `CheckpointStore`, `InMemoryCheckpointStore`, `SQLCheckpointStore`, protocols (`LLMClient`, `Provider`, `ContextAssembler`, `MemoryStore`, `RecallProvider`).
+
+**Version:** `leagent.sdk.__version__` (semver). Current: `0.1.0`.
 
 ## Adding New Tools
 

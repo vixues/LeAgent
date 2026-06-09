@@ -131,6 +131,10 @@ interface ChatStore {
   cancelBackendSession: (sessionId: string) => Promise<void>;
   /** Whether the last stream was stopped by the user (supports "continue" flow). */
   lastStopWasUserInitiated: boolean;
+  /** Terminal reason from the last agent turn (populated from ``assistant_complete`` SSE). */
+  lastTerminalReason: string | null;
+  /** Checkpoint id from the last agent turn (enables durable resume). */
+  lastCheckpointId: string | null;
 
   getCurrentMessages: () => Message[];
   getCurrentSession: () => ChatSession | null;
@@ -226,6 +230,8 @@ export const useChatStore = create<ChatStore>()(
       pendingUserInput: null,
       streamAbortController: null,
       lastStopWasUserInitiated: false,
+      lastTerminalReason: null,
+      lastCheckpointId: null,
       nestedAgentPreviewBySession: {},
       codingProjectIdsBySession: {},
 

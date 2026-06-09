@@ -22,7 +22,6 @@ The LRU is a read-through cache; it never holds state the JSON blob does not.
 from __future__ import annotations
 
 import json
-import logging
 from collections import OrderedDict
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any
@@ -45,12 +44,13 @@ from leagent.services.session.state import (
     SessionState,
     SessionUsage,
 )
+from leagent.utils.logging import get_logger
 
 if TYPE_CHECKING:
     from leagent.config.settings import Settings
     from leagent.db.service import DatabaseService
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 def _as_utc_aware(dt: datetime | None) -> datetime | None:

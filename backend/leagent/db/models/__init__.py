@@ -1,5 +1,6 @@
 """Database models for LeAgent (standalone local deployment)."""
 
+from leagent.db.models.agent_checkpoint import AgentCheckpoint
 from leagent.db.models.agent_memory import (
     AgentEpisode,
     AgentFact,
@@ -91,6 +92,8 @@ from leagent.db.models.task import (
 )
 
 __all__ = [
+    # Agent checkpoints
+    "AgentCheckpoint",
     # Agent memory
     "AgentEpisode",
     "AgentFact",

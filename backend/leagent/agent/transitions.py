@@ -68,7 +68,6 @@ class ContinueReason(str, Enum):
     - ``REACTIVE_COMPACT_RETRY``: we compacted and are retrying.
     - ``MAX_OUTPUT_TOKENS_RECOVERY``: the stream truncated on length;
       we bumped ``max_output_tokens`` and retry.
-    - ``STOP_HOOK_BLOCKING``: a hook asked us to pause then resume.
     - ``TOKEN_BUDGET_CONTINUATION``: resumed after a budget throttle.
     """
 
@@ -76,7 +75,6 @@ class ContinueReason(str, Enum):
     COLLAPSE_DRAIN_RETRY = "collapse_drain_retry"
     REACTIVE_COMPACT_RETRY = "reactive_compact_retry"
     MAX_OUTPUT_TOKENS_RECOVERY = "max_output_tokens_recovery"
-    STOP_HOOK_BLOCKING = "stop_hook_blocking"
     TOKEN_BUDGET_CONTINUATION = "token_budget_continuation"
 
 

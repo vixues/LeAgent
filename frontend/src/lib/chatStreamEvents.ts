@@ -490,11 +490,13 @@ export function applyChatStreamEvent(
         }
       }
       if (!toolCallId || questions.length === 0) break;
+      const checkpointIdFromRequest = typeof d.checkpoint_id === 'string' ? d.checkpoint_id : undefined;
       const payload: PendingUserInput = {
         sessionId,
         assistantMsgId,
         toolCallId,
         questions,
+        checkpointId: checkpointIdFromRequest,
       };
       s.setPendingUserInput(payload);
       s.updateToolCall(sessionId, assistantMsgId, toolCallId, { status: 'awaiting_user' });
@@ -551,12 +553,30 @@ export function applyChatStreamEvent(
       break;
     }
 
-    case 'error':
-      s.setError(
-        (event.data as { message?: string })?.message || t('chat.errors.stream'),
-      );
+    case 'error': {
+      const errData = event.data as { message?: string; terminal_reason?: string } | undefined;
+      const errReason = errData?.terminal_reason;
+
+      // Use reason-aware error messages when available.
+      let errMessage: string;
+      if (errReason === 'prompt_too_long') {
+        errMessage = t('chat.errors.promptTooLong', {
+          defaultValue: 'The conversation is too long for the model context window. Try starting a new chat or compacting the context.',
+        });
+      } else if (errReason === 'model_error') {
+        errMessage = errData?.message || t('chat.errors.modelError', {
+          defaultValue: 'The model returned an error. Please try again.',
+        });
+      } else {
+        errMessage = errData?.message || t('chat.errors.stream');
+      }
+      s.setError(errMessage);
       s.finalizeToolCalls(sessionId, assistantMsgId, 'error');
+      if (errReason) {
+        useChatStore.setState({ lastTerminalReason: errReason });
+      }
       break;
+    }
 
     case 'canvas': {
       const d = event.data as Record<string, unknown>;
@@ -685,6 +705,21 @@ export function applyChatStreamEvent(
         isStreaming: false,
         ...fallbackBubble,
       });
+
+      // Capture terminal_reason + checkpoint_id for differentiated
+      // end-of-turn UI (e.g. "turn limit reached", resume button).
+      const acData = event.data as Record<string, unknown> | undefined;
+      if (acData) {
+        const terminalReason = typeof acData.terminal_reason === 'string'
+          ? acData.terminal_reason
+          : null;
+        const checkpointId = typeof acData.checkpoint_id === 'string'
+          ? acData.checkpoint_id
+          : null;
+        s.lastTerminalReason = terminalReason;
+        s.lastCheckpointId = checkpointId;
+        useChatStore.setState({ lastTerminalReason: terminalReason, lastCheckpointId: checkpointId });
+      }
       break;
     }
 

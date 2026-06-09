@@ -10,7 +10,8 @@ from uuid import uuid4
 import pytest
 
 from leagent.agent.base import AgentContext, ToolCall, ToolResult
-from leagent.agent.executor import ErrorRecovery, ResultProcessor, ToolExecutor
+from leagent.agent.recovery import ErrorRecovery, ResultProcessor
+from leagent.tools.executor import ToolExecutor
 from leagent.exceptions.tool import (
     ToolExecutionError,
     ToolTimeoutError,

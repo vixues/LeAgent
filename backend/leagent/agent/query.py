@@ -22,7 +22,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-import logging
 import time
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, AsyncIterator
@@ -33,11 +32,12 @@ from leagent.agent.transitions import Continue, ContinueReason, Terminal, Termin
 from leagent.config.settings import get_settings
 from leagent.context.session_compression import apply_progressive_transcript_compress
 from leagent.memory.compact import _approximate_tokens
+from leagent.utils.logging import get_logger
 
 if TYPE_CHECKING:
     from leagent.agent.tool_use_context import ToolUseContext
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 ASK_USER_TOOL_NAME = "ask_user"
 
@@ -347,8 +347,10 @@ class QueryParams:
     max_tool_calls_per_turn: int = 10
     temperature: float | None = None
     max_output_tokens: int | None = None
+    max_total_tokens: int | None = None
     model_provider: str | None = None
     model_name: str | None = None
+    model_task: str | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -492,6 +494,31 @@ async def _query_loop(params: QueryParams) -> AsyncIterator[Any]:
         except Exception:
             logger.exception("progressive_transcript_compress_failed")
 
+        # PreCompact hook (Claude ``PreCompact``): notify observers right
+        # before the transcript summarization runs. Gated on the same token
+        # threshold autocompact uses so it only fires when a compaction is
+        # actually likely, not every turn.
+        _hooks = getattr(state.tool_use_context, "hooks", None)
+        if _hooks is not None:
+            try:
+                _settings = get_settings()
+                if (
+                    _approximate_tokens(messages_for_query)
+                    > _settings.session.autocompact_token_threshold
+                ):
+                    from uuid import uuid4 as _uuid4
+
+                    from leagent.agent.base import AgentContext
+
+                    _compact_ctx = AgentContext(
+                        session_id=getattr(state.tool_use_context, "session_id", None)
+                        or _uuid4(),
+                        user_id=getattr(state.tool_use_context, "user_id", None),
+                    )
+                    await _hooks.dispatch_pre_compact(_compact_ctx, "autocompact")
+            except Exception:
+                logger.debug("pre_compact_hook_failed", exc_info=True)
+
         # The system prompt arrives fully-assembled from the prompt
         # builder (L0..L7). Autocompact still uses it as a size anchor
         # but we no longer fold environment / recall into it here —
@@ -546,6 +573,8 @@ async def _query_loop(params: QueryParams) -> AsyncIterator[Any]:
                 call_kwargs["model_provider"] = params.model_provider
             if params.model_name:
                 call_kwargs["model_name"] = params.model_name
+            if params.model_task:
+                call_kwargs["model_task"] = params.model_task
             stream = params.deps.call_model(
                 **call_kwargs,
             )
@@ -572,11 +601,29 @@ async def _query_loop(params: QueryParams) -> AsyncIterator[Any]:
             yield Terminal(reason=TerminalReason.ABORTED_STREAMING)
             return
         except Exception as exc:  # noqa: BLE001
-            logger.warning("query_loop_model_error", extra={"error": str(exc)})
-            yield Terminal(
-                reason=TerminalReason.MODEL_ERROR,
-                meta={"error": str(exc)},
+            err_str = str(exc).lower()
+            is_context_overflow = (
+                "context_length" in err_str
+                or "context length" in err_str
+                or "maximum context" in err_str
+                or "reduce your prompt" in err_str
+                or "prompt is too long" in err_str
             )
+            if is_context_overflow:
+                logger.warning(
+                    "query_loop_prompt_too_long",
+                    extra={"error": str(exc)},
+                )
+                yield Terminal(
+                    reason=TerminalReason.PROMPT_TOO_LONG,
+                    meta={"error": str(exc)},
+                )
+            else:
+                logger.warning("query_loop_model_error", extra={"error": str(exc)})
+                yield Terminal(
+                    reason=TerminalReason.MODEL_ERROR,
+                    meta={"error": str(exc)},
+                )
             return
 
         # ------------------------------------------------------------------
@@ -618,6 +665,28 @@ async def _query_loop(params: QueryParams) -> AsyncIterator[Any]:
             agg["prompt_tokens"] += int(usage.get("prompt_tokens", 0) or 0)
             agg["completion_tokens"] += int(usage.get("completion_tokens", 0) or 0)
             agg["total_tokens"] += int(usage.get("total_tokens", 0) or 0)
+
+        if params.max_total_tokens and params.max_total_tokens > 0:
+            total_so_far = int(
+                tracking.get("usage", {}).get("total_tokens", 0) or 0
+            )
+            if total_so_far >= params.max_total_tokens:
+                logger.warning(
+                    "query_loop_token_budget_exceeded",
+                    extra={
+                        "total_tokens": total_so_far,
+                        "budget": params.max_total_tokens,
+                    },
+                )
+                yield Terminal(
+                    reason=TerminalReason.TOKEN_BUDGET_EXCEEDED,
+                    meta={
+                        "turn_count": state.turn_count,
+                        "usage": tracking.get("usage", {}),
+                        "budget": params.max_total_tokens,
+                    },
+                )
+                return
 
         if stream_error is not None:
             err_kind = str(stream_error.get("error", "")).lower()

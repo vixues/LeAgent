@@ -1,38 +1,32 @@
 """Prompt builder — delegates to :class:`ContextManager` for source-based assembly.
 
-For callers that supply a :class:`ContextManager` via
-``PromptContext.context_manager``, the builder is a thin wrapper: it
-calls ``context_manager.prepare_turn()`` and wraps the result in a
-:class:`BuiltPrompt`.
-
-For callers that do NOT supply a context manager (legacy path, tests,
-workflow nodes), the builder falls back to a minimal assembly using only
-the prompt registry (persona + optional tool listing).
+The builder is a thin wrapper over the source-driven
+:class:`leagent.context.ContextManager`: it calls
+``context_manager.prepare_turn()`` and wraps the result in a
+:class:`BuiltPrompt`. A :class:`ContextManager` is the single, canonical
+prompt-assembly path; the legacy registry-only fallback has been removed.
 """
 
 from __future__ import annotations
 
 import threading
 import time
-from typing import Any
+from typing import TYPE_CHECKING
 from uuid import uuid4
 
 import structlog
 
-from leagent.prompts.context import PromptContext
 from leagent.prompts.registry import PromptRegistry, get_prompt_registry
-from leagent.prompts.render import get_renderer
-from leagent.prompts.types import (
-    BuiltPrompt,
-    LayerResult,
-    RenderTarget,
-)
+
+if TYPE_CHECKING:
+    from leagent.prompts.context import PromptContext
+    from leagent.prompts.types import BuiltPrompt
 
 logger = structlog.get_logger(__name__)
 
 
 class PromptBuilder:
-    """Assemble system prompts via :class:`ContextManager` or legacy fallback."""
+    """Assemble system prompts via the source-driven :class:`ContextManager`."""
 
     def __init__(
         self,
@@ -48,12 +42,13 @@ class PromptBuilder:
         return self._registry
 
     async def build(self, context: PromptContext) -> BuiltPrompt:
-        start = time.perf_counter()
-
-        if context.context_manager is not None:
-            return await self._build_via_context_manager(context, start)
-
-        return await self._build_fallback(context, start)
+        if context.context_manager is None:
+            raise ValueError(
+                "PromptBuilder.build requires a ContextManager. The legacy "
+                "registry-only fallback has been removed; assemble prompts "
+                "through leagent.context.ContextManager.prepare_turn()."
+            )
+        return await self._build_via_context_manager(context, time.perf_counter())
 
     async def _build_via_context_manager(
         self, context: PromptContext, start: float
@@ -80,62 +75,6 @@ class PromptBuilder:
             duration_ms=duration_ms,
         )
         return turn.built_prompt
-
-    async def _build_fallback(
-        self, context: PromptContext, start: float
-    ) -> BuiltPrompt:
-        """Minimal assembly for callers without a ContextManager."""
-        import re
-        from datetime import datetime, timezone
-
-        variant = self._registry.get(context.variant, context.template_variant)
-
-        variables: dict[str, Any] = {
-            "agent_name": context.agent_id,
-            "current_date": datetime.now(timezone.utc).strftime("%Y-%m-%d"),
-            **context.template_vars,
-        }
-        source = context.persona_override.strip() or variant.body
-        _var_re = re.compile(r"\{\{\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*\}\}")
-        body = _var_re.sub(
-            lambda m: str(variables.get(m.group(1), "")), source
-        )
-
-        layers: list[LayerResult] = []
-        if body.strip():
-            layers.append(LayerResult(name="persona", body=body, tokens=len(body) // 3))
-
-        if context.append_extra:
-            layers.append(LayerResult(name="turn_extras", body=context.append_extra))
-
-        renderer = get_renderer(
-            context.render_target,
-            enable_cache_boundaries=self._enable_cache_boundaries,
-        )
-        system_text, messages = renderer.render(layers)
-        import hashlib
-        full_hash = hashlib.sha256(system_text.encode()).hexdigest()
-
-        built = BuiltPrompt(
-            system_text=system_text,
-            messages=messages,
-            layers=layers,
-            render_target=context.render_target,
-            stable_hash=full_hash,
-            full_hash=full_hash,
-            total_chars=len(system_text),
-            variant_key=variant.key,
-        )
-
-        duration_ms = int((time.perf_counter() - start) * 1000)
-        logger.info(
-            "prompt_build",
-            variant=variant.key,
-            total_chars=len(system_text),
-            stable_hash=full_hash,
-            duration_ms=duration_ms,
-        )
-        return built
 
 
 # ---------------------------------------------------------------------------

@@ -14,6 +14,10 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from leagent.db.repositories.agent_checkpoint import (
+    CheckpointRepository,
+    DbCheckpointRepository,
+)
 from leagent.db.repositories.chat import ChatRepository, DbChatRepository
 from leagent.db.repositories.files import DbFileRepository, FileRepository
 from leagent.db.repositories.tasks import DbTaskRepository, TaskRepository
@@ -34,6 +38,7 @@ class Repositories:
         self._files: DbFileRepository | None = None
         self._tasks: DbTaskRepository | None = None
         self._chat: DbChatRepository | None = None
+        self._checkpoints: DbCheckpointRepository | None = None
         self._workflow_executions: DbWorkflowExecutionRepository | None = None
 
     @property
@@ -55,6 +60,12 @@ class Repositories:
         return self._chat
 
     @property
+    def checkpoints(self) -> DbCheckpointRepository:
+        if self._checkpoints is None:
+            self._checkpoints = DbCheckpointRepository(self._db)
+        return self._checkpoints
+
+    @property
     def workflow_executions(self) -> DbWorkflowExecutionRepository:
         if self._workflow_executions is None:
             self._workflow_executions = DbWorkflowExecutionRepository(self._db)
@@ -65,6 +76,8 @@ __all__ = [
     "Repositories",
     "ChatRepository",
     "DbChatRepository",
+    "CheckpointRepository",
+    "DbCheckpointRepository",
     "FileRepository",
     "DbFileRepository",
     "TaskRepository",

@@ -13,11 +13,10 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-from contextlib import suppress
-import json
 from collections import OrderedDict
-from dataclasses import dataclass
 from collections.abc import AsyncIterator  # noqa: TC003
+from contextlib import suppress
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from types import SimpleNamespace
@@ -29,15 +28,12 @@ import structlog
 from leagent.agent.base import (
     AgentConfig,
     AgentContext,
-    AgentMode,
     AgentResponse,
     AgentState,
     ConversationContext,
     ConversationMessage,
-    ExecutionPlan,
     ExecutionStep,
     NoOpStreamHandler,
-    PlanStep,
     StepType,
     StreamEvent,
     StreamHandler,
@@ -52,24 +48,22 @@ from leagent.agent.query import (
 )
 from leagent.agent.transitions import TerminalReason
 from leagent.exceptions.base import LeAgentError
-from leagent.exceptions.llm import LLMServiceError
-from leagent.prompts import PromptContext, get_prompt_builder
+from leagent.file.attachment_context import build_tool_extra_for_attachment_paths
 from leagent.services.session.artifacts import (
     ArtifactRegistrar,
     attachment_dicts,
     coerce_tool_result_data,
     extract_produced_path_candidates,
 )
-from leagent.tools.base import ToolPermissionContext, check_tool_permission
+from leagent.tools.base import ToolPermissionContext
 from leagent.tools.context import build_tool_context
-from leagent.tools.executor import parse_tool_arguments_str, strict_json_loads_error
-from leagent.file.attachment_context import build_tool_extra_for_attachment_paths
 
 if TYPE_CHECKING:
     from leagent.agent.hooks import HookManager
     from leagent.agent.planner import TaskPlanner
     from leagent.llm import LLMService
     from leagent.memory import AgentMemory
+    from leagent.runtime import AgentDefinition
     from leagent.services.session import SessionManager
     from leagent.tools import ToolRegistry
     from leagent.tools.executor import ToolExecutor
@@ -205,15 +199,16 @@ class AgentController:
         self,
         llm: LLMService,
         tools: ToolRegistry,
-        planner: TaskPlanner,
         executor: ToolExecutor,
         *,
+        planner: TaskPlanner | None = None,
         agent_memory: AgentMemory | None = None,
         session_manager: SessionManager | None = None,
         workflow_engine: WorkflowEngine | None = None,
         hook_manager: HookManager | None = None,
         config: AgentConfig | None = None,
         permission_context: ToolPermissionContext | None = None,
+        checkpoint_store: Any = None,
     ) -> None:
         self.llm = llm
         self.tools = tools
@@ -227,6 +222,30 @@ class AgentController:
         self._permission_context = permission_context or ToolPermissionContext()
         self._abort_event = asyncio.Event()
         self._ingested_produced_paths: set[str] = set()
+        # Last durable checkpoint id stamped by the kernel on a turn pause
+        # (awaiting_user_input); linked into resumable_state so the chat
+        # "continue" path can prefer a durable resume.
+        self._last_checkpoint_id: str | None = None
+        # Memory-formation gate for the current turn, driven by the active
+        # AgentDefinition's MemoryPolicy.formation (set per turn).
+        self._memory_formation_enabled = True
+
+        # Unified runtime: AgentController is a thin HTTP/session
+        # orchestration shell over AgentRuntime. The runtime owns engine
+        # materialisation from a declarative AgentDefinition.
+        from leagent.runtime import AgentRuntime, RuntimeContext
+
+        self._runtime_context = RuntimeContext(
+            llm=llm,
+            tools=tools,
+            executor=executor,
+            agent_memory=agent_memory,
+            session_manager=session_manager,
+            hook_manager=hook_manager,
+            permission_context=self._permission_context,
+            checkpoint_store=checkpoint_store,
+        )
+        self._runtime = AgentRuntime(self._runtime_context)
 
     def abort(self) -> None:
         """Signal abort to the running agent loop."""
@@ -310,18 +329,6 @@ class AgentController:
                     )
                     self._last_appended_user_index = len(conversation.messages) - 1
 
-                workflow_match = await self._match_workflow(user_input)
-                if workflow_match:
-                    wf_response = await self._run_workflow(workflow_match, context, handler)
-                    if self._hooks:
-                        await self._hooks.dispatch_complete(context, wf_response)
-                    return wf_response
-
-                if not self.config.use_query_engine:
-                    logger.warning(
-                        "legacy_agent_modes_deprecated",
-                        mode=str(self.config.mode),
-                    )
                 result = await self._run_via_query_engine(
                     user_input,
                     conversation,
@@ -471,6 +478,8 @@ class AgentController:
                             "partial": response.partial,
                             "metadata": dict(response.metadata or {}),
                             "token_usage": dict(response.token_usage) if response.token_usage else None,
+                            "terminal_reason": response.terminal_reason,
+                            "checkpoint_id": response.checkpoint_id,
                         },
                     )
                 )
@@ -478,7 +487,13 @@ class AgentController:
 
             async def on_error(self, error: Exception) -> None:
                 await _put_stream_event(
-                    StreamEvent(type="error", data={"error": str(error)})
+                    StreamEvent(
+                        type="error",
+                        data={
+                            "error": str(error),
+                            "terminal_reason": final_reason,
+                        },
+                    )
                 )
                 await _put_stream_event(None)
 
@@ -513,7 +528,7 @@ class AgentController:
             while True:
                 try:
                     event = await asyncio.wait_for(queue.get(), timeout=drain_timeout)
-                except asyncio.TimeoutError:
+                except TimeoutError:
                     logger.warning(
                         "stream_drain_timeout",
                         session_id=str(session_id),
@@ -545,514 +560,8 @@ class AgentController:
                     await task
 
     # ------------------------------------------------------------------
-    # ReAct loop
-    # ------------------------------------------------------------------
-
-    async def _run_react(
-        self,
-        conversation: ConversationContext,
-        context: AgentContext,
-        handler: StreamHandler,
-        query: str = "",
-    ) -> AgentResponse:
-        """Pure ReAct (Reason-Act-Observe) loop with permission checks and partitioning."""
-        system_prompt = await self._build_system_prompt(context, query=query)
-        conversation.system_prompt = system_prompt
-
-        while context.iteration < self.config.max_iterations:
-            if context.is_cancelled or self._abort_event.is_set():
-                break
-
-            context.iteration += 1
-            logger.debug(
-                "react_iteration",
-                task_id=str(context.task_id),
-                iteration=context.iteration,
-            )
-
-            await context.transition_to(AgentState.THINKING)
-            llm_response = await self._call_llm(conversation, context)
-
-            tool_calls = await self._extract_tool_calls(
-                llm_response,
-                session_id=str(context.session_id),
-            )
-
-            if tool_calls:
-                await context.transition_to(AgentState.EXECUTING)
-                thought_text = llm_response.get("content", "")
-
-                conversation.append_assistant_message(
-                    thought_text,
-                    tool_calls=[tc.model_dump() for tc in tool_calls],
-                )
-
-                capped_calls = tool_calls[: self.config.max_tool_calls_per_turn]
-
-                # Partition into concurrent-safe and serial groups
-                concurrent_safe: list[ToolCall] = []
-                serial: list[ToolCall] = []
-                for tc in capped_calls:
-                    tool = self.tools.find_by_name(tc.name) if self.tools else None
-                    if tool and getattr(tool, "is_concurrency_safe", False):
-                        concurrent_safe.append(tc)
-                    else:
-                        serial.append(tc)
-
-                async def _dispatch_tool(
-                    tool_call: ToolCall,
-                    thought_snapshot: str = thought_text,
-                ) -> ToolResult:
-                    # Permission check before execution
-                    tool = self.tools.find_by_name(tool_call.name) if self.tools else None
-                    if tool:
-                        perm_ctx = self._build_tool_context(context)
-                        perm = check_tool_permission(
-                            tool,
-                            tool_call.arguments,
-                            self._permission_context,
-                            tool_context=perm_ctx,
-                        )
-                        if not perm.allowed:
-                            res = ToolResult(
-                                tool_call_id=tool_call.id,
-                                name=tool_call.name,
-                                success=False,
-                                error=f"Permission denied: {perm.reason}",
-                            )
-                            conversation.append_tool_result(tool_call.id, tool_call.name, res.content)
-                            context.record_step(ExecutionStep(type=StepType.TOOL_RESULT, tool_result=res))
-                            return res
-                        if perm.updated_params:
-                            tool_call.arguments = perm.updated_params
-
-                    await handler.on_tool_call(tool_call)
-                    if self._hooks:
-                        await self._hooks.dispatch_tool_call(context, tool_call)
-                    context.record_step(
-                        ExecutionStep(
-                            type=StepType.TOOL_CALL,
-                            tool_call=tool_call,
-                            thought=thought_snapshot,
-                        )
-                    )
-                    base_res = await self.executor.run_tool(
-                        tool_call.name, tool_call.arguments, context
-                    )
-                    res = ToolResult.from_base(
-                        base_res, tool_call_id=tool_call.id, name=tool_call.name,
-                    )
-                    await handler.on_tool_result(res)
-                    await self._ingest_produced_path_for_workspace(
-                        context, res, context.session_id, context.user_id, handler
-                    )
-                    if self._hooks:
-                        await self._hooks.dispatch_tool_result(context, tool_call, res)
-                    context.record_step(
-                        ExecutionStep(type=StepType.TOOL_RESULT, tool_result=res, duration_ms=res.duration_ms)
-                    )
-                    conversation.append_tool_result(tool_call.id, tool_call.name, res.content)
-                    return res
-
-                if concurrent_safe:
-                    await asyncio.gather(*[_dispatch_tool(tc) for tc in concurrent_safe])
-
-                for tool_call in serial:
-                    if context.is_cancelled or self._abort_event.is_set():
-                        break
-                    await _dispatch_tool(tool_call)
-            else:
-                final_text = llm_response.get("content", "")
-                conversation.append_assistant_message(final_text)
-
-                context.record_step(
-                    ExecutionStep(type=StepType.ANSWER, content=final_text)
-                )
-
-                response = context.to_response(text=final_text)
-                await handler.on_complete(response)
-                return response
-
-        response = context.to_response(
-            text="I've reached the maximum number of steps. Here's what I've done so far.",
-        )
-        response.partial = True
-        await handler.on_complete(response)
-        return response
-
-    # ------------------------------------------------------------------
-    # Plan-Execute loop
-    # ------------------------------------------------------------------
-
-    async def _run_plan_execute(
-        self,
-        conversation: ConversationContext,
-        context: AgentContext,
-        handler: StreamHandler,
-    ) -> AgentResponse:
-        """Plan-Execute mode: create plan upfront, then execute steps."""
-        await context.transition_to(AgentState.THINKING)
-        await handler.on_thinking("Creating execution plan...")
-
-        user_task = conversation.messages[-1].content if conversation.messages else ""
-
-        plan = await self.planner.plan(user_task, context, abort_event=self._abort_event)
-        context.current_plan = plan
-
-        plan_summary = json.dumps(
-            {"goal": plan.goal, "steps": [{"id": s.id, "description": s.description} for s in plan.steps]},
-            ensure_ascii=False,
-            indent=2,
-        )
-
-        context.record_step(
-            ExecutionStep(
-                type=StepType.THOUGHT,
-                thought=f"Created plan with {len(plan.steps)} steps",
-                content=plan_summary,
-            )
-        )
-
-        if self._hooks:
-            await self._hooks.dispatch_plan_created(context, plan)
-
-        conversation.append_assistant_message(
-            f"I've created a {len(plan.steps)}-step plan:\n{plan_summary}"
-        )
-
-        await context.transition_to(AgentState.EXECUTING)
-
-        from leagent.agent.planner import schedule_ready
-
-        while not plan.is_complete and context.iteration < self.config.max_iterations:
-            if context.is_cancelled or self._abort_event.is_set():
-                break
-
-            ready = schedule_ready(plan)
-            if not ready:
-                break
-            context.iteration += 1
-            active_plan = plan
-
-            # Dispatch all ready steps concurrently: steps without a
-            # tool are resolved inline; tool-bearing steps go through
-            # the executor (permission check + run). Failures kick a
-            # single replan and the loop restarts with the adjusted plan.
-            async def _run_step(
-                step: PlanStep,
-                plan_snapshot: ExecutionPlan = active_plan,
-            ) -> tuple[PlanStep, ToolResult | None]:
-                await handler.on_thinking(
-                    f"Executing step {step.id}: {step.description}"
-                )
-                if not step.tool:
-                    plan_snapshot.mark_step_completed(step.id)
-                    return step, None
-
-                tool = self.tools.find_by_name(step.tool) if self.tools else None
-                if tool is not None:
-                    perm_ctx = self._build_tool_context(context)
-                    perm = check_tool_permission(
-                        tool,
-                        step.params,
-                        self._permission_context,
-                        tool_context=perm_ctx,
-                    )
-                    if not perm.allowed:
-                        plan_snapshot.mark_step_failed(step.id, f"Permission denied: {perm.reason}")
-                        return step, ToolResult(
-                            tool_call_id="",
-                            name=step.tool,
-                            success=False,
-                            error=f"Permission denied: {perm.reason}",
-                        )
-
-                tool_call = ToolCall(name=step.tool, arguments=step.params)
-                await handler.on_tool_call(tool_call)
-
-                base_result = await self.executor.run_tool(
-                    step.tool, step.params, context,
-                )
-                result = ToolResult.from_base(
-                    base_result, tool_call_id=tool_call.id, name=step.tool,
-                )
-                await handler.on_tool_result(result)
-                await self._ingest_produced_path_for_workspace(
-                    context, result, context.session_id, context.user_id, handler
-                )
-
-                if result.success:
-                    plan_snapshot.mark_step_completed(step.id, result.data)
-                    context.record_step(
-                        ExecutionStep(type=StepType.TOOL_RESULT, tool_result=result)
-                    )
-                else:
-                    plan_snapshot.mark_step_failed(step.id, result.error or "Unknown error")
-                return step, result
-
-            outcomes = await asyncio.gather(*(_run_step(s) for s in ready))
-
-            # If any step failed, attempt replan once before the next wave.
-            failed = [(s, r) for s, r in outcomes if r is not None and not r.success]
-            if failed:
-                failed_step, failed_result = failed[0]
-                revised = await self.planner.replan(
-                    plan,
-                    failed_step,
-                    (failed_result.error if failed_result else "") or "Unknown error",
-                    abort_event=self._abort_event,
-                )
-                if revised is not None:
-                    from leagent.agent.planner import TaskPlanner
-                    plan = TaskPlanner.merge_replan(plan, revised)
-                    context.current_plan = plan
-                    context.record_step(
-                        ExecutionStep(
-                            type=StepType.REPLAN,
-                            content=(
-                                f"Replanned due to error in step "
-                                f"{failed_step.id}: {failed_result.error if failed_result else ''}"
-                            ),
-                        )
-                    )
-
-        final_text = await self._generate_summary(plan, context)
-        response = context.to_response(text=final_text)
-        await handler.on_complete(response)
-        return response
-
-    # ------------------------------------------------------------------
-    # Hybrid
-    # ------------------------------------------------------------------
-
-    async def _run_hybrid(
-        self,
-        user_input: str,
-        conversation: ConversationContext,
-        context: AgentContext,
-        handler: StreamHandler,
-    ) -> AgentResponse:
-        """Hybrid mode: use planning for complex tasks, ReAct for simple ones."""
-        complexity = await self._estimate_complexity(user_input, context)
-
-        if complexity >= self.config.plan_threshold:
-            logger.info("hybrid_using_plan_execute", task_id=str(context.task_id), complexity=complexity)
-            return await self._run_plan_execute(conversation, context, handler)
-        else:
-            logger.info("hybrid_using_react", task_id=str(context.task_id), complexity=complexity)
-            return await self._run_react(conversation, context, handler, query=user_input)
-
-    # ------------------------------------------------------------------
-    # LLM interaction
-    # ------------------------------------------------------------------
-
-    async def _call_llm(
-        self,
-        conversation: ConversationContext,
-        context: AgentContext,
-    ) -> dict[str, Any]:
-        """Call LLM with context compaction and enabled-tool filtering."""
-        await self._maybe_compact(conversation, context)
-
-        messages = conversation.to_messages()
-
-        # Only send schemas for enabled, non-denied tools
-        if self.tools:
-            tool_schemas = self.tools.get_tools_for_llm(
-                deny_patterns=self._permission_context.always_deny_rules,
-                provider_format="openai",
-            )
-        else:
-            tool_schemas = []
-
-        try:
-            response = await self.llm.chat(
-                messages=messages,
-                tools=tool_schemas if tool_schemas else None,
-                tool_choice="auto" if tool_schemas else None,
-                temperature=self.config.temperature,
-            )
-            return response
-        except LLMServiceError:
-            raise
-
-    async def _maybe_compact(self, conversation: ConversationContext, context: AgentContext) -> None:
-        """Apply context compression if the conversation is getting large."""
-        if self._hooks:
-            with contextlib.suppress(Exception):
-                await self._hooks.dispatch_pre_compact(context)
-
-        try:
-            from leagent.services.compact.service import CompactService
-            compact_svc = CompactService(llm_service=self.llm)
-            await compact_svc.maybe_compact(conversation)
-        except Exception as e:
-            logger.debug("compact_skipped", error=str(e))
-
-        if self._hooks:
-            with contextlib.suppress(Exception):
-                await self._hooks.dispatch_post_compact(context)
-
-    async def _extract_tool_calls(
-        self,
-        llm_response: dict[str, Any],
-        *,
-        session_id: str | None = None,
-    ) -> list[ToolCall]:
-        """Extract tool calls from LLM response (supports both OpenAI and Anthropic formats)."""
-        from leagent.agent.deps import (
-            _ingest_session_id,
-            _try_blob_streaming_ingest,
-            _try_direct_content_ingest,
-            _try_salvage_truncated_ui_tree,
-        )
-
-        ingest_sid = _ingest_session_id(session_id)
-        # OpenAI format
-        tool_calls_raw = llm_response.get("tool_calls", [])
-
-        # Anthropic format: content blocks with type=tool_use
-        if not tool_calls_raw:
-            content_blocks = llm_response.get("content", [])
-            if isinstance(content_blocks, list):
-                for block in content_blocks:
-                    if isinstance(block, dict) and block.get("type") == "tool_use":
-                        tool_calls_raw.append({
-                            "id": block.get("id", ""),
-                            "function": {
-                                "name": block.get("name", ""),
-                                "arguments": block.get("input", {}),
-                            },
-                        })
-
-        if not tool_calls_raw:
-            return []
-
-        tool_calls = []
-        for tc in tool_calls_raw:
-            func = tc.get("function", {})
-            name = func.get("name", "")
-            args_str = func.get("arguments", "{}")
-            if isinstance(args_str, dict):
-                arguments = args_str
-            elif isinstance(args_str, str):
-                parsed = parse_tool_arguments_str(args_str)
-                if parsed is not None:
-                    arguments = parsed
-                else:
-                    ingested = await _try_blob_streaming_ingest(
-                        name,
-                        args_str,
-                        session_id=ingest_sid,
-                    )
-                    if ingested is not None:
-                        arguments = ingested
-                    elif (
-                        content_ingested := await _try_direct_content_ingest(
-                            name,
-                            args_str,
-                            session_id=ingest_sid,
-                        )
-                    ) is not None:
-                        arguments = content_ingested
-                    elif (
-                        salvaged := _try_salvage_truncated_ui_tree(name, args_str)
-                    ) is not None:
-                        arguments = salvaged
-                    else:
-                        strict_err = strict_json_loads_error(args_str)
-                        logger.warning(
-                            "tool_call_parse_error",
-                            error=str(strict_err)
-                            if strict_err
-                            else "unrecoverable_tool_arguments",
-                            args_len=len(args_str),
-                            json_lineno=getattr(strict_err, "lineno", None),
-                            json_colno=getattr(strict_err, "colno", None),
-                            json_pos=getattr(strict_err, "pos", None),
-                            raw=tc,
-                        )
-                        arguments = {"__raw__": args_str}
-            else:
-                arguments = {}
-
-            tool_calls.append(
-                ToolCall(
-                    id=tc.get("id", ""),
-                    name=name,
-                    arguments=arguments if isinstance(arguments, dict) else {},
-                )
-            )
-
-        return tool_calls
-
-    # ------------------------------------------------------------------
-    # System prompt
-    # ------------------------------------------------------------------
-
-    async def _build_system_prompt(self, context: AgentContext, query: str = "") -> str:
-        """Delegate to :class:`PromptBuilder` for the default agent variant.
-
-        The controller no longer owns persona text, tool listing, file
-        access policy, or memory recall formatting — the builder does.
-        We still run recall at this call site because the legacy ReAct /
-        plan-execute paths consume the final string directly (unlike the
-        QueryEngine path which threads a ``RecallHandle`` through).
-        """
-        builder = get_prompt_builder()
-        prompt_variant = getattr(self.config, "prompt_variant", "default_agent") or "default_agent"
-        ctx = PromptContext(
-            variant=prompt_variant,
-            query=query or "",
-            cwd=".",
-            tools=self.tools,
-            permission_context=self._permission_context,
-            agent_memory=self.agent_memory if self.config.enable_memory else None,
-            session_manager=self.session_manager,
-            session_id=context.session_id,
-            user_id=context.user_id,
-            agent_id=getattr(self.config, "agent_name", "default") or "default",
-            append_extra=getattr(self.config, "extra_system_prompt", "") or "",
-        )
-        built = await builder.build(ctx)
-        return built.system_text
-
-    # ------------------------------------------------------------------
     # Helpers
     # ------------------------------------------------------------------
-
-    async def _estimate_complexity(self, user_input: str, context: AgentContext) -> int:
-        """Estimate task complexity (1-10) for mode selection.
-
-        Delegates to :meth:`TaskPlanner.estimate_complexity` so the
-        ReAct/Plan-Execute routing heuristic lives next to the rest of
-        the planning knowledge.
-        """
-        if self.planner is not None:
-            return self.planner.estimate_complexity(user_input)
-        # Fallback when an agent runs without a planner (rare).
-        return 5 if len(user_input) > 200 else 2
-
-    async def _generate_summary(self, plan: ExecutionPlan, context: AgentContext) -> str:
-        completed = [s for s in plan.steps if s.status == "completed"]
-        failed = [s for s in plan.steps if s.status == "failed"]
-
-        if not completed and not failed:
-            return "No steps were executed."
-
-        summary_parts = [f"Goal: {plan.goal}\n"]
-
-        if completed:
-            summary_parts.append(f"Completed {len(completed)} steps:")
-            for step in completed:
-                summary_parts.append(f"  - {step.description}")
-
-        if failed:
-            summary_parts.append(f"\nFailed {len(failed)} steps:")
-            for step in failed:
-                summary_parts.append(f"  - {step.description}: {step.error}")
-
-        return "\n".join(summary_parts)
 
     async def _create_context(
         self,
@@ -1205,12 +714,11 @@ class AgentController:
         self,
         session_id: UUID,
         user_input: str,
-        context: "AgentContext",
-        conversation: "ConversationContext",
+        context: AgentContext,
+        conversation: ConversationContext,
     ) -> None:
         """Persist a lightweight snapshot so the user can resume with 'continue'."""
         try:
-            from leagent.services.chat.service import ChatService
             from leagent.db import get_database_service
 
             partial_response = ""
@@ -1224,6 +732,9 @@ class AgentController:
                 "partial_response": partial_response[:2000],
                 "turn_index": context.iteration,
                 "interrupted": True,
+                # Link the durable SDK checkpoint (if any) so the continue
+                # path can prefer a full-history resume over the partial blob.
+                "checkpoint_id": self._last_checkpoint_id,
             }
 
             db = get_database_service()
@@ -1265,6 +776,34 @@ class AgentController:
             return msgs[:-1]
         return msgs
 
+    def _per_turn_definition(self, deny_patterns: list[str]) -> AgentDefinition:
+        """Derive the per-turn :class:`AgentDefinition` from controller config.
+
+        Starts from the registered base definition for the active
+        ``prompt_variant`` and overlays the dynamic, request-scoped values
+        the controller owns (model routing, deny patterns, memory toggle,
+        turn budget).
+        """
+        base = self._runtime.resolve(
+            getattr(self.config, "prompt_variant", "default_agent") or "default_agent"
+        )
+        self._memory_formation_enabled = bool(
+            base.memory.formation and self.config.enable_memory
+        )
+        return base.with_overrides(
+            model=base.model.model_copy(
+                update={
+                    "provider": self.config.model_provider,
+                    "model": self.config.model_name,
+                    "temperature": self.config.temperature,
+                }
+            ),
+            tools=base.tools.model_copy(update={"deny": list(deny_patterns)}),
+            memory=base.memory.model_copy(update={"enabled": self.config.enable_memory}),
+            max_turns=self.config.max_iterations,
+            max_tool_calls_per_turn=self.config.max_tool_calls_per_turn,
+        )
+
     async def _run_via_query_engine(
         self,
         user_input: str,
@@ -1285,8 +824,6 @@ class AgentController:
         (API/WebSocket/CLI) observes the same ``StreamHandler`` events
         and ``AgentResponse`` shape it did before.
         """
-        from leagent.agent.query_engine import QueryEngine, QueryEngineConfig
-
         append_extra = getattr(self.config, "extra_system_prompt", "") or ""
 
         # Keep forwarding attachment storage paths so tools can access files,
@@ -1344,7 +881,11 @@ class AgentController:
 
         tool_extra["nested_preview_emit"] = _emit_nested_preview
 
+        # Set the skills manager on the shared runtime context (lazy import
+        # to avoid an import cycle at module load).
         from leagent.skills.manager import get_skills_manager
+
+        self._runtime_context.skills_manager = get_skills_manager()
 
         # When the request carries a code-project binding, run the
         # engine with cwd anchored to the project root so the L4
@@ -1364,34 +905,22 @@ class AgentController:
         if primary_project_root is None and "project_*" not in tools_deny_patterns:
             tools_deny_patterns.append("project_*")
 
-        engine_config = QueryEngineConfig(
-            cwd=engine_cwd,
-            llm=self.llm,
-            tools=self.tools,
-            executor=self.executor,
-            agent_memory=self.agent_memory,
-            hooks=self._hooks,
-            append_system_prompt=append_extra,
-            max_turns=self.config.max_iterations,
-            max_tool_calls_per_turn=self.config.max_tool_calls_per_turn,
-            temperature=self.config.temperature,
-            tools_deny_patterns=tools_deny_patterns,
-            model_provider=self.config.model_provider,
-            model_name=self.config.model_name,
-            user_id=context.user_id,
+        # Materialise the engine from a declarative AgentDefinition via the
+        # unified runtime. The controller no longer hand-builds QueryEngine.
+        definition = self._per_turn_definition(tools_deny_patterns)
+        engine = self._runtime.build_engine(
+            definition,
             session_id=context.session_id,
-            abort_event=self._abort_event,
+            user_id=context.user_id,
+            cwd=engine_cwd,
             tool_extra=tool_extra,
-            session_manager=self.session_manager,
-            permission_context=self._permission_context,
-            prompt_variant=getattr(self.config, "prompt_variant", "default_agent") or "default_agent",
-            skills_manager=get_skills_manager(),
+            abort_event=self._abort_event,
             initial_messages=self._openai_seed_messages_from_conversation(
                 conversation,
                 skip_user_trim=skip_user_append,
             ),
+            append_system_prompt=append_extra,
         )
-        engine = QueryEngine(engine_config)
 
         AgentController._update_task_phase(
             context.session_id, context.task_id, "llm",
@@ -1401,6 +930,8 @@ class AgentController:
         response_text = ""
         reasoning_acc = ""
         final_usage: dict[str, int] = {}
+        final_reason = "completed"
+        final_checkpoint_id: str | None = None
 
         formatted_attachments = normalized_attachments if normalized_attachments else attachments
         query_input = self._format_user_message(
@@ -1422,18 +953,36 @@ class AgentController:
         except Exception as exc:  # noqa: BLE001
             logger.warning("multimodal_message_build_failed", error=str(exc))
         resume_hint = "Continue after the tool results above."
-        submit_kw: dict[str, Any] = {"append_user_turn": not skip_user_append}
         turn_message_start = len(conversation.messages)
-        async for sdk_msg in engine.submit_message(
+
+        # Single think-act path: drive the SDK kernel run loop instead of
+        # consuming ``engine.submit_message`` directly. ``AgentEvent`` shares
+        # the exact ``{type, data}`` shape of the former ``SDKMessage`` so the
+        # StreamHandler mapping (and therefore the SSE wire contract) is
+        # unchanged, while chat now gains a ``RunState`` + turn-pause
+        # checkpointing and single-site tool hooks.
+        from leagent.sdk.kernel.loop import run_loop
+        from leagent.sdk.kernel.state import RunState
+
+        run_state = RunState(
+            session_id=str(context.session_id or ""),
+            agent_name=definition.name,
+        )
+        async for event in run_loop(
+            engine,
             resume_hint if skip_user_append else query_input,
-            **submit_kw,
+            run_state=run_state,
+            checkpoint_store=self._runtime.checkpoint_store,
+            hooks=self._hooks,
+            hook_context=context,
+            append_user_turn=not skip_user_append,
         ):
             if context.is_cancelled or self._abort_event.is_set():
                 engine.abort()
                 break
 
-            mtype = sdk_msg.type
-            data = sdk_msg.data
+            mtype = event.type
+            data = event.data
 
             if mtype == "stream_delta":
                 if not streaming_phase_marked:
@@ -1465,8 +1014,9 @@ class AgentController:
                     tool_name=tc.name or None,
                 )
                 await handler.on_tool_call(tc)
-                if self._hooks:
-                    await self._hooks.dispatch_tool_call(context, tc)
+                # ``on_tool_call`` / ``on_tool_result`` hooks are dispatched
+                # from the single kernel site (see ``run_loop``); the controller
+                # only drives the SSE handler + step bookkeeping here.
                 context.record_step(
                     ExecutionStep(type=StepType.TOOL_CALL, tool_call=tc)
                 )
@@ -1511,10 +1061,17 @@ class AgentController:
             elif mtype == "result":
                 final_usage = data.get("usage", {}) or {}
                 reason = data.get("reason", "completed")
+                final_reason = reason
+                final_checkpoint_id = data.get("checkpoint_id")
                 if reason == TerminalReason.AWAITING_USER_INPUT.value:
                     meta = data.get("meta") or {}
                     tool_call = meta.get("tool_call") or {}
                     questions = meta.get("questions") or []
+                    # The kernel persists a durable checkpoint on a turn pause
+                    # and stamps its id onto the result event; surface it so the
+                    # resume path can rehydrate the run.
+                    checkpoint_id = data.get("checkpoint_id")
+                    self._last_checkpoint_id = checkpoint_id
                     last_tcs: list[dict[str, Any]] | None = None
                     if conversation.messages:
                         last = conversation.messages[-1]
@@ -1525,6 +1082,7 @@ class AgentController:
                             "tool_call": tool_call,
                             "questions": questions,
                             "assistant_tool_calls": last_tcs,
+                            "checkpoint_id": checkpoint_id,
                         },
                     )
                     _tid = str(tool_call.get("id") or "").strip()
@@ -1537,11 +1095,14 @@ class AgentController:
                     response = context.to_response()
                     response.text = response_text
                     response.partial = True
+                    response.terminal_reason = reason
+                    response.checkpoint_id = checkpoint_id
                     response.metadata = {
                         "awaiting_user_input": True,
                         "tool_call": tool_call,
                         "questions": questions,
                         "assistant_tool_calls": last_tcs,
+                        "checkpoint_id": checkpoint_id,
                     }
                     if final_usage:
                         with contextlib.suppress(Exception):
@@ -1566,6 +1127,8 @@ class AgentController:
         context.record_step(ExecutionStep(type=StepType.ANSWER, content=response_text))
         response = context.to_response()
         response.text = response_text
+        response.terminal_reason = final_reason
+        response.checkpoint_id = final_checkpoint_id
         if final_usage:
             with contextlib.suppress(Exception):
                 tu = {
@@ -1712,53 +1275,6 @@ class AgentController:
         except OSError:
             return False
 
-    async def _match_workflow(self, user_input: str) -> dict[str, Any] | None:
-        if not self.workflow_engine:
-            return None
-        try:
-            return await self.workflow_engine.match(user_input)
-        except Exception as e:
-            logger.debug("workflow_match_error", error=str(e))
-            return None
-
-    async def _run_workflow(
-        self,
-        workflow_match: dict[str, Any],
-        context: AgentContext,
-        handler: StreamHandler,
-    ) -> AgentResponse:
-        if not self.workflow_engine:
-            return context.to_response(error="Workflow engine not configured")
-
-        AgentController._update_task_phase(
-            context.session_id, context.task_id, "workflow",
-        )
-
-        try:
-            await context.transition_to(AgentState.EXECUTING)
-            workflow_id = workflow_match.get("workflow_id", "")
-            inputs = workflow_match.get("inputs", {})
-
-            await handler.on_thinking(f"Running workflow: {workflow_id}")
-
-            result = await self.workflow_engine.execute(
-                workflow_id=workflow_id,
-                inputs=inputs,
-                context_vars={
-                    "session_id": str(context.session_id),
-                    "user_id": str(context.user_id) if context.user_id else "",
-                },
-            )
-
-            text = result.get("output", str(result))
-            context.record_step(ExecutionStep(type=StepType.ANSWER, content=text))
-            response = context.to_response(text=text)
-            await handler.on_complete(response)
-            return response
-        except Exception as e:
-            logger.exception("workflow_execution_error", workflow=workflow_match)
-            return context.to_response(error=f"Workflow execution failed: {e}")
-
     def _episode_paths_from_steps(self, steps: list[ExecutionStep]) -> list[str]:
         """Paths touched or returned by tools this turn (for episodic recall)."""
         seen: OrderedDict[str, None] = OrderedDict()
@@ -1816,6 +1332,8 @@ class AgentController:
         and/or semantic memory as appropriate.
         """
         if not self.config.enable_memory or self.agent_memory is None:
+            return
+        if not self._memory_formation_enabled:
             return
         try:
             from leagent.memory.formation import TriggerKind, TurnObservation

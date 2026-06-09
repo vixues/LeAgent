@@ -10,7 +10,6 @@ a legacy :class:`AgentController` based handler via
 from __future__ import annotations
 
 import json
-import logging
 import time
 from typing import TYPE_CHECKING, Any
 from uuid import UUID
@@ -21,13 +20,14 @@ from leagent.db.models.task import (
     TaskContext,
     TaskType,
 )
+from leagent.utils.logging import get_logger
 
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
 
     from leagent.services.service_manager import ServiceManager
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class AgentTaskHandler:
@@ -45,8 +45,8 @@ class AgentTaskHandler:
         params: dict[str, Any],
         session: "AsyncSession",
     ) -> dict[str, Any]:
-        from leagent.agent.query_engine import QueryEngine, QueryEngineConfig
         from leagent.config.settings import get_settings
+        from leagent.sdk import AgentDefinition, AgentRuntime, MemoryPolicy
         from leagent.tools.executor import ToolExecutor
         from leagent.tools.registry import get_registry
 
@@ -111,21 +111,28 @@ class AgentTaskHandler:
             + "\n"
         )
 
-        cfg = QueryEngineConfig(
-            cwd=cwd,
-            llm=llm,
-            tools=tool_registry,
-            executor=executor,
-            system_prompt=system_prompt,
+        # Drive the run through the unified runtime. The task handler keeps
+        # its budget-aware executor (via the runtime context) and stays
+        # behaviour-neutral with the previous QueryEngine wiring: cognitive
+        # memory is left detached for background agent tasks.
+        runtime = AgentRuntime.from_service_manager(sm, executor=executor)
+        definition = AgentDefinition(
+            name=prompt_variant,
             prompt_variant=prompt_variant,
+            system_prompt=system_prompt,
+            runtime_profile=budget.name,
             max_turns=max_turns,
             max_tool_calls_per_turn=max_tool_calls,
+            memory=MemoryPolicy(enabled=False, formation=False),
+        )
+        engine = runtime.build_engine(
+            definition,
             session_id=session_id,
             user_id=user_id,
-            abort_event=task_ctx.abort_event,
+            cwd=cwd,
             tool_extra=tool_extra,
+            abort_event=task_ctx.abort_event,
         )
-        engine = QueryEngine(cfg)
 
         final_text = ""
         final_usage: dict[str, Any] = {}

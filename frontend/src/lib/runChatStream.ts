@@ -58,6 +58,9 @@ export async function runChatStream({
   signal,
   t,
 }: RunChatStreamParams): Promise<void> {
+  // Reset terminal reason state from any prior turn.
+  useChatStore.setState({ lastTerminalReason: null, lastCheckpointId: null });
+
   const formData = new FormData();
   formData.append('message', content ?? '');
   formData.append('session_id', sessionId);

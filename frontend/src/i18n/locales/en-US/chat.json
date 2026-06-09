@@ -323,7 +323,12 @@
       "stream": "Something went wrong",
       "cancelled": "Cancelled",
       "sendShort": "Failed to send",
-      "genericRetry": "Something went wrong. Please try again."
+      "genericRetry": "Something went wrong. Please try again.",
+      "stoppedByUser": "Stopped by user",
+      "promptTooLong": "The conversation is too long for the model context window. Try starting a new chat or compacting the context.",
+      "modelError": "The model returned an error. Please try again.",
+      "maxTurns": "The agent reached its turn limit without completing the task.",
+      "tokenBudgetExceeded": "Token budget exceeded. The conversation used more tokens than allowed."
     },
     "workflow": {
       "run": "Run",

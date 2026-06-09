@@ -298,12 +298,29 @@ export interface PendingUserInput {
   assistantMsgId: string;
   toolCallId: string;
   questions: UserInputQuestion[];
+  checkpointId?: string;
 }
+
+/**
+ * Why the agent stopped. Mirrors backend `TerminalReason` (Python str enum).
+ * Surfaced on the `assistant_complete` and `error` SSE events so the frontend
+ * can show differentiated end-of-turn UI.
+ */
+export type TerminalReason =
+  | 'completed'
+  | 'max_turns'
+  | 'blocking_limit'
+  | 'model_error'
+  | 'aborted_streaming'
+  | 'prompt_too_long'
+  | 'token_budget_exceeded'
+  | 'awaiting_user_input';
 
 export interface StreamEvent {
   type:
     | 'content'
     | 'tool_call'
+    | 'tool_call_delta'
     | 'tool_result'
     | 'thinking'
     | 'error'
@@ -317,6 +334,12 @@ export interface StreamEvent {
     | 'ui_patch'
     | 'pet_bubble'
     | 'user_input_request'
+    | 'nested_agent_preview'
+    | 'context_usage'
+    | 'assistant_complete'
+    | 'message_ids'
+    | 'code_artifact'
+    | 'agent_task'
     | 'done';
   data: unknown;
 }

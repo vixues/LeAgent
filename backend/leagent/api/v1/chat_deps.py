@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import logging
 import time
 from typing import TYPE_CHECKING, Annotated, Optional
 
@@ -10,18 +9,19 @@ from fastapi import Depends
 
 from leagent.api.deps import get_service_manager as get_service_manager_dep
 from leagent.services.chat import ChatService, get_chat_service
+from leagent.utils.logging import get_logger
 
 if TYPE_CHECKING:
     from leagent.agent.controller import AgentController
     from leagent.services.service_manager import ServiceManager
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 ChatSvc = Annotated[ChatService, Depends(get_chat_service)]
 
 
 def build_agent_controller(
-    service_manager: "ServiceManager | None" = None,
+    service_manager: ServiceManager | None = None,
 ):  # type: ignore[return]
     """Build an :class:`AgentController` wired to the running services.
 
@@ -36,9 +36,8 @@ def build_agent_controller(
     started = time.perf_counter()
     status_label = "success"
     try:
-        from leagent.agent.controller import AgentController, AgentConfig
+        from leagent.agent.controller import AgentConfig, AgentController
         from leagent.agent.hooks import HookManager, create_default_hooks
-        from leagent.agent.planner import TaskPlanner
         from leagent.services.runtime import get_service_manager
         from leagent.tools.base import ToolPermissionContext
         from leagent.tools.executor import ToolExecutor
@@ -57,22 +56,16 @@ def build_agent_controller(
             service_manager=sm,
             permission_context=permission_context,
         )
-        planner = TaskPlanner(
-            llm=sm.llm_service,
-            agent_memory=sm.agent_memory,
-            rule_engine=sm.rule_engine,
-        )
-
-        workflow_engine = None
-        try:
-            from leagent.workflow import WorkflowExecutor
-            workflow_engine = WorkflowExecutor()
-        except Exception:
-            pass
 
         hook_manager = HookManager()
         for hook in create_default_hooks(sm.agent_memory):
             hook_manager.register(hook)
+
+        # Durable, resumable chat turns: back the checkpoint store with the DB
+        # when available so a paused turn (awaiting_user_input) can be resumed.
+        from leagent.sdk.kernel.checkpoint import build_checkpoint_store
+
+        checkpoint_store = build_checkpoint_store(getattr(sm, "database_service", None))
 
         config = AgentConfig(enable_streaming=True)
         controller = AgentController(
@@ -80,12 +73,11 @@ def build_agent_controller(
             tools=registry,
             agent_memory=sm.agent_memory,
             session_manager=sm.session_manager,
-            planner=planner,
             executor=executor,
-            workflow_engine=workflow_engine,
             hook_manager=hook_manager,
             config=config,
             permission_context=permission_context,
+            checkpoint_store=checkpoint_store,
         )
         return controller
     except Exception as exc:
@@ -106,7 +98,7 @@ def build_agent_controller(
 
 
 def get_agent_controller(
-    sm: Annotated["ServiceManager", Depends(get_service_manager_dep)],
+    sm: Annotated[ServiceManager, Depends(get_service_manager_dep)],
 ):  # type: ignore[return]
     """FastAPI dependency wrapper around :func:`build_agent_controller`."""
     return build_agent_controller(sm)

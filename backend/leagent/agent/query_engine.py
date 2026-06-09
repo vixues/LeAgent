@@ -34,6 +34,7 @@ from leagent.services.session.artifacts import (
     attachment_dicts,
     strip_inline_base64_payloads,
 )
+from leagent.utils.logging import get_logger
 
 if TYPE_CHECKING:
     from leagent.agent.hooks import HookManager
@@ -49,6 +50,9 @@ if TYPE_CHECKING:
     from leagent.tools.base import ToolPermissionContext
     from leagent.tools.executor import ToolExecutor
     from leagent.tools.registry import ToolRegistry
+
+
+logger = get_logger(__name__)
 
 
 # ---------------------------------------------------------------------------
@@ -80,6 +84,7 @@ class QueryEngineConfig:
     system_prompt: str = ""
     append_system_prompt: str = ""
     tools_deny_patterns: list[str] = field(default_factory=list)
+    tools_max_tools: int = 25
 
     max_turns: int = 15
     max_tool_calls_per_turn: int = 10
@@ -87,6 +92,7 @@ class QueryEngineConfig:
     max_output_tokens: int | None = 8192
     model_provider: str | None = None
     model_name: str | None = None
+    model_task: str | None = None
 
     initial_messages: list[dict[str, Any]] = field(default_factory=list)
     abort_event: asyncio.Event | None = None
@@ -99,6 +105,7 @@ class QueryEngineConfig:
 
     prompt_variant: str = "default_agent"
     prompt_template_variant: str = "default"
+    context_recipe: str | None = None
     prompt_builder: "PromptBuilder | None" = None
     session_manager: "SessionManager | None" = None
     working_scratchpad: "WorkingScratchpad | None" = None
@@ -106,6 +113,8 @@ class QueryEngineConfig:
     skills_manager: "SkillsManager | None" = None
 
     context_settings: "ContextSettings | None" = None
+    recall_limit: int | None = None
+    memory_formation: bool = True
 
     context_manager: ContextManager | None = None
     file_state: FileState | None = None
@@ -207,6 +216,7 @@ class QueryEngine:
             agent_id=config.agent_id,
             variant=config.prompt_variant,
             template_variant=config.prompt_template_variant,
+            recipe=config.context_recipe,
             file_state=config.file_state,
             artifact_store=self._artifact_store,
             operation_journal=self._operation_journal,
@@ -230,6 +240,16 @@ class QueryEngine:
         is_meta: bool = False,
         append_user_turn: bool = True,
     ) -> AsyncIterator[SDKMessage]:
+        # Correlate every log line emitted during this turn with the session
+        # and agent so structured logs/traces can be filtered per conversation.
+        from leagent.utils.logging import bind_log_context
+
+        bind_log_context(
+            session_id=str(self.config.session_id) if self.config.session_id else None,
+            user_id=str(self.config.user_id) if self.config.user_id else None,
+            agent_id=getattr(self.config, "agent_id", None),
+        )
+
         # Provide user_id to the DeepSeek provider for KV cache isolation.
         # This is a no-op for other providers (they never read this contextvar).
         _ds_token: Any = None
@@ -286,13 +306,15 @@ class QueryEngine:
         if self.config.agent_memory is not None and (query_stripped or recall_anchor_text):
             from leagent.memory.agent_memory import RecallHandle
             recall_handle = RecallHandle(self.config.agent_memory)
-            recall_handle.start(
-                query_stripped,
+            recall_kwargs: dict[str, Any] = dict(
                 recall_anchor=recall_anchor_text if not query_stripped else None,
                 user_id=self.config.user_id,
                 session_id=self.session_id,
                 file_state=self._context.file_state,
             )
+            if self.config.recall_limit is not None:
+                recall_kwargs["limit"] = self.config.recall_limit
+            recall_handle.start(query_stripped, **recall_kwargs)
 
         # Surface the active code-project root (if any) to context
         # sources so prompt layers like project_memory and a small
@@ -348,7 +370,7 @@ class QueryEngine:
                     deny_patterns=self.config.tools_deny_patterns or None,
                     provider_format="openai",
                     context_hint=query_text or None,
-                    max_tools=25,
+                    max_tools=self.config.tools_max_tools or 25,
                 )
             except Exception:
                 status = "error"
@@ -432,6 +454,7 @@ class QueryEngine:
             max_output_tokens=self.config.max_output_tokens,
             model_provider=self.config.model_provider,
             model_name=self.config.model_name,
+            model_task=self.config.model_task,
         )
 
         from leagent.telemetry.otel import get_tracer
@@ -726,12 +749,14 @@ class QueryEngine:
             system_prompt=system_prompt or self.config.system_prompt,
             append_system_prompt=self.config.append_system_prompt,
             tools_deny_patterns=list(self.config.tools_deny_patterns),
+            tools_max_tools=self.config.tools_max_tools,
             max_turns=self.config.max_turns,
             max_tool_calls_per_turn=self.config.max_tool_calls_per_turn,
             temperature=self.config.temperature,
             max_output_tokens=self.config.max_output_tokens,
             model_provider=self.config.model_provider,
             model_name=self.config.model_name,
+            model_task=self.config.model_task,
             session_id=self.session_id,
             user_id=self.config.user_id,
             agent_id=f"{self.config.agent_id}/fork",

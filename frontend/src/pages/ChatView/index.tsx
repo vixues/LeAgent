@@ -10,6 +10,7 @@ import { ChatMessages } from '@/components/chat/ChatMessages';
 import { ChatPinnedStrip } from '@/components/chat/ChatPinnedStrip';
 import { ChatInput } from '@/components/chat/ChatInput';
 import { ChatComposerUserInputGate } from '@/components/chat/ChatComposerUserInputGate';
+import { ChatTerminalReasonBanner } from '@/components/chat/ChatTerminalReasonBanner';
 import { ChatFabBar } from '@/components/chat/ChatFabBar';
 import { ChatErrorToast } from '@/components/chat/ChatErrorToast';
 import { ChatCommandPalette } from '@/components/chat/ChatCommandPalette';
@@ -416,6 +417,7 @@ export default function ChatView() {
               />
             </div>
           )}
+          <ChatTerminalReasonBanner />
           <ChatComposerUserInputGate onSubmitAnswers={onAskUserResume} />
           <ChatInput onSend={handleSend} onStop={stopStreaming} />
         </div>

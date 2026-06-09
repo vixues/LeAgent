@@ -7,16 +7,17 @@ preserve maximum information within budget constraints.
 
 from __future__ import annotations
 
-import logging
 from dataclasses import dataclass, field
 from enum import IntEnum
 import json
 from typing import TYPE_CHECKING, Any
 
+from leagent.utils.logging import get_logger
+
 if TYPE_CHECKING:
     pass
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class CompressionLevel(IntEnum):

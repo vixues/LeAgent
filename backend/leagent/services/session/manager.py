@@ -20,7 +20,6 @@ writes) lives in the agent runtime.
 from __future__ import annotations
 
 import asyncio
-import logging
 import mimetypes
 import os
 from contextlib import asynccontextmanager
@@ -43,6 +42,7 @@ from leagent.services.session.state import (
 )
 from leagent.services.session.paths import SessionPathRegistry
 from leagent.services.session.store import TieredSessionStore
+from leagent.utils.logging import get_logger
 
 if TYPE_CHECKING:
     from fastapi import UploadFile
@@ -51,7 +51,7 @@ if TYPE_CHECKING:
     from leagent.services.cache.service import CacheService
     from leagent.db.service import DatabaseService
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class SessionManager:

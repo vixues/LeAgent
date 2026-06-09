@@ -20,6 +20,7 @@ import structlog
 from leagent.tools.base import BaseTool, ToolCategory
 
 if TYPE_CHECKING:
+    from collections.abc import Iterable
     from types import ModuleType
 
 logger = structlog.get_logger(__name__)
@@ -286,6 +287,72 @@ class ToolRegistry:
             if not denied:
                 result.append(tool)
         return result
+
+    def scoped(
+        self,
+        *,
+        allow: "Iterable[str] | None" = None,
+        deny: "Iterable[str] | None" = None,
+        match: str = "glob",
+        only_enabled: bool = False,
+        replace: bool = False,
+    ) -> ToolRegistry:
+        """Build a child registry honoring allow/deny policies.
+
+        This is the single, canonical tool-scoping primitive used by the
+        runtime (definition allow-lists) and sub-agent delegation
+        (per-call allow/deny). It replaces the per-call-site
+        ``_filtered_registry`` / ``_filter_registry`` helpers.
+
+        Args:
+            allow: Names the child may expose. ``None`` keeps everything in
+                the source. In ``glob`` mode each entry is an fnmatch
+                pattern matched against a tool's name + aliases; in
+                ``exact`` mode each entry is resolved via
+                :meth:`find_by_name` (alias-aware exact lookup).
+            deny: fnmatch patterns applied to tool names *after* ``allow``.
+                Exact names work as trivial globs.
+            match: ``"glob"`` or ``"exact"`` (see ``allow``).
+            only_enabled: Seed from :meth:`get_enabled_tools` instead of
+                :meth:`list_all` when ``allow`` is a glob / ``None``.
+            replace: Pass-through to :meth:`register` for the child.
+
+        Returns:
+            A new :class:`ToolRegistry` containing the selected tools.
+        """
+        child = ToolRegistry()
+        deny_patterns = [d.strip() for d in (deny or ()) if d and d.strip()]
+
+        if match == "exact" and allow is not None:
+            selected: list[BaseTool] = []
+            for name in allow:
+                tool = self.find_by_name(name)
+                if tool is not None:
+                    selected.append(tool)
+        else:
+            base = self.get_enabled_tools() if only_enabled else self.list_all()
+            if allow is None:
+                selected = list(base)
+            else:
+                allow_list = list(allow)
+                selected = [
+                    tool
+                    for tool in base
+                    if any(
+                        fnmatch.fnmatch(n, pat)
+                        for n in (tool.name, *(getattr(tool, "aliases", None) or []))
+                        for pat in allow_list
+                    )
+                ]
+
+        for tool in selected:
+            if any(fnmatch.fnmatch(tool.name, p) for p in deny_patterns):
+                continue
+            try:
+                child.register(tool, replace=replace)
+            except Exception:  # noqa: BLE001
+                logger.debug("scoped_tool_register_skip", tool=getattr(tool, "name", None))
+        return child
 
     def _schema_cache_key(self, deny_patterns: list[str] | None, provider_format: str) -> str:
         """Content-addressed cache key based on actual tool state."""

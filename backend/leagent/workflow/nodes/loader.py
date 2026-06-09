@@ -189,12 +189,18 @@ async def bootstrap(
     registry: NodeRegistry | None = None,
     custom_dirs: Iterable[str | Path] | None = None,
     tool_registry: Any | None = None,
+    agent_registry: Any | None = None,
 ) -> dict[str, list[str]]:
-    """One-shot bootstrap: built-ins + entrypoints + custom dirs + tool nodes.
+    """One-shot bootstrap: built-ins + entrypoints + custom dirs + tool/agent nodes.
 
     If ``tool_registry`` is provided, every tool it contains is lifted
     into a dedicated ``Tool.<name>`` workflow node via
     :func:`leagent.workflow.nodes.tool_factory.register_tool_nodes`.
+
+    If ``agent_registry`` is provided (or omitted, in which case the
+    process-wide registry is used), every agent definition is lifted into a
+    dedicated ``Agent.<name>`` node via
+    :func:`leagent.workflow.nodes.agent_node_factory.register_agent_nodes`.
     """
     reg = registry or get_registry()
     summary: dict[str, list[str]] = {}
@@ -209,6 +215,23 @@ async def bootstrap(
     if tool_registry is not None:
         from .tool_factory import register_tool_nodes
         summary["tools"] = register_tool_nodes(reg, tool_registry)
+    try:
+        from .agent_node_factory import register_agent_nodes
+
+        if agent_registry is None:
+            from leagent.runtime import get_agent_registry
+
+            agent_registry = get_agent_registry()
+        summary["agents"] = register_agent_nodes(reg, agent_registry)
+    except Exception:  # noqa: BLE001 - agent nodes are optional palette extras
+        logger.warning("agent_node_bootstrap_failed", exc_info=True)
+
+    try:
+        from .domain_model_factory import register_domain_model_nodes
+
+        summary["domain_models"] = register_domain_model_nodes(reg)
+    except Exception:  # noqa: BLE001 - domain-model nodes are optional palette extras
+        logger.warning("domain_model_node_bootstrap_failed", exc_info=True)
     return summary
 
 

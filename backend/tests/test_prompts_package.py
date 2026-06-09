@@ -14,12 +14,11 @@ from __future__ import annotations
 
 import textwrap
 from pathlib import Path
-from typing import Any
 
 import pytest
 
-from leagent.context.budget import minimise, PINNED_THRESHOLD
-from leagent.context.types import ContextBlock, ContextScope, RenderTarget
+from leagent.context.budget import minimise
+from leagent.context.types import ContextBlock, RenderTarget
 from leagent.prompts.builder import PromptBuilder
 from leagent.prompts.context import PromptContext
 from leagent.prompts.fingerprint import (
@@ -33,8 +32,7 @@ from leagent.prompts.registry import (
     PromptTemplateParseError,
 )
 from leagent.prompts.render import AnthropicRenderer, OpenAIRenderer
-from leagent.prompts.types import LayerResult, RenderTarget as PromptRenderTarget
-
+from leagent.prompts.types import LayerResult
 
 # ---------------------------------------------------------------------------
 # Registry
@@ -291,9 +289,11 @@ def fixture_templates(tmp_path: Path) -> Path:
 
 
 @pytest.mark.asyncio
-async def test_builder_fallback_assembles_persona(
+async def test_builder_requires_context_manager(
     fixture_templates: Path,
 ) -> None:
+    """The legacy registry-only fallback has been removed; build() now
+    requires a ContextManager (the single canonical assembly path)."""
     registry = PromptRegistry(templates_dir=fixture_templates)
     builder = PromptBuilder(registry=registry)
 
@@ -303,34 +303,5 @@ async def test_builder_fallback_assembles_persona(
         cwd=".",
         agent_id="fixture",
     )
-    built = await builder.build(ctx)
-    assert "You are fixture." in built.system_text
-    assert built.stable_hash and built.full_hash
-    assert built.variant_key == "fixture_agent:default"
-
-
-@pytest.mark.asyncio
-async def test_builder_persona_override(fixture_templates: Path) -> None:
-    registry = PromptRegistry(templates_dir=fixture_templates)
-    builder = PromptBuilder(registry=registry)
-
-    ctx = PromptContext(
-        variant="fixture_agent",
-        query="hello",
-        persona_override="Custom persona only.",
-    )
-    built = await builder.build(ctx)
-    assert "Custom persona only." in built.system_text
-
-
-@pytest.mark.asyncio
-async def test_builder_turn_extras_appended(fixture_templates: Path) -> None:
-    registry = PromptRegistry(templates_dir=fixture_templates)
-    builder = PromptBuilder(registry=registry)
-    ctx = PromptContext(
-        variant="fixture_agent",
-        query="hi",
-        append_extra="WORKFLOW_NODE=report",
-    )
-    built = await builder.build(ctx)
-    assert "WORKFLOW_NODE=report" in built.system_text
+    with pytest.raises(ValueError, match="requires a ContextManager"):
+        await builder.build(ctx)

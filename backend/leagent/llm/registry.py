@@ -375,9 +375,9 @@ class ProviderRegistry:
 
 def create_default_registry() -> ProviderRegistry:
     """Create a registry from providers.yaml v2 plus optional env-only overrides."""
-    import logging
+    from leagent.utils.logging import get_logger
 
-    _log = logging.getLogger(__name__)
+    _log = get_logger(__name__)
     registry = ProviderRegistry()
 
     try:

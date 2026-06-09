@@ -425,12 +425,21 @@ class ServiceManager:
             except Exception:
                 logger.warning("Tool registry/executor not available for workflow engine", exc_info=True)
 
+            agent_runtime = None
+            try:
+                from leagent.runtime import AgentRuntime
+
+                agent_runtime = AgentRuntime.from_service_manager(self, executor=tool_executor)
+            except Exception:
+                logger.warning("Agent runtime not available for workflow engine", exc_info=True)
+
             executor = WorkflowExecutor(
                 tool_registry=tool_registry,
                 tool_executor=tool_executor,
                 llm_service=self._llm_service,
                 review_service=None,
                 workflow_registry=None,
+                agent_runtime=agent_runtime,
                 cache_mode=wf_settings.cache_mode,
                 cache_provider=None,
             )

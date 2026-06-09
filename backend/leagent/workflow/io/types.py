@@ -450,6 +450,74 @@ class IO:
                 return ",".join(self.types) if self.types else "MULTI"
 
 
+# ---------------------------------------------------------------------------
+# Frontend rendering hints (socket colours + widget kinds)
+# ---------------------------------------------------------------------------
+
+#: Stable colour per ``io_type``, consumed by the litegraph editor to paint
+#: typed sockets (mirrors ComfyUI's per-type slot colours). Keys are the
+#: ``io_type`` strings emitted by :meth:`Input.get_io_type`.
+SOCKET_COLORS: dict[str, str] = {
+    "STRING": "#7BD88F",
+    "INT": "#6E9BF5",
+    "FLOAT": "#4FC1E9",
+    "BOOLEAN": "#E9A23B",
+    "COMBO": "#B98EFF",
+    "OBJECT": "#D98AA8",
+    "ARRAY": "#E0A458",
+    "FILE": "#5AC8A8",
+    "IMAGE": "#64B5F6",
+    "AUDIO": "#F06292",
+    "VIDEO": "#BA68C8",
+    "DATETIME": "#90A4AE",
+    "MULTI": "#9E9E9E",
+    WILDCARD_TYPE: "#C0C0C0",
+}
+
+#: Default colour for unknown / custom types.
+DEFAULT_SOCKET_COLOR = "#A0A0A0"
+
+#: Map an ``io_type`` to the widget kind the editor should render inline.
+#: An empty string means "socket-only" (no inline widget; link required).
+_WIDGET_KINDS: dict[str, str] = {
+    "STRING": "string",
+    "INT": "int",
+    "FLOAT": "float",
+    "BOOLEAN": "toggle",
+    "COMBO": "combo",
+    "FILE": "file",
+    "DATETIME": "datetime",
+}
+
+
+def socket_color(io_type: str) -> str:
+    """Return the editor slot colour for an ``io_type``.
+
+    For multi-type descriptors (``"A,B"``) the colour of the first known
+    member is used so polymorphic links still read sensibly.
+    """
+    if io_type in SOCKET_COLORS:
+        return SOCKET_COLORS[io_type]
+    if "," in io_type:
+        for member in io_type.split(","):
+            if member in SOCKET_COLORS:
+                return SOCKET_COLORS[member]
+        return SOCKET_COLORS["MULTI"]
+    return DEFAULT_SOCKET_COLOR
+
+
+def widget_kind(io_type: str) -> str:
+    """Return the inline widget kind for an ``io_type`` (``""`` = socket-only)."""
+    if io_type in _WIDGET_KINDS:
+        return _WIDGET_KINDS[io_type]
+    return ""
+
+
+def all_socket_colors() -> dict[str, str]:
+    """Return the full ``io_type -> colour`` legend for the editor."""
+    return dict(SOCKET_COLORS)
+
+
 def types_compatible(upstream: str, downstream: str) -> bool:
     """Return True if a link from ``upstream`` output type into ``downstream``
     input type is compatible.

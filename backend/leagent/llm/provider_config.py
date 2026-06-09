@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import asyncio
 import shutil
-import logging
 import os
 import time
 from dataclasses import dataclass, field
@@ -23,8 +22,10 @@ import yaml
 from leagent.config.constants import PROVIDERS_PATH
 from leagent.llm.error_policy import classify_llm_error
 from leagent.llm.registry import HealthCheckResult, ProviderRegistry
+from leagent.llm.transport import get_default_transport
+from leagent.utils.logging import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class ProviderConfigValidationError(ValueError):
@@ -256,13 +257,22 @@ class ProviderConfigService:
                     logger.warning("Failed to register provider %s from YAML", pc.name, exc_info=True)
 
     def _create_llm_provider(self, pc: ProviderConfig):
-        """Instantiate the correct LLMProvider subclass for a config."""
-        from leagent.llm.providers.anthropic import AnthropicProvider
-        from leagent.llm.providers.custom import CustomOpenAIProvider
+        """Instantiate the correct LLMProvider for a config.
+
+        Provider *construction kwargs* are still computed per type (defaults
+        and base-url handling differ), but the actual class is resolved through
+        the pluggable :func:`leagent.llm.provider_plugin.create_provider`
+        factory rather than a hardcoded ``if/else`` ladder. Unknown types fall
+        back to the tolerant ``custom`` OpenAI-compatible gateway inside
+        ``create_provider``.
+        """
+        from leagent.llm.provider_plugin import create_provider, load_provider_plugins
         from leagent.llm.providers.dashscope import DashScopeProvider
-        from leagent.llm.providers.ollama import OllamaProvider
-        from leagent.llm.providers.openai import OpenAIProvider
+        from leagent.llm.providers.deepseek import DeepSeekProvider
         from leagent.llm.providers.vllm import VLLMProvider
+
+        # Pick up any third-party provider types registered via entry points.
+        load_provider_plugins()
 
         api_key = self._resolve_api_key(pc.api_key)
         default_model = pc.models[0]["name"] if pc.models else ""
@@ -271,67 +281,60 @@ class ProviderConfigService:
         meta = pc.metadata if isinstance(pc.metadata, dict) else {}
         meta_parse_think = meta.get("parse_think_tags")
 
-        if pc.type == "custom":
-            return CustomOpenAIProvider(
-                api_key=api_key or "not-needed",
-                base_url=pc.base_url,
-                default_model=default_model,
-                timeout=pc.timeout,
-                parse_think_tags=bool(meta_parse_think) if meta_parse_think is not None else True,
-            )
         if pc.type in ("openai", "azure"):
-            return OpenAIProvider(
+            kwargs: dict[str, Any] = dict(
                 api_key=api_key or "not-needed",
                 base_url=pc.base_url or "https://api.openai.com/v1",
                 default_model=default_model or "gpt-4o",
                 timeout=pc.timeout,
                 parse_think_tags=bool(meta_parse_think) if meta_parse_think is not None else False,
             )
-        if pc.type == "anthropic":
-            return AnthropicProvider(
+        elif pc.type == "anthropic":
+            kwargs = dict(
                 api_key=api_key,
                 default_model=default_model or "claude-sonnet-4-20250514",
                 timeout=pc.timeout,
                 base_url=pc.base_url or None,
             )
-        if pc.type in ("qwen", "dashscope"):
-            return DashScopeProvider(
+        elif pc.type in ("qwen", "dashscope"):
+            kwargs = dict(
                 api_key=api_key,
                 base_url=pc.base_url or DashScopeProvider.DEFAULT_BASE_URL,
                 default_model=default_model or "qwen-plus",
                 timeout=pc.timeout,
             )
-        if pc.type == "ollama":
-            return OllamaProvider(
+        elif pc.type == "ollama":
+            kwargs = dict(
                 base_url=pc.base_url or "http://localhost:11434",
                 default_model=default_model or "llama3.2",
                 timeout=pc.timeout,
             )
-        if pc.type == "deepseek":
-            from leagent.llm.providers.deepseek import DeepSeekProvider
-            return DeepSeekProvider(
+        elif pc.type == "deepseek":
+            kwargs = dict(
                 api_key=api_key,
                 base_url=pc.base_url or DeepSeekProvider.DEFAULT_BASE_URL,
                 default_model=default_model or DeepSeekProvider.DEFAULT_MODEL,
                 timeout=pc.timeout,
             )
-        if pc.type == "vllm":
-            enable_auto_tool_choice = bool(meta.get("enable_auto_tool_choice", False))
-            return VLLMProvider(
+        elif pc.type == "vllm":
+            kwargs = dict(
                 api_key=api_key or "not-needed",
                 base_url=pc.base_url or VLLMProvider.DEFAULT_BASE_URL,
                 default_model=default_model,
                 timeout=pc.timeout,
-                enable_auto_tool_choice=enable_auto_tool_choice,
+                enable_auto_tool_choice=bool(meta.get("enable_auto_tool_choice", False)),
             )
-        # Fallback: treat unknown types as tolerant OpenAI-compatible custom gateways.
-        return CustomOpenAIProvider(
-            api_key=api_key or "not-needed",
-            base_url=pc.base_url,
-            default_model=default_model,
-            timeout=pc.timeout,
-            parse_think_tags=bool(meta_parse_think) if meta_parse_think is not None else True,
-        )
+        else:
+            # ``custom`` + any unknown type: tolerant OpenAI-compatible gateway.
+            kwargs = dict(
+                api_key=api_key or "not-needed",
+                base_url=pc.base_url,
+                default_model=default_model,
+                timeout=pc.timeout,
+                parse_think_tags=bool(meta_parse_think) if meta_parse_think is not None else True,
+            )
+
+        return create_provider(pc.type, **kwargs)
 
     def _create_image_gen_provider(self, pc: ProviderConfig, model_name: str):
         """Instantiate an image generation provider for *pc*."""
@@ -897,9 +900,12 @@ class ProviderConfigService:
         if not base_url:
             return []
 
+        # Propagate X-Request-Id + W3C traceparent on the config-time probe
+        # via the shared transport so it joins the originating request trace.
+        headers = get_default_transport().request_headers(headers)
         async with httpx.AsyncClient(timeout=timeout) as client:
             if pc.type == "ollama":
-                response = await client.get(f"{base_url}/api/tags")
+                response = await client.get(f"{base_url}/api/tags", headers=headers)
                 response.raise_for_status()
                 data = response.json()
                 raw_models = data.get("models", []) if isinstance(data, dict) else []
@@ -941,7 +947,8 @@ class ProviderConfigService:
         import httpx
 
         api_key = self._resolve_api_key(pc.api_key)
-        headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
+        base_headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
+        headers = get_default_transport().request_headers(base_headers)
 
         async def _probe(url: str) -> dict[str, Any]:
             normalized = url.rstrip("/")
@@ -949,7 +956,7 @@ class ProviderConfigService:
             try:
                 async with httpx.AsyncClient(timeout=min(max(pc.timeout, 1), 20)) as client:
                     if pc.type == "ollama":
-                        resp = await client.get(f"{normalized}/api/tags")
+                        resp = await client.get(f"{normalized}/api/tags", headers=headers)
                     else:
                         model_url = f"{normalized}/models" if normalized.endswith("/v1") else f"{normalized}/v1/models"
                         resp = await client.get(model_url, headers=headers)

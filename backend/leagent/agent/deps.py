@@ -18,6 +18,7 @@ from typing import TYPE_CHECKING, Any, AsyncIterator, Protocol
 import structlog
 
 from leagent.llm.base import token_usage_to_api_dict
+from leagent.llm.streaming import ToolCallStreamAssembler
 from leagent.tools.executor import parse_tool_arguments_str, strict_json_loads_error
 
 if TYPE_CHECKING:
@@ -442,6 +443,7 @@ class CallModel(Protocol):
         max_output_tokens: int | None = None,
         model_provider: str | None = None,
         model_name: str | None = None,
+        model_task: str | None = None,
     ) -> AsyncIterator[ModelStreamEvent]: ...
 
 
@@ -669,6 +671,7 @@ def _make_llm_call_model(llm: "LLMService") -> CallModel:
         max_output_tokens: int | None = None,
         model_provider: str | None = None,
         model_name: str | None = None,
+        model_task: str | None = None,
     ) -> AsyncIterator[ModelStreamEvent]:
         full_messages: list[dict[str, Any]] = []
         if system_prompt:
@@ -682,12 +685,18 @@ def _make_llm_call_model(llm: "LLMService") -> CallModel:
             stream_kw["provider"] = model_provider
         if model_name:
             stream_kw["model"] = model_name
+        if model_task:
+            stream_kw["task"] = model_task
 
         max_attempts = 3
         attempt = 0
         emitted_visible_content = False
         while True:
             attempt += 1
+            # Delegate raw OpenAI-shaped tool-call delta coalescing to the
+            # shared assembler; deps keeps its own throttling + rich
+            # finalization (blob ingest / salvage / parse) on top.
+            assembler = ToolCallStreamAssembler()
             pending_tool_calls: dict[int, dict[str, Any]] = {}
             last_delta_emit: dict[int, dict[str, Any]] = {}
             final_usage: dict[str, Any] = {}
@@ -736,31 +745,9 @@ def _make_llm_call_model(llm: "LLMService") -> CallModel:
                             raw=chunk,
                         )
 
-                    for delta in chunk.tool_calls_delta or []:
-                        idx = delta.get("index", 0)
-                        slot = pending_tool_calls.setdefault(
-                            idx,
-                            {"id": "", "name": "", "arguments": ""},
-                        )
-                        if tid := delta.get("id"):
-                            slot["id"] = tid
-                        fn = delta.get("function") or {}
-                        if fname := fn.get("name"):
-                            slot["name"] = fname
-                        if "arguments" in fn:
-                            fargs = fn.get("arguments")
-                            if isinstance(fargs, str):
-                                current = slot.get("arguments")
-                                if isinstance(current, str):
-                                    slot["arguments"] = current + fargs
-                                elif isinstance(current, dict):
-                                    slot["arguments"] = json.dumps(current, ensure_ascii=False) + fargs
-                                else:
-                                    slot["arguments"] = fargs
-                            elif isinstance(fargs, dict):
-                                slot["arguments"] = fargs
-                            elif fargs is not None:
-                                slot["arguments"] = json.dumps(fargs, ensure_ascii=False)
+                    if chunk.tool_calls_delta:
+                        assembler.feed_deltas(chunk.tool_calls_delta)
+                        pending_tool_calls = assembler.slots_as_dicts()
 
                     for idx in sorted(pending_tool_calls.keys()):
                         slot = pending_tool_calls[idx]

@@ -223,6 +223,18 @@ class SessionCancelResponse(BaseModel):
     message: str
 
 
+class ResumeCheckpointRequest(BaseModel):
+    checkpoint_id: str
+    prompt: str = ""
+
+
+class ResumeCheckpointResponse(BaseModel):
+    session_id: str
+    checkpoint_id: str
+    accepted: bool
+    message: str
+
+
 class AgentTaskItem(BaseModel):
     task_id: str
     session_id: str

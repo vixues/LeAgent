@@ -7,13 +7,14 @@ import uuid
 from collections import defaultdict, deque
 from typing import Callable
 
-import structlog
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import Response
 from starlette.types import ASGIApp
 
-_access_logger = structlog.get_logger("leagent.access")
+from leagent.utils.logging import bind_log_context, clear_log_context, get_logger
+
+_access_logger = get_logger("leagent.access")
 
 
 class RequestIDMiddleware(BaseHTTPMiddleware):
@@ -27,10 +28,8 @@ class RequestIDMiddleware(BaseHTTPMiddleware):
         request_id = request.headers.get("x-request-id") or str(uuid.uuid4())
         request.state.request_id = request_id
 
-        import structlog
-
-        structlog.contextvars.clear_contextvars()
-        structlog.contextvars.bind_contextvars(request_id=request_id)
+        clear_log_context()
+        bind_log_context(request_id=request_id)
 
         response = await call_next(request)
         response.headers["X-Request-ID"] = request_id

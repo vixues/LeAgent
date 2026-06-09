@@ -15,7 +15,7 @@ from uuid import UUID
 if TYPE_CHECKING:
     from leagent.agent.hooks import HookManager
     from leagent.context.file_state import FileState
-    from leagent.memory.agent_memory import RecallHandle
+    from leagent.sdk.protocols import RecallProvider
     from leagent.tools.executor import ToolExecutor
     from leagent.tools.registry import ToolRegistry
 
@@ -28,7 +28,7 @@ class ToolUseContext:
     tools: "ToolRegistry"
     executor: "ToolExecutor"
     file_state_cache: "FileState"
-    recall_handle: "RecallHandle | None" = None
+    recall_handle: "RecallProvider | None" = None
     hooks: "HookManager | None" = None
 
     session_id: UUID | None = None

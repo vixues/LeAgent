@@ -24,6 +24,7 @@ class Hidden(str, Enum):
     TOOL_CONTEXT = "tool_context"  # integration container w/ tool_executor/llm_service
     LLM_SERVICE = "llm_service"
     REVIEW_SERVICE = "review_service"
+    AGENT_RUNTIME = "agent_runtime"  # leagent.runtime.AgentRuntime facade
     WORKFLOW_STATE = "workflow_state"  # mutable state object (legacy bridge)
     LOGGER = "logger"
 
@@ -45,8 +46,13 @@ class HiddenHolder:
     tool_context: Any = None
     llm_service: Any = None
     review_service: Any = None
+    agent_runtime: Any = None
     workflow_state: Any = None
     logger: Any = None
+    #: Per-execution :class:`ProgressRegistry`. Nodes use it to stream
+    #: intermediate previews to the canvas via
+    #: ``progress.update(preview=..., node_id=unique_id)``.
+    progress: Any = None
 
     def resolve(self, key: Hidden) -> Any:
         return getattr(self, key.value, None)
@@ -63,6 +69,8 @@ class HiddenHolder:
             tool_context=self.tool_context,
             llm_service=self.llm_service,
             review_service=self.review_service,
+            agent_runtime=self.agent_runtime,
             workflow_state=self.workflow_state,
             logger=self.logger,
+            progress=self.progress,
         )

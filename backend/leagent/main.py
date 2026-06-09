@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-import logging
 import os
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -26,12 +25,12 @@ from leagent import __version__ as leagent_version
 from leagent.api.router import api_router
 from leagent.config.settings import get_settings
 from leagent.exceptions.handlers import register_exception_handlers
-from leagent.utils.logging import setup_logging
+from leagent.utils.logging import get_logger, setup_logging
 
 if TYPE_CHECKING:
     from leagent.services.service_manager import ServiceManager
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 _service_manager: ServiceManager | None = None
 
@@ -58,6 +57,22 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         json_output=not settings.debug,
         log_file=settings.log_file,
     )
+
+    # Activate OpenTelemetry export + auto-instrumentation when an OTLP
+    # endpoint is configured. No-op otherwise (spans degrade to the
+    # NullTracer), so this is safe for the default zero-config deployment.
+    if os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT"):
+        with contextlib.suppress(Exception):
+            from leagent.telemetry import TelemetryConfig, instrument_all, setup_otel
+
+            setup_otel(
+                TelemetryConfig(
+                    service_name="leagent",
+                    environment="debug" if settings.debug else "production",
+                    otlp_endpoint=os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT", ""),
+                )
+            )
+            instrument_all(app)
 
     logger.info("LeAgent starting up (standalone local mode)...")
 

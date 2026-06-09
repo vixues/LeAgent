@@ -40,7 +40,6 @@ Public surface
 from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
-from collections.abc import Callable
 from typing import TYPE_CHECKING, Any, Iterable
 from uuid import UUID
 
@@ -426,25 +425,26 @@ async def _run_coding_agent(
     if parent_controller is None and parent_engine is None:
         return {"error": "Coding agent has no parent configured"}
 
-    from leagent.agent.subagent import _run_subagent_core
+    from leagent.runtime import get_delegation_runtime
 
     parent_cap = 4096
     if parent_engine is not None:
         parent_cap = int(getattr(parent_engine.config, "max_output_tokens", None) or 4096)
 
-    return await _run_subagent_core(
-        parent_controller=parent_controller,
-        parent_engine=parent_engine,
-        prompt=prompt,
-        prompt_variant="coding_agent",
+    # Definition-driven delegation: tool whitelist, temperature, and
+    # per-turn tool budget come from the registered ``coding_agent``
+    # definition; per-call args (turn budget, tool override, project root,
+    # output cap derived from the parent) override them.
+    runtime = get_delegation_runtime()
+    return await runtime.delegate(
+        parent_engine or parent_controller,
+        "coding_agent",
+        prompt,
         allowed_tools=allowed_tools,
-        denied_tools=None,
         max_turns=max_turns,
         tool_extra={"project_roots": [project_path]},
         cwd=project_path,
-        temperature=0.2,
         max_output_tokens=min(16384, max(4096, parent_cap)),
-        max_tool_calls_per_turn=8,
         inherit_abort=True,
         log_event="coding_agent_invoke",
         log_fields={

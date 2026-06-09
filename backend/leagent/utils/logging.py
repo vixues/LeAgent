@@ -1,13 +1,103 @@
-"""Structured logging setup using structlog."""
+"""Structured logging setup using structlog.
+
+This module is the single source of truth for LeAgent's logging pipeline.
+Every process configures logging exactly once via :func:`setup_logging`, and
+every module acquires its logger via :func:`get_logger`. Correlation fields
+(``request_id``, ``user_id``, ``session_id``, ``agent_id``) are bound on
+``structlog.contextvars`` at request/turn boundaries and merged into every log
+line; OpenTelemetry ``trace_id`` / ``span_id`` are injected by
+:func:`_inject_otel_context` when a span is active.
+"""
 
 from __future__ import annotations
 
 import logging
 import logging.handlers
 import sys
-from typing import Literal
+from contextvars import ContextVar
+from typing import Any, Literal
 
 import structlog
+
+# ---------------------------------------------------------------------------
+# Correlation context
+# ---------------------------------------------------------------------------
+# Canonical mechanism is ``structlog.contextvars`` (bound via the helpers
+# below and merged by ``merge_contextvars``). These ContextVars are retained
+# for components that read them directly (e.g. legacy middleware/interceptors)
+# and are kept in sync by :func:`bind_log_context`.
+request_id_var: ContextVar[str | None] = ContextVar("request_id", default=None)
+user_id_var: ContextVar[str | None] = ContextVar("user_id", default=None)
+tenant_id_var: ContextVar[str | None] = ContextVar("tenant_id", default=None)
+
+# Keys that mirror into the bare ContextVars above for backwards compatibility.
+_MIRRORED_CONTEXT_VARS = {
+    "request_id": request_id_var,
+    "user_id": user_id_var,
+    "tenant_id": tenant_id_var,
+}
+
+
+def get_logger(name: str | None = None) -> Any:
+    """Return the canonical structlog logger.
+
+    This is the single accessor every module should use:
+    ``logger = get_logger(__name__)``. It is a thin wrapper over
+    ``structlog.get_logger`` so the whole codebase shares one pipeline and we
+    avoid scattered ``logging.getLogger`` / ``structlog.get_logger`` idioms.
+    """
+    return structlog.get_logger(name)
+
+
+def bind_log_context(**fields: Any) -> None:
+    """Bind correlation fields onto the active logging context.
+
+    Fields flow into every subsequent log line on the current context (request
+    or agent turn) via ``merge_contextvars``. Drops ``None`` values so callers
+    can pass optional ids unconditionally.
+    """
+    clean = {k: v for k, v in fields.items() if v is not None}
+    if not clean:
+        return
+    structlog.contextvars.bind_contextvars(**clean)
+    for key, value in clean.items():
+        var = _MIRRORED_CONTEXT_VARS.get(key)
+        if var is not None:
+            var.set(str(value))
+
+
+def unbind_log_context(*keys: str) -> None:
+    """Remove correlation fields from the active logging context."""
+    if keys:
+        structlog.contextvars.unbind_contextvars(*keys)
+
+
+def clear_log_context() -> None:
+    """Clear all correlation fields from the active logging context."""
+    structlog.contextvars.clear_contextvars()
+
+
+def _inject_otel_context(
+    _logger: Any, _method_name: str, event_dict: dict[str, Any]
+) -> dict[str, Any]:
+    """Structlog processor: attach OpenTelemetry trace/span ids when present.
+
+    Request/user/session correlation is handled by ``merge_contextvars``; this
+    processor only adds the active span identifiers so logs correlate with
+    traces when OTel is configured. It is a no-op when no valid span is active
+    or the OTel API is not installed.
+    """
+    try:
+        from opentelemetry import trace
+
+        span = trace.get_current_span()
+        ctx = span.get_span_context()
+        if ctx.is_valid:
+            event_dict.setdefault("trace_id", format(ctx.trace_id, "032x"))
+            event_dict.setdefault("span_id", format(ctx.span_id, "016x"))
+    except Exception:
+        pass
+    return event_dict
 
 
 def setup_logging(
@@ -58,6 +148,7 @@ def setup_logging(
             structlog.stdlib.add_log_level,
             structlog.stdlib.PositionalArgumentsFormatter(),
             structlog.stdlib.ExtraAdder(),
+            _inject_otel_context,
             structlog.stdlib.ProcessorFormatter.wrap_for_formatter,
         ],
         logger_factory=structlog.stdlib.LoggerFactory(),
@@ -75,6 +166,7 @@ def setup_logging(
         structlog.stdlib.add_log_level,
         structlog.stdlib.PositionalArgumentsFormatter(),
         structlog.stdlib.ExtraAdder(),
+        _inject_otel_context,
     ]
 
     # processors: runs for ALL records (structlog + foreign) after the
@@ -143,3 +235,15 @@ def setup_logging(
     logging.getLogger("sqlalchemy.engine").setLevel(
         logging.WARNING if log_level > logging.DEBUG else logging.INFO
     )
+
+
+__all__ = [
+    "setup_logging",
+    "get_logger",
+    "bind_log_context",
+    "unbind_log_context",
+    "clear_log_context",
+    "request_id_var",
+    "user_id_var",
+    "tenant_id_var",
+]

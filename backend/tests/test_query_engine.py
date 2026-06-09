@@ -503,6 +503,71 @@ class TestQueryLoop:
         assert terminals[0].meta.get("turn_count") == 3
 
 
+class TestPromptTooLong:
+    @pytest.mark.asyncio
+    async def test_context_overflow_yields_prompt_too_long(self) -> None:
+        """A context-length error during streaming yields PROMPT_TOO_LONG."""
+        registry = _make_registry()
+        ctx = _make_ctx(registry)
+
+        async def _exploding_stream(**kwargs):
+            raise RuntimeError("maximum context length is 128000 tokens")
+            yield  # pragma: no cover
+
+        async def _micro(msgs, ctx):
+            return msgs
+
+        async def _auto(msgs, ctx, sp):
+            return msgs
+
+        deps = QueryDeps(
+            call_model=_exploding_stream,
+            microcompact=_micro,
+            autocompact=_auto,
+        )
+        params = QueryParams(
+            messages=[{"role": "user", "content": "hi"}],
+            system_prompt="t",
+            tool_use_context=ctx,
+            deps=deps,
+        )
+        terminals = [ev async for ev in query(params) if isinstance(ev, Terminal)]
+        assert len(terminals) == 1
+        assert terminals[0].reason == TerminalReason.PROMPT_TOO_LONG
+
+
+class TestTokenBudgetExceeded:
+    @pytest.mark.asyncio
+    async def test_budget_exceeded_yields_token_budget_exceeded(self) -> None:
+        """Cumulative usage past ``max_total_tokens`` yields TOKEN_BUDGET_EXCEEDED."""
+        registry = _make_registry()
+        ctx = _make_ctx(registry)
+        deps = _make_deps(
+            [
+                [
+                    ModelStreamEvent(content_delta="hi"),
+                    ModelStreamEvent(
+                        message_stop={
+                            "finish_reason": "stop",
+                            "usage": {"prompt_tokens": 500, "completion_tokens": 600, "total_tokens": 1100},
+                        },
+                    ),
+                ]
+            ]
+        )
+        params = QueryParams(
+            messages=[{"role": "user", "content": "hi"}],
+            system_prompt="t",
+            tool_use_context=ctx,
+            deps=deps,
+            max_total_tokens=1000,
+        )
+        terminals = [ev async for ev in query(params) if isinstance(ev, Terminal)]
+        assert len(terminals) == 1
+        assert terminals[0].reason == TerminalReason.TOKEN_BUDGET_EXCEEDED
+        assert terminals[0].meta["budget"] == 1000
+
+
 class TestNormalizeAskUserQuestions:
     def test_permission_metadata_preserved(self) -> None:
         raw = [

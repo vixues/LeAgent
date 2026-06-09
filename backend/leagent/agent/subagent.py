@@ -24,14 +24,14 @@ coroutine returns a flat dict the calling LLM can reason about
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING, Any, Iterable, TypedDict
 from uuid import uuid4
 
-import structlog
-
 from leagent.tools.base import BaseTool, ToolCategory, ToolContext
+from leagent.utils.logging import get_logger
 
 if TYPE_CHECKING:
     from leagent.agent.controller import AgentController
@@ -40,7 +40,7 @@ if TYPE_CHECKING:
     from leagent.tools.registry import ToolRegistry
 
 
-logger = structlog.get_logger(__name__)
+logger = get_logger(__name__)
 
 DEFAULT_AGENT_TOOL_DENIED_TOOLS: frozenset[str] = frozenset({
     "project_write",
@@ -188,37 +188,18 @@ def _filter_registry(
 ) -> "ToolRegistry":
     """Build a child registry honouring allow/deny lists.
 
-    * ``allowed_tools`` — whitelist. ``None`` means "keep everything the
-      parent has enabled". Names missing from the parent are skipped
-      silently.
+    Thin wrapper over the canonical :meth:`ToolRegistry.scoped` primitive:
+
+    * ``allowed_tools`` — whitelist (exact, alias-aware). ``None`` means
+      "keep everything the parent has enabled".
     * ``denied_tools`` — blacklist applied after the whitelist.
     """
-    from leagent.tools.registry import ToolRegistry
-
-    registry = ToolRegistry()
-    denied = {name.strip() for name in (denied_tools or ())}
-
-    if allowed_tools is None:
-        parent_tools = source.get_enabled_tools()
-    else:
-        parent_tools = []
-        for name in allowed_tools:
-            tool = source.find_by_name(name)
-            if tool is not None:
-                parent_tools.append(tool)
-
-    for tool in parent_tools:
-        if tool.name in denied:
-            continue
-        try:
-            registry.register(tool)
-        except Exception as exc:  # noqa: BLE001
-            logger.debug(
-                "subagent_tool_register_failed",
-                tool=getattr(tool, "name", None),
-                error=str(exc),
-            )
-    return registry
+    return source.scoped(
+        allow=allowed_tools,
+        deny=denied_tools,
+        match="exact",
+        only_enabled=True,
+    )
 
 
 def _activity_summary(tool_name: str, content: str, ok: bool) -> str:
@@ -416,6 +397,14 @@ async def _run_subagent_core(
     temperature: float | None = None,
     max_output_tokens: int | None = None,
     max_tool_calls_per_turn: int | None = None,
+    context_recipe: str | None = None,
+    model_task: str | None = None,
+    model_provider: str | None = None,
+    model_name: str | None = None,
+    memory_enabled: bool | None = None,
+    recall_limit: int | None = None,
+    memory_formation: bool | None = None,
+    tools_max_tools: int | None = None,
     cwd: str | None = None,
     inherit_abort: bool = True,
     inherit_authorized_roots: bool = True,
@@ -502,6 +491,34 @@ async def _run_subagent_core(
                     child_extra["authorized_roots"] = merged_auth
         child.config.tool_extra = child_extra
 
+    # Definition fidelity: apply the child's own context/model/memory policy
+    # instead of silently inheriting the parent's. ``None`` means "keep what
+    # the fork inherited" so callers that don't pass a definition are unaffected.
+    if context_recipe is not None:
+        child.config.context_recipe = context_recipe
+        if hasattr(child, "_context") and hasattr(child._context, "recipe"):
+            child._context.recipe = context_recipe
+    if model_task is not None:
+        child.config.model_task = model_task
+    if model_provider is not None:
+        child.config.model_provider = model_provider
+    if model_name is not None:
+        child.config.model_name = model_name
+    if tools_max_tools is not None:
+        child.config.tools_max_tools = tools_max_tools
+    if memory_enabled is not None:
+        if memory_enabled:
+            if recall_limit is not None:
+                child.config.recall_limit = recall_limit
+        else:
+            # Detach memory entirely so no recall is fetched for this child.
+            child.config.agent_memory = None
+            child.config.recall_limit = None
+            if hasattr(child, "_context"):
+                child._context.agent_memory = None
+    if memory_formation is not None:
+        child.config.memory_formation = memory_formation
+
     emit = nested_preview_emit
     if emit is None and getattr(parent_eng.config, "tool_extra", None):
         cand = parent_eng.config.tool_extra.get("nested_preview_emit")
@@ -567,8 +584,29 @@ async def _run_subagent_core(
         **(log_fields or {}),
     )
 
+    # Subagent lifecycle hooks (Claude ``SubagentStart`` / ``SubagentStop``),
+    # dispatched off the parent engine's hook manager. Built-in hooks treat
+    # these as no-ops; custom hooks can observe delegation.
+    hooks = getattr(parent_eng.config, "hooks", None)
+    hook_ctx = None
+    if hooks is not None:
+        from leagent.agent.base import AgentContext
+
+        hook_ctx = AgentContext(
+            session_id=getattr(parent_eng, "session_id", None) or uuid4(),
+            user_id=getattr(parent_eng.config, "user_id", None),
+        )
+        with contextlib.suppress(Exception):
+            await hooks.dispatch_subagent_start(hook_ctx, prompt_variant, prompt)
+
     try:
-        return await _run_engine(child, prompt)
+        result = await _run_engine(child, prompt)
+        if hooks is not None and hook_ctx is not None:
+            with contextlib.suppress(Exception):
+                await hooks.dispatch_subagent_stop(
+                    hook_ctx, prompt_variant, dict(result)
+                )
+        return result
     finally:
         if bridge_task is not None and not bridge_task.done():
             bridge_task.cancel()
@@ -758,14 +796,20 @@ class AgentTool(BaseTool):
             prompt_preview=prompt[:120],
         )
 
-        return await fork_subagent(
+        from leagent.runtime import get_delegation_runtime
+
+        # Definition-driven delegation through the unified runtime using the
+        # built-in ``subagent`` definition (general delegation persona).
+        runtime = get_delegation_runtime()
+        return await runtime.delegate(
             parent,
+            "subagent",
             prompt,
             allowed_tools=list(allowed) if isinstance(allowed, list) else None,
-            denied_tools=sorted(denied_names),
-            system_prompt=None,
+            extra_denied_tools=sorted(denied_names),
             max_turns=max_turns,
             inherit_abort=True,
+            log_event="subagent_fork",
         )
 
 

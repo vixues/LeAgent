@@ -85,6 +85,7 @@ class WorkflowExecutor:
         review_service: Any = None,
         workflow_registry: Any = None,
         agent_controller: Any = None,
+        agent_runtime: Any = None,
         cache_set: CacheSet | None = None,
         cache_provider: CacheProvider | None = None,
         node_registry: NodeRegistry | None = None,
@@ -97,6 +98,7 @@ class WorkflowExecutor:
         self.review_service = review_service
         self.workflow_registry = workflow_registry
         self.agent_controller = agent_controller
+        self.agent_runtime = agent_runtime
         self.cache_set = cache_set or build_cache_set(cache_mode)
         self.cache_provider = cache_provider or NullCacheProvider()
         self.node_registry = node_registry or get_registry()
@@ -195,8 +197,10 @@ class WorkflowExecutor:
             tool_context=_ContextShim(self),
             llm_service=self.llm_service,
             review_service=self.review_service,
+            agent_runtime=self.agent_runtime,
             workflow_state=state,
             logger=logger,
+            progress=progress,
         )
 
         upstream_values: dict[tuple[str, int], Any] = {}
@@ -472,6 +476,7 @@ class _ContextShim:
         self.review_service = executor.review_service
         self.workflow_registry = executor.workflow_registry
         self.agent_controller = executor.agent_controller
+        self.agent_runtime = executor.agent_runtime
         self.workflow_executor = executor
 
     def get_tool_context(self, state: WorkflowState | None) -> Any:

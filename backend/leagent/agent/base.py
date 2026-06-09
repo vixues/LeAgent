@@ -166,6 +166,8 @@ class AgentResponse(BaseModel):
     total_duration_ms: int = 0
     token_usage: dict[str, int] = Field(default_factory=dict)
     metadata: dict[str, Any] = Field(default_factory=dict)
+    terminal_reason: str = "completed"
+    checkpoint_id: str | None = None
 
     @property
     def success(self) -> bool:

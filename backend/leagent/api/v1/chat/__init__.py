@@ -87,6 +87,8 @@ from leagent.api.schemas.chat import (  # noqa: E402
     PromptPreviewRead,
     SendMessageRequest,
     SessionAttachmentsResponse,
+    ResumeCheckpointRequest,
+    ResumeCheckpointResponse,
     SessionCancelResponse,
     SessionUpdateRequest,
 )
@@ -580,7 +582,13 @@ async def chat_stream_endpoint(
                             if response_content:
                                 yield _format_frontend_event("content", response_content)
                     elif etype == "error":
-                        yield _format_frontend_event("error", {"message": edata.get("error", "Unknown error")})
+                        _err_payload: dict[str, Any] = {
+                            "message": edata.get("error", "Unknown error"),
+                        }
+                        _err_reason = edata.get("terminal_reason")
+                        if _err_reason:
+                            _err_payload["terminal_reason"] = _err_reason
+                        yield _format_frontend_event("error", _err_payload)
             else:
                 yield _format_frontend_event("error", {
                     "message": "No LLM provider configured. Please configure a model in Settings.",
@@ -593,7 +601,18 @@ async def chat_stream_endpoint(
 
             # Tell the client token streaming is finished before DB persistence so the UI
             # can hide the caret and show actions without waiting on add_message latency.
-            yield _format_frontend_event("assistant_complete", {})
+            # Include terminal_reason + checkpoint_id so the frontend can show
+            # differentiated end-of-turn UI (e.g. "turn limit reached") and a
+            # checkpoint-based resume button.
+            _complete_payload: dict[str, Any] = {}
+            if last_complete_event:
+                _tr = last_complete_event.get("terminal_reason")
+                if _tr:
+                    _complete_payload["terminal_reason"] = _tr
+                _cpid = last_complete_event.get("checkpoint_id")
+                if _cpid:
+                    _complete_payload["checkpoint_id"] = _cpid
+            yield _format_frontend_event("assistant_complete", _complete_payload)
 
             md_fin = (last_complete_event or {}).get("metadata") or {}
             reasoning_fin = md_fin.get("reasoning_content")
@@ -1544,6 +1563,54 @@ async def cancel_session(
         cancelled=cancelled,
         processes_killed=procs_killed,
         message=msg,
+    )
+
+
+@router.post("/sessions/{session_id}/resume-checkpoint", response_model=ResumeCheckpointResponse)
+async def resume_checkpoint(
+    session_id: UUID,
+    body: ResumeCheckpointRequest,
+    user_id: CurrentUserId,
+    chat_svc: ChatSvc,
+) -> ResumeCheckpointResponse:
+    """Accept a checkpoint-based resume request for a paused agent turn.
+
+    The frontend sends the ``checkpoint_id`` it received on the
+    ``assistant_complete`` SSE event together with the user's follow-up
+    ``prompt``. This endpoint validates the checkpoint exists, then
+    triggers a new streaming turn on the same session (via the normal
+    ``/stream`` path with ``skip_append_user`` and the stored
+    checkpoint's history). For now this is a "prepare + acknowledge"
+    handshake; the actual streaming happens when the client posts to
+    ``/stream`` with the ``checkpoint_id`` field.
+    """
+    session = await chat_svc.get_session(session_id, user_id=user_id)
+    if not session:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
+
+    try:
+        from leagent.sdk.kernel.checkpoint import build_checkpoint_store
+        from leagent.services.service_manager import get_service_manager
+        sm = get_service_manager()
+        store = build_checkpoint_store(getattr(sm, "database_service", None))
+        if store is None:
+            from leagent.sdk.kernel.checkpoint import InMemoryCheckpointStore
+            store = InMemoryCheckpointStore()
+        cp = await store.load(body.checkpoint_id)
+    except Exception:  # noqa: BLE001
+        cp = None
+
+    if cp is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Checkpoint {body.checkpoint_id!r} not found",
+        )
+
+    return ResumeCheckpointResponse(
+        session_id=str(session_id),
+        checkpoint_id=body.checkpoint_id,
+        accepted=True,
+        message="Checkpoint validated; proceed with /stream using checkpoint_id",
     )
 
 

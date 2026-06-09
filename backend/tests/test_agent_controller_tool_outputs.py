@@ -69,51 +69,34 @@ def _controller(session_manager: Any | None = None) -> AgentController:
     )
 
 
+async def _finalize_single_tool_call(name: str, raw_args: str) -> dict[str, Any]:
+    """Drive one coalesced tool call through the production recovery path."""
+    from leagent.agent.deps import _finalize_pending_tool_calls
+
+    pending = {0: {"id": "call_1", "name": name, "arguments": raw_args}}
+    events = await _finalize_pending_tool_calls(pending, {}, session_id=None)
+    tool_calls = [e.tool_call for e in events if e.tool_call]
+    assert len(tool_calls) == 1
+    return tool_calls[0]
+
+
 @pytest.mark.asyncio
-async def test_extract_tool_calls_recovers_code_execution_source_from_malformed_json() -> None:
-    controller = _controller()
+async def test_finalize_recovers_code_execution_source_from_malformed_json() -> None:
     raw_args = '{"source": "\nprint("broken json")\n"}'
 
-    calls = await controller._extract_tool_calls(
-        {
-            "tool_calls": [
-                {
-                    "id": "call_1",
-                    "function": {
-                        "name": "code_execution",
-                        "arguments": raw_args,
-                    },
-                }
-            ]
-        }
-    )
+    call = await _finalize_single_tool_call("code_execution", raw_args)
 
-    assert len(calls) == 1
-    assert calls[0].name == "code_execution"
-    assert calls[0].arguments.get("source") == '\nprint("broken json")\n'
+    assert call["name"] == "code_execution"
+    assert call["arguments"].get("source") == '\nprint("broken json")\n'
 
 
 @pytest.mark.asyncio
-async def test_extract_tool_calls_preserves_unrecoverable_arguments_as_raw() -> None:
-    controller = _controller()
+async def test_finalize_preserves_unrecoverable_arguments_as_raw() -> None:
     raw_args = '{"value": "broken"'
 
-    calls = await controller._extract_tool_calls(
-        {
-            "tool_calls": [
-                {
-                    "id": "call_1",
-                    "function": {
-                        "name": "echo_tool",
-                        "arguments": raw_args,
-                    },
-                }
-            ]
-        }
-    )
+    call = await _finalize_single_tool_call("echo_tool", raw_args)
 
-    assert len(calls) == 1
-    assert calls[0].arguments == {"__raw__": raw_args}
+    assert call["arguments"] == {"__raw__": raw_args}
 
 
 def test_script_execution_agent_uses_script_agent_prompt_variant() -> None:

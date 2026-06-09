@@ -16,9 +16,10 @@ import asyncio
 import sys
 
 import click
-import structlog
 
-logger = structlog.get_logger(__name__)
+from leagent.utils.logging import get_logger
+
+logger = get_logger(__name__)
 
 
 @click.command("workflow-worker")
@@ -29,6 +30,12 @@ logger = structlog.get_logger(__name__)
               help="Directory to scan for custom node packs.")
 def workflow_worker(concurrency: int | None, queue: str | None, custom_nodes_dir: str | None) -> None:
     """Start a workflow worker loop. Exits on SIGTERM / SIGINT."""
+    from leagent.config.settings import get_settings
+    from leagent.utils.logging import setup_logging
+
+    settings = get_settings()
+    setup_logging(level=settings.log_level, log_format=settings.log_format,
+                  json_output=not settings.debug)
     try:
         asyncio.run(_run(concurrency=concurrency, queue_backend=queue,
                          custom_nodes_dir=custom_nodes_dir))
@@ -84,12 +91,21 @@ async def _run(
     except Exception:  # noqa: BLE001
         logger.warning("tool_services_unavailable_for_worker", exc_info=True)
 
+    agent_runtime = None
+    try:
+        from leagent.runtime import AgentRuntime
+
+        agent_runtime = AgentRuntime.from_service_manager(sm, executor=tool_executor)
+    except Exception:  # noqa: BLE001
+        logger.warning("agent_runtime_unavailable_for_worker", exc_info=True)
+
     executor = WorkflowExecutor(
         tool_registry=tool_registry,
         tool_executor=tool_executor,
         llm_service=sm.llm_service,
         review_service=None,
         workflow_registry=None,
+        agent_runtime=agent_runtime,
         cache_mode=wf_settings.cache_mode,
     )
 

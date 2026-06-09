@@ -60,6 +60,7 @@ class SubworkflowNode(WorkflowNode):
                 tool_executor=getattr(ctx, "tool_executor", None),
                 llm_service=getattr(ctx, "llm_service", None),
                 review_service=getattr(ctx, "review_service", None),
+                agent_runtime=getattr(ctx, "agent_runtime", None),
             )
             result = await executor.execute(sub_def, resolved_inputs)
             duration_ms = int((time.monotonic() - start) * 1000)

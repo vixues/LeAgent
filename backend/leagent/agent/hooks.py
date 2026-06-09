@@ -134,6 +134,27 @@ class AgentHook(ABC):
         """
         pass
 
+    async def on_pre_compact(self, context: AgentContext, reason: str) -> None:
+        """Called before transcript compaction runs (Claude ``PreCompact``).
+
+        Args:
+            context: Agent execution context.
+            reason: Why compaction was triggered (e.g. ``"autocompact"``).
+        """
+        pass
+
+    async def on_subagent_start(
+        self, context: AgentContext, agent_name: str, prompt: str
+    ) -> None:
+        """Called when a sub-agent is delegated (Claude ``SubagentStart``)."""
+        pass
+
+    async def on_subagent_stop(
+        self, context: AgentContext, agent_name: str, result: dict[str, Any]
+    ) -> None:
+        """Called when a delegated sub-agent finishes (Claude ``SubagentStop``)."""
+        pass
+
 
 class HookManager:
     """Manages and dispatches lifecycle hooks.
@@ -170,6 +191,25 @@ class HookManager:
         """Remove all registered hooks."""
         self._hooks.clear()
         self._sorted = False
+
+    def filter_by_names(self, names: list[str]) -> HookManager:
+        """Return a new manager exposing only hooks matching ``names``.
+
+        A hook matches when ``names`` contains its declared ``name`` attribute
+        (if any) or its class name. This lets an :class:`AgentDefinition`
+        opt into a named subset of the process-wide hooks (Claude-Code-style
+        per-agent hook selection) without mutating the shared manager. An
+        empty / falsy ``names`` returns ``self`` unchanged.
+        """
+        if not names:
+            return self
+        wanted = set(names)
+        child = HookManager()
+        for hook in self._hooks:
+            hook_name = getattr(hook, "name", None) or hook.__class__.__name__
+            if hook_name in wanted:
+                child.register(hook)
+        return child
 
     def _ensure_sorted(self) -> None:
         """Sort hooks by priority if needed."""
@@ -234,6 +274,25 @@ class HookManager:
         """Dispatch on_code_artifact to all hooks."""
         self._ensure_sorted()
         await self._dispatch("on_code_artifact", artifact)
+
+    async def dispatch_pre_compact(self, context: AgentContext, reason: str) -> None:
+        """Dispatch on_pre_compact to all hooks (Claude ``PreCompact``)."""
+        self._ensure_sorted()
+        await self._dispatch("on_pre_compact", context, reason)
+
+    async def dispatch_subagent_start(
+        self, context: AgentContext, agent_name: str, prompt: str
+    ) -> None:
+        """Dispatch on_subagent_start to all hooks (Claude ``SubagentStart``)."""
+        self._ensure_sorted()
+        await self._dispatch("on_subagent_start", context, agent_name, prompt)
+
+    async def dispatch_subagent_stop(
+        self, context: AgentContext, agent_name: str, result: dict[str, Any]
+    ) -> None:
+        """Dispatch on_subagent_stop to all hooks (Claude ``SubagentStop``)."""
+        self._ensure_sorted()
+        await self._dispatch("on_subagent_stop", context, agent_name, result)
 
     async def _dispatch(self, method_name: str, *args: Any) -> None:
         """Dispatch a method call to all hooks."""

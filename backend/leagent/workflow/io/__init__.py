@@ -27,7 +27,10 @@ from .types import (
     OutputBase,
     WidgetInput,
     WILDCARD_TYPE,
+    all_socket_colors,
+    socket_color,
     types_compatible,
+    widget_kind,
 )
 from .validator import validate
 
@@ -45,6 +48,7 @@ __all__ = [
     "WILDCARD_TYPE",
     "WorkflowDocument",
     "WorkflowLoaderError",
+    "all_socket_colors",
     "default_check_lazy_status",
     "default_fingerprint_inputs",
     "export",
@@ -52,8 +56,10 @@ __all__ = [
     "json_schema_to_inputs",
     "load",
     "save",
+    "socket_color",
     "to_json",
     "to_yaml",
     "types_compatible",
     "validate",
+    "widget_kind",
 ]

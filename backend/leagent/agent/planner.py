@@ -1,5 +1,11 @@
 """TaskPlanner: task decomposition, plan construction, and dependency scheduling.
 
+.. deprecated:: 0.1.0
+   The Plan-Execute mode is superseded by the unified SDK runtime
+   (:class:`~leagent.sdk.AgentRuntime`). This module is kept for backward
+   compatibility but is scheduled for removal. New code should use the
+   SDK's ``AgentRuntime.run`` / ``AgentRuntime.stream`` instead.
+
 This module provides the Plan-Execute path used by
 :class:`leagent.agent.controller.AgentController._run_plan_execute` and any
 workflow that wants a structured, step-wise plan instead of the ReAct-style
@@ -378,7 +384,7 @@ class TaskPlanner:
 
         lines = ["Relevant knowledge:"]
         for entry in bundle.entries:
-            summary = (entry.summary or "").strip()
+            summary = (getattr(entry, "text", "") or "").strip()
             if not summary:
                 continue
             lines.append(f"- [{entry.kind.value}] {summary[:500]}")

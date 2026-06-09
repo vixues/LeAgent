@@ -20,11 +20,22 @@ def _register(cls: type[ContextSource]) -> type[ContextSource]:
 
 
 def get_all_sources() -> dict[str, type[ContextSource]]:
+    """Return all registered sources (builtin + plugin)."""
     global _REGISTRY_SEEDED
     if not _REGISTRY_SEEDED:
         _lazy_load()
         _REGISTRY_SEEDED = True
-    return dict(SOURCE_REGISTRY)
+    merged = dict(SOURCE_REGISTRY)
+    try:
+        from leagent.context.plugin import get_plugin_sources, load_source_plugins
+
+        # Discover drop-in third-party sources (entry points) once, then merge
+        # the plugin registry on top of the builtins.
+        load_source_plugins()
+        merged.update(get_plugin_sources())
+    except ImportError:
+        pass
+    return merged
 
 
 def _lazy_load() -> None:

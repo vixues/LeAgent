@@ -32,8 +32,6 @@ from collections.abc import Callable
 from typing import TYPE_CHECKING, Any, Iterable
 from uuid import UUID, uuid4
 
-from leagent.agent.subagent import fork_subagent
-
 import structlog
 
 from leagent.agent.base import AgentConfig, AgentMode
@@ -100,7 +98,12 @@ def build_script_execution_agent(
     allowed_tools: Iterable[str] = DEFAULT_SCRIPT_AGENT_TOOLS,
     max_iterations: int = 15,
 ) -> "AgentController":
-    """Build a child :class:`AgentController` for sandboxed script runs."""
+    """Build a child :class:`AgentController` for sandboxed script runs.
+
+    .. deprecated:: 0.1.0
+       Use ``AgentRuntime.delegate(parent, "script_agent", ...)`` instead.
+       This factory is kept for backward compatibility with existing callers.
+    """
     from leagent.agent.controller import AgentController
     from leagent.tools.executor import ToolExecutor
 
@@ -267,13 +270,28 @@ class ScriptAgentTool(BaseTool):
             prompt_preview=prompt[:120],
         )
 
-        return await fork_subagent(
+        from leagent.runtime import get_delegation_runtime
+
+        extra = getattr(context, "extra", None) or {}
+        nested_emit = extra.get("nested_preview_emit")
+        if nested_emit is not None and not callable(nested_emit):
+            nested_emit = None
+        parent_tc = extra.get("current_tool_call_id")
+        parent_tc_str = str(parent_tc).strip() if parent_tc is not None else None
+
+        # Definition-driven delegation: tool whitelist, model controls, and
+        # per-turn budget come from the registered ``script_agent`` definition.
+        runtime = get_delegation_runtime()
+        return await runtime.delegate(
             parent,
+            "script_agent",
             prompt,
             allowed_tools=list(self._allowed_tools),
-            prompt_variant="script_agent",
             max_turns=max_iter,
             inherit_abort=True,
+            log_event="script_agent_fork",
+            nested_preview_emit=nested_emit,
+            parent_tool_call_id=parent_tc_str,
         )
 
 

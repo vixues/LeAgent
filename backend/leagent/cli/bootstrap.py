@@ -9,11 +9,10 @@ with :class:`~leagent.tools.executor.ToolExecutor` over the global registry so l
 
 from __future__ import annotations
 
-import logging
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
-import structlog
+from leagent.utils.logging import get_logger
 
 if TYPE_CHECKING:
     from leagent.agent.controller import AgentController
@@ -22,7 +21,7 @@ if TYPE_CHECKING:
     from leagent.skills.manager import SkillsManager
     from leagent.tools.registry import ToolRegistry
 
-logger = structlog.get_logger(__name__)
+logger = get_logger(__name__)
 
 
 @dataclass
@@ -48,7 +47,6 @@ class CLIServices:
 
         from leagent.agent.base import AgentConfig
         from leagent.agent.controller import AgentController
-        from leagent.agent.planner import TaskPlanner
         from leagent.tools.executor import ToolExecutor
 
         config = AgentConfig(
@@ -58,13 +56,11 @@ class CLIServices:
         )
 
         executor = ToolExecutor(registry=self.tools)
-        planner = TaskPlanner(llm=self.llm)
 
         self._agent = AgentController(
             llm=self.llm,
             tools=self.tools,
             agent_memory=None,
-            planner=planner,
             executor=executor,
             config=config,
         )
@@ -96,7 +92,9 @@ async def bootstrap_cli_services(
     Skips PostgreSQL/session persistence, auth, and :class:`~leagent.services.service_manager.ServiceManager`.
     """
     if debug:
-        logging.basicConfig(level=logging.DEBUG)
+        from leagent.utils.logging import setup_logging
+
+        setup_logging(level="DEBUG", log_format="console")
 
     services = CLIServices()
 

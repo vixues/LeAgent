@@ -16,8 +16,9 @@ from leagent.context.types import ContextBlock, ContextScope, RenderTarget
 if TYPE_CHECKING:
     from leagent.context.file_state import FileState
     from leagent.context.working_set import WorkingSet
-    from leagent.memory.agent_memory import AgentMemory, RecallHandle
+    from leagent.memory.agent_memory import AgentMemory
     from leagent.memory.working_scratchpad import WorkingScratchpad
+    from leagent.sdk.protocols import RecallProvider
     from leagent.services.session import SessionManager
     from leagent.skills.manager import SkillsManager
     from leagent.tools.base import ToolPermissionContext
@@ -45,7 +46,7 @@ class ResolveContext:
     skills_manager: "SkillsManager | None" = None
 
     agent_memory: "AgentMemory | None" = None
-    recall_handle: "RecallHandle | None" = None
+    recall_handle: "RecallProvider | None" = None
     recall_limit: int = 5
 
     session_manager: "SessionManager | None" = None

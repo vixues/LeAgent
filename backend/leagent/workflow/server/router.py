@@ -300,7 +300,12 @@ async def import_flow(
 
 @router.get("/object_info", response_model=ObjectInfoResponse)
 async def object_info() -> ObjectInfoResponse:
-    return ObjectInfoResponse(nodes=get_registry().snapshot())
+    from ..io import all_socket_colors
+
+    return ObjectInfoResponse(
+        nodes=get_registry().snapshot(),
+        socket_colors=all_socket_colors(),
+    )
 
 
 @router.post("/admin/reload-nodes", response_model=NodeReloadResponse)

@@ -7,12 +7,13 @@ have to conditionally import OTel.
 
 from __future__ import annotations
 
-import logging
 import os
 from dataclasses import dataclass
 from typing import Any
 
-logger = logging.getLogger(__name__)
+from leagent.utils.logging import get_logger
+
+logger = get_logger(__name__)
 
 _configured = False
 

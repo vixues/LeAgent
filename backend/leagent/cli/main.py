@@ -121,9 +121,9 @@ def cli(ctx: click.Context, debug: bool, message: str | None, verbose_chat: bool
     ctx.ensure_object(dict)
     ctx.obj["debug"] = debug
 
-    if debug:
-        import logging
-        logging.basicConfig(level=logging.DEBUG)
+    from leagent.utils.logging import setup_logging
+
+    setup_logging(level="DEBUG" if debug else "INFO", log_format="console")
 
 
 # ── Register command groups ─────────────────────────────────────────

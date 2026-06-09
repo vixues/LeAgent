@@ -43,6 +43,7 @@ from leagent.memory.formation import (
     TurnObservation,
 )
 from leagent.memory.procedural import ProceduralStore, build_signature
+from leagent.memory.protocols import RecallProvider
 from leagent.memory.recall import RecallOptions, RetrievalPipeline
 from leagent.memory.semantic import SemanticStore
 from leagent.memory.types import (
@@ -73,6 +74,7 @@ __all__ = [
     "RecallEntry",
     "RecallHandle",
     "RecallOptions",
+    "RecallProvider",
     "RetrievalPipeline",
     "SemanticStore",
     "ToolInvocation",
@@ -80,6 +82,20 @@ __all__ = [
     "TurnObservation",
     "WorkingScratchpad",
     "build_signature",
+]
+
+from leagent.memory.fake import (
+    FakeAgentMemory,
+    FakeEpisodicStore,
+    FakeProceduralStore,
+    FakeSemanticStore,
+)
+
+__all__ += [
+    "FakeAgentMemory",
+    "FakeEpisodicStore",
+    "FakeProceduralStore",
+    "FakeSemanticStore",
 ]
 
 try:

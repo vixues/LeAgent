@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import contextlib
 import json
 import time
 from collections.abc import AsyncIterator, Awaitable, Callable
@@ -12,7 +13,7 @@ from typing import Any, Literal, TypeVar
 
 import structlog
 
-from leagent.exceptions.llm import LLMRateLimitError, LLMServiceError
+from leagent.exceptions.llm import LLMRateLimitError, LLMServiceError, LLMTimeoutError
 from leagent.llm.base import (
     ChatMessage,
     EmbeddingResponse,
@@ -221,7 +222,7 @@ class LLMService:
             request_max = self.resolver.clamp_max_tokens(messages, spec=spec, requested=request_max)
             try:
                 provider = self.registry.get_provider(provider_name)
-                response = await provider.complete(
+                complete_coro = provider.complete(
                     messages=messages,
                     model=model_name,
                     temperature=temperature if temperature is not None else resolved.temperature,
@@ -230,6 +231,13 @@ class LLMService:
                     tool_choice=tool_choice,
                     **kwargs,
                 )
+                # Honor the per-task TaskBinding.timeout at the service layer so
+                # it applies uniformly across providers without leaking into any
+                # provider's request body.
+                if resolved.timeout and resolved.timeout > 0:
+                    response = await asyncio.wait_for(complete_coro, timeout=resolved.timeout)
+                else:
+                    response = await complete_coro
                 self.registry.record_success(provider_name)
                 return response
             except Exception as exc:
@@ -277,7 +285,12 @@ class LLMService:
                 request_max = max_tokens if max_tokens is not None else resolved.max_tokens
                 request_max = self.resolver.clamp_max_tokens(messages, spec=spec, requested=request_max)
                 provider_instance = self.registry.get_provider(provider_name)
-                async for chunk in provider_instance.stream(
+                # Honour the per-task ``TaskBinding.timeout`` as a per-chunk
+                # (stall) timeout so a hung provider stream cannot block the
+                # turn indefinitely. A total timeout is inappropriate here
+                # because legitimate generations can run long.
+                chunk_timeout = resolved.timeout if resolved.timeout and resolved.timeout > 0 else None
+                stream_iter = provider_instance.stream(
                     messages=messages,
                     model=model_name,
                     temperature=temperature if temperature is not None else resolved.temperature,
@@ -285,7 +298,24 @@ class LLMService:
                     tools=tools,
                     tool_choice=tool_choice,
                     **kwargs,
-                ):
+                ).__aiter__()
+                while True:
+                    try:
+                        if chunk_timeout is not None:
+                            chunk = await asyncio.wait_for(
+                                stream_iter.__anext__(), timeout=chunk_timeout
+                            )
+                        else:
+                            chunk = await stream_iter.__anext__()
+                    except StopAsyncIteration:
+                        break
+                    except (asyncio.TimeoutError, TimeoutError):
+                        with contextlib.suppress(Exception):
+                            await stream_iter.aclose()  # type: ignore[attr-defined]
+                        raise LLMTimeoutError(
+                            f"Stream stalled: no chunk from '{provider_name}' "
+                            f"within {chunk_timeout:.0f}s"
+                        ) from None
                     yielded = True
                     if first_chunk_at is None:
                         first_chunk_at = time.perf_counter()

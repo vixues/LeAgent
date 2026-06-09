@@ -18,10 +18,7 @@ from uuid import uuid4
 
 import structlog
 
-from leagent.agent.coding_agent import (
-    DEFAULT_CODING_AGENT_TOOLS,
-    _run_coding_agent,
-)
+from leagent.agent.coding_agent import DEFAULT_CODING_AGENT_TOOLS
 from leagent.workflow.io import (
     IO,
     Hidden,
@@ -29,9 +26,17 @@ from leagent.workflow.io import (
     NodeOutput,
     Schema,
 )
+from leagent.workflow.nodes.agent_exec import run_agent_node
 from leagent.workflow.nodes.base import WorkflowNode
 
 logger = structlog.get_logger(__name__)
+
+_READ_ONLY_PROJECT_TOOLS = (
+    "project_read",
+    "project_grep",
+    "project_glob",
+    "project_tree",
+)
 
 
 class CodingAgentNode(WorkflowNode):
@@ -104,20 +109,26 @@ class CodingAgentNode(WorkflowNode):
                 IO.String.Output(id="text"),
                 IO.Boolean.Output(id="success"),
                 IO.Int.Output(id="steps_count"),
+                IO.String.Output(id="checkpoint_id"),
+                IO.Array.Output(id="activity"),
+                IO.Array.Output(id="produced_files"),
             ],
-            hidden=[Hidden.UNIQUE_ID, Hidden.TOOL_CONTEXT, Hidden.WORKFLOW_STATE],
+            hidden=[
+                Hidden.UNIQUE_ID,
+                Hidden.TOOL_CONTEXT,
+                Hidden.AGENT_RUNTIME,
+                Hidden.WORKFLOW_STATE,
+                Hidden.SESSION_ID,
+                Hidden.USER_ID,
+            ],
             not_idempotent=True,
         )
 
     async def execute(self, *, hidden: HiddenHolder, **inputs: Any) -> NodeOutput:
-        ctx = hidden.tool_context
-        parent_agent = getattr(ctx, "agent_controller", None) if ctx else None
-        if parent_agent is None:
+        runtime = hidden.agent_runtime
+        if runtime is None:
             return NodeOutput(
-                error=(
-                    "CodingAgentNode requires an agent_controller on "
-                    "the tool context."
-                ),
+                error="CodingAgentNode requires an agent runtime on the workflow executor.",
                 metadata={"node_id": hidden.unique_id},
             )
 
@@ -146,13 +157,8 @@ class CodingAgentNode(WorkflowNode):
             not inputs.get("allowed_tools")
             or list(inputs["allowed_tools"]) == list(DEFAULT_CODING_AGENT_TOOLS)
         ):
-            allowed_raw = (
-                "project_read",
-                "project_grep",
-                "project_glob",
-                "project_tree",
-            )
-        allowed = tuple(str(t) for t in allowed_raw)
+            allowed_raw = _READ_ONLY_PROJECT_TOOLS
+        allowed = [str(t) for t in allowed_raw]
         output_var = inputs.get("output")
 
         from pathlib import Path
@@ -177,39 +183,23 @@ class CodingAgentNode(WorkflowNode):
             )
 
         started = time.monotonic()
-        try:
-            response = await _run_coding_agent(
-                parent_controller=parent_agent,
-                parent_engine=None,
-                prompt=prompt,
-                project_path=str(path),
-                allowed_tools=allowed,
-                max_turns=max_iter,
-                goal_summary=None,
-            )
-        except Exception as exc:  # noqa: BLE001
-            logger.error("coding_agent_node_error", error=str(exc), exc_info=True)
-            return NodeOutput(
-                error=str(exc),
-                metadata={
-                    "node_id": hidden.unique_id,
-                    "duration_ms": int((time.monotonic() - started) * 1000),
-                    "run_id": str(uuid4()),
-                },
-            )
-
-        if state is not None and output_var:
-            state.set(output_var, response.get("text", ""))
-
-        return NodeOutput(
-            values=(
-                response.get("text", "") or "",
-                bool(response.get("success", False)),
-                int(response.get("steps_count") or 0),
-            ),
-            metadata={
-                "duration_ms": int((time.monotonic() - started) * 1000),
-                "partial": bool(response.get("partial", False)),
+        result = await run_agent_node(
+            hidden=hidden,
+            agent_name="coding_agent",
+            prompt=prompt,
+            allowed_tools=allowed,
+            max_turns=max_iter,
+            tool_extra={"project_roots": [str(path)]},
+            cwd=str(path),
+            output_var=output_var,
+            log_event="coding_agent_node",
+            extra_metadata={
+                "node_id": hidden.unique_id,
                 "project_path": str(path),
+                "run_id": str(uuid4()),
             },
         )
+        result.metadata.setdefault(
+            "duration_ms", int((time.monotonic() - started) * 1000)
+        )
+        return result

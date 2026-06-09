@@ -168,10 +168,11 @@ def _stage_in_sandbox(src: Path) -> Path:
 
 
 def _build_llm_service():
+    from leagent.llm.model_registry import ModelRegistry
     from leagent.llm.providers.deepseek import DeepSeekProvider
     from leagent.llm.registry import ProviderRegistry
-    from leagent.llm.router import ModelRouter, TierConfig
     from leagent.llm.service import LLMService
+    from leagent.llm.task_resolver import TaskResolver
 
     api_key = os.environ.get("DEEPSEEK_API_KEY")
     if not api_key:
@@ -183,21 +184,29 @@ def _build_llm_service():
     model = os.getenv("DEEPSEEK_MODEL", DeepSeekProvider.DEFAULT_MODEL)
 
     registry = ProviderRegistry()
-    for name in ("deepseek", "tier1", "tier2"):
+    for name in ("deepseek",):
         registry.register(
             name,
             DeepSeekProvider(api_key=api_key, base_url=base_url, default_model=model),
-            metadata={"tier": name, "vendor": "deepseek", "model": model},
+            metadata={"vendor": "deepseek", "model": model},
         )
 
-    router = ModelRouter(
-        registry=registry,
-        tier_configs={
-            "tier1": TierConfig(provider="tier1", model=model, temperature=0.1),
-            "tier2": TierConfig(provider="tier2", model=model, temperature=0.1),
+    model_registry = ModelRegistry()
+    model_registry.load_from_config({
+        "providers": [{
+            "name": "deepseek",
+            "type": "deepseek",
+            "models": [{"name": model, "kind": "chat"}],
+        }],
+        "routing": {
+            "tasks": {
+                "chat": {"provider": "deepseek", "model": model},
+                "fast": {"provider": "deepseek", "model": model},
+            },
         },
-    )
-    return LLMService(registry=registry, router=router), model
+    })
+    resolver = TaskResolver(registry=registry, model_registry=model_registry)
+    return LLMService(registry=registry, model_registry=model_registry, resolver=resolver), model
 
 
 def _build_tool_registry():

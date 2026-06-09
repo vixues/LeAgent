@@ -15,9 +15,6 @@ import json
 from typing import Any, AsyncIterator, Literal
 
 import httpx
-import structlog
-
-from leagent.utils.httpx_proxy import httpx_trust_env
 
 from leagent.exceptions.llm import (
     LLMRateLimitError,
@@ -35,12 +32,11 @@ from leagent.llm.base import (
     ToolCall,
     ToolDefinition,
 )
+from leagent.llm.transport import HttpTransport, TransportConfig
+from leagent.utils.logging import get_logger
 
 
-logger = structlog.get_logger(__name__)
-
-_STREAM_HTTPX_TIMEOUT = httpx.Timeout(connect=30.0, read=None, write=60.0, pool=10.0)
-_STREAM_HTTPX_LIMITS = httpx.Limits(max_connections=100, max_keepalive_connections=20, keepalive_expiry=60.0)
+logger = get_logger(__name__)
 
 
 class AnthropicProvider(LLMProvider):
@@ -76,43 +72,32 @@ class AnthropicProvider(LLMProvider):
         self.timeout = timeout
         self.max_retries = max_retries
         self.base_url = (base_url or self.BASE_URL).rstrip("/")
-        self._http_complete_client: httpx.AsyncClient | None = None
-        self._http_stream_client: httpx.AsyncClient | None = None
+        # Shared pooled transport — see OpenAIProvider for rationale.
+        self._transport = HttpTransport(TransportConfig(complete_timeout=self.timeout))
 
     def _ensure_complete_client(self) -> httpx.AsyncClient:
-        if self._http_complete_client is None:
-            self._http_complete_client = httpx.AsyncClient(
-                timeout=self.timeout,
-                trust_env=httpx_trust_env(),
-            )
-        return self._http_complete_client
+        return self._transport.complete_client
 
     def _ensure_stream_client(self) -> httpx.AsyncClient:
-        if self._http_stream_client is None:
-            self._http_stream_client = httpx.AsyncClient(
-                timeout=_STREAM_HTTPX_TIMEOUT,
-                limits=_STREAM_HTTPX_LIMITS,
-                trust_env=httpx_trust_env(),
-            )
-        return self._http_stream_client
+        return self._transport.stream_client
 
     async def aclose(self) -> None:
         """Release pooled HTTP connections."""
-        for client in (self._http_complete_client, self._http_stream_client):
-            if client is not None:
-                await client.aclose()
-        self._http_complete_client = None
-        self._http_stream_client = None
+        await self._transport.aclose()
 
     def _get_default_model(self) -> str:
         return self.default_model
 
     def _get_headers(self) -> dict[str, str]:
-        return {
+        headers = {
             "x-api-key": self.api_key,
             "anthropic-version": self.API_VERSION,
             "content-type": "application/json",
         }
+        # Correlate outbound LLM HTTP with the originating request/turn and
+        # join the OTel trace (X-Request-Id + W3C traceparent).
+        headers.update(self._transport.request_headers())
+        return headers
 
     def _split_messages(
         self, messages: list[ChatMessage]
@@ -339,7 +324,12 @@ class AnthropicProvider(LLMProvider):
         for attempt in range(self.max_retries + 1):
             try:
                 client = self._ensure_complete_client()
-                response = await client.post(url, headers=self._get_headers(), json=body)
+                with self._transport.request_span(
+                    "complete", model=model, provider="anthropic"
+                ):
+                    response = await client.post(
+                        url, headers=self._get_headers(), json=body
+                    )
 
                 if response.status_code == 200:
                     return self._parse_response(response.json(), model)

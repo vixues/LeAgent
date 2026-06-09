@@ -20,14 +20,13 @@ from typing import Any, AsyncIterator, Literal
 
 import httpx
 
-from leagent.utils.httpx_proxy import httpx_trust_env
-
 from leagent.exceptions.llm import (
     LLMRateLimitError,
     LLMServiceError,
     LLMTimeoutError,
     ModelNotFoundError,
 )
+from leagent.llm.transport import HttpTransport, TransportConfig
 from leagent.llm.base import (
     ChatMessage,
     EmbeddingResponse,
@@ -139,65 +138,37 @@ class OllamaProvider(LLMProvider):
         self.default_model = default_model
         self.timeout = timeout
         self.max_retries = max_retries
-        self._http_complete_client: httpx.AsyncClient | None = None
-        self._http_stream_client: httpx.AsyncClient | None = None
-        self._http_management_client: httpx.AsyncClient | None = None
-        self._http_pull_client: httpx.AsyncClient | None = None
+        # Shared pooled transports. Ollama uses a shorter stream connect
+        # timeout and dedicated transports for model management / pulls
+        # (which can run for up to an hour).
+        self._transport = HttpTransport(
+            TransportConfig(
+                complete_timeout=self.timeout,
+                stream_timeout=httpx.Timeout(connect=10.0, read=None, write=30.0, pool=30.0),
+            )
+        )
+        self._mgmt_transport = HttpTransport(TransportConfig(complete_timeout=30.0))
+        self._pull_transport = HttpTransport(TransportConfig(complete_timeout=3600.0))
 
     def _get_default_model(self) -> str:
         return self.default_model
 
     def _ensure_complete_client(self) -> httpx.AsyncClient:
-        if self._http_complete_client is None:
-            self._http_complete_client = httpx.AsyncClient(
-                timeout=self.timeout,
-                trust_env=httpx_trust_env(),
-            )
-        return self._http_complete_client
+        return self._transport.complete_client
 
     def _ensure_stream_client(self) -> httpx.AsyncClient:
-        if self._http_stream_client is None:
-            self._http_stream_client = httpx.AsyncClient(
-                timeout=httpx.Timeout(
-                    connect=10.0,
-                    read=None,
-                    write=30.0,
-                    pool=30.0,
-                ),
-                trust_env=httpx_trust_env(),
-            )
-        return self._http_stream_client
+        return self._transport.stream_client
 
     def _ensure_management_client(self) -> httpx.AsyncClient:
-        if self._http_management_client is None:
-            self._http_management_client = httpx.AsyncClient(
-                timeout=30.0,
-                trust_env=httpx_trust_env(),
-            )
-        return self._http_management_client
+        return self._mgmt_transport.complete_client
 
     def _ensure_pull_client(self) -> httpx.AsyncClient:
-        if self._http_pull_client is None:
-            self._http_pull_client = httpx.AsyncClient(
-                timeout=3600.0,
-                trust_env=httpx_trust_env(),
-            )
-        return self._http_pull_client
+        return self._pull_transport.complete_client
 
     async def aclose(self) -> None:
         """Release pooled HTTP connections."""
-        for client in (
-            self._http_complete_client,
-            self._http_stream_client,
-            self._http_management_client,
-            self._http_pull_client,
-        ):
-            if client is not None:
-                await client.aclose()
-        self._http_complete_client = None
-        self._http_stream_client = None
-        self._http_management_client = None
-        self._http_pull_client = None
+        for transport in (self._transport, self._mgmt_transport, self._pull_transport):
+            await transport.aclose()
 
     @staticmethod
     def _is_embedding_model(name: str) -> bool:
@@ -500,7 +471,12 @@ class OllamaProvider(LLMProvider):
         for attempt in range(self.max_retries + 1):
             try:
                 client = self._ensure_complete_client()
-                response = await client.post(url, json=body)
+                with self._transport.request_span(
+                    "complete", model=model, provider="ollama"
+                ):
+                    response = await client.post(
+                        url, json=body, headers=self._transport.request_headers()
+                    )
 
                 if response.status_code == 200:
                     return self._parse_response(response.json(), model)
@@ -588,7 +564,10 @@ class OllamaProvider(LLMProvider):
         for attempt in range(self.max_retries + 1):
             try:
                 client = self._ensure_stream_client()
-                async with client.stream("POST", url, json=body) as response:
+                async with client.stream(
+                    "POST", url, json=body,
+                    headers=self._transport.request_headers(),
+                ) as response:
                     if response.status_code != 200:
                         content = await response.aread()
                         if attempt < self.max_retries and response.status_code >= 500:

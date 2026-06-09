@@ -35,8 +35,9 @@ from leagent.context.types import (
 from leagent.context.working_set import WorkingSet
 
 if TYPE_CHECKING:
-    from leagent.memory.agent_memory import AgentMemory, RecallHandle
+    from leagent.memory.agent_memory import AgentMemory
     from leagent.memory.working_scratchpad import WorkingScratchpad
+    from leagent.sdk.protocols import RecallProvider
     from leagent.prompts.registry import PromptRegistry
     from leagent.prompts.types import BuiltPrompt
     from leagent.services.session import SessionManager
@@ -79,6 +80,7 @@ class ContextManager:
         agent_id: str = "default",
         variant: str = "default_agent",
         template_variant: str = "default",
+        recipe: str | None = None,
         file_state: FileState | None = None,
         working_set: WorkingSet | None = None,
         artifact_tracker: ArtifactErrorTracker | None = None,
@@ -99,6 +101,10 @@ class ContextManager:
         self.agent_id = agent_id
         self.variant = variant
         self.template_variant = template_variant
+        # Context recipe defaults to the prompt variant but can be decoupled
+        # so an agent can reuse another agent's context assembly recipe while
+        # keeping its own persona/prompt variant.
+        self.recipe = recipe or variant
         self.artifact_store = artifact_store
         self.operation_journal = operation_journal
 
@@ -136,13 +142,14 @@ class ContextManager:
         append_extra: str = "",
         workflow_hint: str = "",
         template_vars: dict[str, Any] | None = None,
-        recall_handle: "RecallHandle | None" = None,
+        recall_handle: "RecallProvider | None" = None,
         project_roots: list[str] | None = None,
+        budget_max_chars: int | None = None,
     ) -> TurnContext:
         start = time.perf_counter()
         self.artifact_tracker.advance_turn()
 
-        recipe = get_recipe(self.variant)
+        recipe = get_recipe(self.recipe)
         source_classes = get_all_sources()
 
         resolve_ctx = self._build_resolve_context(
@@ -163,9 +170,14 @@ class ContextManager:
             if self.artifact_tracker.needs_workspace_reset:
                 self._refresh_workspace_file_state()
 
+        effective_budget_chars = (
+            budget_max_chars
+            if budget_max_chars is not None and budget_max_chars > 0
+            else self._cfg("budget_max_chars", recipe.max_chars)
+        )
         budget_result = minimise(
             blocks,
-            max_chars=recipe.max_chars,
+            max_chars=effective_budget_chars,
             freshness_half_life_seconds=self._cfg("freshness_half_life_seconds", 300.0),
         )
 
@@ -294,6 +306,86 @@ class ContextManager:
             project_memory_sources=pm_sources,
         )
 
+    async def assemble(self, request: Any) -> Any:
+        """Narrow SDK entry point — satisfies :class:`ContextAssembler` protocol.
+
+        Wraps :meth:`prepare_turn` by unpacking an
+        :class:`~leagent.sdk.protocols.AssemblyRequest` into the existing
+        keyword interface, then repacks the :class:`TurnContext` into an
+        :class:`~leagent.sdk.protocols.AssemblyResult`.
+        """
+        from uuid import uuid4
+
+        from leagent.sdk.protocols import AssemblyRequest, AssemblyResult
+
+        if not isinstance(request, AssemblyRequest):
+            raise TypeError(
+                f"assemble() expects AssemblyRequest, got {type(request).__name__}"
+            )
+
+        # Map SDK session/user identity onto the manager when the request
+        # carries it and the instance was constructed without one (the SDK
+        # path builds a generic manager and supplies identity per turn).
+        if request.session_id is not None and self.session_id is None:
+            self.session_id = request.session_id
+        if request.user_id is not None and self.user_id is None:
+            self.user_id = request.user_id
+
+        # Build + start background recall from the bound memory store, mirroring
+        # what QueryEngine does on the agent hot path.
+        recall_handle: "RecallProvider | None" = None
+        if self.agent_memory is not None and request.query.strip():
+            from leagent.memory.agent_memory import RecallHandle
+
+            recall_handle = RecallHandle(self.agent_memory)
+            recall_handle.start(
+                request.query,
+                user_id=request.user_id or self.user_id,
+                session_id=request.session_id or self.session_id,
+            )
+
+        turn = await self.prepare_turn(
+            request.query,
+            task_id=request.task_id or uuid4(),
+            persona_override=request.persona_override,
+            append_extra=request.append_extra,
+            workflow_hint=request.workflow_hint,
+            template_vars=request.template_vars or {},
+            project_roots=request.project_roots or [],
+            recall_handle=recall_handle,
+            budget_max_chars=request.max_budget_chars,
+        )
+
+        system_text = ""
+        if turn.built_prompt is not None:
+            system_text = getattr(turn.built_prompt, "system_text", "")
+
+        source_ids = []
+        metadata: dict[str, Any] = {}
+        if turn.ledger is not None:
+            # A source was "kept" in the assembled prompt when it was neither
+            # dropped by the budget minimiser nor skipped during resolution.
+            source_ids = [
+                row.source_id
+                for row in getattr(turn.ledger, "rows", [])
+                if not getattr(row, "dropped", False)
+                and not getattr(row, "skip_reason", "")
+            ]
+            metadata = {
+                "stable_hash": turn.ledger.stable_hash,
+                "full_hash": turn.ledger.full_hash,
+                "project_memory_hash": turn.ledger.project_memory_hash,
+                "prepare_duration_ms": turn.ledger.duration_ms,
+            }
+
+        return AssemblyResult(
+            system_prompt=system_text,
+            attachment_messages=list(turn.attachment_messages),
+            token_estimate=len(system_text) // 3,
+            source_ids=source_ids,
+            metadata=metadata,
+        )
+
     def clone(self) -> ContextManager:
         """Create a child manager with a branched file state + empty working set."""
         return ContextManager(
@@ -310,6 +402,7 @@ class ContextManager:
             agent_id=f"{self.agent_id}/fork",
             variant=self.variant,
             template_variant=self.template_variant,
+            recipe=self.recipe,
             file_state=self.file_state.clone(),
             artifact_tracker=self.artifact_tracker.clone(),
         )

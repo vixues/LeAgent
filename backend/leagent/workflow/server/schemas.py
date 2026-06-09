@@ -110,6 +110,12 @@ class ExecutionStatusEvent(BaseModel):
 
 
 class ObjectInfoResponse(BaseModel):
-    """Alias over the raw node snapshot; typed for documentation."""
+    """Node schema snapshot plus editor rendering hints.
+
+    ``nodes`` is the per-node ``/object_info`` payload. ``socket_colors``
+    is the ``io_type -> colour`` legend the litegraph editor uses to paint
+    typed sockets without hard-coding the palette client-side.
+    """
 
     nodes: dict[str, dict[str, Any]]
+    socket_colors: dict[str, str] = Field(default_factory=dict)

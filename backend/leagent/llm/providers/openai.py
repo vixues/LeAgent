@@ -11,8 +11,6 @@ from typing import TYPE_CHECKING, Any, AsyncIterator, Literal
 
 import httpx
 
-from leagent.utils.httpx_proxy import httpx_trust_env
-
 from leagent.exceptions.llm import (
     LLMRateLimitError,
     LLMServiceError,
@@ -29,10 +27,7 @@ from leagent.llm.base import (
     ToolCall,
     ToolDefinition,
 )
-
-# Streaming uses infinite read timeout; connect/write stay bounded.
-_STREAM_HTTPX_TIMEOUT = httpx.Timeout(connect=30.0, read=None, write=60.0, pool=10.0)
-_STREAM_HTTPX_LIMITS = httpx.Limits(max_connections=100, max_keepalive_connections=20, keepalive_expiry=60.0)
+from leagent.llm.transport import HttpTransport, TransportConfig
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -179,33 +174,20 @@ class OpenAIProvider(LLMProvider):
         self.organization = organization
         self.parse_think_tags = parse_think_tags
         self._extra_headers = dict(default_headers) if default_headers else {}
-        self._http_complete_client: httpx.AsyncClient | None = None
-        self._http_stream_client: httpx.AsyncClient | None = None
+        # Shared, pooled HTTP transport (replaces per-provider httpx client
+        # boilerplate + duplicated timeout/limit constants). The per-provider
+        # ``timeout`` is honoured as the completion-request timeout.
+        self._transport = HttpTransport(TransportConfig(complete_timeout=self.timeout))
 
     def _ensure_complete_client(self) -> httpx.AsyncClient:
-        if self._http_complete_client is None:
-            self._http_complete_client = httpx.AsyncClient(
-                timeout=self.timeout,
-                trust_env=httpx_trust_env(),
-            )
-        return self._http_complete_client
+        return self._transport.complete_client
 
     def _ensure_stream_client(self) -> httpx.AsyncClient:
-        if self._http_stream_client is None:
-            self._http_stream_client = httpx.AsyncClient(
-                timeout=_STREAM_HTTPX_TIMEOUT,
-                limits=_STREAM_HTTPX_LIMITS,
-                trust_env=httpx_trust_env(),
-            )
-        return self._http_stream_client
+        return self._transport.stream_client
 
     async def aclose(self) -> None:
         """Release pooled HTTP connections (optional lifecycle hook)."""
-        for client in (self._http_complete_client, self._http_stream_client):
-            if client is not None:
-                await client.aclose()
-        self._http_complete_client = None
-        self._http_stream_client = None
+        await self._transport.aclose()
 
     def _get_default_model(self) -> str:
         return self.default_model
@@ -219,6 +201,10 @@ class OpenAIProvider(LLMProvider):
             headers["Authorization"] = f"Bearer {self.api_key}"
         if self.organization:
             headers["OpenAI-Organization"] = self.organization
+        # Correlate outbound LLM HTTP with the originating request/turn and
+        # join the OTel trace (X-Request-Id + W3C traceparent) via the shared
+        # transport. Applies to complete/stream/embeddings (all use this).
+        headers.update(self._transport.request_headers())
         return headers
 
     def _build_request_body(
@@ -398,11 +384,14 @@ class OpenAIProvider(LLMProvider):
         for attempt in range(self.max_retries + 1):
             try:
                 client = self._ensure_complete_client()
-                response = await client.post(
-                    url,
-                    headers=self._get_headers(),
-                    json=body,
-                )
+                with self._transport.request_span(
+                    "complete", model=model, provider="openai"
+                ):
+                    response = await client.post(
+                        url,
+                        headers=self._get_headers(),
+                        json=body,
+                    )
 
                 if response.status_code == 200:
                     return self._parse_response(response.json())
@@ -680,7 +669,10 @@ class OpenAIProvider(LLMProvider):
         url = f"{self.base_url}/embeddings"
 
         try:
-            async with httpx.AsyncClient(timeout=self.timeout, trust_env=httpx_trust_env()) as client:
+            client = self._ensure_complete_client()
+            with self._transport.request_span(
+                "embed", model=embed_model, provider="openai"
+            ):
                 response = await client.post(
                     url,
                     headers=self._get_headers(),

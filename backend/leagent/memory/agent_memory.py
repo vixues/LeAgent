@@ -22,10 +22,13 @@ import asyncio
 import json
 import logging
 import os
+from collections import OrderedDict
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 from uuid import UUID
+
+_MAX_OBSERVED_TURN_KEYS = 2048
 
 from leagent.memory.formation import (
     FormationDecision,
@@ -80,6 +83,10 @@ class AgentMemory:
             procedural=procedural,
             embeddings=embeddings,
         )
+        # Deterministic bounded LRU of observed ``(session_id, turn_id)`` keys
+        # so duplicate ``observe_turn`` calls (controller + hook) are
+        # idempotent without unbounded growth or non-deterministic eviction.
+        self._observed_turn_keys: OrderedDict[str, None] = OrderedDict()
 
     @property
     def pipeline(self) -> RetrievalPipeline:
@@ -184,34 +191,6 @@ class AgentMemory:
             self._append_failed_write_wal("episode", str(exc), repr(episode.id))
             return episode
 
-    async def batch_record_episodes(
-        self,
-        episodes: list[dict[str, Any]],
-    ) -> list[dict[str, Any]]:
-        """Batch-record multiple episodes in a single transaction."""
-        results = []
-        for ep in episodes:
-            try:
-                result = await self.record_episode(**ep)
-                results.append({"ok": True, "result": result})
-            except Exception as exc:
-                results.append({"ok": False, "error": str(exc)})
-        return results
-
-    async def batch_upsert_facts(
-        self,
-        facts: list[dict[str, Any]],
-    ) -> list[dict[str, Any]]:
-        """Batch-upsert multiple facts."""
-        results = []
-        for fact in facts:
-            try:
-                result = await self.upsert_fact(**fact)
-                results.append({"ok": True, "result": result})
-            except Exception as exc:
-                results.append({"ok": False, "error": str(exc)})
-        return results
-
     async def upsert_fact(self, fact: Fact) -> Fact:
         try:
             out = await self._semantic.upsert(fact)
@@ -269,12 +248,19 @@ class AgentMemory:
         """Evaluate a turn observation and write to appropriate stores.
 
         This is the primary entry-point for multi-signal memory formation.
-        It replaces the old pattern of writing episodic rows unconditionally
-        at importance 0.3 and only writing procedural rows on user likes.
+        Idempotent per ``(session_id, turn_id)`` — duplicate calls from
+        both the controller and the hook are silently deduplicated.
 
         Returns the formation decision for observability / tests.
         Safe to call from streaming paths — never raises.
         """
+        turn_key = f"{obs.session_id}:{getattr(obs, 'turn_id', '') or ''}"
+        if turn_key in self._observed_turn_keys:
+            return FormationDecision(suppress=True, reasoning="duplicate observe_turn")
+        self._observed_turn_keys[turn_key] = None
+        while len(self._observed_turn_keys) > _MAX_OBSERVED_TURN_KEYS:
+            self._observed_turn_keys.popitem(last=False)
+
         try:
             decision = self._formation.evaluate(obs)
         except Exception as exc:  # noqa: BLE001
@@ -405,6 +391,55 @@ class AgentMemory:
         except Exception as exc:  # noqa: BLE001
             logger.warning("recall_failed: %s", exc)
             return RecallBundle(query=query)
+
+
+    # -- lifecycle -------------------------------------------------------
+
+    async def forget_episode(self, episode_id: UUID) -> None:
+        """Delete a single episodic memory entry."""
+        await self._episodic.delete(episode_id)
+
+    async def forget_fact(self, fact_id: UUID) -> None:
+        """Delete a single semantic fact."""
+        await self._semantic.delete(fact_id)
+
+    async def export_episodes(
+        self, *, user_id: UUID, limit: int = 500,
+    ) -> list[Episode]:
+        """Export recent episodes for a user (GDPR / data portability)."""
+        return await self._episodic.list_recent(user_id=user_id, limit=limit)
+
+    async def export_facts(
+        self, *, user_id: UUID, limit: int = 500,
+    ) -> list[Fact]:
+        """Export all facts for a user."""
+        return await self._semantic.list_for_user(user_id, limit=limit)
+
+    async def delete_user_data(self, user_id: UUID) -> dict[str, int]:
+        """Delete all memory data for a user (GDPR right-to-erasure).
+
+        Returns counts of deleted rows per store.
+        """
+        counts: dict[str, int] = {}
+        episodes = await self._episodic.list_recent(user_id=user_id, limit=10_000)
+        for ep in episodes:
+            if ep.id:
+                await self._episodic.delete(ep.id)
+        counts["episodes"] = len(episodes)
+
+        facts = await self._semantic.list_for_user(user_id, limit=10_000)
+        for f in facts:
+            if f.id:
+                await self._semantic.delete(f.id)
+        counts["facts"] = len(facts)
+
+        procs = await self._procedural.list_recent_for_user(user_id=user_id, limit=10_000)
+        for p in procs:
+            if p.id:
+                await self._procedural.delete(p.id)
+        counts["procedures"] = len(procs)
+
+        return counts
 
 
 class RecallHandle:

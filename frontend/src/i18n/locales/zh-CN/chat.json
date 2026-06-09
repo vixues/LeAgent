@@ -323,7 +323,12 @@
       "stream": "发生错误",
       "cancelled": "已取消",
       "sendShort": "发送失败",
-      "genericRetry": "发生错误，请重试"
+      "genericRetry": "发生错误，请重试",
+      "stoppedByUser": "已被用户停止",
+      "promptTooLong": "对话内容超出模型上下文窗口限制，请尝试新建对话或压缩上下文。",
+      "modelError": "模型返回错误，请重试。",
+      "maxTurns": "智能体已达到最大轮次限制，任务未完成。",
+      "tokenBudgetExceeded": "Token 预算已用尽，对话消耗的 Token 超出限额。"
     },
     "workflow": {
       "run": "运行",

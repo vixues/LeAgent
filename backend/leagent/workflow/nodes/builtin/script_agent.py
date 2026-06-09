@@ -9,14 +9,10 @@ from __future__ import annotations
 
 import time
 from typing import Any
-from uuid import uuid4
 
 import structlog
 
-from leagent.agent.script_agent import (
-    DEFAULT_SCRIPT_AGENT_TOOLS,
-    build_script_execution_agent,
-)
+from leagent.agent.script_agent import DEFAULT_SCRIPT_AGENT_TOOLS
 from leagent.workflow.io import (
     IO,
     Hidden,
@@ -24,6 +20,7 @@ from leagent.workflow.io import (
     NodeOutput,
     Schema,
 )
+from leagent.workflow.nodes.agent_exec import run_agent_node
 from leagent.workflow.nodes.base import WorkflowNode
 
 logger = structlog.get_logger(__name__)
@@ -82,17 +79,26 @@ class ScriptAgentNode(WorkflowNode):
                 IO.String.Output(id="text"),
                 IO.Boolean.Output(id="success"),
                 IO.Int.Output(id="steps_count"),
+                IO.String.Output(id="checkpoint_id"),
+                IO.Array.Output(id="activity"),
+                IO.Array.Output(id="produced_files"),
             ],
-            hidden=[Hidden.UNIQUE_ID, Hidden.TOOL_CONTEXT, Hidden.WORKFLOW_STATE],
+            hidden=[
+                Hidden.UNIQUE_ID,
+                Hidden.TOOL_CONTEXT,
+                Hidden.AGENT_RUNTIME,
+                Hidden.WORKFLOW_STATE,
+                Hidden.SESSION_ID,
+                Hidden.USER_ID,
+            ],
             not_idempotent=True,
         )
 
     async def execute(self, *, hidden: HiddenHolder, **inputs: Any) -> NodeOutput:
-        ctx = hidden.tool_context
-        parent_agent = getattr(ctx, "agent_controller", None) if ctx else None
-        if parent_agent is None:
+        runtime = hidden.agent_runtime
+        if runtime is None:
             return NodeOutput(
-                error="ScriptAgentNode requires an agent_controller on the tool context",
+                error="ScriptAgentNode requires an agent runtime on the workflow executor",
                 metadata={"node_id": hidden.unique_id},
             )
 
@@ -107,39 +113,22 @@ class ScriptAgentNode(WorkflowNode):
             prompt = state.resolve_template(prompt)
 
         max_iter = int(inputs.get("max_iterations") or 15)
-        allowed = inputs.get("allowed_tools") or DEFAULT_SCRIPT_AGENT_TOOLS
+        allowed_raw = inputs.get("allowed_tools") or DEFAULT_SCRIPT_AGENT_TOOLS
+        allowed = [str(t) for t in allowed_raw]
         output_var = inputs.get("output")
 
         started = time.monotonic()
-        try:
-            agent = build_script_execution_agent(
-                parent=parent_agent,
-                allowed_tools=[str(t) for t in allowed],
-                max_iterations=max_iter,
-            )
-            response = await agent.run(prompt, uuid4())
-        except Exception as exc:  # noqa: BLE001
-            logger.error("script_agent_node_error", error=str(exc), exc_info=True)
-            return NodeOutput(
-                error=str(exc),
-                metadata={
-                    "node_id": hidden.unique_id,
-                    "duration_ms": int((time.monotonic() - started) * 1000),
-                },
-            )
-
-        if state is not None and output_var:
-            state.set(output_var, response.text)
-
-        return NodeOutput(
-            values=(
-                response.text,
-                bool(response.success),
-                int(response.tool_calls_count or 0),
-            ),
-            metadata={
-                "duration_ms": int((time.monotonic() - started) * 1000),
-                "partial": bool(response.partial),
-                "sandbox": "subprocess",
-            },
+        result = await run_agent_node(
+            hidden=hidden,
+            agent_name="script_agent",
+            prompt=prompt,
+            allowed_tools=allowed,
+            max_turns=max_iter,
+            output_var=output_var,
+            log_event="script_agent_node",
+            extra_metadata={"node_id": hidden.unique_id, "sandbox": "subprocess"},
         )
+        result.metadata.setdefault(
+            "duration_ms", int((time.monotonic() - started) * 1000)
+        )
+        return result

@@ -5,10 +5,8 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-import httpx
-
 from leagent.llm.providers.deepseek import DeepSeekProvider
-from leagent.utils.httpx_proxy import httpx_trust_env
+from leagent.llm.transport import get_default_transport
 
 logger = logging.getLogger(__name__)
 
@@ -52,14 +50,17 @@ async def check_balance(
     """
     normalized_base_url = normalize_deepseek_base_url(base_url)
     url = f"{normalized_base_url}/user/balance"
-    headers = {
+    transport = get_default_transport()
+    headers = transport.request_headers({
         "Accept": "application/json",
         "Authorization": f"Bearer {api_key}",
-    }
-    async with httpx.AsyncClient(timeout=timeout, trust_env=httpx_trust_env()) as client:
-        response = await client.get(url, headers=headers)
-        response.raise_for_status()
-        return response.json()
+    })
+    with transport.request_span("balance", provider="deepseek"):
+        response = await transport.complete_client.get(
+            url, headers=headers, timeout=timeout
+        )
+    response.raise_for_status()
+    return response.json()
 
 
 async def list_models(
@@ -73,11 +74,14 @@ async def list_models(
     Returns the ``data`` array from ``GET /models``.
     """
     url = f"{normalize_deepseek_base_url(base_url)}/models"
-    headers = {
+    transport = get_default_transport()
+    headers = transport.request_headers({
         "Accept": "application/json",
         "Authorization": f"Bearer {api_key}",
-    }
-    async with httpx.AsyncClient(timeout=timeout, trust_env=httpx_trust_env()) as client:
-        response = await client.get(url, headers=headers)
-        response.raise_for_status()
-        return response.json().get("data", [])
+    })
+    with transport.request_span("list_models", provider="deepseek"):
+        response = await transport.complete_client.get(
+            url, headers=headers, timeout=timeout
+        )
+    response.raise_for_status()
+    return response.json().get("data", [])

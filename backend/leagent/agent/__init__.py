@@ -41,12 +41,6 @@ from leagent.agent.base import (
     ToolResult,
 )
 from leagent.agent.controller import AgentController
-from leagent.agent.executor import (
-    ErrorRecovery,
-    RecoveryHandler,
-    ResultProcessor,
-    ToolExecutor,
-)
 from leagent.agent.hooks import (
     AgentHook,
     HookManager,
@@ -65,6 +59,7 @@ from leagent.agent.planner import (
     topological_sort,
 )
 from leagent.agent.query_engine import QueryEngine, QueryEngineConfig, SDKMessage
+from leagent.agent.recovery import ErrorRecovery, RecoveryHandler, ResultProcessor
 from leagent.agent.subagent import AgentTool, fork_subagent
 from leagent.agent.tool_use_context import ToolUseContext
 from leagent.agent.transitions import (
@@ -73,6 +68,7 @@ from leagent.agent.transitions import (
     Terminal,
     TerminalReason,
 )
+from leagent.tools.executor import ToolExecutor
 
 __all__ = [
     # Base types

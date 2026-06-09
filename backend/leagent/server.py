@@ -26,7 +26,9 @@ def run_uvicorn(
         log_level=log_level,
         timeout_keep_alive=120,
         limit_concurrency=200,
-        access_log=True,
+        # Access logging is handled by AccessLogMiddleware (structured, with
+        # correlation IDs). Disable uvicorn's duplicate access log.
+        access_log=False,
     )
 
 
@@ -67,7 +69,7 @@ def run_gunicorn(
         "max_requests": 5000,
         "max_requests_jitter": 500,
         "preload_app": False,
-        "accesslog": "-",
+        # Access logging handled by AccessLogMiddleware; keep only error log.
         "errorlog": "-",
     }
 

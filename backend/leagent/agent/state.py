@@ -57,9 +57,6 @@ class QueryState:
         pending_tool_use_summary: Placeholder for TS parity; unused in
             the current Python loop but kept so downstream hooks can
             attach structured tool summaries without schema churn.
-        stop_hook_active: Tri-state (``None`` / ``True`` / ``False``)
-            recording whether a stop hook is currently pausing the
-            loop.
         turn_count: 1-indexed turn counter; incremented on
             ``NEXT_TURN`` transitions only.
         transition: The :class:`Continue` record that caused this
@@ -73,6 +70,5 @@ class QueryState:
     has_attempted_reactive_compact: bool = False
     max_output_tokens_override: int | None = None
     pending_tool_use_summary: Any = None  # unused stub (TS parity)
-    stop_hook_active: bool | None = None
     turn_count: int = 1
     transition: Continue | None = None

@@ -75,6 +75,9 @@ async def get_current_user_id(request: Request) -> UUID:
     uid = _require_authenticated_user(request) if _auth_enforced() else LOCAL_USER_ID
     request.state.user_id = str(uid)
     request.state.user_id_cached = str(uid)
+    from leagent.utils.logging import bind_log_context
+
+    bind_log_context(user_id=str(uid))
     return uid
 
 
