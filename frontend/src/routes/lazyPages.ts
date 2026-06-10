@@ -2,7 +2,7 @@ import { lazy, useEffect, type ComponentType, type LazyExoticComponent } from 'r
 import { lazyImportWithRetry } from '@/lib/lazyImportWithRetry';
 import { queryClient } from '@/lib/queryClient';
 import { QUERY_KEYS } from '@/controllers/API/helpers/constants';
-import { fetchFlow } from '@/pages/FlowPage/fetchFlow';
+import { fetchFlow } from '@/pages/WorkflowsPage/fetchFlow';
 
 function lazyPage<T extends ComponentType<unknown>>(
   loader: () => Promise<{ default: T }>
@@ -11,13 +11,14 @@ function lazyPage<T extends ComponentType<unknown>>(
 }
 
 /**
- * If the current URL is `/workflows/:id` (not `/new`), fire the GET /flows/:id
- * request in parallel with the FlowPage chunk download so the useQuery inside
- * FlowPage finds either a hot cache entry or an already-in-flight promise
- * instead of starting the API call only after the chunk is parsed.
+ * If the current URL is `/workflows/:id` (not `/new` or `/templates`), fire
+ * the GET /flows/:id request in parallel with the WorkflowsPage chunk
+ * download so the editor finds either a hot cache entry or an
+ * already-in-flight promise instead of starting the API call only after the
+ * chunk is parsed.
  *
- * Safe to call on every FlowPage import: `prefetchQuery` respects `staleTime`
- * and deduplicates in-flight requests.
+ * Safe to call on every WorkflowsPage import: `prefetchQuery` respects
+ * `staleTime` and deduplicates in-flight requests.
  */
 function prefetchFlowForCurrentUrl(): void {
   if (typeof window === 'undefined') return;
@@ -35,17 +36,14 @@ function prefetchFlowForCurrentUrl(): void {
 export const loadChatView = () => import('../pages/ChatView');
 export const loadHomePage = () => import('../pages/HomePage');
 export const loadDashboardPage = () => import('../pages/DashboardPage');
-export const loadFlowPage = () => {
+export const loadWorkflowsPage = () => {
   prefetchFlowForCurrentUrl();
-  return import('../pages/FlowPage');
+  return import('../pages/WorkflowsPage');
 };
-export const loadWorkflowListPage = () => import('../pages/WorkflowListPage');
 export const loadExecutionPage = () => import('../pages/ExecutionPage');
 export const loadCronPage = () => import('../pages/CronPage');
 export const loadTemplatesPage = () => import('../pages/TemplatesPage');
 export const loadPlaygroundPage = () => import('../pages/PlaygroundPage');
-export const loadChatWorkflowTemplatesPage = () =>
-  import('../pages/ChatWorkflowTemplatesPage');
 export const loadKnowledgePage = () => import('../pages/KnowledgePage');
 export const loadToolsPage = () => import('../pages/ToolsPage');
 export const loadMCPPage = () => import('../pages/MCPPage');
@@ -64,13 +62,11 @@ export const loadCodingProjectsPage = () => import('../pages/CodingProjects');
 export const ChatView = lazyPage(loadChatView);
 export const HomePage = lazyPage(loadHomePage);
 export const DashboardPage = lazyPage(loadDashboardPage);
-export const FlowPage = lazyPage(loadFlowPage);
-export const WorkflowListPage = lazyPage(loadWorkflowListPage);
+export const WorkflowsPage = lazyPage(loadWorkflowsPage);
 export const ExecutionPage = lazyPage(loadExecutionPage);
 export const CronPage = lazyPage(loadCronPage);
 export const TemplatesPage = lazyPage(loadTemplatesPage);
 export const PlaygroundPage = lazyPage(loadPlaygroundPage);
-export const ChatWorkflowTemplatesPage = lazyPage(loadChatWorkflowTemplatesPage);
 export const KnowledgePage = lazyPage(loadKnowledgePage);
 export const ToolsPage = lazyPage(loadToolsPage);
 export const MCPPage = lazyPage(loadMCPPage);
@@ -97,16 +93,16 @@ const prefetchByHref: Record<string, () => void> = {
     void loadDashboardPage();
   },
   '/workflows': () => {
-    void loadWorkflowListPage();
+    void loadWorkflowsPage();
   },
   '/workflows/new': () => {
-    void loadFlowPage();
+    void loadWorkflowsPage();
+  },
+  '/workflows/templates': () => {
+    void loadWorkflowsPage();
   },
   '/playground': () => {
     void loadPlaygroundPage();
-  },
-  '/chat-workflow-templates': () => {
-    void loadChatWorkflowTemplatesPage();
   },
   '/templates': () => {
     void loadTemplatesPage();
@@ -158,7 +154,7 @@ const prefetchByHref: Record<string, () => void> = {
 /**
  * Warm the route chunk for a nav href (hover/focus). No-op for unknown paths.
  *
- * Also handles dynamic `/workflows/:id` links by warming the FlowPage chunk
+ * Also handles dynamic `/workflows/:id` links by warming the WorkflowsPage chunk
  * and prefetching the flow data so a click feels instant.
  */
 export function prefetchRoute(href: string): void {
@@ -170,8 +166,8 @@ export function prefetchRoute(href: string): void {
     return;
   }
   const flowMatch = path.match(/^\/workflows\/([^/]+)$/);
-  if (flowMatch && flowMatch[1] !== 'new') {
-    void loadFlowPage();
+  if (flowMatch && flowMatch[1] !== 'new' && flowMatch[1] !== 'templates') {
+    void loadWorkflowsPage();
     void queryClient.prefetchQuery({
       queryKey: QUERY_KEYS.FLOW(flowMatch[1]!),
       queryFn: () => fetchFlow(flowMatch[1]!),
@@ -192,7 +188,7 @@ export function prefetchRoute(href: string): void {
 const PREWARM_TOP_ROUTES: ReadonlyArray<() => Promise<unknown>> = [
   loadHomePage,
   loadDashboardPage,
-  loadWorkflowListPage,
+  loadWorkflowsPage,
   loadKnowledgePage,
   loadSettingsPage,
 ];

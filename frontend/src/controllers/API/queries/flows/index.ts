@@ -32,8 +32,8 @@ interface BackendPaginatedFlows {
 export interface CreateFlowInput {
   name: string;
   description?: string;
-  nodes?: FlowData['nodes'];
-  edges?: FlowData['edges'];
+  /** Canonical workflow document (`nodes` dict + `control` + optional `ui`). */
+  data?: Record<string, unknown>;
   tags?: string[];
 }
 
@@ -41,8 +41,8 @@ export interface UpdateFlowInput {
   id: string;
   name?: string;
   description?: string;
-  nodes?: FlowData['nodes'];
-  edges?: FlowData['edges'];
+  /** Canonical workflow document (`nodes` dict + `control` + optional `ui`). */
+  data?: Record<string, unknown>;
   tags?: string[];
 }
 

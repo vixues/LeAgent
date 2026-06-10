@@ -23,7 +23,6 @@ import {
   Webhook,
   Radio,
   ScrollText,
-  LayoutList,
 } from 'lucide-react';
 import { useAuthStore } from '@/stores/auth';
 import { isAdminUser } from '@/lib/authUser';
@@ -88,12 +87,6 @@ const AppSidebar = ({ collapsed = false, onCollapsedChange }: AppSidebarProps) =
       label: t('nav.playground'),
       icon: <PlayCircle className="w-5 h-5" />,
       href: '/playground',
-    },
-    {
-      id: 'chatWorkflowTemplates',
-      label: t('nav.chatWorkflowTemplates'),
-      icon: <LayoutList className="w-5 h-5" />,
-      href: '/chat-workflow-templates',
     },
     {
       id: 'templates',

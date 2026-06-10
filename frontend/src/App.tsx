@@ -14,13 +14,11 @@ import {
   ChatView,
   HomePage,
   DashboardPage,
-  FlowPage,
-  WorkflowListPage,
+  WorkflowsPage,
   ExecutionPage,
   CronPage,
   TemplatesPage,
   PlaygroundPage,
-  ChatWorkflowTemplatesPage,
   KnowledgePage,
   ToolsPage,
   MCPPage,
@@ -102,10 +100,12 @@ export default function App() {
               <Route path="dashboard" element={<DashboardPage />} />
               <Route path="workflow" element={<Navigate to="/workflows" replace />} />
               <Route path="template" element={<Navigate to="/templates" replace />} />
-              <Route path="workflows" element={<WorkflowListPage />} />
-              <Route path="workflows/new" element={<FlowPage />} />
-              <Route path="workflows/:id/executions" element={<WorkflowListPage />} />
-              <Route path="workflows/:id" element={<FlowPage />} />
+              {/* Unified workflow page: hub (list + chat templates) and editor */}
+              <Route path="workflows" element={<WorkflowsPage />} />
+              <Route path="workflows/templates" element={<WorkflowsPage />} />
+              <Route path="workflows/new" element={<WorkflowsPage />} />
+              <Route path="workflows/:id/executions" element={<WorkflowsPage />} />
+              <Route path="workflows/:id" element={<WorkflowsPage />} />
               <Route path="executions/:executionId" element={<ExecutionPage />} />
               <Route path="templates" element={<TemplatesPage />} />
               <Route path="cron" element={<CronPage />} />
@@ -114,7 +114,7 @@ export default function App() {
               <Route path="playground" element={<PlaygroundPage />} />
               <Route
                 path="chat-workflow-templates"
-                element={<ChatWorkflowTemplatesPage />}
+                element={<Navigate to="/workflows/templates" replace />}
               />
               <Route path="pet-space" element={<PetSpacePage />} />
               <Route path="knowledge" element={<KnowledgePage />} />

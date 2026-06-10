@@ -1,8 +1,5 @@
 export { useFlowStore, type FlowNode, type FlowEdge, type FlowNodeData } from './flow';
 export {
-  useFlowsManagerStore,
-} from './flowsManagerStore';
-export {
   useMessagesStore,
   type Message,
   type MessageRole,

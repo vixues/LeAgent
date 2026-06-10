@@ -13,7 +13,7 @@ function obfuscateRouteChunksPlugin(): Plugin {
       const assetsDir = path.resolve(__dirname, 'dist', 'assets');
       if (!fs.existsSync(assetsDir)) return;
       const { default: JavaScriptObfuscator } = await import('javascript-obfuscator');
-      const targets = /ChatView|FlowPage|WorkflowList/i;
+      const targets = /ChatView|WorkflowsPage/i;
       for (const file of fs.readdirSync(assetsDir)) {
         if (!file.endsWith('.js') || !targets.test(file)) continue;
         const full = path.join(assetsDir, file);
