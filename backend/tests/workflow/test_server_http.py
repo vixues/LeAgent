@@ -74,6 +74,27 @@ def test_object_info_returns_nodes(app_with_stubs):
     assert "StartNode" in data["nodes"]
 
 
+def test_object_info_includes_domain_models_when_env_set(app_with_stubs, monkeypatch):
+    import asyncio
+
+    monkeypatch.delenv("DASHSCOPE_API_KEY", raising=False)
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.setenv("LEAGENT_DIFFUSION_ENABLED", "0")
+    monkeypatch.setenv("LEAGENT_LOCAL_ASR_URL", "http://localhost:8000")
+    monkeypatch.setenv("LEAGENT_LOCAL_TTS_URL", "http://localhost:8880")
+
+    from leagent.workflow.nodes import bootstrap
+
+    asyncio.run(bootstrap())
+
+    client = TestClient(app_with_stubs)
+    resp = client.get("/api/v1/workflow/object_info")
+    assert resp.status_code == 200
+    nodes = resp.json()["nodes"]
+    assert "Model.asr.local" in nodes
+    assert "Model.tts.local" in nodes
+
+
 def test_get_flow_returns_404_when_missing(app_with_stubs):
     client = TestClient(app_with_stubs)
     resp = client.get(f"/api/v1/workflow/flows/{uuid4()}")

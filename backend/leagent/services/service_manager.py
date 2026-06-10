@@ -51,6 +51,7 @@ class ServiceManager:
         self._mcp_manager: MCPClientManager | None = None
         self._cron: CronManager | None = None
         self._workflow_service: WorkflowService | None = None
+        self._workflow_event_bus: Any = None
         self._file_service: "FileService | None" = None
         self._file_processing: FileProcessingService | None = None
         self._rule_engine: Any = None
@@ -414,6 +415,10 @@ class ServiceManager:
             )
 
             event_bus = InMemoryEventBus()
+            # Share the bus with the WS router (`get_event_bus(service_manager)`)
+            # so publishers (executor progress handler) and subscribers
+            # (WebSocket endpoints) use one transport.
+            self._workflow_event_bus = event_bus
 
             tool_registry = None
             tool_executor = None

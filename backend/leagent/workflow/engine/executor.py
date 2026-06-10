@@ -43,7 +43,7 @@ from .errors import (
 )
 from .graph import DynamicPrompt, ExecutionList, ExpandFrame, TopologicalSort
 from .progress import NodeStatus, ProgressEvent, ProgressHandler, ProgressRegistry
-from .runner import NodeRunner
+from .runner import NodeRunner, NodeRunResult
 
 logger = structlog.get_logger(__name__)
 
@@ -108,15 +108,14 @@ class WorkflowExecutor:
         self._abort_events: dict[str, asyncio.Event] = {}
 
     # ------------------------------------------------------------------
-    # Backwards-compatible facade used by legacy callers
+    # Convenience facade
     # ------------------------------------------------------------------
 
     async def execute(self, definition: Any, inputs: dict[str, Any] | None = None) -> WorkflowResult:
         """Run a workflow and return a :class:`WorkflowResult`.
 
-        ``definition`` may be a :class:`WorkflowDocument`, a legacy
-        ``WorkflowDefinition``, a dict, or a path — anything
-        :func:`io.load` accepts. Upgrades to v2 on the fly.
+        ``definition`` may be a :class:`WorkflowDocument`, a canonical
+        document dict, or a path — anything :func:`io.load` accepts.
         """
         doc = _ensure_document(definition)
         prompt_id = str(uuid4())
@@ -298,20 +297,34 @@ class WorkflowExecutor:
                 continue
             state.current_node = node_id
 
-            try:
-                result = await runner.run(node_id, node_def, upstream_values, hidden)
-            except NodeExecutionError as exc:
-                errors_list.append(f"{node_id}: {exc}")
-                state.error_stack.append(f"{node_id}: {exc}")
-                exec_list.fail_node_execution(node_id)
-                state.record_execution(NodeExecutionResult(
-                    node_id=node_id, status=WorkflowStatus.FAILED, error=str(exc),
-                ))
-                control = node_def.get("control", {}) or {}
-                if control.get("error_handler"):
-                    exec_list.select_branch(node_id, control["error_handler"])
-                    exec_list.add_node(control["error_handler"])
-                continue
+            # ComfyUI-style node modes: ``mute`` skips the node entirely,
+            # ``bypass`` passes type-matching inputs straight through to the
+            # outputs. Both are stored on ``meta.mode`` by the editor.
+            mode = _node_mode(node_def)
+            if mode in ("mute", "bypass"):
+                progress.set_status(node_id, NodeStatus.SKIPPED,
+                                    metadata={"mode": mode})
+                result = NodeRunResult(
+                    _mode_passthrough_output(
+                        self.node_registry, node_def, upstream_values, mode,
+                    ),
+                    duration_ms=0,
+                )
+            else:
+                try:
+                    result = await runner.run(node_id, node_def, upstream_values, hidden)
+                except NodeExecutionError as exc:
+                    errors_list.append(f"{node_id}: {exc}")
+                    state.error_stack.append(f"{node_id}: {exc}")
+                    exec_list.fail_node_execution(node_id)
+                    state.record_execution(NodeExecutionResult(
+                        node_id=node_id, status=WorkflowStatus.FAILED, error=str(exc),
+                    ))
+                    control = node_def.get("control", {}) or {}
+                    if control.get("error_handler"):
+                        exec_list.select_branch(node_id, control["error_handler"])
+                        exec_list.add_node(control["error_handler"])
+                    continue
 
             output = result.output or NodeOutput()
 
@@ -350,7 +363,8 @@ class WorkflowExecutor:
                     type="execution_blocked",
                     prompt_id=prompt_id,
                     node_id=node_id,
-                    data={"tag": output.block_execution, "ui": output.ui,
+                    data={"tag": output.block_execution,
+                          "ui": _sanitize_ui(output.ui),
                           "metadata": output.metadata},
                 ))
                 return  # pause the run; caller drives resume
@@ -388,7 +402,8 @@ class WorkflowExecutor:
                 type="executed",
                 prompt_id=prompt_id,
                 node_id=node_id,
-                data={"values": list(output.as_tuple()), "ui": output.ui,
+                data={"values": list(output.as_tuple()),
+                      "ui": _sanitize_ui(output.ui),
                       "metadata": output.metadata, "cached": result.cached},
             ))
 
@@ -488,6 +503,93 @@ class WorkflowExecutor:
 # ---------------------------------------------------------------------------
 # Utilities
 # ---------------------------------------------------------------------------
+
+
+def _node_mode(node_def: dict[str, Any]) -> str:
+    """Read the editor-assigned node mode (``""``, ``mute`` or ``bypass``)."""
+    meta = node_def.get("meta") or {}
+    if not isinstance(meta, dict):
+        return ""
+    mode = meta.get("mode")
+    return mode if isinstance(mode, str) else ""
+
+
+def _mode_passthrough_output(
+    registry: NodeRegistry,
+    node_def: dict[str, Any],
+    upstream_values: dict[tuple[str, int], Any],
+    mode: str,
+) -> NodeOutput:
+    """Synthesize a :class:`NodeOutput` for muted / bypassed nodes.
+
+    ``mute`` produces no output values. ``bypass`` maps each declared output
+    slot to the first linked input whose wire type is compatible — mirroring
+    ComfyUI's BYPASS pass-through semantics.
+    """
+    if mode != "bypass":
+        return NodeOutput(values=None, metadata={"mode": mode})
+
+    node_cls = registry.get(node_def.get("class_type", ""))
+    if node_cls is None:
+        return NodeOutput(values=None, metadata={"mode": mode})
+    schema = node_cls.get_schema()
+
+    from leagent.workflow.io.types import types_compatible
+
+    # Resolve linked input values + their wire types (literals pass too).
+    resolved: list[tuple[str, Any]] = []  # (io_type, value)
+    input_types = {inp.id: inp.get_io_type() for inp in schema.inputs}
+    for key, value in (node_def.get("inputs") or {}).items():
+        if isinstance(value, list) and len(value) == 2 and isinstance(value[0], str):
+            up_id, slot = value
+            resolved.append((input_types.get(key, "*"),
+                             upstream_values.get((up_id, int(slot)))))
+
+    values: list[Any] = []
+    for out in schema.outputs:
+        out_type = out.get_io_type()
+        passed: Any = None
+        for in_type, value in resolved:
+            if value is not None and types_compatible(in_type, out_type):
+                passed = value
+                break
+        values.append(passed)
+    return NodeOutput(values=tuple(values), metadata={"mode": mode})
+
+
+def _sanitize_ui(ui: dict[str, Any] | None) -> dict[str, Any] | None:
+    """Validate an embedded ``gen_ui`` tree on ``NodeOutput.ui`` before emission.
+
+    Nodes may attach a full GenUI component tree under ``ui["gen_ui"]``; it is
+    validated against the shared chat GenUI schema (and normalized) so the
+    frontend can render it directly. Invalid trees are dropped rather than
+    failing the run.
+    """
+    if not isinstance(ui, dict) or "gen_ui" not in ui:
+        return ui
+    out = dict(ui)
+    tree = out.get("gen_ui")
+    if not isinstance(tree, dict):
+        out.pop("gen_ui", None)
+        return out
+    try:
+        from leagent.services.gen_ui.schema import validate_ui_tree
+
+        max_depth, max_nodes = 96, 2000
+        try:
+            from leagent.config.settings import get_settings
+
+            canvas = getattr(get_settings(), "canvas", None)
+            if canvas is not None:
+                max_depth = int(getattr(canvas, "max_tree_depth", max_depth))
+                max_nodes = int(getattr(canvas, "max_nodes_per_tree", max_nodes))
+        except Exception:  # noqa: BLE001
+            pass
+        out["gen_ui"] = validate_ui_tree(tree, max_depth=max_depth, max_nodes=max_nodes)
+    except Exception:  # noqa: BLE001
+        logger.warning("workflow_gen_ui_invalid", exc_info=True)
+        out.pop("gen_ui", None)
+    return out
 
 
 _call_idx_counter: dict[str, int] = {}

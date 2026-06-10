@@ -42,6 +42,27 @@ class HumanReviewNode(WorkflowNode):
             return NodeOutput(error="Missing 'reviewer' input")
 
         state = hidden.workflow_state
+
+        # Resume path: ``POST /prompts/{id}/resume`` stashes the reviewer's
+        # decision under ``__resume__<node_id>``; consume it and complete the
+        # node instead of blocking again.
+        resume = self._take_resume_payload(state, hidden.unique_id)
+        if resume is not None:
+            decision = {
+                "approved": bool(resume.get("approved")),
+                "comments": str(resume.get("comments") or resume.get("answer") or ""),
+                "reviewer": reviewer,
+                "node_id": hidden.unique_id,
+            }
+            if state is not None and inputs.get("output"):
+                state.set(inputs["output"], decision)
+            logger.info("human_review_resolved", reviewer=reviewer,
+                        node_id=hidden.unique_id, approved=decision["approved"])
+            return NodeOutput(
+                values=(decision,),
+                ui={"review_decision": decision},
+                metadata={"reviewer": reviewer, "approved": decision["approved"]},
+            )
         review_data = {
             "execution_id": hidden.execution_id,
             "state_id": str(state.id) if state is not None else None,
@@ -72,3 +93,14 @@ class HumanReviewNode(WorkflowNode):
             ui={"review": review_data, "review_request_id": review_request_id},
             metadata={"reviewer": reviewer, "review_request_id": review_request_id},
         )
+
+    @staticmethod
+    def _take_resume_payload(state: Any, node_id: str | None) -> dict[str, Any] | None:
+        """Pop the resume decision for this node, if one was posted."""
+        if state is None or not node_id:
+            return None
+        try:
+            payload = state.variables.pop(f"__resume__{node_id}", None)
+        except Exception:  # noqa: BLE001
+            return None
+        return payload if isinstance(payload, dict) else None

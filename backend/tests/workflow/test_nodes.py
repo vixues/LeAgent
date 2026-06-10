@@ -39,7 +39,13 @@ class _NotCacheableNode(_DummyNode):
         return NOT_CACHEABLE
 
 
-async def test_bootstrap_registers_builtins():
+async def test_bootstrap_registers_builtins(monkeypatch):
+    monkeypatch.delenv("DASHSCOPE_API_KEY", raising=False)
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.setenv("LEAGENT_DIFFUSION_ENABLED", "0")
+    monkeypatch.setenv("LEAGENT_LOCAL_ASR_URL", "http://localhost:8000")
+    monkeypatch.setenv("LEAGENT_LOCAL_TTS_URL", "http://localhost:8880")
+
     await bootstrap()
     reg = get_registry()
     ids = set(reg.list_ids())
@@ -57,6 +63,7 @@ async def test_bootstrap_registers_builtins():
         "WaitNode",
     }
     assert expected <= ids
+    assert any(node_id.startswith("Model.") for node_id in ids)
 
 
 def test_manual_registration_and_lookup():
