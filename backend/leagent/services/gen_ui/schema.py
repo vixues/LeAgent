@@ -106,6 +106,13 @@ UI_TREE_SCHEMA: dict[str, Any] = {
                         "Select",
                         "Chip",
                         "ChipGroup",
+                        # Forms (interactive ingress: workflow inputs, resume prompts)
+                        "Form",
+                        "NumberInput",
+                        "Switch",
+                        "Slider",
+                        "FileInput",
+                        "Textarea",
                         # Feedback
                         "Alert",
                         "Callout",
@@ -446,10 +453,53 @@ _COMPONENT_CATALOG: list[dict[str, Any]] = [
     },
     {"kind": "ToggleButton", "description": "Toggle on/off button", "props": {"label": "string", "actionId": "string", "active": "boolean"}},
     {"kind": "LinkButton", "description": "Button styled as a link", "props": {"label": "string", "url": "string", "external": "boolean"}},
-    {"kind": "Input", "description": "Text input field (display only in gen UI)", "props": {"label": "string", "placeholder": "string", "value": "string", "type": "string (text|email|number)"}},
-    {"kind": "Select", "description": "Dropdown select (display only)", "props": {"label": "string", "options": "array of string", "value": "string"}},
+    {
+        "kind": "Input",
+        "description": "Text input field. Interactive (two-way bound) when given a `name` inside a Form; display-only otherwise",
+        "props": {"label": "string", "name": "string (form field name; enables editing)", "placeholder": "string", "value": "string (initial value)", "type": "string (text|email|number)", "required": "boolean", "description": "string (helper text)"},
+    },
+    {
+        "kind": "Select",
+        "description": "Dropdown select. Interactive when given a `name` inside a Form; display-only otherwise",
+        "props": {"label": "string", "name": "string (form field name; enables editing)", "options": "array of string", "value": "string (initial value)", "required": "boolean", "description": "string (helper text)"},
+    },
     {"kind": "Chip", "description": "Compact selection chip", "props": {"label": "string", "selected": "boolean", "color": "string"}},
     {"kind": "ChipGroup", "description": "Group of selectable chips; children are Chip nodes", "props": {"label": "string"}},
+    # ── Forms (interactive ingress) ───────────────────────────────────────
+    {
+        "kind": "Form",
+        "description": (
+            "Interactive form scope. Named field children (Input, Select, NumberInput, Switch, "
+            "Slider, FileInput, Textarea with a `name` prop) become editable and their values are "
+            "collected when a child Button fires a submit_form / run_workflow / resume_workflow action"
+        ),
+        "props": {"formId": "string (stable id; defaults to nodeId)", "title": "string", "description": "string"},
+    },
+    {
+        "kind": "NumberInput",
+        "description": "Numeric form field (interactive inside a Form with `name`)",
+        "props": {"label": "string", "name": "string", "value": "number (initial)", "min": "number", "max": "number", "step": "number", "required": "boolean", "description": "string", "integer": "boolean (restrict to integers)"},
+    },
+    {
+        "kind": "Switch",
+        "description": "Boolean toggle form field (interactive inside a Form with `name`)",
+        "props": {"label": "string", "name": "string", "value": "boolean (initial)", "description": "string"},
+    },
+    {
+        "kind": "Slider",
+        "description": "Bounded numeric slider form field (interactive inside a Form with `name`)",
+        "props": {"label": "string", "name": "string", "value": "number (initial)", "min": "number", "max": "number", "step": "number", "description": "string"},
+    },
+    {
+        "kind": "FileInput",
+        "description": "File reference form field (file id or path string; interactive inside a Form with `name`)",
+        "props": {"label": "string", "name": "string", "value": "string (file id or path)", "accept": "string (hint, e.g. image/*)", "required": "boolean", "description": "string"},
+    },
+    {
+        "kind": "Textarea",
+        "description": "Multiline text form field (interactive inside a Form with `name`)",
+        "props": {"label": "string", "name": "string", "value": "string (initial)", "placeholder": "string", "rows": "number", "required": "boolean", "description": "string"},
+    },
     # ── Feedback ──────────────────────────────────────────────────────────
     {"kind": "Alert", "description": "Inline alert banner", "props": {"title": "string", "message": "string", "severity": "string (info|success|warning|error)", "icon": "string"}},
     {"kind": "Callout", "description": "Highlighted callout / tip / note block", "props": {"title": "string", "message": "string", "variant": "string (info|tip|warning|important)"}},
