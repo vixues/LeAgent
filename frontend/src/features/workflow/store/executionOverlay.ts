@@ -1,5 +1,7 @@
 import { create } from 'zustand';
 
+import type { GenUiTreeV1 } from '@/types/genUi';
+
 /** Node execution status mirrored from the backend `ProgressRegistry`. */
 export type NodeRunStatus =
   | 'pending'
@@ -7,7 +9,8 @@ export type NodeRunStatus =
   | 'success'
   | 'error'
   | 'blocked'
-  | 'cached';
+  | 'cached'
+  | 'skipped';
 
 export interface NodeRunState {
   status: NodeRunStatus;
@@ -25,6 +28,8 @@ export interface BlockedInfo {
   /** The agent's question (for awaiting_user_input pauses). */
   question?: string;
   checkpointId?: string;
+  /** Raw `data.ui` payload from the `execution_blocked` event. */
+  ui?: Record<string, unknown>;
 }
 
 interface ExecutionOverlayState {
@@ -33,10 +38,16 @@ interface ExecutionOverlayState {
   nodes: Record<string, NodeRunState>;
   /** Set when the run paused on a blocking node (resume affordance). */
   blocked: BlockedInfo | null;
+  /** Resolved `WorkflowDocument.outputs` from the terminal event. */
+  outputs: Record<string, unknown> | null;
+  /** Explicit `NodeOutput.ui.gen_ui` trees collected from `executed` events. */
+  genUiTrees: GenUiTreeV1[];
+  errors: string[];
   start: (promptId: string) => void;
   setNode: (nodeId: string, patch: Partial<NodeRunState>) => void;
   setBlocked: (info: BlockedInfo | null) => void;
-  finish: () => void;
+  addGenUiTree: (tree: GenUiTreeV1) => void;
+  finish: (result?: { outputs?: Record<string, unknown>; errors?: string[] }) => void;
   reset: () => void;
 }
 
@@ -50,7 +61,19 @@ export const useExecutionOverlay = create<ExecutionOverlayState>((set) => ({
   running: false,
   nodes: {},
   blocked: null,
-  start: (promptId) => set({ promptId, running: true, nodes: {}, blocked: null }),
+  outputs: null,
+  genUiTrees: [],
+  errors: [],
+  start: (promptId) =>
+    set({
+      promptId,
+      running: true,
+      nodes: {},
+      blocked: null,
+      outputs: null,
+      genUiTrees: [],
+      errors: [],
+    }),
   setNode: (nodeId, patch) =>
     set((state) => ({
       nodes: {
@@ -59,6 +82,22 @@ export const useExecutionOverlay = create<ExecutionOverlayState>((set) => ({
       },
     })),
   setBlocked: (info) => set({ blocked: info }),
-  finish: () => set({ running: false }),
-  reset: () => set({ promptId: null, running: false, nodes: {}, blocked: null }),
+  addGenUiTree: (tree) =>
+    set((state) => ({ genUiTrees: [...state.genUiTrees, tree] })),
+  finish: (result) =>
+    set((state) => ({
+      running: false,
+      outputs: result?.outputs ?? state.outputs,
+      errors: result?.errors ?? state.errors,
+    })),
+  reset: () =>
+    set({
+      promptId: null,
+      running: false,
+      nodes: {},
+      blocked: null,
+      outputs: null,
+      genUiTrees: [],
+      errors: [],
+    }),
 }));

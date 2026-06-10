@@ -14,7 +14,7 @@ import { useExecutionOverlay } from '../store/executionOverlay';
  * execution WebSocket.
  */
 export function ResumePanel() {
-  const { t } = useTranslation('workflows');
+  const { t } = useTranslation();
   const promptId = useExecutionOverlay((s) => s.promptId);
   const blocked = useExecutionOverlay((s) => s.blocked);
   const setBlocked = useExecutionOverlay((s) => s.setBlocked);

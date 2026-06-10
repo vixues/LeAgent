@@ -14,7 +14,7 @@ interface NodeSidebarProps {
 
 /** Node catalog grouped by category, with drag-to-canvas + click-to-add. */
 export function NodeSidebar({ registry, collapsed, onAdd }: NodeSidebarProps) {
-  const { t } = useTranslation('workflows');
+  const { t } = useTranslation();
   const [query, setQuery] = useState('');
   const [open, setOpen] = useState<Record<string, boolean>>({});
 

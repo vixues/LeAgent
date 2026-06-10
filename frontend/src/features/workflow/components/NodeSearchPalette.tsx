@@ -1,23 +1,46 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import Fuse from 'fuse.js';
 
 import { cn } from '@/lib/utils';
 
 import type { NodeDefinition, ObjectInfo } from '../graph/objectInfo';
+import { typesCompatible } from '../graph/socketTypes';
+
+export interface PaletteTypeFilter {
+  /** Wire type of the dangling link end. */
+  type: string;
+  /** 'out': dragging from an output, so candidates need a compatible input. */
+  direction: 'out' | 'in';
+}
 
 interface NodeSearchPaletteProps {
   registry: ObjectInfo;
   onSelect: (def: NodeDefinition) => void;
   onClose: () => void;
+  /** Restrict results to nodes connectable to a dangling link (link-release). */
+  typeFilter?: PaletteTypeFilter | null;
+}
+
+function connectable(def: NodeDefinition, filter: PaletteTypeFilter): boolean {
+  if (filter.direction === 'out') {
+    return def.inputs.some((slot) => typesCompatible(filter.type, slot.type));
+  }
+  return def.outputs.some((slot) => typesCompatible(slot.type, filter.type));
 }
 
 /**
  * Canvas-first node search (litegraph-style). Opened by double-clicking the
- * canvas or a hotkey; type to filter the full `/object_info` catalog and
- * press Enter / click to drop the node at the cursor.
+ * canvas, a hotkey, or releasing a link on empty canvas (which filters to
+ * type-compatible nodes and auto-connects on pick). Fuzzy matching via Fuse.
  */
-export function NodeSearchPalette({ registry, onSelect, onClose }: NodeSearchPaletteProps) {
-  const { t } = useTranslation('workflows');
+export function NodeSearchPalette({
+  registry,
+  onSelect,
+  onClose,
+  typeFilter,
+}: NodeSearchPaletteProps) {
+  const { t } = useTranslation();
   const [query, setQuery] = useState('');
   const [active, setActive] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -26,21 +49,36 @@ export function NodeSearchPalette({ registry, onSelect, onClose }: NodeSearchPal
     inputRef.current?.focus();
   }, []);
 
+  const candidates = useMemo(() => {
+    let all = Object.values(registry.definitions).filter((d) => !d.deprecated);
+    if (typeFilter) all = all.filter((d) => connectable(d, typeFilter));
+    return all;
+  }, [registry, typeFilter]);
+
+  const fuse = useMemo(
+    () =>
+      new Fuse(candidates, {
+        keys: [
+          { name: 'displayName', weight: 0.5 },
+          { name: 'type', weight: 0.3 },
+          { name: 'category', weight: 0.15 },
+          { name: 'description', weight: 0.05 },
+        ],
+        threshold: 0.35,
+        ignoreLocation: true,
+      }),
+    [candidates],
+  );
+
   const results = useMemo(() => {
-    const all = Object.values(registry.definitions).filter((d) => !d.deprecated);
-    const q = query.trim().toLowerCase();
-    const filtered = q
-      ? all.filter(
-          (d) =>
-            d.displayName.toLowerCase().includes(q) ||
-            d.type.toLowerCase().includes(q) ||
-            d.category.toLowerCase().includes(q),
-        )
-      : all;
-    return filtered
-      .sort((a, b) => a.displayName.localeCompare(b.displayName))
-      .slice(0, 50);
-  }, [registry, query]);
+    const q = query.trim();
+    if (!q) {
+      return [...candidates]
+        .sort((a, b) => a.displayName.localeCompare(b.displayName))
+        .slice(0, 50);
+    }
+    return fuse.search(q, { limit: 50 }).map((r) => r.item);
+  }, [candidates, fuse, query]);
 
   useEffect(() => {
     setActive(0);
@@ -59,6 +97,14 @@ export function NodeSearchPalette({ registry, onSelect, onClose }: NodeSearchPal
         className="w-[420px] max-w-[90%] overflow-hidden rounded-lg border border-border bg-popover shadow-xl"
         onClick={(e) => e.stopPropagation()}
       >
+        {typeFilter && (
+          <div className="flex items-center gap-1.5 border-b border-border bg-muted/40 px-3 py-1.5 text-[11px] text-muted-foreground">
+            {t('palette.typeFilter', 'Compatible with')}
+            <code className="rounded bg-muted px-1 font-mono text-[10px]">
+              {typeFilter.type}
+            </code>
+          </div>
+        )}
         <input
           ref={inputRef}
           className="w-full border-b border-border bg-transparent px-3 py-2 text-sm outline-none"

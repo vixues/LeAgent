@@ -4,6 +4,7 @@ import {
   useExecutionOverlay,
   type NodeRunStatus,
 } from '../store/executionOverlay';
+import type { GenUiTreeV1 } from '@/types/genUi';
 
 interface WsState {
   node_id?: string;
@@ -29,7 +30,20 @@ const STATUS_MAP: Record<string, NodeRunStatus> = {
   error: 'error',
   blocked: 'blocked',
   cached: 'cached',
+  skipped: 'skipped',
 };
+
+function asGenUiTree(value: unknown): GenUiTreeV1 | null {
+  if (
+    value &&
+    typeof value === 'object' &&
+    (value as { schemaVersion?: string }).schemaVersion === '1' &&
+    (value as { root?: unknown }).root
+  ) {
+    return value as GenUiTreeV1;
+  }
+  return null;
+}
 
 function wsUrl(promptId: string): string {
   const base = import.meta.env.VITE_API_BASE_URL || '/api/v1';
@@ -46,7 +60,7 @@ function wsUrl(promptId: string): string {
  * overlay store (node highlighting + agent previews). Pass `null` to stop.
  */
 export function useExecutionStream(promptId: string | null): void {
-  const { start, setNode, setBlocked, finish } = useExecutionOverlay();
+  const { start, setNode, setBlocked, addGenUiTree, finish } = useExecutionOverlay();
   const socketRef = useRef<WebSocket | null>(null);
 
   useEffect(() => {
@@ -77,6 +91,12 @@ export function useExecutionStream(promptId: string | null): void {
       } else if (nodeId && msg.type === 'executed') {
         setNode(nodeId, { status: 'success' });
       }
+      if (nodeId && msg.type === 'executed') {
+        // Nodes may publish ad-hoc GenUI trees via NodeOutput.ui.gen_ui.
+        const ui = (msg.data?.ui ?? null) as Record<string, unknown> | null;
+        const tree = ui ? asGenUiTree(ui.gen_ui) : null;
+        if (tree) addGenUiTree(tree);
+      }
       if (msg.type === 'execution_blocked' && nodeId) {
         const ui = (msg.data?.ui ?? {}) as Record<string, unknown>;
         setNode(nodeId, { status: 'blocked' });
@@ -86,6 +106,7 @@ export function useExecutionStream(promptId: string | null): void {
           question: typeof ui.question === 'string' ? ui.question : undefined,
           checkpointId:
             typeof ui.checkpoint_id === 'string' ? ui.checkpoint_id : undefined,
+          ui,
         });
         finish();
       } else if (msg.type === 'execution_start') {
@@ -97,7 +118,14 @@ export function useExecutionStream(promptId: string | null): void {
         msg.type === 'execution_failed' ||
         msg.type === 'execution_cancelled'
       ) {
-        finish();
+        const outputs =
+          msg.data?.outputs && typeof msg.data.outputs === 'object'
+            ? (msg.data.outputs as Record<string, unknown>)
+            : undefined;
+        const errors = Array.isArray(msg.data?.errors)
+          ? (msg.data.errors as string[]).map(String)
+          : undefined;
+        finish({ outputs, errors });
         if (!closed) socket.close();
       }
     };

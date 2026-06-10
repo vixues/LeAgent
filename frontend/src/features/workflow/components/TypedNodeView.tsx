@@ -11,6 +11,8 @@ import { cn } from '@/lib/utils';
 
 import { useNodeDefinition } from '../graph/registryContext';
 import type { WorkflowNodeData } from '../graph/serialization';
+import { typesCompatible } from '../graph/socketTypes';
+import { useConnectionDrag } from '../store/connectionDrag';
 import { useExecutionOverlay } from '../store/executionOverlay';
 import { NodeWidget } from './NodeWidget';
 
@@ -20,6 +22,7 @@ const STATUS_RING: Record<string, string> = {
   error: 'ring-2 ring-red-500',
   blocked: 'ring-2 ring-amber-400',
   cached: 'ring-2 ring-slate-400',
+  skipped: 'ring-2 ring-slate-300 opacity-70',
 };
 
 function TypedNodeViewImpl({ id, data, selected }: NodeProps) {
@@ -55,6 +58,17 @@ function TypedNodeViewImpl({ id, data, selected }: NodeProps) {
   const outputs = def?.outputs ?? [];
   const label = nodeData.label || def?.displayName || nodeData.nodeType;
   const ringClass = runState ? STATUS_RING[runState.status] ?? '' : '';
+  const missing = !def;
+  const mode = nodeData.mode;
+
+  // Dim nodes with no compatible slot during a link drag (ComfyUI affordance).
+  const dragType = useConnectionDrag((s) => s.type);
+  const dragDirection = useConnectionDrag((s) => s.direction);
+  const dimmed =
+    dragType != null &&
+    !(dragDirection === 'out'
+      ? inputs.some((slot) => typesCompatible(dragType, slot.type))
+      : outputs.some((slot) => typesCompatible(slot.type, dragType)));
 
   return (
     <div
@@ -62,6 +76,12 @@ function TypedNodeViewImpl({ id, data, selected }: NodeProps) {
         'min-w-[200px] max-w-[300px] rounded-md border border-border bg-card text-card-foreground shadow-sm',
         selected && 'ring-2 ring-primary',
         ringClass,
+        // ComfyUI parity: muted nodes dim out, bypassed nodes tint purple.
+        mode === 'mute' && 'opacity-40 saturate-50',
+        mode === 'bypass' &&
+          'border-violet-400 bg-violet-50/60 dark:border-violet-600 dark:bg-violet-950/40',
+        missing && 'border-dashed border-red-400 dark:border-red-600',
+        dimmed && 'opacity-30 transition-opacity',
       )}
     >
       <div className="flex items-center justify-between gap-2 rounded-t-md border-b border-border bg-muted/60 px-2 py-1">
@@ -69,6 +89,18 @@ function TypedNodeViewImpl({ id, data, selected }: NodeProps) {
           {label}
         </span>
         <div className="flex items-center gap-1">
+          {mode && (
+            <span
+              className={cn(
+                'rounded px-1 text-[9px] uppercase',
+                mode === 'mute'
+                  ? 'bg-slate-500/20 text-slate-500'
+                  : 'bg-violet-500/20 text-violet-600 dark:text-violet-400',
+              )}
+            >
+              {mode}
+            </span>
+          )}
           {def?.experimental && (
             <span className="rounded bg-amber-500/20 px-1 text-[9px] text-amber-600">
               exp
@@ -86,6 +118,36 @@ function TypedNodeViewImpl({ id, data, selected }: NodeProps) {
           )}
         </div>
       </div>
+
+      {missing && (
+        <div className="relative px-2 py-2 text-[10px] leading-relaxed text-red-600 dark:text-red-400">
+          {/* Generic handles keep stored links visible for missing types. */}
+          <Handle
+            id="__missing_in"
+            type="target"
+            position={Position.Left}
+            style={{ left: -14, width: 11, height: 11, background: '#f87171' }}
+          />
+          <Handle
+            id="__missing_out"
+            type="source"
+            position={Position.Right}
+            style={{ right: -14, width: 11, height: 11, background: '#f87171' }}
+          />
+          Unknown node type <code className="font-mono">{nodeData.nodeType}</code>.
+          The stored configuration is preserved; install or re-enable the node
+          pack to run this workflow.
+        </div>
+      )}
+
+      {runState?.progress != null && runState.status === 'running' && (
+        <div className="h-0.5 w-full bg-muted">
+          <div
+            className="h-full bg-blue-400 transition-[width]"
+            style={{ width: `${Math.round(runState.progress * 100)}%` }}
+          />
+        </div>
+      )}
 
       <div className="flex flex-col gap-2 px-2 py-2">
         {inputs.map((slot, index) => {

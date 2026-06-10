@@ -2,6 +2,8 @@ import { useTranslation } from 'react-i18next';
 import { X } from 'lucide-react';
 import { useReactFlow } from '@xyflow/react';
 
+import { cn } from '@/lib/utils';
+
 import { useNodeDefinition } from '../graph/registryContext';
 import type { EditorNode } from '../graph/serialization';
 import { NodeWidget } from './NodeWidget';
@@ -18,7 +20,7 @@ interface NodeInspectorProps {
  * allowed_tools / project_path here with full-width editors.
  */
 export function NodeInspector({ node, onClose }: NodeInspectorProps) {
-  const { t } = useTranslation('workflows');
+  const { t } = useTranslation();
   const def = useNodeDefinition(node.data.nodeType);
   const { updateNodeData } = useReactFlow();
 
@@ -62,6 +64,41 @@ export function NodeInspector({ node, onClose }: NodeInspectorProps) {
         {def?.description && (
           <p className="text-xs text-muted-foreground">{def.description}</p>
         )}
+
+        {/* ComfyUI-style execution mode: normal / mute (skip) / bypass. */}
+        <div>
+          <label className="mb-1 block text-[11px] font-medium text-muted-foreground">
+            {t('flowEditor.nodeMode', 'Execution mode')}
+          </label>
+          <div className="flex gap-1">
+            {([
+              ['', t('flowEditor.modeNormal', 'Normal')],
+              ['mute', t('flowEditor.modeMute', 'Mute')],
+              ['bypass', t('flowEditor.modeBypass', 'Bypass')],
+            ] as const).map(([value, label]) => (
+              <button
+                key={value || 'normal'}
+                className={cn(
+                  'flex-1 rounded border px-2 py-1 text-[11px] transition-colors',
+                  (node.data.mode ?? '') === value
+                    ? 'border-primary-400 bg-primary-50 text-primary-700 dark:bg-primary-900/30 dark:text-primary-300'
+                    : 'border-border text-muted-foreground hover:bg-accent',
+                )}
+                onClick={() =>
+                  updateNodeData(node.id, { mode: value === '' ? undefined : value })
+                }
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          <p className="mt-1 text-[10px] text-muted-foreground">
+            {t(
+              'flowEditor.modeHint',
+              'Mute skips the node; bypass passes compatible inputs through to outputs.',
+            )}
+          </p>
+        </div>
 
         {def && def.inputs.length > 0 && (
           <div>
