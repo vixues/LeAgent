@@ -175,6 +175,7 @@ paper/arxiv_submission/
 alembic/versions/*.pyc
 
 # Playwright
+.playwright_chromium_marker
 playwright-report/
 playwright/.cache/
 
