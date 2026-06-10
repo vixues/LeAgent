@@ -19,6 +19,10 @@ interface Flow {
     required?: boolean;
     multiline?: boolean;
   }>;
+  /** Raw declared `WorkflowDocument.inputs` (drives the GenUI run form). */
+  inputs?: Array<Record<string, unknown>>;
+  /** Raw declared `WorkflowDocument.outputs` (render hints for results). */
+  outputs?: Array<Record<string, unknown>>;
   createdAt: string;
   updatedAt: string;
 }
@@ -54,9 +58,10 @@ export function useFlows() {
       })() as Record<string, unknown> | null;
       const nodes = parsedData?.nodes;
       const inputs = parsedData?.inputs;
-      const nodeCount = Array.isArray(nodes)
-        ? nodes.length
-        : nodes && typeof nodes === 'object'
+      const outputs = parsedData?.outputs;
+      // Canonical documents store nodes as a dict keyed by node id.
+      const nodeCount =
+        nodes && typeof nodes === 'object' && !Array.isArray(nodes)
           ? Object.keys(nodes as Record<string, unknown>).length
           : 0;
       const inputSchema = Array.isArray(inputs)
@@ -81,6 +86,12 @@ export function useFlows() {
         status: f.status === 'published' ? 'active' : (f.status as Flow['status']),
         nodeCount,
         inputSchema,
+        inputs: Array.isArray(inputs)
+          ? inputs.filter((it): it is Record<string, unknown> => !!it && typeof it === 'object')
+          : undefined,
+        outputs: Array.isArray(outputs)
+          ? outputs.filter((it): it is Record<string, unknown> => !!it && typeof it === 'object')
+          : undefined,
         createdAt: f.created_at ?? new Date().toISOString(),
         updatedAt: f.updated_at ?? new Date().toISOString(),
       };

@@ -383,11 +383,31 @@
     "paletteHint": "Double-click canvas to search nodes",
     "loadingNodes": "Loading node catalog...",
     "loadNodesFailed": "Failed to load the node catalog.",
-    "linkOnlyInput": "Set by linking an upstream node"
+    "linkOnlyInput": "Set by linking an upstream node",
+    "toggleRunPanel": "Toggle run panel",
+    "closePanel": "Close panel",
+    "nodeMode": "Execution mode",
+    "modeNormal": "Normal",
+    "modeMute": "Mute",
+    "modeBypass": "Bypass",
+    "modeHint": "Mute skips the node; bypass passes compatible inputs through to outputs.",
+    "alignLeft": "Align left",
+    "alignCenterX": "Align horizontal centers",
+    "alignRight": "Align right",
+    "alignTop": "Align top",
+    "alignCenterY": "Align vertical centers",
+    "alignBottom": "Align bottom",
+    "distributeH": "Distribute horizontally",
+    "distributeV": "Distribute vertically",
+    "groupSelection": "Group selection",
+    "ungroup": "Ungroup",
+    "extractSubgraph": "Convert to subworkflow",
+    "subgraphUnavailable": "SubworkflowNode is not available"
   },
   "palette": {
     "searchPlaceholder": "Search nodes...",
-    "noResults": "No matching nodes"
+    "noResults": "No matching nodes",
+    "typeFilter": "Compatible with"
   },
   "resume": {
     "title": "The workflow is waiting for your input",
@@ -430,5 +450,32 @@
     "nodeDuration": "Duration",
     "clickNodeHint": "Click a node in the timeline to inspect its details",
     "fallbackNode": "Node {{index}}"
+  },
+  "runPanel": {
+    "tab": "Run",
+    "run": "Run",
+    "inputs": "Inputs",
+    "saveFirst": "Save the workflow to enable runs.",
+    "running": "Running...",
+    "waiting": "Waiting for your input",
+    "results": "Results",
+    "approve": "Approve",
+    "reject": "Reject",
+    "comments": "Comments"
+  },
+  "ioPanel": {
+    "tab": "Inputs / Outputs",
+    "inputs": "Workflow inputs",
+    "outputs": "Workflow outputs",
+    "add": "Add",
+    "remove": "Remove",
+    "name": "name",
+    "description": "Description",
+    "default": "Default value",
+    "required": "Required",
+    "choices": "Choices (comma-separated, optional)",
+    "noInputs": "No declared inputs. The run form will be empty.",
+    "noOutputs": "No declared outputs. Results render from state variables automatically.",
+    "outputsHint": "Output names map to workflow state variables; the renderer hint controls how each result is displayed."
   }
 }

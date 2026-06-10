@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import {
@@ -30,6 +30,8 @@ import {
   type NodeExecutionResult,
 } from '@/controllers/API/queries/executions';
 import { useToast } from '@/components/ui/Toaster';
+import { GenUiTreeView } from '@/components/canvas/GenUiRegistry';
+import { outputsToGenUiTree } from '@/features/workflow/genui/outputsToGenUiTree';
 
 function formatDuration(ms: number): string {
   if (ms < 1000) return `${ms}ms`;
@@ -76,6 +78,15 @@ export default function ExecutionPage() {
   const cancelMutation = useCancelExecution();
   const pauseMutation = usePauseExecution();
   const resumeMutation = useResumeExecution();
+
+  // Structured GenUI rendering of resolved workflow outputs.
+  const outputsTree = useMemo(() => {
+    if (execution?.status !== 'completed') return null;
+    return outputsToGenUiTree(
+      (execution.outputs as Record<string, unknown>) ?? null,
+      null,
+    );
+  }, [execution?.status, execution?.outputs]);
 
   const handleCancel = async () => {
     if (!executionId || !confirm(t('execution.confirmCancel'))) return;
@@ -341,12 +352,21 @@ export default function ExecutionPage() {
             defaultExpanded={false}
           />
 
-          {/* Outputs — expand when run finished so template/demo results are visible immediately */}
+          {/* Outputs — structured GenUI rendering with raw JSON fallback */}
+          {outputsTree && (
+            <div className="overflow-hidden rounded-lg border border-border">
+              <div className="border-b border-border bg-surface px-3 py-1.5 text-xs font-medium text-muted-foreground">
+                {t('execution.outputs')}
+              </div>
+              <GenUiTreeView tree={outputsTree} />
+            </div>
+          )}
           <JsonViewer
             data={execution.outputs || {}}
             label={t('execution.outputs')}
             maxHeight="240px"
             defaultExpanded={
+              outputsTree == null &&
               execution.status === 'completed' &&
               execution.outputs != null &&
               typeof execution.outputs === 'object' &&

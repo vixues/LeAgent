@@ -383,11 +383,31 @@
     "paletteHint": "双击画布以搜索节点",
     "loadingNodes": "正在加载节点目录…",
     "loadNodesFailed": "加载节点目录失败。",
-    "linkOnlyInput": "通过连接上游节点设置"
+    "linkOnlyInput": "通过连接上游节点设置",
+    "toggleRunPanel": "切换运行面板",
+    "closePanel": "关闭面板",
+    "nodeMode": "执行模式",
+    "modeNormal": "正常",
+    "modeMute": "静默",
+    "modeBypass": "旁路",
+    "modeHint": "静默将跳过该节点；旁路会将类型兼容的输入直接传递到输出。",
+    "alignLeft": "左对齐",
+    "alignCenterX": "水平居中对齐",
+    "alignRight": "右对齐",
+    "alignTop": "顶部对齐",
+    "alignCenterY": "垂直居中对齐",
+    "alignBottom": "底部对齐",
+    "distributeH": "水平均匀分布",
+    "distributeV": "垂直均匀分布",
+    "groupSelection": "编组所选节点",
+    "ungroup": "取消编组",
+    "extractSubgraph": "转换为子工作流",
+    "subgraphUnavailable": "子工作流节点不可用"
   },
   "palette": {
     "searchPlaceholder": "搜索节点…",
-    "noResults": "没有匹配的节点"
+    "noResults": "没有匹配的节点",
+    "typeFilter": "兼容类型"
   },
   "resume": {
     "title": "工作流正在等待您的输入",
@@ -430,5 +450,32 @@
     "nodeDuration": "耗时",
     "clickNodeHint": "在时间线中点击节点以查看详情",
     "fallbackNode": "节点 {{index}}"
+  },
+  "runPanel": {
+    "tab": "运行",
+    "run": "运行",
+    "inputs": "输入",
+    "saveFirst": "保存工作流后即可运行。",
+    "running": "运行中...",
+    "waiting": "等待您的输入",
+    "results": "结果",
+    "approve": "通过",
+    "reject": "拒绝",
+    "comments": "备注"
+  },
+  "ioPanel": {
+    "tab": "输入 / 输出",
+    "inputs": "工作流输入",
+    "outputs": "工作流输出",
+    "add": "添加",
+    "remove": "删除",
+    "name": "名称",
+    "description": "描述",
+    "default": "默认值",
+    "required": "必填",
+    "choices": "可选项（逗号分隔，可选）",
+    "noInputs": "尚未声明输入。运行表单将为空。",
+    "noOutputs": "尚未声明输出。结果将根据状态变量自动渲染。",
+    "outputsHint": "输出名称对应工作流状态变量；渲染提示决定每项结果的展示方式。"
   }
 }
