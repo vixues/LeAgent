@@ -21,7 +21,7 @@ Modular architecture:
 - :mod:`leagent.workflow.registry` — flow document registry backed
   by the ``flows`` table.
 
-Runtime data models (``WorkflowState``, ``WorkflowResult``, ``WorkflowDefinition``,
+Runtime data models (``WorkflowState``, ``WorkflowResult``,
 ``NodeExecutionResult``, etc.) live in :mod:`leagent.workflow.base`
 and are re-exported here for consumers that want a flat import path.
 """
@@ -29,17 +29,9 @@ and are re-exported here for consumers that want a flat import path.
 from __future__ import annotations
 
 from leagent.workflow.base import (
-    BranchCondition,
     ConditionExpression,
     ConditionOperator,
-    EdgeType,
     NodeExecutionResult,
-    NodeType,
-    ParallelBranch,
-    WorkflowDefinition,
-    WorkflowEdge,
-    WorkflowInput,
-    WorkflowOutput,
     WorkflowResult,
     WorkflowState,
     WorkflowStatus,
@@ -149,18 +141,10 @@ __all__ = [
     # Services / registry
     "FlowWorkflowRegistry",
     "WorkflowService",
-    # Legacy types (from leagent.workflow.base)
-    "BranchCondition",
+    # Runtime types (from leagent.workflow.base)
     "ConditionExpression",
     "ConditionOperator",
-    "EdgeType",
     "NodeExecutionResult",
-    "NodeType",
-    "ParallelBranch",
-    "WorkflowDefinition",
-    "WorkflowEdge",
-    "WorkflowInput",
-    "WorkflowOutput",
     "WorkflowResult",
     "WorkflowState",
     "WorkflowStatus",

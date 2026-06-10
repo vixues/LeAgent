@@ -1,4 +1,4 @@
-"""Tests for LLM base models, ModelRouter, and ProviderRegistry."""
+"""Tests for LLM base models, TaskResolver helpers, and ProviderRegistry."""
 
 from __future__ import annotations
 
@@ -20,7 +20,7 @@ from leagent.llm.base import (
 )
 from leagent.llm.registry import ProviderInfo, ProviderRegistry
 from leagent.llm.model_registry import ModelRegistry
-from leagent.llm.model_spec import ModelSpec, ModelTask
+from leagent.llm.model_spec import ModelSpec
 from leagent.llm.service import LLMService
 from leagent.llm.task_resolver import TaskResolver
 
@@ -212,72 +212,6 @@ class TestProviderRegistry:
         health_map = {r.provider_name: r.is_healthy for r in results}
         assert health_map["a"] is True
         assert health_map["b"] is False
-
-
-# ===========================================================================
-# TaskResolver
-# ===========================================================================
-
-
-def _minimal_catalog(provider: str = "mock", model: str = "gpt-4") -> ModelRegistry:
-    catalog = ModelRegistry()
-    catalog.load_from_config(
-        {
-            "version": 2,
-            "providers": [
-                {
-                    "name": provider,
-                    "type": "openai",
-                    "enabled": True,
-                    "models": [
-                        {
-                            "name": model,
-                            "kind": "chat",
-                            "capabilities": {
-                                "input": ["text"],
-                                "output": ["text"],
-                                "tool_call": True,
-                            },
-                            "context_window": 128000,
-                        }
-                    ],
-                }
-            ],
-            "routing": {"tasks": {"chat": {"provider": provider, "model": model}}},
-        }
-    )
-    return catalog
-
-
-class TestTaskResolver:
-    def _resolver(self) -> TaskResolver:
-        reg = ProviderRegistry()
-        mock_prov = MagicMock()
-        mock_prov.name = "mock"
-        reg.register("mock", mock_prov)
-        return TaskResolver(reg, _minimal_catalog())
-
-    def test_resolve_chat_task_binding(self) -> None:
-        resolved = self._resolver().resolve(ModelTask.CHAT)
-        assert resolved.provider == "mock"
-        assert resolved.model == "gpt-4"
-        assert resolved.task == ModelTask.CHAT
-
-    def test_explicit_user_model(self) -> None:
-        resolved = self._resolver().resolve(
-            ModelTask.CHAT,
-            user_provider="mock",
-            user_model="gpt-4",
-        )
-        assert resolved.reason == "user_explicit"
-
-    def test_unknown_model_raises(self) -> None:
-        with pytest.raises(ModelNotFoundError):
-            self._resolver().resolve(
-                ModelTask.CHAT,
-                user_provider="mock",
-                user_model="missing",
-            )
 
 
 class TestLLMServiceRetries:

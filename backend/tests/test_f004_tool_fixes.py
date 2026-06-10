@@ -1,4 +1,4 @@
-"""Regression tests for F-004 speech_to_text + workflow notification payloads."""
+"""Regression tests for F-004 workflow notification payloads."""
 
 from __future__ import annotations
 
@@ -9,8 +9,6 @@ from leagent.tools.integration.notification import (
     NotificationTool,
     normalize_workflow_notification_params,
 )
-from leagent.tools.integration.speech_to_text import SpeechToTextTool
-from leagent.tools.registry import ToolRegistry
 
 
 @pytest.fixture
@@ -47,31 +45,3 @@ async def test_notification_run_admin_no_http(
     assert res.success is True
     assert res.data is not None
     assert res.data.get("skipped") is True
-
-
-@pytest.mark.asyncio
-async def test_speech_to_text_placeholder(
-    tmp_path,
-    monkeypatch: pytest.MonkeyPatch,
-    tool_ctx: ToolContext,
-) -> None:
-    monkeypatch.setenv("LEAGENT_TOOL_FILE_ROOTS", str(tmp_path))
-    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
-    audio = tmp_path / "meet.wav"
-    audio.write_bytes(b"fake")
-
-    tool = SpeechToTextTool()
-    res = await tool.run({"audio_file": str(audio), "language": "zh-CN"}, tool_ctx)
-    assert res.success is True
-    assert res.data["confidence"] == pytest.approx(0.9)
-    assert "text" in res.data
-    assert res.data["source"] == "placeholder"
-
-
-def test_registry_loads_speech_to_text_module() -> None:
-    import leagent.tools.integration.speech_to_text as st_mod
-
-    reg = ToolRegistry()
-    count = reg.load_from_module(st_mod)
-    assert count >= 1
-    assert reg.has("speech_to_text")

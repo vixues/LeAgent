@@ -20,7 +20,7 @@ if TYPE_CHECKING:
     from uuid import UUID
 
     from leagent.channels.manager import ChannelManager
-    from leagent.workflow import WorkflowDefinition, WorkflowExecutor, WorkflowResult
+    from leagent.workflow import WorkflowDocument, WorkflowExecutor, WorkflowResult
 
 logger = structlog.get_logger(__name__)
 
@@ -543,14 +543,14 @@ class CronExecutor:
             "stderr": stderr.decode()[:10000],
         }
 
-    async def _load_workflow_definition(self, workflow_id: str) -> WorkflowDefinition | None:
-        """Load a workflow definition by ID.
+    async def _load_workflow_definition(self, workflow_id: str) -> WorkflowDocument | None:
+        """Load a canonical workflow document by ID.
 
         Args:
             workflow_id: The workflow ID.
 
         Returns:
-            Workflow definition or None.
+            Workflow document or None.
         """
         if self.workflow_registry:
             return await self.workflow_registry.get(workflow_id)

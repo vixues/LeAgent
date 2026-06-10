@@ -82,45 +82,24 @@ def _condition_label(cond: Any) -> str:
 
 
 def _iter_nodes(document: dict[str, Any]) -> Iterable[tuple[str, dict[str, Any]]]:
-    """Yield ``(node_id, node_spec)`` for both canonical and authoring shapes.
-
-    Canonical stores ``nodes`` as ``dict[id, spec]``; the authoring YAML
-    shape uses a ``list[{"id", ...}]``. We support both so this module
-    can be reused during migration of legacy rows.
-    """
+    """Yield ``(node_id, node_spec)`` from the canonical ``nodes`` dict."""
     nodes = document.get("nodes")
     if isinstance(nodes, dict):
         for node_id, spec in nodes.items():
             if isinstance(spec, dict):
                 yield str(node_id), spec
-    elif isinstance(nodes, list):
-        for spec in nodes:
-            if isinstance(spec, dict):
-                node_id = spec.get("id")
-                if node_id:
-                    yield str(node_id), spec
 
 
 def _control_of(spec: dict[str, Any]) -> dict[str, Any]:
-    """Return the control block regardless of shape.
-
-    Canonical nodes wrap control inside ``spec["control"]``. Authoring
-    nodes keep ``next`` / ``conditions`` / ``branches`` at the top level.
-    """
-    if isinstance(spec.get("control"), dict):
-        return spec["control"]
-    return spec
+    """Return the node's canonical ``control`` block."""
+    control = spec.get("control")
+    return control if isinstance(control, dict) else {}
 
 
 def _meta_of(spec: dict[str, Any]) -> dict[str, Any]:
-    """Return the meta/metadata block regardless of shape."""
+    """Return the node's canonical ``meta`` block."""
     meta = spec.get("meta")
-    if isinstance(meta, dict):
-        return meta
-    metadata = spec.get("metadata")
-    if isinstance(metadata, dict):
-        return metadata
-    return {}
+    return meta if isinstance(meta, dict) else {}
 
 
 def extract_edges(document: dict[str, Any]) -> list[LayoutEdge]:
@@ -194,7 +173,7 @@ def extract_edges(document: dict[str, Any]) -> list[LayoutEdge]:
 
         # 5. Human-review action buttons (stored under meta.actions after
         # template canonicalisation).
-        actions = meta.get("actions") or control.get("actions") or []
+        actions = meta.get("actions") or []
         if isinstance(actions, list):
             for action in actions:
                 if not isinstance(action, dict):

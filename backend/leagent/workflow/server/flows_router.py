@@ -28,7 +28,7 @@ from leagent.db.models import (
     FlowType,
 )
 
-from ..io.authoring import to_canonical
+from ..io.loader import WorkflowLoaderError, load as load_document
 from .schemas import (
     FlowDuplicateResponse,
     WorkflowExecutionDetail,
@@ -37,19 +37,27 @@ from .schemas import (
 
 
 def _canonicalize(data: Optional[dict[str, Any]]) -> Optional[dict[str, Any]]:
-    """Best-effort conversion of incoming flow data to the canonical shape.
+    """Validate incoming flow data against the canonical document shape.
 
-    The frontend may send visual-editor style documents (flat ``nodes`` list,
-    ``edges`` list). The engine only accepts canonical documents, so we convert
-    on write. If the payload is already canonical, :func:`to_canonical` returns
-    a copy unchanged. If it looks like unrelated free-form data we leave it be.
+    The editor saves canonical documents (``nodes`` dict + ``control`` +
+    sibling ``ui`` layout block). Anything else is rejected — there is no
+    legacy conversion path on write.
     """
+    if data is None:
+        return None
     if not isinstance(data, dict):
-        return data
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Flow data must be a canonical workflow document object",
+        )
     try:
-        return to_canonical(data)
-    except Exception:
-        return data
+        load_document({k: v for k, v in data.items() if k != "ui"})
+    except WorkflowLoaderError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Flow data is not a canonical workflow document: {exc}",
+        ) from exc
+    return data
 
 logger = structlog.get_logger(__name__)
 
@@ -124,13 +132,9 @@ def _node_count(flow: Flow) -> int:
     try:
         doc = json.loads(flow.data)
         nodes = doc.get("nodes") if isinstance(doc, dict) else None
-        if isinstance(nodes, dict):
-            return len(nodes)
-        if isinstance(nodes, list):
-            return len(nodes)
+        return len(nodes) if isinstance(nodes, dict) else 0
     except Exception:
         return 0
-    return 0
 
 
 # ---------------------------------------------------------------------------

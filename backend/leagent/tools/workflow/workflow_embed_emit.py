@@ -58,6 +58,15 @@ class ChatWorkflowEmbedEmitTool(BaseTool):
             "required": ["title", "flow_data"],
         }
 
+    @staticmethod
+    def _canonical_payload(doc: Any, raw_fd: dict[str, Any]) -> dict[str, Any]:
+        """Store the validated canonical document, preserving any ``ui`` layout."""
+        payload = doc.to_dict()
+        ui = raw_fd.get("ui")
+        if isinstance(ui, dict):
+            payload["ui"] = ui
+        return payload
+
     async def validate_input(self, params: dict[str, Any], context: ToolContext) -> ValidationResult:
         raw_fd = params.get("flow_data")
         if not isinstance(raw_fd, dict):
@@ -68,24 +77,25 @@ class ChatWorkflowEmbedEmitTool(BaseTool):
             return ValidationResult(valid=False, message=str(e))
         context.extra["_workflow_embed_doc"] = doc
         context.extra["_workflow_embed_digest"] = digest
-        context.extra["_workflow_embed_raw"] = raw_fd
+        context.extra["_workflow_embed_canonical"] = self._canonical_payload(doc, raw_fd)
         return ValidationResult(valid=True)
 
     async def execute(self, params: dict[str, Any], context: ToolContext) -> Any:
         digest = context.extra.get("_workflow_embed_digest")
-        raw_fd = context.extra.get("_workflow_embed_raw")
-        if not isinstance(digest, str) or not isinstance(raw_fd, dict):
+        flow_data = context.extra.get("_workflow_embed_canonical")
+        if not isinstance(digest, str) or not isinstance(flow_data, dict):
             raw_fd = params.get("flow_data")
             if not isinstance(raw_fd, dict):
                 return {"success": False, "error": "flow_data missing"}
-            _doc, digest = validate_workflow_embed(raw_fd, node_registry=get_registry())
+            doc, digest = validate_workflow_embed(raw_fd, node_registry=get_registry())
+            flow_data = self._canonical_payload(doc, raw_fd)
         title = params.get("title", "")
         summary = params.get("summary")
         flow_id = params.get("flow_id")
         return {
             "success": True,
             "digest": digest,
-            "flow_data": raw_fd,
+            "flow_data": flow_data,
             "title": title if isinstance(title, str) else "",
             "summary": summary if isinstance(summary, str) else None,
             "flow_id": flow_id if isinstance(flow_id, str) else None,

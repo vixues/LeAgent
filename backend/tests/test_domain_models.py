@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import base64
 from typing import Any
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -33,6 +34,7 @@ from leagent.workflow.nodes.domain_model_nodes import (
     MODEL_OUTPUT_NAMES,
     build_domain_model_node,
 )
+from leagent.workflow.nodes.registry import NodeRegistry
 
 
 class _FakeAdapter:
@@ -444,3 +446,277 @@ def test_gating_diffusion_disabled_by_env(monkeypatch):
     monkeypatch.setattr(diffusion_pkg, "diffusers_available", lambda: True)
     registry = DomainModelRegistry()
     assert register_builtin_domain_models(registry) == []
+
+
+# ---------------------------------------------------------------------------
+# Factory + bootstrap integration
+# ---------------------------------------------------------------------------
+
+
+def test_register_domain_model_nodes_lifts_adapters():
+    registry = DomainModelRegistry()
+    registry.register(_FakeAdapter())
+    node_reg = NodeRegistry()
+
+    from leagent.workflow.nodes.domain_model_factory import register_domain_model_nodes
+
+    ids = register_domain_model_nodes(node_reg, domain_registry=registry)
+    assert ids == ["Model.echo.fake"]
+    assert "Model.echo.fake" in node_reg.list_ids()
+
+
+@pytest.mark.asyncio
+async def test_bootstrap_registers_domain_models_when_env_set(monkeypatch):
+    _clear_provider_env(monkeypatch)
+    monkeypatch.setenv("LEAGENT_DIFFUSION_ENABLED", "0")
+    monkeypatch.setenv("LEAGENT_LOCAL_ASR_URL", "http://localhost:8000")
+    monkeypatch.setenv("LEAGENT_LOCAL_TTS_URL", "http://localhost:8880")
+
+    from leagent.workflow.nodes import bootstrap, get_registry
+
+    summary = await bootstrap()
+    reg = get_registry()
+    assert "Model.asr.local" in summary.get("domain_models", [])
+    assert "Model.tts.local" in summary.get("domain_models", [])
+    assert "Model.asr.local" in reg.list_ids()
+
+
+# ---------------------------------------------------------------------------
+# Entry point plugin discovery
+# ---------------------------------------------------------------------------
+
+
+class _FakeEntryPoint:
+    def __init__(self, name: str, target) -> None:
+        self.name = name
+        self._target = target
+
+    def load(self):
+        return self._target
+
+    def __str__(self) -> str:
+        return f"FakeEntryPoint({self.name})"
+
+
+def test_load_domain_model_plugins(monkeypatch):
+    from leagent.llm import domain_registry as dr
+
+    fake_ep = _FakeEntryPoint("echo_plugin", _FakeAdapter())
+    monkeypatch.setattr(dr, "entry_points", lambda *a, **k: [fake_ep])
+    dr.reset_domain_registry()
+
+    registered = dr.load_domain_model_plugins()
+    assert registered == ["echo.fake"]
+    assert dr.get_domain_registry().get("echo", "fake") is not None
+    assert dr.load_domain_model_plugins() == []
+
+    dr.reset_domain_registry()
+
+
+# ---------------------------------------------------------------------------
+# Node execution edge cases
+# ---------------------------------------------------------------------------
+
+
+class _TemplateState:
+    def resolve_template(self, text: str) -> str:
+        return str(text).replace("{{name}}", "world")
+
+
+async def test_node_resolves_template_variables():
+    adapter = _FakeAdapter()
+    node = build_domain_model_node(adapter)()
+    await node.execute(
+        hidden=HiddenHolder(unique_id="n1", workflow_state=_TemplateState()),
+        text="{{name}}",
+    )
+    assert adapter.calls == [{"text": "world"}]
+
+
+async def test_node_adapter_exception_maps_to_error():
+    class _Boom(_FakeAdapter):
+        async def invoke(self, **params: Any) -> DomainModelResult:
+            raise RuntimeError("boom")
+
+    node = build_domain_model_node(_Boom())()
+    out = await node.execute(hidden=HiddenHolder(unique_id="n1"), text="x")
+    assert out.error == "boom"
+
+
+async def test_node_url_falls_back_to_text_slot():
+    adapter = _FakeAdapter()
+    adapter.result = DomainModelResult(
+        success=True,
+        url="https://example.com/out.wav",
+        mime="audio/wav",
+    )
+    node = build_domain_model_node(adapter)()
+    out = await node.execute(hidden=HiddenHolder(unique_id="n1"), text="x")
+    assert out.values[0] == "https://example.com/out.wav"
+
+
+# ---------------------------------------------------------------------------
+# Cloud adapter HTTP mocks
+# ---------------------------------------------------------------------------
+
+
+def _mock_http_response(*, content: bytes = b"", json_body: dict | None = None):
+    resp = MagicMock()
+    resp.content = content
+    resp.json.return_value = json_body or {}
+    resp.raise_for_status = MagicMock()
+    return resp
+
+
+def _mock_http_client(*, content: bytes = b"", json_body: dict | None = None):
+    from unittest.mock import AsyncMock
+
+    client = MagicMock()
+    client.post = AsyncMock(return_value=_mock_http_response(content=content, json_body=json_body))
+    client.get = AsyncMock(return_value=_mock_http_response(content=content, json_body=json_body))
+    return client
+
+
+def _attach_mock_http(adapter, **kwargs):
+    adapter._transport._complete_client = _mock_http_client(**kwargs)
+
+
+@pytest.mark.asyncio
+async def test_openai_tts_invoke_success():
+    from leagent.llm.domain_models.openai_audio import OpenAITTSAdapter
+
+    adapter = OpenAITTSAdapter(api_key="sk-test")
+    _attach_mock_http(adapter, content=b"mp3-bytes")
+
+    result = await adapter.invoke(text="hello")
+    assert result.success and result.b64_data
+    assert result.mime == "audio/mpeg"
+
+
+@pytest.mark.asyncio
+async def test_openai_tts_missing_text():
+    from leagent.llm.domain_models.openai_audio import OpenAITTSAdapter
+
+    adapter = OpenAITTSAdapter(api_key="sk-test")
+    result = await adapter.invoke(text="")
+    assert not result.success and "text" in (result.error or "")
+
+
+@pytest.mark.asyncio
+async def test_openai_asr_invoke_success(tmp_path):
+    from leagent.llm.domain_models.openai_audio import OpenAIASRAdapter
+
+    audio = tmp_path / "clip.wav"
+    audio.write_bytes(b"wav")
+    adapter = OpenAIASRAdapter(api_key="sk-test")
+    _attach_mock_http(adapter, json_body={"text": "hello world"})
+
+    result = await adapter.invoke(audio_path=str(audio))
+    assert result.success and result.text == "hello world"
+
+
+@pytest.mark.asyncio
+async def test_openai_asr_missing_file():
+    from leagent.llm.domain_models.openai_audio import OpenAIASRAdapter
+
+    adapter = OpenAIASRAdapter(api_key="sk-test")
+    result = await adapter.invoke(audio_path="/no/such/file.wav")
+    assert not result.success and "not found" in (result.error or "").lower()
+
+
+@pytest.mark.asyncio
+async def test_dashscope_tts_invoke_with_inline_b64():
+    from leagent.llm.domain_models.dashscope_audio import DashScopeTTSAdapter
+
+    adapter = DashScopeTTSAdapter(api_key="ds-test")
+    _attach_mock_http(adapter, json_body={"output": {"audio": {"data": "YWFh"}}})
+
+    result = await adapter.invoke(text="你好")
+    assert result.success and result.b64_data == "YWFh"
+
+
+@pytest.mark.asyncio
+async def test_dashscope_asr_invoke_success():
+    from leagent.llm.domain_models.dashscope_audio import DashScopeASRAdapter
+
+    adapter = DashScopeASRAdapter(api_key="ds-test")
+    _attach_mock_http(
+        adapter,
+        json_body={"output": {"choices": [{"message": {"content": "transcript"}}]}},
+    )
+
+    result = await adapter.invoke(audio_url="https://example.com/a.wav")
+    assert result.success and result.text == "transcript"
+
+
+@pytest.mark.asyncio
+async def test_dashscope_image_gen_invoke_success():
+    from unittest.mock import AsyncMock
+
+    from leagent.llm.domain_models.image import DashScopeImageGenAdapter
+
+    adapter = DashScopeImageGenAdapter(api_key="ds-test")
+    gen_result = MagicMock(
+        b64_json="aW1n",
+        url=None,
+        mime="image/png",
+        model="wanx2.1-t2i-turbo",
+        provider="dashscope",
+        metadata={},
+        revised_prompt="revised",
+    )
+    adapter._provider.generate = AsyncMock(return_value=gen_result)
+
+    result = await adapter.invoke(prompt="a cat")
+    assert result.success and result.b64_data == "aW1n"
+
+
+@pytest.mark.asyncio
+async def test_local_tts_invoke_success(monkeypatch):
+    from leagent.llm.domain_models.local_audio import LocalTTSAdapter
+
+    monkeypatch.setenv("LEAGENT_LOCAL_TTS_URL", "http://localhost:8880")
+    adapter = LocalTTSAdapter()
+    _attach_mock_http(adapter, content=b"mp3")
+
+    result = await adapter.invoke(text="hi")
+    assert result.success and result.b64_data
+
+
+@pytest.mark.asyncio
+async def test_local_asr_invoke_success(tmp_path, monkeypatch):
+    from leagent.llm.domain_models.local_audio import LocalWhisperASRAdapter
+
+    monkeypatch.setenv("LEAGENT_LOCAL_ASR_URL", "http://localhost:8000")
+    audio = tmp_path / "x.wav"
+    audio.write_bytes(b"wav")
+    adapter = LocalWhisperASRAdapter()
+    _attach_mock_http(adapter, json_body={"text": "local transcript"})
+
+    result = await adapter.invoke(audio_path=str(audio))
+    assert result.success and result.text == "local transcript"
+
+
+# ---------------------------------------------------------------------------
+# Builtin gating — cloud API keys
+# ---------------------------------------------------------------------------
+
+
+def test_gating_openai_api_key(monkeypatch):
+    _clear_provider_env(monkeypatch)
+    monkeypatch.setenv("LEAGENT_DIFFUSION_ENABLED", "0")
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
+
+    registry = DomainModelRegistry()
+    registered = register_builtin_domain_models(registry)
+    assert set(registered) == {"tts.openai", "asr.openai"}
+
+
+def test_gating_dashscope_api_key(monkeypatch):
+    _clear_provider_env(monkeypatch)
+    monkeypatch.setenv("LEAGENT_DIFFUSION_ENABLED", "0")
+    monkeypatch.setenv("DASHSCOPE_API_KEY", "ds-test")
+
+    registry = DomainModelRegistry()
+    registered = register_builtin_domain_models(registry)
+    assert set(registered) == {"tts.dashscope", "asr.dashscope", "image_gen.dashscope"}

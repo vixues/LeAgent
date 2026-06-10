@@ -25,10 +25,10 @@ from .edges import LayoutEdge, extract_edges
 from .engine import LayoutOptions, compute_layout
 
 
-# Map canonical `class_type` → frontend category + authoring `type`.
-# Mirrors the TypeScript mapping in `engineWorkflowToReactFlow` so
-# nodes rendered from the backend-computed UI block look identical to
-# nodes rendered by the legacy client-side fallback path.
+# Map canonical `class_type` → frontend category + display `type`.
+# Mirrors the TypeScript mapping in `workflowLayout.ts` so nodes rendered
+# from the backend-computed UI block look identical to nodes laid out
+# client-side from the canonical document.
 _CLASS_TO_TYPE: dict[str, str] = {
     "StartNode": "start",
     "EndNode": "end",
@@ -64,22 +64,15 @@ def _node_type(spec: dict[str, Any]) -> str:
     class_type = spec.get("class_type")
     if isinstance(class_type, str) and class_type in _CLASS_TO_TYPE:
         return _CLASS_TO_TYPE[class_type]
-    raw_type = spec.get("type")
-    if isinstance(raw_type, str) and raw_type:
-        return raw_type
     return "tool_call"
 
 
 def _node_label(node_id: str, spec: dict[str, Any]) -> str:
-    meta = spec.get("meta") or spec.get("metadata") or {}
+    meta = spec.get("meta")
     if isinstance(meta, dict):
         name = meta.get("name")
         if isinstance(name, str) and name.strip():
             return name
-    # Authoring shape stores `name` at top level.
-    name = spec.get("name")
-    if isinstance(name, str) and name.strip():
-        return name
     return node_id
 
 
@@ -89,10 +82,7 @@ def _node_description(spec: dict[str, Any]) -> str | None:
         tool = inputs.get("tool")
         if isinstance(tool, str) and tool:
             return tool
-    tool = spec.get("tool")
-    if isinstance(tool, str) and tool:
-        return tool
-    meta = spec.get("meta") or spec.get("metadata") or {}
+    meta = spec.get("meta")
     if isinstance(meta, dict):
         desc = meta.get("description")
         if isinstance(desc, str) and desc:
@@ -108,9 +98,6 @@ def _node_parameters(spec: dict[str, Any]) -> dict[str, Any]:
             return params
         # Flat inputs already look like params for the UI.
         return dict(inputs)
-    params = spec.get("params")
-    if isinstance(params, dict):
-        return params
     return {}
 
 
@@ -121,12 +108,6 @@ def _iter_node_pairs(document: dict[str, Any]) -> list[tuple[str, dict[str, Any]
         for node_id, spec in nodes.items():
             if isinstance(spec, dict):
                 pairs.append((str(node_id), spec))
-    elif isinstance(nodes, list):
-        for spec in nodes:
-            if isinstance(spec, dict):
-                nid = spec.get("id")
-                if isinstance(nid, str) and nid:
-                    pairs.append((nid, spec))
     return pairs
 
 
@@ -137,7 +118,7 @@ def _start_node(document: dict[str, Any], pairs: list[tuple[str, dict[str, Any]]
         if isinstance(start, str) and start:
             return start
     for nid, spec in pairs:
-        if spec.get("class_type") == "StartNode" or spec.get("type") == "start":
+        if spec.get("class_type") == "StartNode":
             return nid
     return pairs[0][0] if pairs else None
 

@@ -68,5 +68,27 @@ def test_context_source_plugin_discovery(monkeypatch):
     plugin.reset_plugin_registry()
 
 
+def test_domain_model_plugin_discovery(monkeypatch):
+    from leagent.llm import domain_registry as dr
+    from leagent.llm.domain_registry import DomainModelRegistry, DomainModelResult, DomainModelSpec
+
+    class _PluginAdapter:
+        spec = DomainModelSpec(task="upscale", provider="plugin", model="v1")
+
+        async def invoke(self, **params) -> DomainModelResult:
+            return DomainModelResult(text="ok")
+
+    fake_ep = _FakeEntryPoint("my_upscale", _PluginAdapter())
+    monkeypatch.setattr(dr, "entry_points", lambda *a, **k: [fake_ep])
+    dr.reset_domain_registry()
+
+    registered = dr.load_domain_model_plugins()
+    assert registered == ["upscale.plugin"]
+    assert dr.get_domain_registry().get("upscale", "plugin") is not None
+    assert dr.load_domain_model_plugins() == []
+
+    dr.reset_domain_registry()
+
+
 if __name__ == "__main__":
     raise SystemExit(pytest.main([__file__, "-v"]))

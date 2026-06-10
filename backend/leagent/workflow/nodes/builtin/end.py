@@ -1,4 +1,4 @@
-"""``EndNode`` — terminal marker. Collects ``WorkflowDefinition.outputs``."""
+"""``EndNode`` — terminal marker. Collects the document's declared ``outputs``."""
 
 from __future__ import annotations
 

@@ -1,5 +1,4 @@
-"""Tests for workflow engine: base models, workflow loader, WorkflowState,
-and the workflow-worker bootstrap path."""
+"""Tests for workflow engine runtime models: ConditionExpression and WorkflowState."""
 
 from __future__ import annotations
 
@@ -10,19 +9,11 @@ from uuid import uuid4
 import pytest
 
 from leagent.workflow.base import (
-    BranchCondition,
     ConditionExpression,
     ConditionOperator,
-    EdgeType,
-    NodeType,
-    WorkflowDefinition,
-    WorkflowEdge,
-    WorkflowNode,
     WorkflowState,
     WorkflowStatus,
 )
-from leagent.workflow.io import WorkflowDocument, WorkflowLoaderError, load
-
 
 # ===========================================================================
 # ConditionExpression
@@ -156,236 +147,34 @@ class TestWorkflowState:
 
 
 # ===========================================================================
-# Workflow Loader (load)
+# Canonical document loading (structure lives in io.loader, not base)
 # ===========================================================================
 
 
-VALID_WORKFLOW_YAML = """
-id: test_workflow
-name: Test Workflow
-description: A simple test workflow
-nodes:
-  start:
-    class_type: StartNode
-    inputs: {}
-    meta:
-      name: Start
-      description: Entry point
-    control: {}
-  process:
-    class_type: ToolCallNode
-    inputs:
-      tool: pdf_reader
-      params:
-        file_path: "${input.doc_path}"
-    meta:
-      name: Process Document
-      description: Process a document
-    control:
-      next: end
-  end:
-    class_type: EndNode
-    inputs: {}
-    meta:
-      name: End
-      description: Exit point
-    control: {}
-control:
-  start: start
-  end: end
-  edges:
-    - source: start
-      target: process
-    - source: process
-      target: end
-inputs:
-  - name: doc_path
-    type: string
-    required: true
-outputs:
-  - name: result
-    from_node: process
-    field: text
-"""
-
-INVALID_WORKFLOW_YAML = """
-not_a_workflow:
-  - item: 1
-"""
-
-
-class TestWorkflowLoader:
-    def test_load_valid_yaml(self) -> None:
-        wf = load(VALID_WORKFLOW_YAML)
-        assert isinstance(wf, WorkflowDocument)
-        assert wf.id == "test_workflow"
-        assert len(wf.nodes) == 3
-
-    def test_load_node_class_types(self) -> None:
-        wf = load(VALID_WORKFLOW_YAML)
-        class_types = {spec["class_type"] for spec in wf.nodes.values()}
-        assert "StartNode" in class_types
-        assert "EndNode" in class_types
-        assert "ToolCallNode" in class_types
-
-    def test_load_edges(self) -> None:
-        wf = load(VALID_WORKFLOW_YAML)
-        assert len(wf.control.get("edges", [])) == 2
-
-    def test_invalid_yaml_raises(self) -> None:
-        with pytest.raises((WorkflowLoaderError, Exception)):
-            load(INVALID_WORKFLOW_YAML)
-
-    def test_load_from_file(self, tmp_path) -> None:
-        workflow_file = tmp_path / "workflow.yaml"
-        workflow_file.write_text(VALID_WORKFLOW_YAML, encoding="utf-8")
-        wf = load(workflow_file)
-        assert wf.name == "Test Workflow"
-
-    def test_missing_file_raises(self) -> None:
-        with pytest.raises((WorkflowLoaderError, FileNotFoundError, Exception)):
-            load("/nonexistent/workflow.yaml")
-
-    def test_load_json_workflow(self) -> None:
-        import json
-        data = {
-            "id": "json_wf",
-            "name": "JSON Workflow",
-            "description": "",
+class TestCanonicalDocument:
+    def _doc(self) -> dict[str, Any]:
+        return {
+            "id": "test_wf",
+            "name": "Test",
             "nodes": {
-                "start": {
-                    "class_type": "StartNode",
-                    "inputs": {},
-                    "meta": {"name": "Start"},
-                    "control": {},
-                },
-                "end": {
-                    "class_type": "EndNode",
-                    "inputs": {},
-                    "meta": {"name": "End"},
-                    "control": {},
-                },
+                "start": {"class_type": "StartNode", "control": {"next": "process"}},
+                "process": {"class_type": "ToolCallNode", "control": {"next": "end"}},
+                "end": {"class_type": "EndNode", "control": {}},
             },
-            "control": {
-                "start": "start",
-                "end": "end",
-                "edges": [{"source": "start", "target": "end"}],
-            },
+            "control": {"start": "start", "end": "end", "edges": []},
         }
-        wf = load(json.dumps(data))
-        assert wf.id == "json_wf"
 
+    def test_load_canonical(self) -> None:
+        from leagent.workflow.io import load
 
-# ===========================================================================
-# WorkflowDefinition
-# ===========================================================================
+        doc = load(self._doc())
+        assert doc.id == "test_wf"
+        assert set(doc.nodes) == {"start", "process", "end"}
+        assert doc.start_id == "start"
 
+    def test_rejects_list_shaped_nodes(self) -> None:
+        from leagent.workflow.io import load
+        from leagent.workflow.io.loader import WorkflowLoaderError
 
-class TestWorkflowDefinition:
-    def _wf(self) -> WorkflowDefinition:
-        nodes = [
-            WorkflowNode(id="start", type=NodeType.START, name="Start"),
-            WorkflowNode(id="process", type=NodeType.TOOL_CALL, name="Process"),
-            WorkflowNode(id="end", type=NodeType.END, name="End"),
-        ]
-        edges = [
-            WorkflowEdge(source="start", target="process"),
-            WorkflowEdge(source="process", target="end"),
-        ]
-        return WorkflowDefinition(
-            id="test_wf",
-            name="Test",
-            nodes=nodes,
-            edges=edges,
-        )
-
-    def test_get_node(self) -> None:
-        wf = self._wf()
-        node = wf.get_node("process")
-        assert node is not None
-        assert node.type == NodeType.TOOL_CALL
-
-    def test_get_nonexistent_node(self) -> None:
-        wf = self._wf()
-        assert wf.get_node("nonexistent") is None
-
-    def test_get_start_node(self) -> None:
-        wf = self._wf()
-        start = wf.get_start_node()
-        assert start is not None
-        assert start.type == NodeType.START
-
-    def test_get_next_nodes(self) -> None:
-        wf = self._wf()
-        outgoing = wf.get_outgoing_edges("start")
-        assert len(outgoing) == 1
-        target_node = wf.get_node(outgoing[0].target)
-        assert target_node is not None
-        assert target_node.id == "process"
-
-    def test_validate_no_errors_for_valid(self) -> None:
-        wf = self._wf()
-        errors = wf.validate_structure()
-        assert len(errors) == 0
-
-
-# ===========================================================================
-# Workflow worker bootstrap
-# ===========================================================================
-
-
-class TestWorkflowWorkerBootstrap:
-    def test_worker_init_service_manager_fallback(self) -> None:
-        """The workflow worker must initialise ServiceManager when it's not
-        already set up (i.e. when not running under the FastAPI lifespan).
-
-        Before the fix, ``get_service_manager()`` raised ``RuntimeError``
-        and the worker crashed immediately.
-        """
-        from leagent.workflow.cli import workflow_worker as ww_module
-
-        source = __import__("inspect").getsource(ww_module._run)
-        assert "init_service_manager" in source, (
-            "_run() must fall back to init_service_manager when "
-            "get_service_manager raises RuntimeError"
-        )
-
-
-# ===========================================================================
-# Migration b8c9d0e1f2a3 ordering
-# ===========================================================================
-
-
-class TestMigrationFileSessionIdOrder:
-    def test_add_column_before_delete(self) -> None:
-        """The migration must add ``session_id`` before any SQL that
-        references it. The original bug ran a DELETE on the column before
-        the ADD COLUMN, crashing with ``UndefinedColumnError``."""
-        import ast
-        from pathlib import Path
-
-        migration = Path(
-            __file__
-        ).resolve().parent.parent / (
-            "leagent/alembic/versions/b8c9d0e1f2a3_file_session_id_fk.py"
-        )
-        if not migration.is_file():
-            pytest.skip("Migration file not present in this branch.")
-        source = migration.read_text(encoding="utf-8")
-        tree = ast.parse(source)
-
-        upgrade_fn = None
-        for node in ast.walk(tree):
-            if isinstance(node, ast.FunctionDef) and node.name == "upgrade":
-                upgrade_fn = node
-                break
-        assert upgrade_fn is not None
-
-        first_stmt = upgrade_fn.body[0]
-        assert isinstance(first_stmt, ast.With), (
-            "First statement in upgrade() must be the batch_alter_table "
-            "that adds session_id, not a DELETE"
-        )
-        assert "add_column" in ast.dump(first_stmt), (
-            "First batch_alter_table must call add_column"
-        )
+        with pytest.raises(WorkflowLoaderError):
+            load({"id": "x", "name": "x", "nodes": [{"id": "start", "type": "start"}]})

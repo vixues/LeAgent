@@ -4,16 +4,17 @@ This is NOT a schema migration layer. The engine exposes a single canonical
 document shape (see :mod:`leagent.workflow.io.loader`). Two sources still
 need a light conversion to reach that shape:
 
-* **YAML templates** authored by hand — they use a flat ``nodes: [...]`` list,
-  type strings like ``"tool_call"``, and top-level control keys
-  (``next``, ``conditions``, ``error_handler``). Authors prefer that
-  surface to the runtime-optimized ``nodes: {id: {class_type, control}}``
-  dict.
-* **Visual editor graphs** (:class:`leagent.schema.graph.FlowData`) —
-  the UI produces a similar flat list.
+* **LLM-authored chat workflow embeds** (``chat_workflow_embed_emit``)
+  — models may emit a flat ``nodes: [...]`` list with type strings like
+  ``"tool_call"`` and top-level control keys (``next``, ``conditions``,
+  ``error_handler``); that surface is easier to generate than the
+  runtime-optimized ``nodes: {id: {class_type, control}}`` dict.
+* **scripts/workflow/migrate_flows.py** — the one-shot upgrade tool for
+  historical DB rows.
 
-Both surfaces funnel through :func:`to_canonical`, which produces the
-canonical document that :func:`leagent.workflow.io.load` accepts.
+Both funnel through :func:`to_canonical`, which produces the canonical
+document that :func:`leagent.workflow.io.load` accepts. Stored data
+(flows table, templates, chat embed extensions) is always canonical.
 """
 
 from __future__ import annotations

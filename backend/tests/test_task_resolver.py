@@ -1,4 +1,4 @@
-"""Tests for task-based model resolution with image attachments."""
+"""Tests for task-based model resolution with image attachments and domain tasks."""
 
 from __future__ import annotations
 
@@ -6,10 +6,11 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from leagent.exceptions.llm import LLMServiceError
+from leagent.exceptions.llm import LLMServiceError, ModelNotFoundError
 from leagent.llm.base import ChatMessage, MessageRole
 from leagent.llm.model_registry import ModelRegistry
 from leagent.llm.model_spec import ModelCapabilities, ModelSpec, ModelTask
+from leagent.llm.registry import ProviderRegistry
 from leagent.llm.task_resolver import (
     TaskResolver,
     messages_contain_image,
@@ -50,6 +51,146 @@ def _resolver(catalog: ModelRegistry) -> TaskResolver:
     registry = MagicMock()
     registry.has_provider.return_value = True
     return TaskResolver(registry, catalog)
+
+
+def _minimal_catalog(provider: str = "mock", model: str = "gpt-4") -> ModelRegistry:
+    catalog = ModelRegistry()
+    catalog.load_from_config(
+        {
+            "version": 2,
+            "providers": [
+                {
+                    "name": provider,
+                    "type": "openai",
+                    "enabled": True,
+                    "models": [
+                        {
+                            "name": model,
+                            "kind": "chat",
+                            "capabilities": {
+                                "input": ["text"],
+                                "output": ["text"],
+                                "tool_call": True,
+                            },
+                            "context_window": 128000,
+                        }
+                    ],
+                }
+            ],
+            "routing": {"tasks": {"chat": {"provider": provider, "model": model}}},
+        }
+    )
+    return catalog
+
+
+def _mock_resolver(catalog: ModelRegistry | None = None) -> TaskResolver:
+    reg = ProviderRegistry()
+    mock_prov = MagicMock()
+    mock_prov.name = "mock"
+    reg.register("mock", mock_prov)
+    return TaskResolver(reg, catalog or _minimal_catalog())
+
+
+def _kind_spec(
+    provider: str,
+    model: str,
+    *,
+    kind: str,
+) -> ModelSpec:
+    return ModelSpec(name=model, provider=provider, kind=kind)  # type: ignore[arg-type]
+
+
+def _registry_with_task(task: str, provider: str, model: str, *, kind: str) -> ModelRegistry:
+    reg = ModelRegistry()
+    reg._specs[(provider, model)] = _kind_spec(provider, model, kind=kind)  # noqa: SLF001
+    reg._task_bindings = {task: {"provider": provider, "model": model}}  # noqa: SLF001
+    return reg
+
+
+# ---------------------------------------------------------------------------
+# Chat task binding (merged from test_llm.py)
+# ---------------------------------------------------------------------------
+
+
+def test_resolve_chat_task_binding() -> None:
+    resolved = _mock_resolver().resolve(ModelTask.CHAT)
+    assert resolved.provider == "mock"
+    assert resolved.model == "gpt-4"
+    assert resolved.task == ModelTask.CHAT
+
+
+def test_explicit_user_model() -> None:
+    resolved = _mock_resolver().resolve(
+        ModelTask.CHAT,
+        user_provider="mock",
+        user_model="gpt-4",
+    )
+    assert resolved.reason == "user_explicit"
+
+
+def test_unknown_model_raises() -> None:
+    with pytest.raises(ModelNotFoundError):
+        _mock_resolver().resolve(
+            ModelTask.CHAT,
+            user_provider="mock",
+            user_model="missing",
+        )
+
+
+# ---------------------------------------------------------------------------
+# Non-chat domain tasks (image_gen / tts / asr)
+# ---------------------------------------------------------------------------
+
+
+def test_image_gen_task_requires_image_gen_kind() -> None:
+    catalog = _registry_with_task("image_gen", "openai", "gpt-4", kind="chat")
+    resolver = _resolver(catalog)
+    with pytest.raises(LLMServiceError, match="image_gen"):
+        resolver.resolve(ModelTask.IMAGE_GEN)
+
+
+def test_image_gen_task_succeeds_with_correct_kind() -> None:
+    catalog = _registry_with_task("image_gen", "dashscope", "wanx", kind="image_gen")
+    resolver = _resolver(catalog)
+    resolved = resolver.resolve(ModelTask.IMAGE_GEN)
+    assert resolved.task == ModelTask.IMAGE_GEN
+    assert resolved.provider == "dashscope"
+    assert resolved.model == "wanx"
+
+
+def test_tts_task_requires_tts_kind() -> None:
+    catalog = _registry_with_task("tts", "openai", "gpt-4", kind="chat")
+    resolver = _resolver(catalog)
+    with pytest.raises(LLMServiceError, match="tts"):
+        resolver.resolve(ModelTask.TTS)
+
+
+def test_tts_task_succeeds_with_correct_kind() -> None:
+    catalog = _registry_with_task("tts", "openai", "tts-1", kind="tts")
+    resolver = _resolver(catalog)
+    resolved = resolver.resolve(ModelTask.TTS)
+    assert resolved.task == ModelTask.TTS
+    assert resolved.model == "tts-1"
+
+
+def test_asr_task_requires_asr_kind() -> None:
+    catalog = _registry_with_task("asr", "openai", "gpt-4", kind="chat")
+    resolver = _resolver(catalog)
+    with pytest.raises(LLMServiceError, match="asr"):
+        resolver.resolve(ModelTask.ASR)
+
+
+def test_asr_task_succeeds_with_correct_kind() -> None:
+    catalog = _registry_with_task("asr", "openai", "whisper-1", kind="asr")
+    resolver = _resolver(catalog)
+    resolved = resolver.resolve(ModelTask.ASR)
+    assert resolved.task == ModelTask.ASR
+    assert resolved.model == "whisper-1"
+
+
+# ---------------------------------------------------------------------------
+# Vision / image attachment routing
+# ---------------------------------------------------------------------------
 
 
 def test_user_text_only_model_with_images_does_not_raise() -> None:

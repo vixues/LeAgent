@@ -1,7 +1,8 @@
 """Database-backed :class:`FlowWorkflowRegistry`.
 
-Loads a :class:`WorkflowDocument` from the ``flows`` table and migrates
-older payloads on the fly via :func:`io.load`.
+Loads a :class:`WorkflowDocument` from the ``flows`` table via
+:func:`io.load`. Rows must already be in the canonical document shape —
+non-canonical payloads fail to load (no runtime migration).
 """
 
 from __future__ import annotations
