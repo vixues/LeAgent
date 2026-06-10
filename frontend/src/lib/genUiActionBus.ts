@@ -16,7 +16,10 @@ export type GenUiActionType =
   | 'open_artifact'
   | 'open_file'
   | 'navigate'
-  | 'patch_ui';
+  | 'patch_ui'
+  | 'submit_form'
+  | 'run_workflow'
+  | 'resume_workflow';
 
 export interface SendMessageActionPayload {
   content: string;
@@ -49,13 +52,34 @@ export interface PatchUiActionPayload {
   messageId?: string;
 }
 
+export interface SubmitFormActionPayload {
+  formId?: string;
+  /** Collected named field values from the enclosing GenUi Form. */
+  values: Record<string, unknown>;
+}
+
+export interface RunWorkflowActionPayload {
+  flowId: string;
+  /** Workflow input values (from the enclosing Form unless inlined). */
+  values: Record<string, unknown>;
+}
+
+export interface ResumeWorkflowActionPayload {
+  promptId: string;
+  /** Resume data (e.g. `{answer}` or `{approved, comments}`) merged with form values. */
+  values: Record<string, unknown>;
+}
+
 export type GenUiAction =
   | { type: 'send_message'; payload: SendMessageActionPayload }
   | { type: 'open_url'; payload: OpenUrlActionPayload }
   | { type: 'open_artifact'; payload: OpenArtifactActionPayload }
   | { type: 'open_file'; payload: OpenFileActionPayload }
   | { type: 'navigate'; payload: NavigateActionPayload }
-  | { type: 'patch_ui'; payload: PatchUiActionPayload };
+  | { type: 'patch_ui'; payload: PatchUiActionPayload }
+  | { type: 'submit_form'; payload: SubmitFormActionPayload }
+  | { type: 'run_workflow'; payload: RunWorkflowActionPayload }
+  | { type: 'resume_workflow'; payload: ResumeWorkflowActionPayload };
 
 /** Minimal context describing where the action came from (used as fallback). */
 export interface GenUiActionContext {
@@ -65,6 +89,10 @@ export interface GenUiActionContext {
   actionId?: string;
   /** Toggle state delta for ToggleButton. */
   toggled?: boolean;
+  /** Named field values from the enclosing GenUi Form (set by form-aware buttons). */
+  formValues?: Record<string, unknown>;
+  /** The enclosing Form's id (set by form-aware buttons). */
+  formId?: string;
 }
 
 export interface GenUiActionAdapters {
@@ -74,6 +102,9 @@ export interface GenUiActionAdapters {
   openFile?: (p: OpenFileActionPayload, ctx: GenUiActionContext) => void;
   navigate?: (p: NavigateActionPayload, ctx: GenUiActionContext) => void;
   patchUi?: (p: PatchUiActionPayload, ctx: GenUiActionContext) => void;
+  submitForm?: (p: SubmitFormActionPayload, ctx: GenUiActionContext) => void | Promise<void>;
+  runWorkflow?: (p: RunWorkflowActionPayload, ctx: GenUiActionContext) => void | Promise<void>;
+  resumeWorkflow?: (p: ResumeWorkflowActionPayload, ctx: GenUiActionContext) => void | Promise<void>;
 }
 
 let adapters: GenUiActionAdapters = {};
@@ -90,6 +121,19 @@ export function resetGenUiActionAdapters(): void {
 
 function isUiPatchArray(value: unknown): value is UiPatchStreamPayload['patches'] {
   return Array.isArray(value) && value.every((p) => p && typeof p === 'object' && 'op' in p && 'path' in p);
+}
+
+/** Inline payload values win over collected form values. */
+function mergeFormValues(
+  inline: unknown,
+  ctx: GenUiActionContext,
+): Record<string, unknown> {
+  const fromForm = ctx.formValues ?? {};
+  const fromInline =
+    inline && typeof inline === 'object' && !Array.isArray(inline)
+      ? (inline as Record<string, unknown>)
+      : {};
+  return { ...fromForm, ...fromInline };
 }
 
 /**
@@ -156,6 +200,31 @@ export function normalizeAction(
           },
         };
       }
+      case 'submit_form': {
+        return {
+          type: 'submit_form',
+          payload: {
+            formId: typeof payload.formId === 'string' ? payload.formId : ctx.formId,
+            values: mergeFormValues(payload.values, ctx),
+          },
+        };
+      }
+      case 'run_workflow': {
+        const flowId = typeof payload.flowId === 'string' ? payload.flowId : '';
+        if (!flowId) return null;
+        return {
+          type: 'run_workflow',
+          payload: { flowId, values: mergeFormValues(payload.values, ctx) },
+        };
+      }
+      case 'resume_workflow': {
+        const promptId = typeof payload.promptId === 'string' ? payload.promptId : '';
+        if (!promptId) return null;
+        return {
+          type: 'resume_workflow',
+          payload: { promptId, values: mergeFormValues(payload.values, ctx) },
+        };
+      }
       default:
         break;
     }
@@ -214,6 +283,18 @@ export function dispatchGenUiAction(raw: unknown, ctx: GenUiActionContext = {}):
     }
     case 'patch_ui': {
       adapters.patchUi?.(action.payload, ctx);
+      break;
+    }
+    case 'submit_form': {
+      void adapters.submitForm?.(action.payload, ctx);
+      break;
+    }
+    case 'run_workflow': {
+      void adapters.runWorkflow?.(action.payload, ctx);
+      break;
+    }
+    case 'resume_workflow': {
+      void adapters.resumeWorkflow?.(action.payload, ctx);
       break;
     }
   }

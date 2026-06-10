@@ -62,6 +62,13 @@ export type GenUiNodeKind =
   | 'Select'
   | 'Chip'
   | 'ChipGroup'
+  // Forms (interactive ingress: workflow inputs, resume prompts)
+  | 'Form'
+  | 'NumberInput'
+  | 'Switch'
+  | 'Slider'
+  | 'FileInput'
+  | 'Textarea'
   // Feedback
   | 'Alert'
   | 'Callout'

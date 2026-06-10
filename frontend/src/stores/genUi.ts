@@ -6,6 +6,82 @@ function treeKey(sessionId: string, messageId: string): string {
   return `${sessionId}::${messageId}`;
 }
 
+/** Decode one RFC-6901 JSON Pointer token. */
+function decodePointerToken(token: string): string {
+  return token.replace(/~1/g, '/').replace(/~0/g, '~');
+}
+
+/**
+ * Apply RFC-6902 `add` / `replace` / `remove` patches to a GenUi tree
+ * document (matching the backend `UI_PATCH_SCHEMA` contract). Invalid
+ * patches are skipped; the document is cloned before mutation.
+ */
+export function applyJsonPatches(
+  doc: GenUiTreeV1,
+  patches: UiPatchStreamPayload['patches'],
+): GenUiTreeV1 {
+  const next = structuredClone(doc) as unknown as Record<string, unknown>;
+  for (const p of patches) {
+    if (!p || typeof p.path !== 'string' || !p.path.startsWith('/')) continue;
+    const tokens = p.path.slice(1).split('/').map(decodePointerToken);
+    if (tokens.length === 0) continue;
+    applyOnePatch(next, tokens, p.op, p.value);
+  }
+  return next as unknown as GenUiTreeV1;
+}
+
+function applyOnePatch(
+  doc: Record<string, unknown>,
+  tokens: string[],
+  op: 'add' | 'replace' | 'remove',
+  value: unknown,
+): void {
+  // Walk to the parent of the target.
+  let parent: unknown = doc;
+  for (let i = 0; i < tokens.length - 1; i += 1) {
+    const tok = tokens[i]!;
+    if (Array.isArray(parent)) {
+      const idx = Number(tok);
+      if (!Number.isInteger(idx) || idx < 0 || idx >= parent.length) return;
+      parent = parent[idx];
+    } else if (parent && typeof parent === 'object') {
+      parent = (parent as Record<string, unknown>)[tok];
+    } else {
+      return;
+    }
+  }
+  if (parent == null || typeof parent !== 'object') return;
+
+  const last = tokens[tokens.length - 1]!;
+  if (Array.isArray(parent)) {
+    const arr = parent as unknown[];
+    if (op === 'add') {
+      if (last === '-') {
+        arr.push(value);
+        return;
+      }
+      const idx = Number(last);
+      if (!Number.isInteger(idx) || idx < 0 || idx > arr.length) return;
+      arr.splice(idx, 0, value);
+      return;
+    }
+    const idx = Number(last);
+    if (!Number.isInteger(idx) || idx < 0 || idx >= arr.length) return;
+    if (op === 'replace') arr[idx] = value;
+    else arr.splice(idx, 1);
+    return;
+  }
+
+  const obj = parent as Record<string, unknown>;
+  if (op === 'remove') {
+    delete obj[last];
+    return;
+  }
+  // `add` and `replace` both assign for objects (RFC 6902 §4.1/4.3 —
+  // replace requires existence, but we stay lenient for streaming patches).
+  obj[last] = value;
+}
+
 interface GenUiState {
   /** Full trees keyed by `sessionId::messageId`. */
   trees: Record<string, GenUiTreeV1 | null>;
@@ -58,12 +134,7 @@ export const useGenUiStore = create<GenUiState>()((set, get) => ({
     if (get().errorTrees.has(k)) return;
     const current = get().trees[k];
     if (!current) return;
-    const next = { ...current, root: structuredClone(current.root) };
-    for (const p of payload.patches) {
-      if (p.op === 'replace' && p.path === '/root' && p.value && typeof p.value === 'object') {
-        next.root = p.value as GenUiTreeV1['root'];
-      }
-    }
+    const next = applyJsonPatches(current, payload.patches);
     set((s) => ({ trees: { ...s.trees, [k]: next } }));
   },
 

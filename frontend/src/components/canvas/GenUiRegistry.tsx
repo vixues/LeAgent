@@ -32,6 +32,11 @@ import {
 } from '@/components/canvas/genUi/themeManager';
 import { dispatchGenUiAction } from '@/lib/genUiActionBus';
 import {
+  GenUiForm,
+  GenUiFormField,
+  useGenUiFormExtras,
+} from '@/components/canvas/genUi/formComponents';
+import {
   BADGE_VARIANTS,
   BUTTON_VARIANTS,
   PROGRESS_COLORS,
@@ -45,7 +50,11 @@ import {
 const s = (v: unknown): string => (typeof v === 'string' ? v : v != null ? String(v) : '');
 const b = (v: unknown): boolean => Boolean(v);
 
-function fireGenUiControl(p: Record<string, unknown>, ctx: GenUiRenderContextValue, extra?: { toggled?: boolean }) {
+function fireGenUiControl(
+  p: Record<string, unknown>,
+  ctx: GenUiRenderContextValue,
+  extra?: { toggled?: boolean; formValues?: Record<string, unknown>; formId?: string },
+) {
   const action = p.action;
   const actionId = typeof p.actionId === 'string' ? p.actionId : undefined;
   const base = { sessionId: ctx.sessionId, messageId: ctx.messageId, actionId, ...extra };
@@ -54,6 +63,78 @@ function fireGenUiControl(p: Record<string, unknown>, ctx: GenUiRenderContextVal
   } else if (actionId) {
     dispatchGenUiAction(actionId, base);
   }
+}
+
+/** Button that collects enclosing GenUi Form values into its action context. */
+function GenUiButtonNode({ node, ctx }: { node: GenUiNode; ctx: GenUiRenderContextValue }) {
+  const extras = useGenUiFormExtras();
+  const p = node.props ?? {};
+  const variant = BUTTON_VARIANTS[(p.variant as string)] || BUTTON_VARIANTS.secondary;
+  return (
+    <button
+      type="button"
+      className={cn('px-3 py-1.5 text-xs font-medium rounded-lg border transition-colors', variant)}
+      onClick={() => {
+        fireGenUiControl(p, ctx, extras);
+      }}
+    >
+      {s(p.label) || 'Action'}
+    </button>
+  );
+}
+
+function GenUiInteractiveButtonNode({ node, ctx }: { node: GenUiNode; ctx: GenUiRenderContextValue }) {
+  const extras = useGenUiFormExtras();
+  const p = node.props ?? {};
+  const variant = BUTTON_VARIANTS[(p.variant as string)] || BUTTON_VARIANTS.primary;
+  const sizeClass = p.size === 'lg' ? 'px-5 py-2.5 text-sm' : p.size === 'sm' ? 'px-2.5 py-1 text-xs' : 'px-4 py-2 text-sm';
+  return (
+    <button
+      type="button"
+      disabled={Boolean(p.disabled)}
+      title={p.tooltip as string | undefined}
+      className={cn(
+        'inline-flex items-center gap-2 font-medium rounded-lg border transition-all',
+        sizeClass, variant,
+        b(p.disabled) && 'opacity-50 cursor-not-allowed',
+      )}
+      onClick={() => {
+        if (!p.disabled) fireGenUiControl(p, ctx, extras);
+      }}
+    >
+      {!!p.icon && (
+        <span className="inline-flex items-center">
+          <IconGlyph name={p.icon} size={16} tone="default" />
+        </span>
+      )}
+      {s(p.label) || 'Action'}
+    </button>
+  );
+}
+
+function GenUiToggleButtonNode({ node, ctx }: { node: GenUiNode; ctx: GenUiRenderContextValue }) {
+  const extras = useGenUiFormExtras();
+  const p = node.props ?? {};
+  const active = Boolean(p.active);
+  return (
+    <button
+      type="button"
+      className={cn(
+        'px-3 py-1.5 text-xs font-medium rounded-lg border transition-all',
+        active
+          ? cn(
+              PRIMARY_SOFT_CTA_CLASSNAME,
+              'border-primary-300 dark:border-primary-600',
+            )
+          : 'bg-surface text-foreground border-border hover:bg-surface-sunken',
+      )}
+      onClick={() => {
+        fireGenUiControl(p, ctx, { ...extras, toggled: !active });
+      }}
+    >
+      {s(p.label) || 'Toggle'}
+    </button>
+  );
 }
 
 function UnknownNode({ node }: { node: GenUiNode }) {
@@ -862,73 +943,14 @@ function renderNode(node: GenUiNode, depth: number, ctx: GenUiRenderContextValue
     }
 
     // ── Interactive ─────────────────────────────────────────────────────
-    case 'Button': {
-      const variant = BUTTON_VARIANTS[(p.variant as string)] || BUTTON_VARIANTS.secondary;
-      return (
-        <button
-          type="button"
-          key={node.nodeId}
-          className={cn('px-3 py-1.5 text-xs font-medium rounded-lg border transition-colors', variant)}
-          onClick={() => {
-            fireGenUiControl(p, ctx);
-          }}
-        >
-          {s(p.label) || 'Action'}
-        </button>
-      );
-    }
+    case 'Button':
+      return <GenUiButtonNode key={node.nodeId} node={node} ctx={ctx} />;
 
-    case 'InteractiveButton': {
-      const variant = BUTTON_VARIANTS[(p.variant as string)] || BUTTON_VARIANTS.primary;
-      const sizeClass = p.size === 'lg' ? 'px-5 py-2.5 text-sm' : p.size === 'sm' ? 'px-2.5 py-1 text-xs' : 'px-4 py-2 text-sm';
-      return (
-        <button
-          type="button"
-          key={node.nodeId}
-          disabled={Boolean(p.disabled)}
-          title={p.tooltip as string | undefined}
-          className={cn(
-            'inline-flex items-center gap-2 font-medium rounded-lg border transition-all',
-            sizeClass, variant,
-            b(p.disabled) && 'opacity-50 cursor-not-allowed',
-          )}
-          onClick={() => {
-            if (!p.disabled) fireGenUiControl(p, ctx);
-          }}
-        >
-          {!!p.icon && (
-            <span className="inline-flex items-center">
-              <IconGlyph name={p.icon} size={16} tone="default" />
-            </span>
-          )}
-          {s(p.label) || 'Action'}
-        </button>
-      );
-    }
+    case 'InteractiveButton':
+      return <GenUiInteractiveButtonNode key={node.nodeId} node={node} ctx={ctx} />;
 
-    case 'ToggleButton': {
-      const active = Boolean(p.active);
-      return (
-        <button
-          type="button"
-          key={node.nodeId}
-          className={cn(
-            'px-3 py-1.5 text-xs font-medium rounded-lg border transition-all',
-            active
-              ? cn(
-                  PRIMARY_SOFT_CTA_CLASSNAME,
-                  'border-primary-300 dark:border-primary-600',
-                )
-              : 'bg-surface text-foreground border-border hover:bg-surface-sunken',
-          )}
-          onClick={() => {
-            fireGenUiControl(p, ctx, { toggled: !active });
-          }}
-        >
-          {s(p.label) || 'Toggle'}
-        </button>
-      );
-    }
+    case 'ToggleButton':
+      return <GenUiToggleButtonNode key={node.nodeId} node={node} ctx={ctx} />;
 
     case 'LinkButton':
       return (
@@ -945,33 +967,21 @@ function renderNode(node: GenUiNode, depth: number, ctx: GenUiRenderContextValue
       );
 
     case 'Input':
-      return (
-        <div key={node.nodeId} className="space-y-1">
-          {!!p.label && <label className="text-xs font-medium text-muted-foreground">{s(p.label)}</label>}
-          <input
-            type={(p.type as string) || 'text'}
-            placeholder={(p.placeholder as string) || ''}
-            defaultValue={(p.value as string) || ''}
-            readOnly
-            className="w-full px-3 py-2 text-sm border border-border rounded-lg bg-surface text-foreground"
-          />
-        </div>
-      );
-
     case 'Select':
+    case 'NumberInput':
+    case 'Switch':
+    case 'Slider':
+    case 'FileInput':
+    case 'Textarea':
+      return <GenUiFormField key={node.nodeId} node={node} />;
+
+    case 'Form':
       return (
-        <div key={node.nodeId} className="space-y-1">
-          {!!p.label && <label className="text-xs font-medium text-muted-foreground">{s(p.label)}</label>}
-          <select
-            defaultValue={(p.value as string) || ''}
-            disabled
-            className="w-full px-3 py-2 text-sm border border-border rounded-lg bg-surface text-foreground appearance-none"
-          >
-            {((p.options as string[]) || []).map((opt, i) => (
-              <option key={i} value={opt}>{opt}</option>
-            ))}
-          </select>
-        </div>
+        <GenUiForm key={node.nodeId} node={node} ctx={ctx}>
+          {ch.map((c) => (
+            <div key={c.nodeId}>{renderNode(c, depth + 1, ctx)}</div>
+          ))}
+        </GenUiForm>
       );
 
     case 'Chip': {
