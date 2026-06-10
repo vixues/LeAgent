@@ -93,6 +93,16 @@ paddle = [
     "paddleocr",
     "paddlepaddle",
 ]
+# Self-hosted diffusion models (SD/SDXL checkpoints + LoRA) run in-process.
+# Heavy GPU stack — install with `uv sync --extra diffusion`.
+diffusion = [
+    "torch>=2.4.0",
+    "diffusers>=0.31.0",
+    "transformers>=4.46.0",
+    "accelerate>=1.0.0",
+    "safetensors>=0.4.0",
+    "peft>=0.13.0",
+]
 dev = [
     "pytest>=8.0.0",
     "pytest-asyncio>=0.24.0",

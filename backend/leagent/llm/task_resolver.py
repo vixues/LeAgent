@@ -232,6 +232,10 @@ class TaskResolver:
             raise LLMServiceError(
                 f"Task 'image_gen' requires kind=image_gen, got {spec.kind}"
             )
+        if task == ModelTask.TTS and spec.kind != "tts":
+            raise LLMServiceError(f"Task 'tts' requires kind=tts, got {spec.kind}")
+        if task == ModelTask.ASR and spec.kind != "asr":
+            raise LLMServiceError(f"Task 'asr' requires kind=asr, got {spec.kind}")
 
     def _build_resolved(
         self,

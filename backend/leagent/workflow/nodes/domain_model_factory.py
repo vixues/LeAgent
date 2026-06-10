@@ -9,11 +9,12 @@ provider/model becomes a first-class palette node whose schema is derived
 from the adapter's parameter schema and whose typed ``IMAGE``/``AUDIO``/
 ``FILE`` sockets wire into the graph.
 
-Phase 1 provides the registration scaffold + bootstrap call site; the
-concrete node classes and adapter parameter schemas are filled in by the
-custom-model integration phase. ``register_domain_model_nodes`` is therefore
-safe to call today (it returns an empty list when no domain registry is
-available) so the bootstrap path is wired end-to-end ahead of the adapters.
+``register_domain_model_nodes`` resolves the process-wide
+:class:`~leagent.llm.domain_registry.DomainModelRegistry`, registers the
+built-in adapters (for providers with configured credentials) plus any
+``leagent.domain_models`` entry-point plugins, and lifts each adapter into a
+node via :func:`leagent.workflow.nodes.domain_model_nodes.build_domain_model_node`.
+It is safe to call with no adapters configured (returns an empty list).
 """
 
 from __future__ import annotations
@@ -47,11 +48,17 @@ def register_domain_model_nodes(
     """
     if domain_registry is None:
         try:
-            from leagent.llm.domain_registry import get_domain_registry
+            from leagent.llm.domain_models import register_builtin_domain_models
+            from leagent.llm.domain_registry import (
+                get_domain_registry,
+                load_domain_model_plugins,
+            )
 
             domain_registry = get_domain_registry()
-        except Exception:  # noqa: BLE001 - domain registry is optional pre-Phase-4
-            logger.debug("domain_model_registry_unavailable")
+            register_builtin_domain_models(domain_registry)
+            load_domain_model_plugins()
+        except Exception:  # noqa: BLE001 - domain registry is optional
+            logger.debug("domain_model_registry_unavailable", exc_info=True)
             return []
 
     builder = None

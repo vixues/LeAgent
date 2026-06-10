@@ -29,7 +29,15 @@ class SubworkflowNode(WorkflowNode):
                 IO.String.Input(id="output", optional=True),
             ],
             outputs=[IO.Object.Output(id="outputs")],
-            hidden=[Hidden.UNIQUE_ID, Hidden.TOOL_CONTEXT, Hidden.WORKFLOW_STATE, Hidden.EXECUTION_ID],
+            hidden=[
+                Hidden.UNIQUE_ID,
+                Hidden.TOOL_CONTEXT,
+                Hidden.WORKFLOW_STATE,
+                Hidden.EXECUTION_ID,
+                Hidden.AGENT_RUNTIME,
+                Hidden.USER_ID,
+                Hidden.SESSION_ID,
+            ],
             enable_expand=True,
             not_idempotent=True,
         )
@@ -53,16 +61,34 @@ class SubworkflowNode(WorkflowNode):
             if not sub_def:
                 return NodeOutput(error=f"Subworkflow '{sub_id}' not found")
 
-            from leagent.workflow.engine.executor import WorkflowExecutor  # local import
+            from uuid import uuid4
+
+            from leagent.workflow.engine.executor import (  # local import
+                WorkflowExecutor,
+                _ensure_document,
+            )
 
             executor = WorkflowExecutor(
                 tool_registry=getattr(ctx, "tool_registry", None),
                 tool_executor=getattr(ctx, "tool_executor", None),
                 llm_service=getattr(ctx, "llm_service", None),
                 review_service=getattr(ctx, "review_service", None),
-                agent_runtime=getattr(ctx, "agent_runtime", None),
+                agent_runtime=hidden.agent_runtime or getattr(ctx, "agent_runtime", None),
             )
-            result = await executor.execute(sub_def, resolved_inputs)
+            # Child run inherits the parent's identity (agent nodes need
+            # user/session) and abort signal (cancelling the parent cancels
+            # nested runs too).
+            result = await executor.execute_async(
+                _ensure_document(sub_def),
+                resolved_inputs,
+                prompt_id=str(uuid4()),
+                extra_data={
+                    "user_id": hidden.user_id,
+                    "session_id": hidden.session_id,
+                    "parent_execution_id": hidden.execution_id,
+                },
+                abort_event=hidden.abort_event,
+            )
             duration_ms = int((time.monotonic() - start) * 1000)
 
             if result.success:

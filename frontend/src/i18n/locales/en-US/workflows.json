@@ -374,7 +374,25 @@
     "paramValuePlaceholder": "Enter {{name}}...",
     "runNeedNodes": "Please add at least one node to run the flow",
     "runSaveFailed": "Could not save the workflow; run was not started",
-    "runFailed": "Failed to run flow"
+    "runFailed": "Failed to run flow",
+    "save": "Save",
+    "run": "Run",
+    "stop": "Stop",
+    "addNode": "Add node",
+    "toggleSidebar": "Toggle node panel",
+    "paletteHint": "Double-click canvas to search nodes",
+    "loadingNodes": "Loading node catalog...",
+    "loadNodesFailed": "Failed to load the node catalog.",
+    "linkOnlyInput": "Set by linking an upstream node"
+  },
+  "palette": {
+    "searchPlaceholder": "Search nodes...",
+    "noResults": "No matching nodes"
+  },
+  "resume": {
+    "title": "The workflow is waiting for your input",
+    "answerPlaceholder": "Type your answer...",
+    "send": "Resume"
   },
   "execution": {
     "output": "Output",

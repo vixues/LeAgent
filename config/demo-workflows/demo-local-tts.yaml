@@ -1,0 +1,68 @@
+# Demo: text-to-speech via a self-hosted OpenAI-compatible TTS server
+# (openedai-speech, Kokoro-FastAPI, ...). Configure:
+#   LEAGENT_LOCAL_TTS_URL=http://localhost:8880   (optional LEAGENT_LOCAL_TTS_MODEL)
+# The Model.tts.local node returns base64 MP3 audio on its data_b64 slot.
+id: demo_local_tts
+name: "Demo: Local TTS pipeline"
+description: >-
+  Synthesise speech from text with a self-hosted OpenAI-compatible TTS
+  server and store the base64 audio in a workflow variable.
+inputs:
+  - name: text
+    type: string
+    required: false
+    default: "Hello from LeAgent. This audio was synthesised by a locally hosted model."
+  - name: voice
+    type: string
+    required: false
+    default: "alloy"
+outputs:
+  - name: audio_b64
+    value: "${var.audio_b64}"
+metadata:
+  category: demo
+  tags:
+    - demo
+    - self-hosted
+    - tts
+nodes:
+  start:
+    class_type: StartNode
+    inputs: {}
+    meta:
+      name: Start
+    control:
+      next: speak
+  speak:
+    class_type: Model.tts.local
+    inputs:
+      text: "${input.text}"
+      voice: "${input.voice}"
+      speed: 1.0
+    meta:
+      name: Synthesise speech (local)
+    control:
+      next: store
+  store:
+    class_type: TransformNode
+    inputs:
+      transform: ["speak", 1]   # data_b64 output slot
+      output: audio_b64
+    meta:
+      name: Store audio
+    control:
+      next: end
+  end:
+    class_type: EndNode
+    inputs: {}
+    meta:
+      name: End
+    control: {}
+control:
+  start: start
+  end: end
+  edges: []
+  timeout_sec: 600
+  max_retries: 0
+  tags:
+    - demo

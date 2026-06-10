@@ -6,10 +6,10 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Any, Literal
 
-ModelKind = Literal["chat", "embedding", "image_gen"]
+ModelKind = Literal["chat", "embedding", "image_gen", "tts", "asr"]
 
 VALID_INPUT_MODALITIES = frozenset({"text", "image", "audio", "pdf"})
-VALID_OUTPUT_MODALITIES = frozenset({"text", "image"})
+VALID_OUTPUT_MODALITIES = frozenset({"text", "image", "audio"})
 
 
 class ModelTask(StrEnum):
@@ -22,6 +22,8 @@ class ModelTask(StrEnum):
     TITLE = "title"
     EMBEDDING = "embedding"
     IMAGE_GEN = "image_gen"
+    TTS = "tts"
+    ASR = "asr"
 
 
 @dataclass(frozen=True)
@@ -92,7 +94,9 @@ class ModelSpec:
     ) -> ModelSpec:
         name = str(raw.get("name") or "").strip()
         kind_raw = str(raw.get("kind") or "chat").strip().lower()
-        kind: ModelKind = kind_raw if kind_raw in ("chat", "embedding", "image_gen") else "chat"
+        kind: ModelKind = (
+            kind_raw if kind_raw in ("chat", "embedding", "image_gen", "tts", "asr") else "chat"
+        )
         caps = ModelCapabilities.from_dict(raw.get("capabilities") if isinstance(raw.get("capabilities"), dict) else None)
         # Legacy bool flags → capabilities (used only by migrate CLI, not runtime)
         if raw.get("supports_tools"):

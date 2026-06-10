@@ -1,0 +1,65 @@
+# Demo: agent checkpoint / pause-resume inside a workflow.
+# The Script Agent is instructed to ask the user a clarifying question before
+# finishing. When it emits `awaiting_user_input` the executor pauses the run,
+# saves a kernel checkpoint, and the canvas shows the Resume panel; answering
+# resumes the same agent turn from the checkpoint
+# (POST /api/v1/workflow/prompts/{prompt_id}/resume).
+id: demo_agent_pause_resume
+name: "Demo: Agent pause & resume"
+description: >-
+  Demonstrates the first-class agent node lifecycle: the agent pauses the
+  workflow to ask the user a question, a durable checkpoint is saved, and
+  the run resumes from that checkpoint with the user's answer.
+inputs:
+  - name: topic
+    type: string
+    required: false
+    default: "a weekend trip itinerary"
+outputs:
+  - name: plan
+    value: "${var.plan}"
+metadata:
+  category: demo
+  tags:
+    - demo
+    - agent
+    - checkpoint
+    - resume
+nodes:
+  start:
+    class_type: StartNode
+    inputs: {}
+    meta:
+      name: Start
+    control:
+      next: plan_with_user
+  plan_with_user:
+    class_type: ScriptAgentNode
+    inputs:
+      prompt: |-
+        You are drafting ${input.topic} for the user.
+
+        Before producing the final draft you MUST ask the user one
+        clarifying question (for example their budget or preferred dates)
+        and wait for their answer. After receiving the answer, produce the
+        final draft incorporating it.
+      max_iterations: 10
+      output: plan
+    meta:
+      name: Plan (asks the user)
+    control:
+      next: end
+  end:
+    class_type: EndNode
+    inputs: {}
+    meta:
+      name: End
+    control: {}
+control:
+  start: start
+  end: end
+  edges: []
+  timeout_sec: 3600
+  max_retries: 0
+  tags:
+    - demo

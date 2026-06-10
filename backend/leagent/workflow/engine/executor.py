@@ -105,6 +105,7 @@ class WorkflowExecutor:
         self._progress_handlers: list[ProgressHandler] = list(progress_handlers or [])
         self._active_lists: dict[str, ExecutionList] = {}
         self._states: dict[str, WorkflowState] = {}
+        self._abort_events: dict[str, asyncio.Event] = {}
 
     # ------------------------------------------------------------------
     # Backwards-compatible facade used by legacy callers
@@ -129,8 +130,16 @@ class WorkflowExecutor:
         prompt_id: str,
         extra_data: dict[str, Any] | None = None,
         outputs_to_execute: list[str] | None = None,
+        resume_state: WorkflowState | None = None,
+        abort_event: asyncio.Event | None = None,
     ) -> WorkflowResult:
-        """Main entry point."""
+        """Main entry point.
+
+        ``resume_state`` continues a paused run on its existing state so
+        accumulated variables (``__resume__<node>`` answers, stashed agent
+        checkpoints) survive into the re-run. ``abort_event`` lets a parent
+        run (subworkflow) share its abort signal with the child.
+        """
 
         ok, output_nodes, errors = validate(doc, registry=self.node_registry)
         if not ok:
@@ -141,13 +150,20 @@ class WorkflowExecutor:
 
         merged_inputs = _merge_schema_input_defaults(doc, inputs)
 
-        state = WorkflowState(
-            workflow_id=doc.id or prompt_id,
-            status=WorkflowStatus.RUNNING,
-            inputs=dict(merged_inputs),
-            variables=dict(merged_inputs),
-            started_at=datetime.utcnow(),
-        )
+        if resume_state is not None:
+            state = resume_state
+            state.status = WorkflowStatus.RUNNING
+            state.completed_at = None
+            for key, value in merged_inputs.items():
+                state.variables.setdefault(key, value)
+        else:
+            state = WorkflowState(
+                workflow_id=doc.id or prompt_id,
+                status=WorkflowStatus.RUNNING,
+                inputs=dict(merged_inputs),
+                variables=dict(merged_inputs),
+                started_at=datetime.utcnow(),
+            )
         # Propagate extra_data (user_id, session_id, tenant, auth) onto the
         # state so per-node helpers (tool_context builder, audit trail) can
         # read them without having to thread HiddenHolder everywhere.
@@ -158,6 +174,12 @@ class WorkflowExecutor:
             state.metadata["prompt_id"] = prompt_id
         state_id = str(state.id)
         self._states[state_id] = state
+        # Per-run abort signal: ``cancel`` sets it so in-flight long-running
+        # nodes (agent turns) stop instead of running to completion. A parent
+        # run may supply its own event so cancellation reaches subworkflows.
+        if abort_event is None:
+            abort_event = self._abort_events.get(state_id) or asyncio.Event()
+        self._abort_events[state_id] = abort_event
 
         progress = ProgressRegistry(prompt_id=prompt_id)
         for h in self._progress_handlers:
@@ -201,6 +223,7 @@ class WorkflowExecutor:
             workflow_state=state,
             logger=logger,
             progress=progress,
+            abort_event=abort_event,
         )
 
         upstream_values: dict[tuple[str, int], Any] = {}
@@ -213,6 +236,7 @@ class WorkflowExecutor:
         finally:
             await self.cache_provider.on_prompt_end(prompt_id)
             self._active_lists.pop(state_id, None)
+            self._abort_events.pop(state_id, None)
 
         duration_ms = int((time.monotonic() - start_ts) * 1000)
         state.completed_at = datetime.utcnow()
@@ -319,6 +343,16 @@ class WorkflowExecutor:
                     node_id=node_id, status=state.status, output=output.values,
                     duration_ms=result.duration_ms, metadata=output.metadata,
                 ))
+                # Tell clients which node blocked and why (e.g. the agent's
+                # question + checkpoint id) so the UI can offer a resume box.
+                progress.set_status(node_id, NodeStatus.BLOCKED)
+                progress.emit(ProgressEvent(
+                    type="execution_blocked",
+                    prompt_id=prompt_id,
+                    node_id=node_id,
+                    data={"tag": output.block_execution, "ui": output.ui,
+                          "metadata": output.metadata},
+                ))
                 return  # pause the run; caller drives resume
 
             if output.expand:
@@ -367,6 +401,10 @@ class WorkflowExecutor:
         if exec_list is None:
             return False
         exec_list.cancel()
+        # Abort in-flight long-running nodes (agent turns) too.
+        abort_event = self._abort_events.get(str(state_id))
+        if abort_event is not None:
+            abort_event.set()
         state = self._states.get(str(state_id))
         if state is not None:
             state.status = WorkflowStatus.CANCELLED
@@ -385,9 +423,13 @@ class WorkflowExecutor:
         definition: Any,
         state_id: UUID,
         resume_data: dict[str, Any] | None = None,
+        *,
+        prompt_id: str | None = None,
     ) -> WorkflowResult:
         """Resume a paused/blocked run. ``resume_data`` may include
-        ``{approved: bool, comments: str, ...}`` for human review."""
+        ``{approved: bool, comments: str, ...}`` for human review or
+        ``{answer: str}`` for an agent ``awaiting_user_input`` pause.
+        ``prompt_id`` keeps the resumed run on the original event channel."""
         doc = _ensure_document(definition)
         state = self._states.get(str(state_id))
         if state is None:
@@ -395,13 +437,30 @@ class WorkflowExecutor:
                                   status=WorkflowStatus.RUNNING,
                                   inputs={}, variables={})
             self._states[str(state.id)] = state
+        blocked_nodes: set[str] = set()
         exec_list = self._active_lists.get(str(state.id))
         if exec_list is not None:
-            for node_id in list(exec_list.state.blocked.keys()):
-                exec_list.release_external_block(node_id, tag="awaiting_review")
-                state.variables[f"__resume__{node_id}"] = resume_data or {}
-        # Kick off a fresh run that reuses the output cache for already-computed nodes.
-        return await self.execute_async(doc, state.inputs, prompt_id=str(state.id))
+            for node_id, tags in list(exec_list.state.blocked.items()):
+                blocked_nodes.add(node_id)
+                for tag in list(tags):
+                    exec_list.release_external_block(node_id, tag=tag)
+        # A paused run's ExecutionList is already torn down; the node that
+        # paused is recorded on the state, so resume data still reaches it
+        # when the fresh run re-executes that node.
+        if state.current_node:
+            blocked_nodes.add(state.current_node)
+        for node_id in blocked_nodes:
+            state.variables[f"__resume__{node_id}"] = resume_data or {}
+        # Re-run on the same state so __resume__ answers and stashed agent
+        # checkpoints survive; the output cache skips already-computed nodes.
+        effective_prompt_id = (
+            prompt_id
+            or str(state.metadata.get("prompt_id") or "")
+            or str(state.id)
+        )
+        return await self.execute_async(
+            doc, state.inputs, prompt_id=effective_prompt_id, resume_state=state,
+        )
 
     def register_progress_handler(self, handler: ProgressHandler) -> None:
         self._progress_handlers.append(handler)

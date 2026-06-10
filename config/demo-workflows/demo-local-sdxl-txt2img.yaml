@@ -1,0 +1,77 @@
+# Demo: self-hosted SDXL text-to-image via the in-process diffusers pipeline.
+# Requires the optional dependency group:  cd backend && uv sync --extra diffusion
+# Put checkpoints in ~/.leagent/models/diffusion (or set LEAGENT_DIFFUSION_MODELS_DIR);
+# LoRA .safetensors go in ~/.leagent/models/lora. The Model.image_gen.local node
+# streams per-step sampling progress onto the canvas.
+id: demo_local_sdxl_txt2img
+name: "Demo: Local SDXL txt2img"
+description: >-
+  Generate an image with a self-hosted Stable Diffusion / SDXL checkpoint
+  (HuggingFace diffusers) running in-process — no API key required.
+inputs:
+  - name: prompt
+    type: string
+    required: false
+    default: "a cozy reading nook by a rainy window, warm lamplight, watercolor"
+  - name: negative_prompt
+    type: string
+    required: false
+    default: "blurry, low quality, watermark"
+outputs:
+  - name: image_b64
+    value: "${var.image_b64}"
+metadata:
+  category: demo
+  tags:
+    - demo
+    - self-hosted
+    - diffusion
+nodes:
+  start:
+    class_type: StartNode
+    inputs: {}
+    meta:
+      name: Start
+    control:
+      next: txt2img
+  txt2img:
+    class_type: Model.image_gen.local
+    inputs:
+      prompt: "${input.prompt}"
+      negative_prompt: "${input.negative_prompt}"
+      width: 1024
+      height: 1024
+      steps: 25
+      cfg_scale: 7.0
+      seed: -1
+      scheduler: euler_a
+      lora: none
+      lora_scale: 0.8
+    meta:
+      name: SDXL txt2img (local)
+    control:
+      next: store
+  store:
+    class_type: TransformNode
+    inputs:
+      # Link the node's data_b64 output (slot 1) into a workflow variable.
+      transform: ["txt2img", 1]
+      output: image_b64
+    meta:
+      name: Store image
+    control:
+      next: end
+  end:
+    class_type: EndNode
+    inputs: {}
+    meta:
+      name: End
+    control: {}
+control:
+  start: start
+  end: end
+  edges: []
+  timeout_sec: 1800
+  max_retries: 0
+  tags:
+    - demo

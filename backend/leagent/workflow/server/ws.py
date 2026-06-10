@@ -74,6 +74,7 @@ async def _send_event(websocket: WebSocket, event: ProgressEvent) -> None:
             "status": state.status.value,
             "value": state.value,
             "max": state.max,
+            "preview": state.preview,
             "message": state.message,
             "error": state.error,
             "metadata": state.metadata,

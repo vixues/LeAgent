@@ -1,0 +1,85 @@
+# Demo: transcribe audio with a self-hosted Whisper server, then have the
+# Script Agent summarise the transcript. Configure:
+#   LEAGENT_LOCAL_ASR_URL=http://localhost:8000  (faster-whisper / whisper.cpp / Speaches)
+id: demo_asr_agent_summary
+name: "Demo: ASR transcript -> agent summary"
+description: >-
+  Speech-to-text via a local Whisper-compatible server (Model.asr.local),
+  link the transcript into a workflow variable, and ask the Script Agent
+  to produce a bullet-point summary.
+inputs:
+  - name: audio_path
+    type: string
+    required: true
+    description: Absolute path to the audio file to transcribe.
+  - name: language
+    type: string
+    required: false
+    default: ""
+outputs:
+  - name: transcript
+    value: "${var.transcript}"
+  - name: summary
+    value: "${var.summary}"
+metadata:
+  category: demo
+  tags:
+    - demo
+    - self-hosted
+    - asr
+    - agent
+nodes:
+  start:
+    class_type: StartNode
+    inputs: {}
+    meta:
+      name: Start
+    control:
+      next: transcribe
+  transcribe:
+    class_type: Model.asr.local
+    inputs:
+      audio_path: "${input.audio_path}"
+      language: "${input.language}"
+    meta:
+      name: Transcribe (local Whisper)
+    control:
+      next: store_transcript
+  store_transcript:
+    class_type: TransformNode
+    inputs:
+      transform: ["transcribe", 0]   # text output slot
+      output: transcript
+    meta:
+      name: Store transcript
+    control:
+      next: summarise
+  summarise:
+    class_type: ScriptAgentNode
+    inputs:
+      prompt: |-
+        Summarise the following transcript as 3-5 concise bullet points,
+        then list any action items separately.
+
+        Transcript:
+        ${var.transcript}
+      max_iterations: 8
+      output: summary
+    meta:
+      name: Agent summary
+    control:
+      next: end
+  end:
+    class_type: EndNode
+    inputs: {}
+    meta:
+      name: End
+    control: {}
+control:
+  start: start
+  end: end
+  edges: []
+  timeout_sec: 1200
+  max_retries: 0
+  tags:
+    - demo

@@ -374,7 +374,25 @@
     "paramValuePlaceholder": "输入 {{name}}...",
     "runNeedNodes": "请至少添加一个节点后再运行工作流",
     "runSaveFailed": "保存工作流失败，无法启动运行",
-    "runFailed": "运行工作流失败"
+    "runFailed": "运行工作流失败",
+    "save": "保存",
+    "run": "运行",
+    "stop": "停止",
+    "addNode": "添加节点",
+    "toggleSidebar": "切换节点面板",
+    "paletteHint": "双击画布以搜索节点",
+    "loadingNodes": "正在加载节点目录…",
+    "loadNodesFailed": "加载节点目录失败。",
+    "linkOnlyInput": "通过连接上游节点设置"
+  },
+  "palette": {
+    "searchPlaceholder": "搜索节点…",
+    "noResults": "没有匹配的节点"
+  },
+  "resume": {
+    "title": "工作流正在等待您的输入",
+    "answerPlaceholder": "输入您的回答…",
+    "send": "继续"
   },
   "execution": {
     "output": "输出",

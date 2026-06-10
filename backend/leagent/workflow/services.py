@@ -281,7 +281,10 @@ class WorkflowService:
         doc = await self._registry.get(str(flow_id))
         if not doc:
             return None
-        result = await self._executor.resume(doc, record.workflow_state_id, resume_data)
+        result = await self._executor.resume(
+            doc, record.workflow_state_id, resume_data,
+            prompt_id=record.prompt_id,
+        )
         await self._update_execution(
             execution_id,
             status=result.status.value,
