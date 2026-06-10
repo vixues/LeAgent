@@ -1,72 +1,89 @@
-# 行政：请假条例命中检查（演示）
-workflow:
-  id: TPL-05
-  name: 请假申请字段校验
-  version: "1.0"
-  description: 对演示请假数据执行规则匹配，检查状态与类型是否符合预设。
+id: TPL-05
+name: 请假申请字段校验
+description: 对演示请假数据执行规则匹配，检查状态与类型是否符合预设。
+inputs:
+- name: leave_status
+  type: string
+  description: 申请状态字段值
+  required: false
+  default: submitted
+- name: leave_type
+  type: string
+  description: 假期类型
+  required: false
+  default: annual
+- name: days
+  type: integer
+  description: 请假天数
+  required: false
+  default: 2
+- name: dept
+  type: string
+  description: 部门标识
+  required: false
+  default: admin
+- name: max_days_rule
+  type: integer
+  description: 规则中「天数上限」比较值
+  required: false
+  default: 15
+outputs:
+- name: rules_result
+  type: object
+  description: 规则评估结果
+  value: ${rules_result}
+metadata:
   category: compliance
-
-  inputs:
-    - name: leave_status
-      type: string
-      description: 申请状态字段值
-      required: false
-      default: "submitted"
-    - name: leave_type
-      type: string
-      description: 假期类型
-      required: false
-      default: "annual"
-    - name: days
-      type: integer
-      description: 请假天数
-      required: false
-      default: 2
-    - name: dept
-      type: string
-      description: 部门标识
-      required: false
-      default: "admin"
-    - name: max_days_rule
-      type: integer
-      description: 规则中「天数上限」比较值
-      required: false
-      default: 15
-
-  outputs:
-    - name: rules_result
-      type: object
-      description: 规则评估结果
-
-  nodes:
-    - id: start
-      type: start
+  original_category: compliance
+nodes:
+  start:
+    class_type: StartNode
+    inputs: {}
+    meta:
+      name: ''
+      description: ''
+    control:
       next: match
-
-    - id: match
-      type: tool_call
-      name: 评估请假规则
+  match:
+    class_type: ToolCallNode
+    inputs:
       tool: rule_matcher
       params:
         operation: evaluate
         data:
-          status: "{{input.leave_status}}"
-          leave_type: "{{input.leave_type}}"
-          days: "{{input.days}}"
-          dept: "{{input.dept}}"
+          status: ${input.leave_status}
+          leave_type: ${input.leave_type}
+          days: ${input.days}
+          dept: ${input.dept}
         rules:
-          - id: status_ok
-            field: status
-            operator: eq
-            value: "{{input.leave_status}}"
-          - id: days_reasonable
-            field: days
-            operator: le
-            value: "{{input.max_days_rule}}"
+        - id: status_ok
+          field: status
+          operator: eq
+          value: ${input.leave_status}
+        - id: days_reasonable
+          field: days
+          operator: le
+          value: ${input.max_days_rule}
       output: rules_result
+    meta:
+      name: 评估请假规则
+      description: ''
+    control:
       next: end
-
-    - id: end
-      type: end
-      output:
-        rules_result: "{{rules_result}}"
+  end:
+    class_type: EndNode
+    inputs: {}
+    meta:
+      name: ''
+      description: ''
+      end_output:
+        rules_result: ${rules_result}
+    control: {}
+control:
+  start: start
+  end: end
+  edges: []
+  timeout_sec: 3600
+  max_retries: 3
+  tags:
+  - compliance

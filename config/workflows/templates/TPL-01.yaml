@@ -1,57 +1,71 @@
-# 白领/行政：报销或 KPI 抽样汇总（沙箱脚本）
-workflow:
-  id: TPL-01
-  name: 报销明细抽样汇总
-  version: "1.0"
-  description: 模拟多条报销金额，输出笔数、合计、均值与样本列表，适合财务复核演示。
+id: TPL-01
+name: 报销明细抽样汇总
+description: 模拟多条报销金额，输出笔数、合计、均值与样本列表，适合财务复核演示。
+inputs:
+- name: amounts
+  type: array
+  description: 报销金额列表（元）
+  required: false
+  default:
+  - 420.5
+  - 1180.0
+  - 236.75
+  - 899.0
+  - 1540.25
+- name: precision
+  type: integer
+  description: 统计值保留小数位
+  required: false
+  default: 2
+outputs:
+- name: summary
+  type: object
+  description: 汇总结果（笔数、合计、均值、最大/最小）
+  value: ${summary}
+metadata:
   category: finance
-
-  inputs:
-    - name: amounts
-      type: array
-      description: 报销金额列表（元）
-      required: false
-      default: [420.5, 1180.0, 236.75, 899.0, 1540.25]
-    - name: precision
-      type: integer
-      description: 统计值保留小数位
-      required: false
-      default: 2
-
-  outputs:
-    - name: summary
-      type: object
-      description: 汇总结果（笔数、合计、均值、最大/最小）
-
-  nodes:
-    - id: start
-      type: start
+  original_category: finance
+nodes:
+  start:
+    class_type: StartNode
+    inputs: {}
+    meta:
+      name: ''
+      description: ''
+    control:
       next: summarize
-
-    - id: summarize
-      type: script
-      name: 汇总报销金额
-      source: |
-        import statistics
-        rows = [float(x) for x in amounts]
-        p = int(precision)
-        result = {
-          "scenario": "expense_batch_review",
-          "count": len(rows),
-          "total_yuan": round(sum(rows), p),
-          "mean_yuan": round(statistics.fmean(rows), p) if rows else None,
-          "max_yuan": round(max(rows), p) if rows else None,
-          "min_yuan": round(min(rows), p) if rows else None,
-        }
-        print("expense_summary_ok")
-      inputs:
-        amounts: "{{input.amounts}}"
-        precision: "{{input.precision}}"
+  summarize:
+    class_type: ScriptNode
+    inputs:
       timeout_sec: 3.0
       output: summary
+      source: "import statistics\nrows = [float(x) for x in amounts]\np = int(precision)\nresult = {\n\
+        \  \"scenario\": \"expense_batch_review\",\n  \"count\": len(rows),\n  \"total_yuan\": round(sum(rows),\
+        \ p),\n  \"mean_yuan\": round(statistics.fmean(rows), p) if rows else None,\n  \"max_yuan\": round(max(rows),\
+        \ p) if rows else None,\n  \"min_yuan\": round(min(rows), p) if rows else None,\n}\nprint(\"expense_summary_ok\"\
+        )\n"
+      inputs:
+        amounts: ${input.amounts}
+        precision: ${input.precision}
+    meta:
+      name: 汇总报销金额
+      description: ''
+    control:
       next: end
-
-    - id: end
-      type: end
-      output:
-        summary: "{{summary}}"
+  end:
+    class_type: EndNode
+    inputs: {}
+    meta:
+      name: ''
+      description: ''
+      end_output:
+        summary: ${summary}
+    control: {}
+control:
+  start: start
+  end: end
+  edges: []
+  timeout_sec: 3600
+  max_retries: 3
+  tags:
+  - finance

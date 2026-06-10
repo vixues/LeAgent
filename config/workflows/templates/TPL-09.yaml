@@ -1,54 +1,74 @@
-# 演示：JSON 解析后规则评估（链式 tool_call）
-workflow:
-  id: TPL-09
-  name: JSON 与规则链式
-  version: "1.0"
-  description: 先解析 JSON，再将 data 字段交给 rule_matcher，演示变量模板解析。
+id: TPL-09
+name: JSON 与规则链式
+description: 先解析 JSON，再将 data 字段交给 rule_matcher，演示变量模板解析。
+inputs:
+- name: json_text
+  type: string
+  description: 待解析的 JSON 文本
+  required: false
+  default: '{"status":"ok","tier":"demo"}'
+outputs:
+- name: rules_result
+  type: object
+  description: 规则评估结果
+  value: ${rules_result}
+metadata:
   category: analytics
-
-  inputs:
-    - name: json_text
-      type: string
-      description: 待解析的 JSON 文本
-      required: false
-      default: '{"status":"ok","tier":"demo"}'
-
-  outputs:
-    - name: rules_result
-      type: object
-      description: 规则评估结果
-
-  nodes:
-    - id: start
-      type: start
+  original_category: analytics
+nodes:
+  start:
+    class_type: StartNode
+    inputs: {}
+    meta:
+      name: ''
+      description: ''
+    control:
       next: parse
-
-    - id: parse
-      type: tool_call
-      name: 解析 JSON
+  parse:
+    class_type: ToolCallNode
+    inputs:
       tool: json_parser
       params:
         operation: parse
-        text: "{{input.json_text}}"
+        text: ${input.json_text}
       output: jp_out
+    meta:
+      name: 解析 JSON
+      description: ''
+    control:
       next: rules
-
-    - id: rules
-      type: tool_call
-      name: 规则评估
+  rules:
+    class_type: ToolCallNode
+    inputs:
       tool: rule_matcher
       params:
         operation: evaluate
-        data: "{{jp_out.data}}"
+        data: ${jp_out.data}
         rules:
-          - id: status_ok
-            field: status
-            operator: eq
-            value: ok
+        - id: status_ok
+          field: status
+          operator: eq
+          value: ok
       output: rules_result
+    meta:
+      name: 规则评估
+      description: ''
+    control:
       next: end
-
-    - id: end
-      type: end
-      output:
-        rules_result: "{{rules_result}}"
+  end:
+    class_type: EndNode
+    inputs: {}
+    meta:
+      name: ''
+      description: ''
+      end_output:
+        rules_result: ${rules_result}
+    control: {}
+control:
+  start: start
+  end: end
+  edges: []
+  timeout_sec: 3600
+  max_retries: 3
+  tags:
+  - analytics

@@ -1,186 +1,141 @@
-# 文档：由 Word 大纲生成 PPT（临时目录内自举 .docx）
-workflow:
-  id: TPL-03
-  name: Word 大纲转 PPT（演示）
-  version: "1.0"
-  description: 自动生成示例 Word，抽取标题与段落，再生成 .pptx；输出路径见执行页 Outputs（不保留 Word 版式，仅迁移文本结构）。
+id: TPL-03
+name: Word 大纲转 PPT（演示）
+description: 自动生成示例 Word，抽取标题与段落，再生成 .pptx；输出路径见执行页 Outputs（不保留 Word 版式，仅迁移文本结构）。
+inputs:
+- name: ppt_title
+  type: string
+  description: 生成 PPT 的标题（亦用于封面幻灯片）
+  required: false
+  default: Word 转 PPT 演示
+- name: deck_subtitle
+  type: string
+  description: 封面副标题
+  required: false
+  default: 由 Word 大纲自动生成
+outputs:
+- name: result
+  type: object
+  description: PPT 生成结果与 Word 抽取摘要
+  value: &id001
+    pptx_file: ${ppt}
+    word_summary:
+      characters: ${wr.total_characters}
+      headings: ${wr.heading_count}
+      tables: ${wr.table_count}
+      paragraph_count: ${wr.paragraph_count}
+    source_doc_path: ${prep.doc_path}
+metadata:
   category: document
-
-  inputs:
-    - name: ppt_title
-      type: string
-      description: 生成 PPT 的标题（亦用于封面幻灯片）
-      required: false
-      default: "Word 转 PPT 演示"
-    - name: deck_subtitle
-      type: string
-      description: 封面副标题
-      required: false
-      default: "由 Word 大纲自动生成"
-
-  outputs:
-    - name: result
-      type: object
-      description: PPT 生成结果与 Word 抽取摘要
-
-  nodes:
-    - id: start
-      type: start
+  original_category: document
+nodes:
+  start:
+    class_type: StartNode
+    inputs: {}
+    meta:
+      name: ''
+      description: ''
+    control:
       next: prep_docx
-
-    - id: prep_docx
-      type: script
-      name: 写入示例 Word
-      source: |
-        import os
-        from pathlib import Path
-        import tempfile
-        from docx import Document
-
-        try:
-            from leagent.config.settings import get_settings
-            settings_upload_dir = get_settings().files.upload_dir
-        except Exception:
-            settings_upload_dir = ""
-
-        roots = [
-            item.strip()
-            for item in os.environ.get("LEAGENT_TOOL_FILE_ROOTS", "").split(",")
-            if item.strip()
-        ]
-        candidates = [
-            *(roots[:1]),
-            os.environ.get("LEAGENT_FILES_UPLOAD_DIR"),
-            os.environ.get("FILES_UPLOAD_DIR"),
-            settings_upload_dir,
-            os.environ.get("LEAGENT_HOME"),
-            tempfile.gettempdir(),
-        ]
-        base = next(str(item) for item in candidates if item)
-        Path(base).mkdir(parents=True, exist_ok=True)
-        root = Path(tempfile.mkdtemp(prefix="wf-docx-", dir=base))
-        path = root / "outline.docx"
-        doc = Document()
-        doc.add_heading("季度工作小结", 0)
-        doc.add_paragraph("本周完成事项与风险回顾。")
-        doc.add_heading("关键指标", level=1)
-        doc.add_paragraph("交付准时率与客户满意度。")
-        doc.add_heading("下一步", level=1)
-        doc.add_paragraph("推进第二轮评审与归档。")
-        doc.save(path)
-        result = {"doc_path": str(path)}
-        print("docx_ready")
-      inputs: {}
+  prep_docx:
+    class_type: ScriptNode
+    inputs:
       timeout_sec: 15.0
       output: prep
+      source: "import os\nfrom pathlib import Path\nimport tempfile\nfrom docx import Document\n\ntry:\n\
+        \    from leagent.config.settings import get_settings\n    settings_upload_dir = get_settings().files.upload_dir\n\
+        except Exception:\n    settings_upload_dir = \"\"\n\nroots = [\n    item.strip()\n    for item\
+        \ in os.environ.get(\"LEAGENT_TOOL_FILE_ROOTS\", \"\").split(\",\")\n    if item.strip()\n]\n\
+        candidates = [\n    *(roots[:1]),\n    os.environ.get(\"LEAGENT_FILES_UPLOAD_DIR\"),\n    os.environ.get(\"\
+        FILES_UPLOAD_DIR\"),\n    settings_upload_dir,\n    os.environ.get(\"LEAGENT_HOME\"),\n    tempfile.gettempdir(),\n\
+        ]\nbase = next(str(item) for item in candidates if item)\nPath(base).mkdir(parents=True, exist_ok=True)\n\
+        root = Path(tempfile.mkdtemp(prefix=\"wf-docx-\", dir=base))\npath = root / \"outline.docx\"\n\
+        doc = Document()\ndoc.add_heading(\"季度工作小结\", 0)\ndoc.add_paragraph(\"本周完成事项与风险回顾。\")\ndoc.add_heading(\"\
+        关键指标\", level=1)\ndoc.add_paragraph(\"交付准时率与客户满意度。\")\ndoc.add_heading(\"下一步\", level=1)\ndoc.add_paragraph(\"\
+        推进第二轮评审与归档。\")\ndoc.save(path)\nresult = {\"doc_path\": str(path)}\nprint(\"docx_ready\")\n"
+      inputs: {}
+    meta:
+      name: 写入示例 Word
+      description: ''
+    control:
       next: read_doc
-
-    - id: read_doc
-      type: tool_call
-      name: 读取 Word 正文与结构
+  read_doc:
+    class_type: ToolCallNode
+    inputs:
       tool: word_reader
       params:
-        file_path: "{{prep.doc_path}}"
+        file_path: ${prep.doc_path}
         extract_tables: true
         preserve_structure: true
       output: wr
+    meta:
+      name: 读取 Word 正文与结构
+      description: ''
+    control:
       next: build_deck
-
-    - id: build_deck
-      type: script
-      name: 组装幻灯片定义
-      source: |
-        import os
-        from pathlib import Path
-        import tempfile
-
-        try:
-            from leagent.config.settings import get_settings
-            settings_upload_dir = get_settings().files.upload_dir
-        except Exception:
-            settings_upload_dir = ""
-
-        data = wr if isinstance(wr, dict) else {}
-        meta = data.get("metadata") or {}
-        doc_title = (meta.get("title") or "").strip() or "演示文稿"
-        cover_title = str(deck_title).strip() if deck_title else doc_title
-        sub = str(deck_subtitle).strip() if deck_subtitle else "由 Word 大纲自动生成"
-        items = list(data.get("content") or [])
-        slides = []
-        slides.append({
-            "layout": "title",
-            "title": cover_title,
-            "subtitle": sub,
-        })
-        max_body_slides = 8
-        used = 0
-        for item in items:
-            if used >= max_body_slides:
-                break
-            kind = item.get("type")
-            text = (item.get("text") or "").strip()
-            if kind == "heading" and text:
-                slides.append({"layout": "section_header", "title": text[:200]})
-                used += 1
-            elif kind == "paragraph" and text:
-                slides.append({
-                    "layout": "title_content",
-                    "title": "要点",
-                    "content": [{"type": "text", "text": text[:1200]}],
-                })
-                used += 1
-        if len(slides) < 2:
-            body = (data.get("text") or "")[:4000]
-            slides.append({
-                "layout": "title_content",
-                "title": "正文",
-                "content": [{"type": "text", "text": body or "(empty)"}],
-            })
-        roots = [
-            item.strip()
-            for item in os.environ.get("LEAGENT_TOOL_FILE_ROOTS", "").split(",")
-            if item.strip()
-        ]
-        candidates = [
-            *(roots[:1]),
-            os.environ.get("LEAGENT_FILES_UPLOAD_DIR"),
-            os.environ.get("FILES_UPLOAD_DIR"),
-            settings_upload_dir,
-            os.environ.get("LEAGENT_HOME"),
-            tempfile.gettempdir(),
-        ]
-        base = next(str(item) for item in candidates if item)
-        Path(base).mkdir(parents=True, exist_ok=True)
-        out = Path(tempfile.mkdtemp(prefix="wf-pptx-", dir=base)) / "from_word.pptx"
-        result = {"output_path": str(out), "slides": slides}
-        print("deck_ready")
-      inputs:
-        wr: "{{wr}}"
-        deck_title: "{{input.ppt_title}}"
-        deck_subtitle: "{{input.deck_subtitle}}"
+  build_deck:
+    class_type: ScriptNode
+    inputs:
       timeout_sec: 15.0
       output: deck
+      source: "import os\nfrom pathlib import Path\nimport tempfile\n\ntry:\n    from leagent.config.settings\
+        \ import get_settings\n    settings_upload_dir = get_settings().files.upload_dir\nexcept Exception:\n\
+        \    settings_upload_dir = \"\"\n\ndata = wr if isinstance(wr, dict) else {}\nmeta = data.get(\"\
+        metadata\") or {}\ndoc_title = (meta.get(\"title\") or \"\").strip() or \"演示文稿\"\ncover_title\
+        \ = str(deck_title).strip() if deck_title else doc_title\nsub = str(deck_subtitle).strip() if\
+        \ deck_subtitle else \"由 Word 大纲自动生成\"\nitems = list(data.get(\"content\") or [])\nslides = []\n\
+        slides.append({\n    \"layout\": \"title\",\n    \"title\": cover_title,\n    \"subtitle\": sub,\n\
+        })\nmax_body_slides = 8\nused = 0\nfor item in items:\n    if used >= max_body_slides:\n     \
+        \   break\n    kind = item.get(\"type\")\n    text = (item.get(\"text\") or \"\").strip()\n  \
+        \  if kind == \"heading\" and text:\n        slides.append({\"layout\": \"section_header\", \"\
+        title\": text[:200]})\n        used += 1\n    elif kind == \"paragraph\" and text:\n        slides.append({\n\
+        \            \"layout\": \"title_content\",\n            \"title\": \"要点\",\n            \"content\"\
+        : [{\"type\": \"text\", \"text\": text[:1200]}],\n        })\n        used += 1\nif len(slides)\
+        \ < 2:\n    body = (data.get(\"text\") or \"\")[:4000]\n    slides.append({\n        \"layout\"\
+        : \"title_content\",\n        \"title\": \"正文\",\n        \"content\": [{\"type\": \"text\", \"\
+        text\": body or \"(empty)\"}],\n    })\nroots = [\n    item.strip()\n    for item in os.environ.get(\"\
+        LEAGENT_TOOL_FILE_ROOTS\", \"\").split(\",\")\n    if item.strip()\n]\ncandidates = [\n    *(roots[:1]),\n\
+        \    os.environ.get(\"LEAGENT_FILES_UPLOAD_DIR\"),\n    os.environ.get(\"FILES_UPLOAD_DIR\"),\n\
+        \    settings_upload_dir,\n    os.environ.get(\"LEAGENT_HOME\"),\n    tempfile.gettempdir(),\n\
+        ]\nbase = next(str(item) for item in candidates if item)\nPath(base).mkdir(parents=True, exist_ok=True)\n\
+        out = Path(tempfile.mkdtemp(prefix=\"wf-pptx-\", dir=base)) / \"from_word.pptx\"\nresult = {\"\
+        output_path\": str(out), \"slides\": slides}\nprint(\"deck_ready\")\n"
+      inputs:
+        wr: ${wr}
+        deck_title: ${input.ppt_title}
+        deck_subtitle: ${input.deck_subtitle}
+    meta:
+      name: 组装幻灯片定义
+      description: ''
+    control:
       next: gen_pptx
-
-    - id: gen_pptx
-      type: tool_call
-      name: 生成 PowerPoint 文件
+  gen_pptx:
+    class_type: ToolCallNode
+    inputs:
       tool: pptx_generator
       params:
-        output_path: "{{deck.output_path}}"
-        title: "{{input.ppt_title}}"
-        slides: "{{deck.slides}}"
+        output_path: ${deck.output_path}
+        title: ${input.ppt_title}
+        slides: ${deck.slides}
       output: ppt
+    meta:
+      name: 生成 PowerPoint 文件
+      description: ''
+    control:
       next: end
-
-    - id: end
-      type: end
-      output:
-        result:
-          pptx_file: "{{ppt}}"
-          word_summary:
-            characters: "{{wr.total_characters}}"
-            headings: "{{wr.heading_count}}"
-            tables: "{{wr.table_count}}"
-            paragraph_count: "{{wr.paragraph_count}}"
-          source_doc_path: "{{prep.doc_path}}"
+  end:
+    class_type: EndNode
+    inputs: {}
+    meta:
+      name: ''
+      description: ''
+      end_output:
+        result: *id001
+    control: {}
+control:
+  start: start
+  end: end
+  edges: []
+  timeout_sec: 3600
+  max_retries: 3
+  tags:
+  - document

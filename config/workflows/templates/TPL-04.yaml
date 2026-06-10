@@ -1,90 +1,120 @@
-# 办公：PDF 简报生成（ReportLab，输出至临时文件）
-workflow:
-  id: TPL-04
-  name: PDF 报告生成（演示）
-  version: "1.0"
-  description: 在临时路径生成一份多段式 PDF 简报，执行页 Outputs 可查看 output_path 与页内统计（无需手工传参）。
+id: TPL-04
+name: PDF 报告生成（演示）
+description: 在临时路径生成一份多段式 PDF 简报，执行页 Outputs 可查看 output_path 与页内统计（无需手工传参）。
+inputs:
+- name: temp_prefix
+  type: string
+  description: 临时目录前缀
+  required: false
+  default: wf-pdf
+- name: filename_slug
+  type: string
+  description: 输出 PDF 文件名（不含扩展名）
+  required: false
+  default: demo_briefing
+- name: report_title
+  type: string
+  description: PDF 元数据标题
+  required: false
+  default: 工作流 PDF 演示
+outputs:
+- name: report
+  type: object
+  description: 报告生成结果（路径、大小、格式等）
+  value: ${report}
+metadata:
   category: document
-
-  inputs:
-    - name: temp_prefix
-      type: string
-      description: 临时目录前缀
-      required: false
-      default: "wf-pdf"
-    - name: filename_slug
-      type: string
-      description: 输出 PDF 文件名（不含扩展名）
-      required: false
-      default: "demo_briefing"
-    - name: report_title
-      type: string
-      description: PDF 元数据标题
-      required: false
-      default: "工作流 PDF 演示"
-
-  outputs:
-    - name: report
-      type: object
-      description: 报告生成结果（路径、大小、格式等）
-
-  nodes:
-    - id: start
-      type: start
+  original_category: document
+nodes:
+  start:
+    class_type: StartNode
+    inputs: {}
+    meta:
+      name: ''
+      description: ''
+    control:
       next: prep_path
-
-    - id: prep_path
-      type: script
-      name: 准备输出路径
-      source: |
-        from pathlib import Path
-        import tempfile
-
-        slug = (str(filename_slug).strip() or "demo_briefing").replace("/", "_")
-        root = Path(tempfile.mkdtemp(prefix=f"{temp_prefix}-"))
-        out = root / f"{slug}.pdf"
-        result = {"output_pdf": str(out)}
-        print("path_ready")
-      inputs:
-        temp_prefix: "{{input.temp_prefix}}"
-        filename_slug: "{{input.filename_slug}}"
+  prep_path:
+    class_type: ScriptNode
+    inputs:
       timeout_sec: 5.0
       output: pdf_ctx
-      next: make_pdf
+      source: 'from pathlib import Path
 
-    - id: make_pdf
-      type: tool_call
-      name: 生成 PDF
+        import tempfile
+
+
+        slug = (str(filename_slug).strip() or "demo_briefing").replace("/", "_")
+
+        root = Path(tempfile.mkdtemp(prefix=f"{temp_prefix}-"))
+
+        out = root / f"{slug}.pdf"
+
+        result = {"output_pdf": str(out)}
+
+        print("path_ready")
+
+        '
+      inputs:
+        temp_prefix: ${input.temp_prefix}
+        filename_slug: ${input.filename_slug}
+    meta:
+      name: 准备输出路径
+      description: ''
+    control:
+      next: make_pdf
+  make_pdf:
+    class_type: ToolCallNode
+    inputs:
       tool: report_generator
       params:
-        output_path: "{{pdf_ctx.output_pdf}}"
+        output_path: ${pdf_ctx.output_pdf}
         output_format: pdf
         metadata:
-          title: "{{input.report_title}}"
-          subtitle: "自动导出"
-          author: "LeAgent"
-          date: "2026"
-          organization: "Desktop Demo"
+          title: ${input.report_title}
+          subtitle: 自动导出
+          author: LeAgent
+          date: '2026'
+          organization: Desktop Demo
         template:
           layout: standard
         sections:
-          - type: cover
-          - type: section
-            title: "概述"
-            level: 1
-            content: |
-              本报告由工作流在零输入条件下生成，用于验证 report_generator 的 PDF 导出与执行页结果展示。
+        - type: cover
+        - type: section
+          title: 概述
+          level: 1
+          content: '本报告由工作流在零输入条件下生成，用于验证 report_generator 的 PDF 导出与执行页结果展示。
 
-              第二段：可包含换行，便于检查 ReportLab 段落排版。
-          - type: section
-            title: "结论"
-            level: 1
-            content: |
-              若本节点成功，请在执行记录中查看 output_path 与 file_size_bytes。
+
+            第二段：可包含换行，便于检查 ReportLab 段落排版。
+
+            '
+        - type: section
+          title: 结论
+          level: 1
+          content: '若本节点成功，请在执行记录中查看 output_path 与 file_size_bytes。
+
+            '
       output: report
+    meta:
+      name: 生成 PDF
+      description: ''
+    control:
       next: end
-
-    - id: end
-      type: end
-      output:
-        report: "{{report}}"
+  end:
+    class_type: EndNode
+    inputs: {}
+    meta:
+      name: ''
+      description: ''
+      end_output:
+        report: ${report}
+    control: {}
+control:
+  start: start
+  end: end
+  edges: []
+  timeout_sec: 3600
+  max_retries: 3
+  tags:
+  - document

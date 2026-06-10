@@ -1,44 +1,57 @@
-# 学生：Python 作业语法预检
-workflow:
-  id: TPL-06
-  name: Python 作业语法自检
-  version: "1.0"
-  description: 对示例函数片段做语法校验，提交作业前可类比替换为你的源码字符串。
+id: TPL-06
+name: Python 作业语法自检
+description: 对示例函数片段做语法校验，提交作业前可类比替换为你的源码字符串。
+inputs:
+- name: source_code
+  type: string
+  description: 待校验的 Python 源码
+  required: false
+  default: "def homework_average(scores: list[float]) -> float:\n    \"\"\"课程作业平均分示例。\"\"\"\n    if not\
+    \ scores:\n        return 0.0\n    return sum(scores) / len(scores)\n"
+outputs:
+- name: syntax
+  type: object
+  description: 校验报告
+  value: ${syntax}
+metadata:
   category: quality
-
-  inputs:
-    - name: source_code
-      type: string
-      description: 待校验的 Python 源码
-      required: false
-      default: |
-        def homework_average(scores: list[float]) -> float:
-            """课程作业平均分示例。"""
-            if not scores:
-                return 0.0
-            return sum(scores) / len(scores)
-
-  outputs:
-    - name: syntax
-      type: object
-      description: 校验报告
-
-  nodes:
-    - id: start
-      type: start
+  original_category: quality
+nodes:
+  start:
+    class_type: StartNode
+    inputs: {}
+    meta:
+      name: ''
+      description: ''
+    control:
       next: validate
-
-    - id: validate
-      type: tool_call
-      name: 校验 Python 语法
+  validate:
+    class_type: ToolCallNode
+    inputs:
       tool: syntax_validator
       params:
         language: python
-        content: "{{input.source_code}}"
+        content: ${input.source_code}
       output: syntax
+    meta:
+      name: 校验 Python 语法
+      description: ''
+    control:
       next: end
-
-    - id: end
-      type: end
-      output:
-        syntax: "{{syntax}}"
+  end:
+    class_type: EndNode
+    inputs: {}
+    meta:
+      name: ''
+      description: ''
+      end_output:
+        syntax: ${syntax}
+    control: {}
+control:
+  start: start
+  end: end
+  edges: []
+  timeout_sec: 3600
+  max_retries: 3
+  tags:
+  - quality

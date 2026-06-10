@@ -1,45 +1,62 @@
-# 演示：通知工具（admin 通道在无 Webhook 时安全跳过）
-workflow:
-  id: TPL-08
-  name: 通知占位示例
-  version: "1.0"
-  description: 调用 notification 工具 admin 通道；未配置 LEAGENT_ADMIN_WEBHOOK_URL 时跳过外部 HTTP。
+id: TPL-08
+name: 通知占位示例
+description: 调用 notification 工具 admin 通道；未配置 LEAGENT_ADMIN_WEBHOOK_URL 时跳过外部 HTTP。
+inputs:
+- name: message
+  type: string
+  description: 通知正文
+  required: false
+  default: Workflow template demo ping (TPL-08)
+- name: severity
+  type: string
+  description: 严重级别（low / medium / high）
+  required: false
+  default: low
+outputs:
+- name: notify
+  type: object
+  description: 通知工具返回
+  value: ${notify}
+metadata:
   category: communication
-
-  inputs:
-    - name: message
-      type: string
-      description: 通知正文
-      required: false
-      default: "Workflow template demo ping (TPL-08)"
-    - name: severity
-      type: string
-      description: 严重级别（low / medium / high）
-      required: false
-      default: "low"
-
-  outputs:
-    - name: notify
-      type: object
-      description: 通知工具返回
-
-  nodes:
-    - id: start
-      type: start
+  original_category: communication
+nodes:
+  start:
+    class_type: StartNode
+    inputs: {}
+    meta:
+      name: ''
+      description: ''
+    control:
       next: ping
-
-    - id: ping
-      type: tool_call
-      name: Admin 通知
+  ping:
+    class_type: ToolCallNode
+    inputs:
       tool: notification
       params:
         channel: admin
-        message: "{{input.message}}"
-        severity: "{{input.severity}}"
+        message: ${input.message}
+        severity: ${input.severity}
       output: notify
+    meta:
+      name: Admin 通知
+      description: ''
+    control:
       next: end
-
-    - id: end
-      type: end
-      output:
-        notify: "{{notify}}"
+  end:
+    class_type: EndNode
+    inputs: {}
+    meta:
+      name: ''
+      description: ''
+      end_output:
+        notify: ${notify}
+    control: {}
+control:
+  start: start
+  end: end
+  edges: []
+  timeout_sec: 3600
+  max_retries: 3
+  tags:
+  - communication
