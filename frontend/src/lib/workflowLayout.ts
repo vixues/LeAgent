@@ -2,9 +2,9 @@
  * Client-side graph layout for the workflow canvas.
  *
  * Mirrors the backend module {@code leagent.workflow.layout} so the
- * "Re-layout" button, drag-and-drop flows without stored positions, and
- * legacy rows all render with the same deterministic topology the
- * backend produces when a template is first applied.
+ * "Re-layout" button and canonical documents without stored positions
+ * render with the same deterministic topology the backend produces when
+ * a template is first applied.
  *
  * The implementation delegates the actual layered placement to
  * {@link https://github.com/dagrejs/dagre dagre} — it's ~25KB gzipped,
@@ -39,22 +39,13 @@ const DEFAULT_OPTIONS: Required<LayoutOptions> = {
   padding: 40,
 };
 
-/**
- * A node in the raw workflow document. Matches both the authoring
- * (flat list) shape and the canonical shape (per-node ``control`` block).
- * We accept either because the parser has to handle both historical
- * formats plus the new backend-computed ``ui.nodes`` payload.
- */
-export interface EngineNode {
+interface EngineNodeAction {
   id?: string;
-  type?: string;
-  name?: string;
-  tool?: string;
-  description?: string;
-  params?: Record<string, unknown>;
-  inputs?: Record<string, unknown> | string[];
-  class_type?: string;
-  /** Authoring-flat form keeps control-flow keys at the top level. */
+  label?: string;
+  next?: string;
+}
+
+interface EngineNodeControl {
   next?: string;
   error_handler?: string;
   else_node?: string;
@@ -65,11 +56,23 @@ export interface EngineNode {
     id?: string;
     nodes?: Array<string | { id?: string }>;
   }>;
-  actions?: Array<{ id?: string; label?: string; next?: string }>;
-  /** Canonical shape wraps control flow in this sub-object. */
-  control?: EngineNode;
-  metadata?: { actions?: Array<{ id?: string; label?: string; next?: string }> };
-  meta?: { actions?: Array<{ id?: string; label?: string; next?: string }> };
+}
+
+/**
+ * A node spec from the canonical workflow document (``nodes`` dict entry
+ * flattened with its id). Control flow lives in ``control``; display
+ * metadata in ``meta``.
+ */
+export interface EngineNode {
+  id?: string;
+  class_type?: string;
+  inputs?: Record<string, unknown> | string[];
+  control?: EngineNodeControl;
+  meta?: {
+    name?: string;
+    description?: string;
+    actions?: EngineNodeAction[];
+  };
 }
 
 export interface WorkflowLayoutEdge {
@@ -100,15 +103,12 @@ function conditionLabel(cond: ConditionEntry | undefined): string {
   return '';
 }
 
-function resolveControl(node: EngineNode): EngineNode {
-  return node.control && typeof node.control === 'object' ? node.control : node;
+function resolveControl(node: EngineNode): EngineNodeControl {
+  return node.control && typeof node.control === 'object' ? node.control : {};
 }
 
-function resolveActions(node: EngineNode): Array<{ id?: string; label?: string; next?: string }> {
-  if (Array.isArray(node.meta?.actions)) return node.meta!.actions;
-  if (Array.isArray(node.metadata?.actions)) return node.metadata!.actions;
-  if (Array.isArray(node.actions)) return node.actions;
-  return [];
+function resolveActions(node: EngineNode): EngineNodeAction[] {
+  return Array.isArray(node.meta?.actions) ? node.meta.actions : [];
 }
 
 /**
@@ -283,14 +283,12 @@ function nodeType(node: EngineNode): string {
     const mapped = CLASS_TO_TYPE[node.class_type];
     if (mapped) return mapped;
   }
-  if (typeof node.type === 'string' && node.type) return node.type;
   return 'tool_call';
 }
 
 function nodeLabel(id: string, node: EngineNode): string {
-  const meta = (node.meta as { name?: unknown } | undefined) ?? (node.metadata as { name?: unknown } | undefined);
-  if (meta && typeof meta.name === 'string' && meta.name.trim()) return meta.name;
-  if (typeof node.name === 'string' && node.name.trim()) return node.name;
+  const name = node.meta?.name;
+  if (typeof name === 'string' && name.trim()) return name;
   return id;
 }
 
@@ -303,7 +301,6 @@ function nodeParameters(node: EngineNode): Record<string, unknown> {
     }
     return inputs;
   }
-  if (node.params && typeof node.params === 'object') return node.params;
   return {};
 }
 
@@ -320,15 +317,20 @@ export function buildLayoutedFlow(
   const baseNodes: FlowNode[] = engineNodes.map((node, i) => {
     const id = typeof node.id === 'string' && node.id ? node.id : `node-${i}`;
     const type = nodeType(node);
+    const inputs = node.inputs;
+    const tool =
+      inputs && typeof inputs === 'object' && !Array.isArray(inputs)
+        ? (inputs as Record<string, unknown>).tool
+        : undefined;
     const data: FlowNodeData = {
       label: nodeLabel(id, node),
       icon: type,
       category: TYPE_TO_CATEGORY[type] ?? 'transform',
       description:
-        typeof node.tool === 'string'
-          ? node.tool
-          : typeof node.description === 'string'
-            ? node.description
+        typeof tool === 'string'
+          ? tool
+          : typeof node.meta?.description === 'string'
+            ? node.meta.description
             : undefined,
       parameters: nodeParameters(node),
       inputs: ['input'],

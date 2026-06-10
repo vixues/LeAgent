@@ -28,10 +28,10 @@ function node(id: string, overrides: Partial<FlowNode> = {}): FlowNode {
 describe('extractWorkflowEdges', () => {
   it('emits edges for linear next chains', () => {
     const nodes: EngineNode[] = [
-      { id: 'start', type: 'start', next: 'a' },
-      { id: 'a', type: 'tool_call', next: 'b' },
-      { id: 'b', type: 'tool_call', next: 'end' },
-      { id: 'end', type: 'end' },
+      { id: 'start', class_type: 'StartNode', control: { next: 'a' } },
+      { id: 'a', class_type: 'ToolCallNode', control: { next: 'b' } },
+      { id: 'b', class_type: 'ToolCallNode', control: { next: 'end' } },
+      { id: 'end', class_type: 'EndNode' },
     ];
     const edges = extractWorkflowEdges(nodes);
     expect(edges.map((e) => [e.source, e.target])).toEqual([
@@ -43,15 +43,17 @@ describe('extractWorkflowEdges', () => {
 
   it('emits condition + else branches with condition label', () => {
     const edges = extractWorkflowEdges([
-      { id: 'start', type: 'start', next: 'check' },
+      { id: 'start', class_type: 'StartNode', control: { next: 'check' } },
       {
         id: 'check',
-        type: 'condition',
-        conditions: [{ if: '${x} > 0', then: 'yes' }],
-        else_node: 'no',
+        class_type: 'ConditionNode',
+        control: {
+          conditions: [{ if: '${x} > 0', then: 'yes' }],
+          else_node: 'no',
+        },
       },
-      { id: 'yes', type: 'transform' },
-      { id: 'no', type: 'transform' },
+      { id: 'yes', class_type: 'TransformNode' },
+      { id: 'no', class_type: 'TransformNode' },
     ]);
     const byTarget = Object.fromEntries(edges.map((e) => [e.target, e]));
     expect(byTarget.yes?.kind).toBe('condition');
@@ -60,20 +62,22 @@ describe('extractWorkflowEdges', () => {
 
   it('fans out parallel branches and sequences branch bodies', () => {
     const edges = extractWorkflowEdges([
-      { id: 'start', type: 'start', next: 'split' },
+      { id: 'start', class_type: 'StartNode', control: { next: 'split' } },
       {
         id: 'split',
-        type: 'parallel',
-        branches: [
-          { id: 'left', nodes: ['l1', 'l2'] },
-          { id: 'right', nodes: ['r1'] },
-        ],
-        next: 'merge',
+        class_type: 'ParallelNode',
+        control: {
+          branches: [
+            { id: 'left', nodes: ['l1', 'l2'] },
+            { id: 'right', nodes: ['r1'] },
+          ],
+          next: 'merge',
+        },
       },
-      { id: 'l1', type: 'tool_call' },
-      { id: 'l2', type: 'tool_call' },
-      { id: 'r1', type: 'tool_call' },
-      { id: 'merge', type: 'transform' },
+      { id: 'l1', class_type: 'ToolCallNode' },
+      { id: 'l2', class_type: 'ToolCallNode' },
+      { id: 'r1', class_type: 'ToolCallNode' },
+      { id: 'merge', class_type: 'TransformNode' },
     ]);
     const pairs = new Set(edges.map((e) => `${e.source}->${e.target}:${e.kind}`));
     expect(pairs.has('split->l1:branch')).toBe(true);
@@ -84,36 +88,24 @@ describe('extractWorkflowEdges', () => {
 
   it('extracts human-review actions and on_reject', () => {
     const edges = extractWorkflowEdges([
-      { id: 'start', type: 'start', next: 'review' },
+      { id: 'start', class_type: 'StartNode', control: { next: 'review' } },
       {
         id: 'review',
-        type: 'human_review',
-        actions: [
-          { id: 'approve', label: 'Approve', next: 'approved' },
-          { id: 'reject', label: 'Reject', next: 'rejected' },
-        ],
-        on_reject: 'rejected',
+        class_type: 'HumanReviewNode',
+        meta: {
+          actions: [
+            { id: 'approve', label: 'Approve', next: 'approved' },
+            { id: 'reject', label: 'Reject', next: 'rejected' },
+          ],
+        },
+        control: { on_reject: 'rejected' },
       },
-      { id: 'approved', type: 'transform' },
-      { id: 'rejected', type: 'transform' },
+      { id: 'approved', class_type: 'TransformNode' },
+      { id: 'rejected', class_type: 'TransformNode' },
     ]);
     const kinds = new Map(edges.map((e) => [`${e.source}->${e.target}`, e.kind]));
     expect(kinds.get('review->approved')).toBe('action');
     expect(kinds.get('review->rejected')).toBeDefined();
-  });
-
-  it('reads canonical control blocks too', () => {
-    const edges = extractWorkflowEdges([
-      {
-        id: 'start',
-        class_type: 'StartNode',
-        control: { next: 'end' },
-      },
-      { id: 'end', class_type: 'EndNode' },
-    ]);
-    expect(edges).toEqual([
-      expect.objectContaining({ source: 'start', target: 'end', kind: 'next' }),
-    ]);
   });
 });
 
@@ -149,20 +141,22 @@ describe('layoutNodes', () => {
 describe('buildLayoutedFlow', () => {
   it('produces unique positions for every node in a parallel workflow', () => {
     const { nodes, edges } = buildLayoutedFlow([
-      { id: 'start', type: 'start', next: 'split' },
+      { id: 'start', class_type: 'StartNode', control: { next: 'split' } },
       {
         id: 'split',
-        type: 'parallel',
-        branches: [
-          { id: 'left', nodes: ['l1', 'l2'] },
-          { id: 'right', nodes: ['r1'] },
-        ],
-        next: 'merge',
+        class_type: 'ParallelNode',
+        control: {
+          branches: [
+            { id: 'left', nodes: ['l1', 'l2'] },
+            { id: 'right', nodes: ['r1'] },
+          ],
+          next: 'merge',
+        },
       },
-      { id: 'l1', type: 'tool_call' },
-      { id: 'l2', type: 'tool_call' },
-      { id: 'r1', type: 'tool_call' },
-      { id: 'merge', type: 'transform' },
+      { id: 'l1', class_type: 'ToolCallNode' },
+      { id: 'l2', class_type: 'ToolCallNode' },
+      { id: 'r1', class_type: 'ToolCallNode' },
+      { id: 'merge', class_type: 'TransformNode' },
     ]);
     const seen = new Set<string>();
     for (const n of nodes) {
@@ -175,16 +169,18 @@ describe('buildLayoutedFlow', () => {
 
   it('handles back-edges via wait nodes without flattening the layout', () => {
     const { nodes } = buildLayoutedFlow([
-      { id: 'start', type: 'start', next: 'collect' },
-      { id: 'collect', type: 'tool_call', next: 'check' },
+      { id: 'start', class_type: 'StartNode', control: { next: 'collect' } },
+      { id: 'collect', class_type: 'ToolCallNode', control: { next: 'check' } },
       {
         id: 'check',
-        type: 'condition',
-        conditions: [{ if: '${ok}', then: 'end' }],
-        else_node: 'wait_more',
+        class_type: 'ConditionNode',
+        control: {
+          conditions: [{ if: '${ok}', then: 'end' }],
+          else_node: 'wait_more',
+        },
       },
-      { id: 'wait_more', type: 'wait', next: 'collect' },
-      { id: 'end', type: 'end' },
+      { id: 'wait_more', class_type: 'WaitNode', control: { next: 'collect' } },
+      { id: 'end', class_type: 'EndNode' },
     ]);
     const byId = Object.fromEntries(nodes.map((n) => [n.id, n]));
     expect(byId.collect!.position.x).toBeLessThan(byId.check!.position.x);

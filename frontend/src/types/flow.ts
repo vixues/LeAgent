@@ -22,9 +22,8 @@ export interface FlowData {
   status?: string;
   flow_type?: string;
   is_public?: boolean;
-  nodes: FlowNode[];
-  edges: FlowEdge[];
   tags?: string[] | string;
+  /** Canonical workflow document (JSON string) — `nodes` dict + `control` + `ui`. */
   data?: string;
   settings?: string;
   version?: number;

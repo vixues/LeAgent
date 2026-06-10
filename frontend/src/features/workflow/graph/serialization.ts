@@ -24,6 +24,8 @@ export interface WorkflowNodeData extends Record<string, unknown> {
   description?: string;
   /** Inline widget values keyed by input slot id. */
   values?: Record<string, unknown>;
+  /** ComfyUI-style execution mode: muted (skip) or bypassed (pass-through). */
+  mode?: 'mute' | 'bypass';
 }
 
 export type EditorNode = Node<WorkflowNodeData>;
@@ -48,7 +50,7 @@ export interface CanonicalDocument {
 interface CanonicalNode {
   class_type: string;
   inputs: Record<string, unknown>;
-  meta: { position: { x: number; y: number }; title?: string };
+  meta: { position: { x: number; y: number }; title?: string; mode?: string };
 }
 
 interface CanonicalEdge {
@@ -81,14 +83,65 @@ export interface ToCanonicalParams {
   viewport?: Viewport;
   definitions: Record<string, NodeDefinition>;
   metadata?: Record<string, unknown>;
+  /** Declared workflow inputs (authored in the I/O config panel). */
+  inputs?: unknown[];
+  /** Declared workflow outputs (authored in the I/O config panel). */
+  outputs?: unknown[];
+}
+
+/** UI-only node types that never serialize into the executable graph. */
+const UI_ONLY_TYPES = new Set(['reroute', 'group']);
+
+function isUiOnly(node: EditorNode): boolean {
+  return UI_ONLY_TYPES.has(node.type ?? '');
+}
+
+/**
+ * Resolve an edge endpoint upstream through any reroute chain, returning the
+ * real producing node + handle (ComfyUI flattens reroutes the same way).
+ */
+function resolveUpstream(
+  sourceId: string,
+  sourceHandle: string | null | undefined,
+  nodesById: Map<string, EditorNode>,
+  edges: EditorEdge[],
+): { source: string; sourceHandle: string | null | undefined } | null {
+  let id = sourceId;
+  let handle = sourceHandle;
+  const seen = new Set<string>();
+  while (nodesById.get(id)?.type === 'reroute') {
+    if (seen.has(id)) return null; // cycle guard
+    seen.add(id);
+    const incoming = edges.find((e) => e.target === id);
+    if (!incoming) return null; // dangling reroute
+    id = incoming.source;
+    handle = incoming.sourceHandle;
+  }
+  return { source: id, sourceHandle: handle };
 }
 
 /** Build the canonical workflow document (executable + `ui`) from the editor. */
 export function toCanonicalDocument(params: ToCanonicalParams): CanonicalDocument {
   const { nodes, edges, definitions } = params;
+  const nodesById = new Map(nodes.map((n) => [n.id, n]));
+
+  // Flatten edges: drop those ending at UI-only nodes, rewire those whose
+  // source chain passes through reroutes to the true upstream producer.
+  const flatEdges: EditorEdge[] = [];
+  for (const edge of edges) {
+    const targetNode = nodesById.get(edge.target);
+    if (!targetNode || isUiOnly(targetNode)) continue;
+    const resolved = resolveUpstream(edge.source, edge.sourceHandle, nodesById, edges);
+    if (!resolved) continue;
+    const sourceNode = nodesById.get(resolved.source);
+    if (!sourceNode || isUiOnly(sourceNode)) continue;
+    flatEdges.push({ ...edge, source: resolved.source, sourceHandle: resolved.sourceHandle });
+  }
+
+  const workflowNodes = nodes.filter((n) => !isUiOnly(n));
 
   const nodeSpecs: Record<string, CanonicalNode> = {};
-  for (const node of nodes) {
+  for (const node of workflowNodes) {
     const data = node.data;
     const classType = data.nodeType || (node.type ?? '');
     const def = definitions[classType];
@@ -102,8 +155,8 @@ export function toCanonicalDocument(params: ToCanonicalParams): CanonicalDocumen
       }
     }
 
-    // 2. Link refs from incoming edges override literal widget values.
-    for (const edge of edges) {
+    // 2. Link refs from incoming (flattened) edges override literal widget values.
+    for (const edge of flatEdges) {
       if (edge.target !== node.id) continue;
       const targetHandle = edge.targetHandle ?? def?.inputs[0]?.id ?? 'input';
       const sourceDef = definitions[nodeFor(nodes, edge.source)?.data.nodeType ?? ''];
@@ -117,11 +170,12 @@ export function toCanonicalDocument(params: ToCanonicalParams): CanonicalDocumen
       meta: {
         position: { x: Math.round(node.position.x), y: Math.round(node.position.y) },
         title: data.label,
+        ...(data.mode ? { mode: data.mode } : {}),
       },
     };
   }
 
-  const canonicalEdges: CanonicalEdge[] = edges.map((edge) => {
+  const canonicalEdges: CanonicalEdge[] = flatEdges.map((edge) => {
     const sourceDef = definitions[nodeFor(nodes, edge.source)?.data.nodeType ?? ''];
     const targetDef = definitions[nodeFor(nodes, edge.target)?.data.nodeType ?? ''];
     return {
@@ -133,17 +187,17 @@ export function toCanonicalDocument(params: ToCanonicalParams): CanonicalDocumen
   });
 
   // Prefer an explicit Start node; else the first node with no incoming edges.
-  const targets = new Set(edges.map((e) => e.target));
+  const targets = new Set(flatEdges.map((e) => e.target));
   const startNode =
-    nodes.find((n) => n.data.nodeType === 'StartNode') ??
-    nodes.find((n) => !targets.has(n.id));
+    workflowNodes.find((n) => n.data.nodeType === 'StartNode') ??
+    workflowNodes.find((n) => !targets.has(n.id));
 
   return {
     id: params.id,
     name: params.name,
     description: params.description ?? '',
-    inputs: [],
-    outputs: [],
+    inputs: params.inputs ?? [],
+    outputs: params.outputs ?? [],
     metadata: { ...(params.metadata ?? {}), editor: 'react-flow-graph' },
     nodes: nodeSpecs,
     control: { start: startNode?.id, edges: canonicalEdges },
@@ -160,18 +214,40 @@ function nodeFor(nodes: EditorNode[], id: string): EditorNode | undefined {
  * block (exact layout); otherwise rebuilds a minimal editor view from the
  * canonical `nodes` dict so legacy/template documents still open.
  */
+export interface StoredDocumentResult {
+  nodes: EditorNode[];
+  edges: EditorEdge[];
+  viewport?: Viewport;
+  description?: string;
+  metadata?: Record<string, unknown>;
+  /** Declared workflow I/O carried through round-trips. */
+  inputs: unknown[];
+  outputs: unknown[];
+}
+
 export function fromStoredDocument(
   raw: unknown,
   definitions: Record<string, NodeDefinition>,
-): { nodes: EditorNode[]; edges: EditorEdge[]; viewport?: Viewport } {
+): StoredDocumentResult {
   const obj = (typeof raw === 'string' ? safeParse(raw) : raw) as
     | Record<string, unknown>
     | null;
-  if (!obj || typeof obj !== 'object') return { nodes: [], edges: [] };
+  if (!obj || typeof obj !== 'object') return { nodes: [], edges: [], inputs: [], outputs: [] };
+
+  const shared = {
+    description: typeof obj.description === 'string' ? obj.description : undefined,
+    metadata:
+      obj.metadata && typeof obj.metadata === 'object'
+        ? (obj.metadata as Record<string, unknown>)
+        : undefined,
+    inputs: Array.isArray(obj.inputs) ? obj.inputs : [],
+    outputs: Array.isArray(obj.outputs) ? obj.outputs : [],
+  };
 
   const ui = obj.ui as CanonicalDocument['ui'] | undefined;
   if (ui && Array.isArray(ui.nodes) && ui.nodes.length > 0) {
     return {
+      ...shared,
       nodes: ui.nodes as EditorNode[],
       edges: Array.isArray(ui.edges) ? (ui.edges as EditorEdge[]) : [],
       viewport: ui.viewport,
@@ -181,9 +257,12 @@ export function fromStoredDocument(
   // Rebuild from the canonical nodes dict.
   const rawNodes = obj.nodes;
   if (rawNodes && typeof rawNodes === 'object' && !Array.isArray(rawNodes)) {
-    return rebuildFromCanonical(rawNodes as Record<string, CanonicalNode>, definitions);
+    return {
+      ...shared,
+      ...rebuildFromCanonical(rawNodes as Record<string, CanonicalNode>, definitions),
+    };
   }
-  return { nodes: [], edges: [] };
+  return { nodes: [], edges: [], ...shared };
 }
 
 function rebuildFromCanonical(
@@ -215,6 +294,7 @@ function rebuildFromCanonical(
       }
     }
     const pos = spec.meta?.position ?? { x: (i % 4) * 280, y: Math.floor(i / 4) * 200 };
+    const mode = spec.meta?.mode;
     nodes.push({
       id,
       type: 'workflow',
@@ -225,6 +305,7 @@ function rebuildFromCanonical(
         category: def?.category ?? 'workflow',
         description: def?.description,
         values,
+        ...(mode === 'mute' || mode === 'bypass' ? { mode } : {}),
       },
     });
     i += 1;

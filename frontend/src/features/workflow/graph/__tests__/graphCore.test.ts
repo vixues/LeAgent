@@ -304,6 +304,183 @@ describe('toCanonicalDocument', () => {
   });
 });
 
+describe('toCanonicalDocument: UI-layer reroutes and groups', () => {
+  function rerouteFixture(): { nodes: EditorNode[]; edges: EditorEdge[] } {
+    const { nodes } = editorFixture();
+    const reroute: EditorNode = {
+      id: 'r1',
+      type: 'reroute',
+      position: { x: 200, y: 20 },
+      data: { nodeType: '__reroute__', label: '', category: 'ui' },
+    };
+    // a.result → r1 → b.text
+    const edges: EditorEdge[] = [
+      {
+        id: 'e-a-r1',
+        source: 'a',
+        sourceHandle: 'result',
+        target: 'r1',
+        targetHandle: 'in',
+        type: 'workflow',
+      },
+      {
+        id: 'e-r1-b',
+        source: 'r1',
+        sourceHandle: 'out',
+        target: 'b',
+        targetHandle: 'text',
+        type: 'workflow',
+      },
+    ];
+    return { nodes: [...nodes, reroute], edges };
+  }
+
+  it('flattens reroute chains to the true upstream producer', () => {
+    const info = parseObjectInfo(RAW);
+    const { nodes, edges } = rerouteFixture();
+    const doc = toCanonicalDocument({
+      id: '',
+      name: 'x',
+      nodes,
+      edges,
+      definitions: info.definitions,
+    });
+    // The reroute never reaches the executable graph...
+    expect(Object.keys(doc.nodes)).toEqual(['a', 'b']);
+    // ...but the link it carried is preserved end-to-end.
+    expect(doc.nodes.b!.inputs.text).toEqual(['a', 0]);
+    expect(doc.control.edges).toEqual([
+      { source: 'a', target: 'b', source_slot: 0, target_slot: 0 },
+    ]);
+    // The ui block keeps the reroute for visual round-trips.
+    expect(doc.ui.nodes.map((n) => n.id)).toContain('r1');
+  });
+
+  it('flattens multi-hop reroute chains', () => {
+    const info = parseObjectInfo(RAW);
+    const { nodes, edges } = rerouteFixture();
+    const r2: EditorNode = {
+      id: 'r2',
+      type: 'reroute',
+      position: { x: 300, y: 20 },
+      data: { nodeType: '__reroute__', label: '', category: 'ui' },
+    };
+    // a → r1 → r2 → b
+    const chained: EditorEdge[] = [
+      edges[0]!,
+      { ...edges[1]!, id: 'e-r1-r2', target: 'r2', targetHandle: 'in' },
+      {
+        id: 'e-r2-b',
+        source: 'r2',
+        sourceHandle: 'out',
+        target: 'b',
+        targetHandle: 'text',
+        type: 'workflow',
+      },
+    ];
+    const doc = toCanonicalDocument({
+      id: '',
+      name: 'x',
+      nodes: [...nodes, r2],
+      edges: chained,
+      definitions: info.definitions,
+    });
+    expect(doc.nodes.b!.inputs.text).toEqual(['a', 0]);
+    expect(doc.control.edges).toHaveLength(1);
+  });
+
+  it('drops dangling reroutes without emitting broken links', () => {
+    const info = parseObjectInfo(RAW);
+    const { nodes } = rerouteFixture();
+    // Only r1 → b exists; r1 has no incoming edge.
+    const edges: EditorEdge[] = [
+      {
+        id: 'e-r1-b',
+        source: 'r1',
+        sourceHandle: 'out',
+        target: 'b',
+        targetHandle: 'text',
+        type: 'workflow',
+      },
+    ];
+    const doc = toCanonicalDocument({
+      id: '',
+      name: 'x',
+      nodes,
+      edges,
+      definitions: info.definitions,
+    });
+    expect(doc.nodes.b!.inputs.text).toBeUndefined();
+    expect(doc.control.edges).toEqual([]);
+  });
+
+  it('excludes group frames from the executable graph', () => {
+    const info = parseObjectInfo(RAW);
+    const { nodes, edges } = editorFixture();
+    const group: EditorNode = {
+      id: 'g1',
+      type: 'group',
+      position: { x: 0, y: 0 },
+      style: { width: 600, height: 300 },
+      data: { nodeType: '__group__', label: 'Group', category: 'ui' },
+    };
+    const doc = toCanonicalDocument({
+      id: '',
+      name: 'x',
+      nodes: [group, ...nodes],
+      edges,
+      definitions: info.definitions,
+    });
+    expect(Object.keys(doc.nodes)).toEqual(['a', 'b']);
+    expect(doc.ui.nodes.map((n) => n.id)).toContain('g1');
+  });
+
+  it('serializes node modes into meta and restores them', () => {
+    const info = parseObjectInfo(RAW);
+    const { nodes, edges } = editorFixture();
+    nodes[0]!.data.mode = 'mute';
+    nodes[1]!.data.mode = 'bypass';
+    const doc = toCanonicalDocument({
+      id: '',
+      name: 'x',
+      nodes,
+      edges,
+      definitions: info.definitions,
+    });
+    expect(doc.nodes.a!.meta.mode).toBe('mute');
+    expect(doc.nodes.b!.meta.mode).toBe('bypass');
+
+    // Canonical-only restore carries the mode back into editor data.
+    const restored = fromStoredDocument(
+      { nodes: doc.nodes, control: doc.control },
+      info.definitions,
+    );
+    expect(restored.nodes.find((n) => n.id === 'a')!.data.mode).toBe('mute');
+    expect(restored.nodes.find((n) => n.id === 'b')!.data.mode).toBe('bypass');
+  });
+
+  it('carries declared workflow I/O through serialize/restore', () => {
+    const info = parseObjectInfo(RAW);
+    const { nodes, edges } = editorFixture();
+    const inputs = [{ name: 'query', type: 'string', required: true }];
+    const outputs = [{ name: 'result', ui: { render: 'table' } }];
+    const doc = toCanonicalDocument({
+      id: '',
+      name: 'x',
+      nodes,
+      edges,
+      definitions: info.definitions,
+      inputs,
+      outputs,
+    });
+    expect(doc.inputs).toEqual(inputs);
+    expect(doc.outputs).toEqual(outputs);
+    const restored = fromStoredDocument(JSON.parse(JSON.stringify(doc)), info.definitions);
+    expect(restored.inputs).toEqual(inputs);
+    expect(restored.outputs).toEqual(outputs);
+  });
+});
+
 describe('fromStoredDocument', () => {
   it('round-trips via the ui block', () => {
     const info = parseObjectInfo(RAW);
@@ -350,8 +527,38 @@ describe('fromStoredDocument', () => {
     });
   });
 
+  it('keeps unknown class_types as placeholder nodes with config intact', () => {
+    const info = parseObjectInfo(RAW);
+    const canonicalOnly = {
+      nodes: {
+        ghost: {
+          class_type: 'Tool.removed_pack',
+          inputs: { secret: 'kept', linked: ['a', 0] },
+          meta: { position: { x: 1, y: 2 } },
+        },
+        a: {
+          class_type: 'Tool.echo',
+          inputs: { text: 'hi' },
+          meta: { position: { x: 0, y: 0 } },
+        },
+      },
+      control: { start: 'a', edges: [] },
+    };
+    const restored = fromStoredDocument(canonicalOnly, info.definitions);
+    const ghost = restored.nodes.find((n) => n.id === 'ghost')!;
+    // Missing types are not dropped — the editor renders the flagged
+    // placeholder and the stored literal config survives a round-trip.
+    expect(ghost.data.nodeType).toBe('Tool.removed_pack');
+    expect(ghost.data.values).toEqual({ secret: 'kept' });
+    // The stored link is preserved as an edge too.
+    expect(restored.edges).toContainEqual(
+      expect.objectContaining({ source: 'a', target: 'ghost' }),
+    );
+  });
+
   it('returns empty graph for unparseable payloads', () => {
-    expect(fromStoredDocument('not json', {})).toEqual({ nodes: [], edges: [] });
-    expect(fromStoredDocument(null, {})).toEqual({ nodes: [], edges: [] });
+    const empty = { nodes: [], edges: [], inputs: [], outputs: [] };
+    expect(fromStoredDocument('not json', {})).toEqual(empty);
+    expect(fromStoredDocument(null, {})).toEqual(empty);
   });
 });

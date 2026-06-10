@@ -5,19 +5,14 @@ import { buildLayoutedFlow, layoutNodes, type EngineNode } from './workflowLayou
  * Convert the ``Flow.data`` JSON payload stored by the backend into
  * ReactFlow-ready ``nodes`` and ``edges``.
  *
- * Three storage shapes are supported, checked in order:
+ * Two storage shapes are supported (both canonical-document based):
  *
- * 1. **Backend-laid-out payload** (new default from
- *    ``apply_template``): the canonical workflow document carries a
- *    sibling ``ui`` block with ``nodes`` (positions + display data)
- *    and ``edges`` already pre-computed. We use it verbatim.
- * 2. **Editor-shape** payload produced by the frontend store on
- *    save: a top-level ``nodes`` array whose entries already have
- *    ``position`` set. Returned as-is.
- * 3. **Canonical / authoring raw shape**: no positions, either a
- *    ``nodes`` dict (canonical) or list (authoring YAML). These fall
- *    through to the client-side dagre layout so legacy rows still
- *    render without overlap.
+ * 1. **Pre-laid-out ``ui`` block**: the canonical workflow document
+ *    carries a sibling ``ui`` block with ``nodes`` (positions +
+ *    display data) and ``edges`` already pre-computed. Used verbatim.
+ * 2. **Bare canonical document**: ``nodes`` is a dict keyed by node
+ *    id (each spec has ``class_type`` / ``control`` / ``meta``). The
+ *    graph is laid out client-side with dagre.
  */
 export function parseStoredFlowData(
   data: string | Record<string, unknown> | null | undefined,
@@ -43,7 +38,7 @@ export function parseStoredFlowData(
     return { nodes: [], edges: [] };
   }
 
-  // 1. Backend-laid-out payload — fast path.
+  // 1. Pre-laid-out ``ui`` block — fast path.
   const ui = obj.ui;
   if (ui && typeof ui === 'object') {
     const uiObj = ui as { nodes?: unknown; edges?: unknown };
@@ -55,25 +50,8 @@ export function parseStoredFlowData(
     }
   }
 
-  // 2. Editor-shape payload that already carries positions.
+  // 2. Bare canonical document — `nodes` is a dict keyed by node id.
   const nodesRaw = obj.nodes;
-  if (Array.isArray(nodesRaw) && nodesRaw.length > 0) {
-    const first = nodesRaw[0] as Record<string, unknown> | undefined;
-    const pos = first?.position;
-    const hasPosition =
-      first && typeof first === 'object' && pos && typeof pos === 'object' && 'x' in (pos as object) && 'y' in (pos as object);
-    if (hasPosition) {
-      return {
-        nodes: nodesRaw as FlowNode[],
-        edges: Array.isArray(obj.edges) ? (obj.edges as FlowEdge[]) : [],
-      };
-    }
-    return buildLayoutedFlow(nodesRaw as EngineNode[]);
-  }
-
-  // 3. Canonical shape — `nodes` is a dict keyed by node id. Flatten
-  // into the authoring list form before handing off to the layout
-  // pipeline.
   if (nodesRaw && typeof nodesRaw === 'object' && !Array.isArray(nodesRaw)) {
     const engineNodes: EngineNode[] = Object.entries(
       nodesRaw as Record<string, Record<string, unknown>>,
