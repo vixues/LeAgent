@@ -3,8 +3,10 @@
 This module consolidates the three previously-scattered actions:
 
 1. ``ToolRegistry.discover_all()`` — auto-register every tool under
-   :mod:`leagent.tools.{doc,web,data,db,gen,integration,util}` that
-   follows the "no-args constructor" contract.
+   :mod:`leagent.tools.{doc,web,data,db,gen,integration,util,…}` that
+   follows the "no-args constructor" contract. Code and project tools
+   live under :mod:`leagent.code` / :mod:`leagent.project` and are
+   registered explicitly below.
 2. Manual registration of the curated utility tools whose
    constructors need runtime config (plan/task/cron/workflow/file
    tools, the skill tool, the code-execution tool, MCP bridge etc.).
@@ -179,9 +181,7 @@ def register_default_tools(
                     "util",
                     "canvas",
                     "workflow",
-                    "code",
                     "skills",
-                    "project",
                 ]
             discovered = reg.discover_all(categories=cats)
             logger.info("bootstrap_tool_discovery", count=discovered)

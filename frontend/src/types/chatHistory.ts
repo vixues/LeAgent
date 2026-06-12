@@ -244,16 +244,30 @@ function usageFromMessageRow(row: MessageResponse): Message['usage'] | undefined
   };
 }
 
+function compareChronological(aCreatedAt: string, aId: string, bCreatedAt: string, bId: string): number {
+  const cmp = aCreatedAt < bCreatedAt ? -1 : aCreatedAt > bCreatedAt ? 1 : 0;
+  return cmp !== 0 ? cmp : aId < bId ? -1 : aId > bId ? 1 : 0;
+}
+
 function ensureChronologicalOrder(rows: MessageResponse[]): MessageResponse[] {
   for (let i = 1; i < rows.length; i++) {
-    if (rows[i]!.created_at < rows[i - 1]!.created_at) {
-      return [...rows].sort((a, b) => {
-        const cmp = a.created_at < b.created_at ? -1 : a.created_at > b.created_at ? 1 : 0;
-        return cmp !== 0 ? cmp : a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
-      });
+    if (compareChronological(rows[i - 1]!.created_at, rows[i - 1]!.id, rows[i]!.created_at, rows[i]!.id) > 0) {
+      return [...rows].sort((a, b) => compareChronological(a.created_at, a.id, b.created_at, b.id));
     }
   }
   return rows;
+}
+
+/** Sort persisted chat rows by ``createdAt`` then ``id`` (oldest first). */
+export function ensureChronologicalMessages(messages: Message[]): Message[] {
+  for (let i = 1; i < messages.length; i++) {
+    const prev = messages[i - 1]!;
+    const cur = messages[i]!;
+    if (compareChronological(prev.createdAt, prev.id, cur.createdAt, cur.id) > 0) {
+      return [...messages].sort((a, b) => compareChronological(a.createdAt, a.id, b.createdAt, b.id));
+    }
+  }
+  return messages;
 }
 
 export function normalizeMessageList(rows: MessageResponse[]): Message[] {

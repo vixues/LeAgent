@@ -81,7 +81,12 @@ def _extra_allowlist_from_env() -> frozenset[str]:
 
 
 def tool_ids_allowed_for_chat_workflow_steps(registry: ToolRegistry) -> frozenset[str]:
-    """Tools permitted inside workflow steps: read-only registered + env allowlist."""
+    """Tools permitted inside workflow steps: registered non-destructive + env allowlist.
+
+    Steps are user-initiated (Run button) with digest verification, so write tools
+    are allowed. Destructive tools remain blocked unless listed in
+    ``LEAGENT_CHAT_WORKFLOW_TOOL_ALLOWLIST``.
+    """
     allowed: set[str] = set(_extra_allowlist_from_env())
     for meta in registry.list_tools():
         name = getattr(meta, "name", None) or ""
@@ -90,11 +95,15 @@ def tool_ids_allowed_for_chat_workflow_steps(registry: ToolRegistry) -> frozense
         tool = registry.get_optional(name)
         if tool is None:
             continue
-        if getattr(tool, "is_read_only", False):
-            allowed.add(name)
-            for alias in getattr(tool, "aliases", []) or []:
-                if alias:
-                    allowed.add(alias)
+        if getattr(tool, "is_destructive", False):
+            if name in allowed:
+                pass  # env allowlist explicitly permits destructive tools
+            else:
+                continue
+        allowed.add(name)
+        for alias in getattr(tool, "aliases", []) or []:
+            if alias:
+                allowed.add(alias)
     return frozenset(allowed)
 
 
@@ -117,7 +126,8 @@ def parse_chat_workflow_spec(
                 raise ValidationError(f"unknown tool_id in step {step.id!r}: {tid!r}")
             raise ValidationError(
                 f"tool {tid!r} in step {step.id!r} is not allowed in chat workflows "
-                "(read-only tools only, unless listed in LEAGENT_CHAT_WORKFLOW_TOOL_ALLOWLIST)",
+                "(destructive tools are blocked unless listed in "
+                "LEAGENT_CHAT_WORKFLOW_TOOL_ALLOWLIST)",
             )
     return spec
 

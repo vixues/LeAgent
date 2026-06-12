@@ -5,7 +5,10 @@ from __future__ import annotations
 import json
 from typing import Any
 
+import jsonschema
+
 from leagent.services.gen_ui.schema import (
+    coerce_ui_patch_tool_params,
     list_component_catalog,
     validate_ui_patch,
     validate_ui_tree,
@@ -13,10 +16,21 @@ from leagent.services.gen_ui.schema import (
 from leagent.tools.base import BaseTool, ToolCategory, ToolContext
 
 
+def _tree_dict_from_parsed(parsed: dict[str, Any]) -> dict[str, Any] | None:
+    """Normalize a parsed object to the gen UI tree envelope (root / schemaVersion)."""
+    inner = parsed.get("tree")
+    if isinstance(inner, dict) and set(parsed.keys()) <= {"tree", "canvas_id"}:
+        return inner
+    if "root" in parsed or "schemaVersion" in parsed:
+        return parsed
+    return None
+
+
 def _try_parse_json_object(raw: str) -> dict[str, Any] | None:
     """Parse a JSON object string, applying the same repair pipeline as tool-arg recovery."""
     from leagent.tools.executor import (
         _candidate_json_texts,
+        _close_truncated_json_object,
         _loads_json_dict,
         _recover_emit_ui_tree_args,
         _try_json_dict_raw_decode_trailing_junk,
@@ -40,14 +54,46 @@ def _try_parse_json_object(raw: str) -> dict[str, Any] | None:
         _try_repair_superfluous_closing_delimiter,
     )
     for candidate in _candidate_json_texts(text):
+        try:
+            obj, _ = json.JSONDecoder().raw_decode(candidate.strip())
+            if isinstance(obj, dict):
+                tree = _tree_dict_from_parsed(obj)
+                if tree is not None:
+                    return tree
+        except json.JSONDecodeError:
+            pass
+
+        for max_del in (3, 8, 16):
+            repaired = _try_repair_superfluous_closing_delimiter(
+                candidate, max_deletions=max_del,
+            )
+            if isinstance(repaired, dict):
+                tree = _tree_dict_from_parsed(repaired)
+                if tree is not None:
+                    return tree
+
         for parser in parsers:
             parsed = parser(candidate)
             if not isinstance(parsed, dict):
                 continue
-            inner = parsed.get("tree")
-            if isinstance(inner, dict) and set(parsed.keys()) <= {"tree", "canvas_id"}:
-                return inner
-            return parsed
+            tree = _tree_dict_from_parsed(parsed)
+            if tree is not None:
+                return tree
+
+    if text.startswith("{") and ("schemaVersion" in text or '"root"' in text):
+        for wrapped in (f'{{"tree":{text}}}', f'{{"tree": {text}}}'):
+            recovered = _recover_emit_ui_tree_args(wrapped)
+            if recovered is not None and isinstance(recovered.get("tree"), dict):
+                return recovered["tree"]
+
+        closed = _close_truncated_json_object(text)
+        if closed is not None:
+            parsed = _loads_json_dict(closed)
+            if isinstance(parsed, dict):
+                tree = _tree_dict_from_parsed(parsed)
+                if tree is not None:
+                    return tree
+
     return None
 
 
@@ -137,6 +183,21 @@ class EmitUiTreeTool(BaseTool):
     is_read_only = True
     is_concurrency_safe = True
 
+    def recover_raw_args(self, raw: str) -> dict[str, Any] | None:
+        """Recover ``tree`` from malformed outer tool-call JSON (LLM nesting mistakes)."""
+        from leagent.tools.executor import _recover_emit_ui_tree_args
+
+        stripped = raw.strip()
+        if not stripped:
+            return None
+        recovered = _recover_emit_ui_tree_args(stripped)
+        if recovered is not None:
+            return recovered
+        tree = _try_parse_json_object(stripped)
+        if tree is not None:
+            return {"tree": tree}
+        return None
+
     @property
     def parameters(self) -> dict[str, Any]:
         return {
@@ -204,32 +265,65 @@ class EmitUiPatchTool(BaseTool):
     description = (
         "Apply incremental JSON-Patch updates (add/replace/remove) to an "
         "already-emitted gen UI tree, validated server-side. Use this instead "
-        "of re-emitting the whole tree when you want to refresh a few fields."
+        "of re-emitting the whole tree when you want to refresh a few fields. "
+        "Pass top-level `{patches, optional seq, optional canvas_id}` — do not "
+        "nest under `payload` (that wrapper is only on the tool result). Omit "
+        "`canvas_id` when unused; never pass null."
     )
     category = ToolCategory.CANVAS
     is_read_only = True
     is_concurrency_safe = True
+
+    def recover_raw_args(self, raw: str) -> dict[str, Any] | None:
+        """Recover ``patches`` from malformed outer tool-call JSON."""
+        from leagent.tools.executor import _recover_emit_ui_patch_args
+
+        stripped = raw.strip()
+        if not stripped:
+            return None
+        recovered = _recover_emit_ui_patch_args(stripped)
+        if recovered is not None:
+            return recovered
+        return None
+
+    def validate_params(self, params: dict[str, Any]) -> tuple[bool, str | None]:
+        try:
+            coerced = coerce_ui_patch_tool_params(dict(params or {}))
+        except ValueError as exc:
+            return False, str(exc)
+        try:
+            jsonschema.validate(instance=coerced, schema=self.parameters)
+            return True, None
+        except jsonschema.ValidationError as exc:
+            return False, str(exc.message)
+        except jsonschema.SchemaError as exc:
+            return False, f"Invalid tool schema: {exc.message}"
 
     @property
     def parameters(self) -> dict[str, Any]:
         return {
             "type": "object",
             "required": ["patches"],
+            "additionalProperties": False,
             "properties": {
-                "patches": {"type": "array"},
-                "canvas_id": {"type": "string"},
-                "seq": {"type": "integer"},
+                "patches": {
+                    "type": "array",
+                    "minItems": 1,
+                    "description": "JSON-Patch ops targeting /root/... paths.",
+                },
+                "canvas_id": {
+                    "type": "string",
+                    "description": "Optional existing canvas id; omit when unused.",
+                },
+                "seq": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "description": "Monotonic sequence number for ordering patches.",
+                },
             },
         }
 
     async def execute(self, params: dict[str, Any], context: ToolContext) -> Any:
-        patches = params.get("patches")
-        if not isinstance(patches, list):
-            raise ValueError("patches must be an array")
-        payload = {
-            "patches": patches,
-            "canvas_id": params.get("canvas_id"),
-            "seq": params.get("seq"),
-        }
+        payload = coerce_ui_patch_tool_params(params)
         validate_ui_patch(payload)
         return {"payload": payload}

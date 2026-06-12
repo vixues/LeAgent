@@ -741,8 +741,7 @@ class ToolRegistry:
         """
         tool_categories = categories or [
             "doc", "web", "data", "db", "gen", "image", "chart",
-            "integration", "util", "canvas", "workflow", "code",
-            "skills", "project",
+            "integration", "util", "canvas", "workflow", "skills",
         ]
         total = 0
 

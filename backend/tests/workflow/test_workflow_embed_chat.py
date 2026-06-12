@@ -24,13 +24,125 @@ async def test_validate_workflow_embed_accepts_canonical(
 
 
 @pytest.mark.asyncio
+async def test_validate_workflow_embed_accepts_camel_node_types(
+    registered_builtins,  # noqa: ARG001
+) -> None:
+    """LLM-authored list graphs may use startNode/toolCallNode instead of StartNode."""
+    from leagent.workflow.nodes import get_registry
+
+    flow = {
+        "id": "camel-nodes",
+        "name": "Camel node types",
+        "nodes": [
+            {"id": "start", "type": "startNode", "data": {"label": "Start"}, "next": "end"},
+            {"id": "end", "type": "endNode", "data": {"label": "End"}},
+        ],
+        "edges": [{"id": "e1", "source": "start", "target": "end"}],
+        "start_node": "start",
+        "end_node": "end",
+    }
+    doc, digest = validate_workflow_embed(flow, node_registry=get_registry())
+    assert doc.start_id == "start"
+    assert len(digest) == 64
+    assert doc.nodes["start"]["class_type"] == "StartNode"
+    assert doc.nodes["end"]["class_type"] == "EndNode"
+
+
+@pytest.mark.asyncio
+async def test_validate_workflow_embed_accepts_tool_class_alias(
+    registered_builtins,  # noqa: ARG001
+) -> None:
+    """LLM graphs may use class_type ``tool`` and omit explicit end nodes."""
+    from leagent.workflow.nodes import get_registry
+
+    flow = {
+        "id": "genui-guide",
+        "name": "GenUI guide",
+        "control": {"start": "start", "end": "end", "edges": []},
+        "nodes": {
+            "router": {
+                "class_type": "tool",
+                "inputs": {"tool": "get_genui_guide", "params": {}},
+                "meta": {"name": "Guide"},
+                "control": {"next": "build"},
+            },
+            "build": {
+                "class_type": "tool",
+                "inputs": {"tool": "emit_ui_tree", "params": {"tree": {"root": {"kind": "Text"}}}},
+                "meta": {"name": "Build"},
+                "control": {"next": "end"},
+            },
+        },
+    }
+    doc, digest = validate_workflow_embed(flow, node_registry=get_registry())
+    assert doc.nodes["router"]["class_type"] == "ToolCallNode"
+    assert doc.nodes["end"]["class_type"] == "EndNode"
+    assert len(digest) == 64
+
+
+@pytest.mark.asyncio
+async def test_validate_workflow_embed_accepts_comfy_style_class_aliases(
+    registered_builtins,  # noqa: ARG001
+) -> None:
+    """LLM graphs may use Comfy-style class_type input/default/output."""
+    from leagent.workflow.nodes import get_registry
+
+    flow = {
+        "id": "genui-comfy-aliases",
+        "name": "GenUI Comfy aliases",
+        "control": {"start": "start", "end": "end", "edges": []},
+        "nodes": {
+            "start": {
+                "class_type": "input",
+                "inputs": {},
+                "meta": {"name": "Start"},
+                "control": {"next": "router"},
+            },
+            "router": {
+                "class_type": "default",
+                "inputs": {"tool": "get_genui_guide", "params": {}},
+                "meta": {"name": "Guide"},
+                "control": {"next": "build"},
+            },
+            "build": {
+                "class_type": "default",
+                "inputs": {
+                    "tool": "emit_ui_tree",
+                    "params": {"tree": {"root": {"kind": "Text", "props": {"value": "hi"}}}},
+                },
+                "meta": {"name": "Build"},
+                "control": {"next": "render"},
+            },
+            "render": {
+                "class_type": "output",
+                "inputs": {},
+                "meta": {"name": "Render"},
+                "control": {"next": "end"},
+            },
+        },
+    }
+    doc, digest = validate_workflow_embed(flow, node_registry=get_registry())
+    assert doc.nodes["start"]["class_type"] == "StartNode"
+    assert doc.nodes["router"]["class_type"] == "ToolCallNode"
+    assert doc.nodes["render"]["class_type"] == "EndNode"
+    assert len(digest) == 64
+
+
+@pytest.mark.asyncio
 async def test_validate_rejects_list_nodes(registered_builtins) -> None:  # noqa: ARG001
     from leagent.workflow.nodes import get_registry
 
     bad = {
         "id": "x",
-        "nodes": [{"id": "a", "class_type": "StartNode"}],
-        "control": {},
+        "nodes": {
+            "a": {
+                "class_type": "NotARegisteredNode",
+                "inputs": {},
+                "meta": {},
+                "control": {},
+            },
+        },
+        "control": {"start": "a", "end": "end", "edges": []},
     }
     with pytest.raises(WorkflowEmbedValidationError):
         validate_workflow_embed(bad, node_registry=get_registry())

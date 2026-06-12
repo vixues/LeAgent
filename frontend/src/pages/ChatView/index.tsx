@@ -245,7 +245,7 @@ export default function ChatView() {
       } catch (err) {
         handleChatStreamFailure(err, sessionId, assistantMsgId, t);
       } finally {
-        useChatStore.getState().releaseChatStreamSession(sessionId);
+        useChatStore.getState().releaseChatStreamSessionAndResync(sessionId);
         useChatStore.getState().releaseStreamAbortController(controller);
       }
     },
@@ -306,7 +306,7 @@ export default function ChatView() {
       } catch (err) {
         handleChatStreamFailure(err, sessionId, assistantMsgId, t);
       } finally {
-        useChatStore.getState().releaseChatStreamSession(sessionId);
+        useChatStore.getState().releaseChatStreamSessionAndResync(sessionId);
         useChatStore.getState().releaseStreamAbortController(controller);
       }
     },

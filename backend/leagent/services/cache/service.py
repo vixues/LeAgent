@@ -151,6 +151,17 @@ class CacheService(Service):
         full_key = self._make_key(key, namespace)
         return await self._memory_cache.delete(full_key)
 
+    async def delete_prefix(self, prefix: str, *, namespace: str | None = None) -> int:
+        """Delete all keys whose logical key starts with *prefix* in *namespace*."""
+        full_prefix = self._make_key(prefix, namespace)
+        pattern = f"{full_prefix}*"
+        keys = await self._memory_cache.keys(pattern)
+        count = 0
+        for key in keys:
+            if await self._memory_cache.delete(key):
+                count += 1
+        return count
+
     async def exists(self, key: str, *, namespace: str | None = None) -> bool:
         full_key = self._make_key(key, namespace)
         return await self._memory_cache.exists(full_key)

@@ -66,7 +66,7 @@ function FlowCard({ flow, onEdit, onRun, onDuplicate, onDelete }: {
     <div
       className={cn(
         'group relative rounded-xl p-5 bg-surface',
-        'border border-gray-200 dark:border-gray-700',
+        'border border-border',
         'hover:border-primary-300 dark:hover:border-primary-600',
         'hover:shadow-md transition-[color,background-color,border-color,box-shadow,opacity,transform] cursor-pointer'
       )}
@@ -81,7 +81,7 @@ function FlowCard({ flow, onEdit, onRun, onDuplicate, onDelete }: {
         <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity" onClick={(e) => e.stopPropagation()}>
           <button
             onClick={(e) => { e.stopPropagation(); onRun(); }}
-            className="p-1.5 rounded-lg text-gray-400 hover:text-mint-600 dark:hover:text-mint-400 hover:bg-mint-50 dark:hover:bg-mint-900/20 transition-colors"
+            className="p-1.5 rounded-lg text-muted-foreground hover:text-mint-600 dark:hover:text-mint-400 hover:bg-mint-50 dark:hover:bg-mint-900/20 transition-colors"
             title={t('list.runTitle')}
           >
             <Play className="w-4 h-4" />
@@ -89,33 +89,33 @@ function FlowCard({ flow, onEdit, onRun, onDuplicate, onDelete }: {
           <div className="relative">
             <button
               onClick={(e) => { e.stopPropagation(); setMenuOpen(!menuOpen); }}
-              className="p-1.5 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+              className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-surface-sunken transition-colors"
             >
               <MoreHorizontal className="w-4 h-4" />
             </button>
             {menuOpen && (
               <div
-                className="absolute right-0 top-full mt-1 z-50 w-40 bg-surface rounded-xl border border-gray-200 dark:border-gray-700 shadow-lg py-1"
+                className="absolute right-0 top-full mt-1 z-50 w-40 bg-surface rounded-xl border border-border shadow-lg py-1"
                 onClick={(e) => e.stopPropagation()}
               >
                 <button
                   onClick={() => { onEdit(); setMenuOpen(false); }}
-                  className="flex items-center gap-2 w-full px-3 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700"
+                  className="flex items-center gap-2 w-full px-3 py-2 text-sm text-foreground hover:bg-surface-sunken"
                 >
                   <Edit2 className="w-3.5 h-3.5" /> {t('list.edit')}
                 </button>
                 <button
                   onClick={() => {
-                    navigate(`/workflows/${flow.id}/executions`);
+                    navigate(`/workflows/${flow.id}?panel=run`);
                     setMenuOpen(false);
                   }}
-                  className="flex items-center gap-2 w-full px-3 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700"
+                  className="flex items-center gap-2 w-full px-3 py-2 text-sm text-foreground hover:bg-surface-sunken"
                 >
                   <Activity className="w-3.5 h-3.5" /> {t('list.executions')}
                 </button>
                 <button
                   onClick={() => { onDuplicate(); setMenuOpen(false); }}
-                  className="flex items-center gap-2 w-full px-3 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700"
+                  className="flex items-center gap-2 w-full px-3 py-2 text-sm text-foreground hover:bg-surface-sunken"
                 >
                   <Copy className="w-3.5 h-3.5" /> {t('list.duplicate')}
                 </button>

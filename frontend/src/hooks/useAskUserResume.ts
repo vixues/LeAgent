@@ -50,7 +50,7 @@ export function useAskUserResume(t: TFunction) {
         useChatStore.getState().updateMessage(snapshot.sessionId, snapshot.assistantMsgId, {
           isStreaming: false,
         });
-        useChatStore.getState().releaseChatStreamSession(snapshot.sessionId);
+        useChatStore.getState().releaseChatStreamSessionAndResync(snapshot.sessionId);
         useChatStore.getState().releaseStreamAbortController(controller);
       }
     },

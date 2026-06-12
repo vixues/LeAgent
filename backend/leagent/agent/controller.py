@@ -34,6 +34,7 @@ from leagent.agent.base import (
     ConversationMessage,
     ExecutionStep,
     NoOpStreamHandler,
+    QueuedStreamHandler,
     StepType,
     StreamEvent,
     StreamHandler,
@@ -46,6 +47,7 @@ from leagent.agent.query import (
     _inject_pending_ask_user_tool_stubs,
     inject_missing_tool_result_stubs,
 )
+
 from leagent.agent.transitions import TerminalReason
 from leagent.exceptions.base import LeAgentError
 from leagent.file.attachment_context import build_tool_extra_for_attachment_paths
@@ -354,16 +356,20 @@ class AgentController:
             return context.to_response(error="Execution cancelled")
         except LeAgentError as e:
             logger.error("agent_error", task_id=str(context.task_id), error=str(e))
-            await handler.on_error(e)
+            response = context.to_response(error=str(e))
+            response.terminal_reason = "error"
+            await handler.on_complete(response)
             if self._hooks:
                 await self._hooks.dispatch_error(context, e)
-            return context.to_response(error=str(e))
+            return response
         except Exception as e:
             logger.exception("agent_unexpected_error", task_id=str(context.task_id))
-            await handler.on_error(e)
+            response = context.to_response(error=str(e))
+            response.terminal_reason = "error"
+            await handler.on_complete(response)
             if self._hooks:
                 await self._hooks.dispatch_error(context, e)
-            return context.to_response(error=f"Unexpected error: {e}")
+            return response
         finally:
             if self._abort_event.is_set():
                 await self._save_resumable_state(
@@ -398,7 +404,6 @@ class AgentController:
         except Exception:  # noqa: BLE001
             pass
         queue: asyncio.Queue[StreamEvent | None] = asyncio.Queue(maxsize=queue_maxsize)
-        stream_session_id = session_id
 
         async def _put_stream_event(event: StreamEvent | None) -> None:
             await queue.put(event)
@@ -409,93 +414,10 @@ class AgentController:
             except Exception:
                 logger.debug("stream_queue_metrics_failed", exc_info=True)
 
-        class QueueHandler:
-            async def on_thinking(self, thought: str) -> None:
-                await _put_stream_event(StreamEvent(type="thinking", data={"thought": thought}))
-
-            async def on_tool_call(self, tool_call: ToolCall) -> None:
-                await _put_stream_event(
-                    StreamEvent(
-                        type="tool_call",
-                        data={
-                            "id": tool_call.id,
-                            "name": tool_call.name,
-                            "arguments": tool_call.arguments,
-                        },
-                    )
-                )
-
-            async def on_tool_call_delta(self, payload: dict[str, Any]) -> None:
-                await _put_stream_event(StreamEvent(type="tool_call_delta", data=dict(payload)))
-
-            async def on_nested_agent_preview(self, payload: dict[str, Any]) -> None:
-                await _put_stream_event(StreamEvent(type="nested_agent_preview", data=dict(payload)))
-
-            async def on_tool_result(self, result: ToolResult) -> None:
-                await _put_stream_event(
-                    StreamEvent(
-                        type="tool_result",
-                        data={
-                            "tool_call_id": result.tool_call_id,
-                            "name": result.name,
-                            "success": result.success,
-                            "content": result.content[:1000],
-                            "data": result.data if isinstance(result.data, (dict, list)) else None,
-                            "error": result.error,
-                            "duration_ms": result.duration_ms,
-                            "metadata": result.metadata,
-                        },
-                    )
-                )
-
-            async def on_workspace_attachments(self, items: list[dict[str, Any]]) -> None:
-                if not items:
-                    return
-                await _put_stream_event(
-                    StreamEvent(
-                        type="workspace_attachments",
-                        data={
-                            "session_id": str(stream_session_id),
-                            "attachments": items,
-                        },
-                    )
-                )
-
-            async def on_token(self, token: str) -> None:
-                await _put_stream_event(StreamEvent(type="token", data={"token": token}))
-
-            async def on_user_input_request(self, payload: dict[str, Any]) -> None:
-                await _put_stream_event(StreamEvent(type="user_input_request", data=payload))
-
-            async def on_complete(self, response: AgentResponse) -> None:
-                await _put_stream_event(
-                    StreamEvent(
-                        type="complete",
-                        data={
-                            "text": response.text,
-                            "files": response.files,
-                            "success": response.success,
-                            "partial": response.partial,
-                            "metadata": dict(response.metadata or {}),
-                            "token_usage": dict(response.token_usage) if response.token_usage else None,
-                            "terminal_reason": response.terminal_reason,
-                            "checkpoint_id": response.checkpoint_id,
-                        },
-                    )
-                )
-                await _put_stream_event(None)
-
-            async def on_error(self, error: Exception) -> None:
-                await _put_stream_event(
-                    StreamEvent(
-                        type="error",
-                        data={
-                            "error": str(error),
-                            "terminal_reason": final_reason,
-                        },
-                    )
-                )
-                await _put_stream_event(None)
+        stream_handler = QueuedStreamHandler(
+            session_id=session_id,
+            put_event=_put_stream_event,
+        )
 
         async def run_agent() -> None:
             try:
@@ -506,13 +428,17 @@ class AgentController:
                     attachments=attachments,
                     project_roots=project_roots,
                     authorized_roots=authorized_roots,
-                    stream_handler=QueueHandler(),
+                    stream_handler=stream_handler,
                     skip_append_user=skip_append_user,
                     persisted_user_message_id=persisted_user_message_id,
                     agent_task_id=agent_task_id,
                 )
-            except Exception:
-                await queue.put(None)
+            except Exception as exc:
+                logger.exception(
+                    "run_stream_background_failed",
+                    session_id=str(session_id),
+                )
+                await stream_handler.on_error(exc)
 
         task = asyncio.create_task(run_agent())
 
@@ -929,9 +855,6 @@ class AgentController:
 
         response_text = ""
         reasoning_acc = ""
-        final_usage: dict[str, int] = {}
-        final_reason = "completed"
-        final_checkpoint_id: str | None = None
 
         formatted_attachments = normalized_attachments if normalized_attachments else attachments
         query_input = self._format_user_message(
@@ -1059,18 +982,13 @@ class AgentController:
                 reasoning = rc if isinstance(rc, str) and rc.strip() else None
                 conversation.append_assistant_message(text, reasoning_content=reasoning)
             elif mtype == "result":
-                final_usage = data.get("usage", {}) or {}
-                reason = data.get("reason", "completed")
-                final_reason = reason
-                final_checkpoint_id = data.get("checkpoint_id")
+                reason = str(data.get("reason", "completed"))
+                checkpoint_id = data.get("checkpoint_id")
+                usage = data.get("usage", {}) or {}
                 if reason == TerminalReason.AWAITING_USER_INPUT.value:
                     meta = data.get("meta") or {}
                     tool_call = meta.get("tool_call") or {}
                     questions = meta.get("questions") or []
-                    # The kernel persists a durable checkpoint on a turn pause
-                    # and stamps its id onto the result event; surface it so the
-                    # resume path can rehydrate the run.
-                    checkpoint_id = data.get("checkpoint_id")
                     self._last_checkpoint_id = checkpoint_id
                     last_tcs: list[dict[str, Any]] | None = None
                     if conversation.messages:
@@ -1092,75 +1010,43 @@ class AgentController:
                             str(tool_call.get("name") or ASK_USER_TOOL_NAME),
                             ASK_USER_PENDING_TOOL_JSON,
                         )
-                    response = context.to_response()
-                    response.text = response_text
-                    response.partial = True
-                    response.terminal_reason = reason
-                    response.checkpoint_id = checkpoint_id
-                    response.metadata = {
-                        "awaiting_user_input": True,
-                        "tool_call": tool_call,
-                        "questions": questions,
-                        "assistant_tool_calls": last_tcs,
-                        "checkpoint_id": checkpoint_id,
-                    }
-                    if final_usage:
-                        with contextlib.suppress(Exception):
-                            tu = {
-                                "prompt_tokens": int(final_usage.get("prompt_tokens", 0) or 0),
-                                "completion_tokens": int(
-                                    final_usage.get("completion_tokens", 0) or 0,
-                                ),
-                                "total_tokens": int(final_usage.get("total_tokens", 0) or 0),
-                                "reasoning_tokens": int(final_usage.get("reasoning_tokens", 0) or 0),
-                            }
-                            for _ck in ("prompt_cache_hit_tokens", "prompt_cache_miss_tokens"):
-                                if _ck in final_usage:
-                                    tu[_ck] = int(final_usage.get(_ck, 0) or 0)
-                            response.token_usage = tu
+                    response = context.finalize_turn(
+                        text=response_text,
+                        reason=reason,
+                        conversation=conversation,
+                        turn_message_start=turn_message_start,
+                        usage=usage,
+                        checkpoint_id=checkpoint_id,
+                        partial=True,
+                        metadata={
+                            "awaiting_user_input": True,
+                            "tool_call": tool_call,
+                            "questions": questions,
+                            "assistant_tool_calls": last_tcs,
+                            "checkpoint_id": checkpoint_id,
+                        },
+                    )
                     await handler.on_complete(response)
                     return response
-                if reason != "completed" and data.get("error"):
-                    err = data.get("error")
-                    await handler.on_error(RuntimeError(str(err)))
 
-        context.record_step(ExecutionStep(type=StepType.ANSWER, content=response_text))
-        response = context.to_response()
-        response.text = response_text
-        response.terminal_reason = final_reason
-        response.checkpoint_id = final_checkpoint_id
-        if final_usage:
-            with contextlib.suppress(Exception):
-                tu = {
-                    "prompt_tokens": int(final_usage.get("prompt_tokens", 0) or 0),
-                    "completion_tokens": int(final_usage.get("completion_tokens", 0) or 0),
-                    "total_tokens": int(final_usage.get("total_tokens", 0) or 0),
-                    "reasoning_tokens": int(final_usage.get("reasoning_tokens", 0) or 0),
-                }
-                for _ck in ("prompt_cache_hit_tokens", "prompt_cache_miss_tokens"):
-                    if _ck in final_usage:
-                        tu[_ck] = int(final_usage.get(_ck, 0) or 0)
-                response.token_usage = tu
-        meta = dict(response.metadata or {})
-        merged_tc_by_id: dict[str, dict[str, Any]] = {}
-        last_reasoning: str | None = None
-        for msg in conversation.messages[turn_message_start:]:
-            if msg.role != "assistant":
-                continue
-            if msg.tool_calls:
-                for tc in msg.tool_calls:
-                    if isinstance(tc, dict):
-                        tid = str(tc.get("id") or "").strip()
-                        if tid:
-                            merged_tc_by_id[tid] = tc
-            rc = getattr(msg, "reasoning_content", None)
-            if isinstance(rc, str) and rc.strip():
-                last_reasoning = rc.strip()
-        if merged_tc_by_id:
-            meta["assistant_tool_calls"] = list(merged_tc_by_id.values())
-        if last_reasoning:
-            meta["reasoning_content"] = last_reasoning
-        response.metadata = meta
+                response = context.finalize_turn(
+                    text=response_text,
+                    reason=reason,
+                    conversation=conversation,
+                    turn_message_start=turn_message_start,
+                    error=data.get("error"),
+                    usage=usage,
+                    checkpoint_id=checkpoint_id,
+                )
+                await handler.on_complete(response)
+                return response
+
+        response = context.finalize_turn(
+            text=response_text,
+            reason=TerminalReason.COMPLETED.value,
+            conversation=conversation,
+            turn_message_start=turn_message_start,
+        )
         await handler.on_complete(response)
         return response
 

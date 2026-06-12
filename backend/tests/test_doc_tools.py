@@ -113,6 +113,12 @@ class TestPDFReaderTool:
         assert isinstance(result.data, dict)
         assert "text" in result.data
 
+    async def test_empty_file_path(self) -> None:
+        result = await run("pdf_reader", {"file_path": "", "operation": "extract_text"})
+        assert not result.success
+        assert result.error
+        assert "file_path is required" in result.error
+
     async def test_missing_file(self) -> None:
         result = await run("pdf_reader", {"file_path": "/nonexistent/path/to.pdf"})
         assert not result.success

@@ -72,7 +72,7 @@ export function GenUiActionBridge() {
         } catch (err) {
           handleChatStreamFailure(err, sessionId, assistantMsgId, tRef.current);
         } finally {
-          useChatStore.getState().releaseChatStreamSession(sessionId);
+          useChatStore.getState().releaseChatStreamSessionAndResync(sessionId);
           useChatStore.getState().releaseStreamAbortController(controller);
         }
       },

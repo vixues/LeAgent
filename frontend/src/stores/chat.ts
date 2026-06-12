@@ -8,7 +8,11 @@ import { useChatDraftStore } from './chatDraft';
 import { useLayoutStore } from './layout';
 import { hydrateSessionCanvasArtifacts } from './artifact';
 import { hydrateGenUiFromMessages, useGenUiStore } from './genUi';
-import { normalizeMessageList, type MessageResponse } from '@/types/chatHistory';
+import {
+  ensureChronologicalMessages,
+  normalizeMessageList,
+  type MessageResponse,
+} from '@/types/chatHistory';
 import { enrichMessagesWithSessionAttachments } from '@/lib/chatAttachments';
 import { queryClient } from '@/lib/queryClient';
 import {
@@ -117,6 +121,8 @@ interface ChatStore {
   beginChatStreamSession: (sessionId: string) => void;
   /** Clear loading/streaming only if this session still owns the stream (safe across abort races). */
   releaseChatStreamSession: (sessionId: string) => void;
+  /** Release stream ownership and reload canonical message order from the server. */
+  releaseChatStreamSessionAndResync: (sessionId: string) => void;
   /** Abort the current fetch if it belongs to another session (before starting a new stream). */
   abortActiveStreamUnlessSession: (sessionId: string) => void;
   setError: (error: string | null) => void;
@@ -180,13 +186,9 @@ const TASK_STATUS_RANK: Record<TaskProgressStep['status'], number> = {
   failed: 2,
 };
 
-/** True when this session has a live SSE assistant row (tool calls / task progress still in client memory). */
-function sessionHasInFlightAssistantStream(
-  messages: Record<string, Message[]>,
-  sessionId: string,
-): boolean {
-  const list = messages[sessionId];
-  return list?.some((m) => m.role === 'assistant' && m.isStreaming) ?? false;
+/** Skip server fetch while the HTTP stream for this session is still active. */
+function shouldSkipFetchMessages(sessionId: string, state: ChatStore): boolean {
+  return isChatStreamBusyForSession(sessionId, state);
 }
 
 /** Keeps first occurrence of each message id (chronological merge order preserved). */
@@ -489,7 +491,7 @@ export const useChatStore = create<ChatStore>()(
       fetchMessages: async (sessionId) => {
         if (!isUuid(sessionId)) return;
         const before = get();
-        if (sessionHasInFlightAssistantStream(before.messages, sessionId)) {
+        if (shouldSkipFetchMessages(sessionId, before)) {
           return;
         }
 
@@ -507,11 +509,13 @@ export const useChatStore = create<ChatStore>()(
           const enriched = await enrichMessagesWithSessionAttachments(sessionId, normalized);
           if (seq !== messagesFetchSeq) return;
 
-          const dedupedEnriched = dedupeMessagesByIdPreserveOrder(enriched);
+          const dedupedEnriched = ensureChronologicalMessages(
+            dedupeMessagesByIdPreserveOrder(enriched),
+          );
 
           let appliedFullMerge = false;
           set((state) => {
-            if (sessionHasInFlightAssistantStream(state.messages, sessionId)) {
+            if (shouldSkipFetchMessages(sessionId, state)) {
               return {
                 messagesLoadingSessionId:
                   state.messagesLoadingSessionId === sessionId
@@ -604,7 +608,9 @@ export const useChatStore = create<ChatStore>()(
             sessionId,
             mergedForEnrich,
           );
-          const dedupedMerged = dedupeMessagesByIdPreserveOrder(enrichedMerged);
+          const dedupedMerged = ensureChronologicalMessages(
+            dedupeMessagesByIdPreserveOrder(enrichedMerged),
+          );
           set((state) => ({
             messages: {
               ...state.messages,
@@ -919,6 +925,10 @@ export const useChatStore = create<ChatStore>()(
           isLoading: false,
           isStreaming: false,
         });
+      },
+      releaseChatStreamSessionAndResync: (sessionId) => {
+        get().releaseChatStreamSession(sessionId);
+        void get().fetchMessages(sessionId);
       },
       abortActiveStreamUnlessSession: (sessionId) => {
         const s = get();

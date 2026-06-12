@@ -208,6 +208,21 @@ class PDFReaderTool(SyncTool):
                     return ValidationResult(valid=False, message=f"Merge source not found: {mf}")
             return ValidationResult(valid=True)
 
+        if not fp or not str(fp).strip():
+            attachments = context.extra.get("attachments") or []
+            if isinstance(attachments, list) and attachments:
+                return ValidationResult(
+                    valid=False,
+                    message=(
+                        "file_path is required. Upload a PDF to this chat session and run the step again, "
+                        "or pass the filename in optional input."
+                    ),
+                )
+            return ValidationResult(
+                valid=False,
+                message="file_path is required. Upload a PDF to this chat session first.",
+            )
+
         if fp and not Path(fp).exists():
             return ValidationResult(valid=False, message=f"PDF file not found: {fp}")
         if fp and not fp.lower().endswith(".pdf"):

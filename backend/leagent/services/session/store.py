@@ -204,7 +204,7 @@ class TieredSessionStore:
         else:
             sid_eq = Message.session_id == chat.id
         result = await db.exec(
-            select(Message).where(sid_eq).order_by(Message.created_at.asc())
+            select(Message).where(sid_eq).order_by(Message.created_at.asc(), Message.id.asc())
         )
         rows = list(result.all())
 

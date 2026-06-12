@@ -58,6 +58,14 @@ def estimate_tokens(text: str) -> int:
     return int(len(text) * TOKENS_PER_CHAR)
 
 
+async def _message_session_sid_eq(db: AsyncSession, session_id: UUID):
+    """Return session filter expression for ``Message`` rows."""
+    if session_dialect_name(db) == "sqlite":
+        s_txt = await sqlite_parent_id_text(db, "chat_sessions", session_id)
+        return cast(Message.session_id, String) == s_txt
+    return Message.session_id == session_id
+
+
 async def _delete_hard_session_dependents(db: AsyncSession, session_id: UUID) -> tuple[int, int, int, int]:
     """Delete rows that FK to ``chat_sessions`` before removing the session itself.
 
@@ -130,6 +138,40 @@ class ChatService(Service):
             "db_connected": self._db is not None,
             "cache_connected": self._cache is not None,
         }
+
+    async def _max_message_created_at(
+        self,
+        db: AsyncSession,
+        session_id: UUID,
+    ) -> datetime | None:
+        """Latest ``created_at`` for rows in *session_id* (may be ``None``)."""
+        from sqlmodel import func as sqlfunc
+
+        sid_eq = await _message_session_sid_eq(db, session_id)
+        stmt = select(sqlfunc.max(Message.created_at)).where(sid_eq)
+        result = await db.execute(stmt)
+        return result.scalar_one_or_none()
+
+    async def _next_message_created_at(
+        self,
+        db: AsyncSession,
+        session_id: UUID,
+    ) -> datetime:
+        """Monotonic timestamp for the next insert in *session_id*."""
+        last_at = await self._max_message_created_at(db, session_id)
+        now = utc_now()
+        if last_at is None:
+            return now
+        bumped = last_at + timedelta(microseconds=1)
+        return max(now, bumped)
+
+    async def _invalidate_session_message_cache(self, session_id: UUID) -> None:
+        """Drop cached history/list keys for a session after writes."""
+        if not self._cache:
+            return
+        sid = str(session_id)
+        await self._cache.delete_prefix(f"messages:{sid}", namespace="chat")
+        await self._cache.delete(f"session:{sid}", namespace="chat")
 
     async def create_session(
         self,
@@ -618,8 +660,7 @@ class ChatService(Service):
 
         if self._cache:
             for session_id in expired_ids:
-                await self._cache.delete(f"session:{session_id}", namespace="chat")
-                await self._cache.delete(f"messages:{session_id}", namespace="chat")
+                await self._invalidate_session_message_cache(session_id)
 
         return {
             "sessions": deleted_sessions,
@@ -706,6 +747,7 @@ class ChatService(Service):
                 chat_row = await load_chat_session_by_id(
                     db, session_id, owner_user_id=None
                 )
+                message.created_at = await self._next_message_created_at(db, session_id)
                 if chat_row:
                     chat_row.message_count += 1
                     chat_row.last_message_at = utc_now()
@@ -715,11 +757,7 @@ class ChatService(Service):
             await db.flush()
             await db.refresh(message)
 
-        if self._cache:
-            await self._cache.delete(f"messages:{session_id}", namespace="chat")
-            # Session row (message_count, last_message_at) changes — must not serve stale
-            # cache to callers like maybe_auto_title_session().
-            await self._cache.delete(f"session:{session_id}", namespace="chat")
+        await self._invalidate_session_message_cache(session_id)
 
         return message
 
@@ -759,6 +797,7 @@ class ChatService(Service):
             wid = chat_row.workspace_id
             fid = chat_row.flow_id
             now_db = utc_now()
+            prev_at: datetime | None = None
 
             for sm in messages:
                 if not isinstance(sm, SM):
@@ -768,6 +807,10 @@ class ChatService(Service):
                     role_enum = MessageRole(role_raw)
                 except ValueError:
                     role_enum = MessageRole.USER
+                row_created = naive_utc_for_db_column(sm.created_at) or now_db
+                if prev_at is not None and row_created <= prev_at:
+                    row_created = prev_at + timedelta(microseconds=1)
+                prev_at = row_created
                 row = Message(
                     id=sm.id,
                     session_id=session_id,
@@ -783,7 +826,7 @@ class ChatService(Service):
                         json.dumps(sm.attachment_ids) if sm.attachment_ids else None
                     ),
                     status=MessageStatus.COMPLETED,
-                    created_at=naive_utc_for_db_column(sm.created_at) or now_db,
+                    created_at=row_created,
                 )
                 db.add(row)
 
@@ -791,9 +834,7 @@ class ChatService(Service):
             chat_row.last_message_at = now_db
             chat_row.updated_at = now_db
 
-        if self._cache:
-            await self._cache.delete(f"messages:{session_id}", namespace="chat")
-            await self._cache.delete(f"session:{session_id}", namespace="chat")
+        await self._invalidate_session_message_cache(session_id)
 
         return True
 
@@ -831,8 +872,7 @@ class ChatService(Service):
                 row.user_id = user_id
             await db.commit()
 
-        if self._cache:
-            await self._cache.delete(f"messages:{session_id}", namespace="chat")
+        await self._invalidate_session_message_cache(session_id)
 
         return True
 
@@ -1178,8 +1218,7 @@ class ChatService(Service):
                 message.rating = max(1, min(5, int(rating)))
             message.updated_at = utc_now()
 
-        if self._cache:
-            await self._cache.delete(f"messages:{session_id}", namespace="chat")
+        await self._invalidate_session_message_cache(session_id)
 
         return True
 
@@ -1226,8 +1265,7 @@ class ChatService(Service):
             message.extensions = json.dumps(merged, ensure_ascii=False)
             message.updated_at = utc_now()
 
-        if self._cache:
-            await self._cache.delete(f"messages:{session_id}", namespace="chat")
+        await self._invalidate_session_message_cache(session_id)
 
         return True
 

@@ -79,7 +79,7 @@ class DbChatRepository:
             result = await session.exec(
                 select(Message)
                 .where(Message.session_id == session_id)
-                .order_by(Message.created_at)
+                .order_by(Message.created_at, Message.id)
                 .limit(limit)
             )
             return list(result.all())

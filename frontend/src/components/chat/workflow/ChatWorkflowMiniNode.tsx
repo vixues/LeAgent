@@ -43,10 +43,45 @@ const CATEGORY_DOT: Record<string, string> = {
   default: 'bg-zinc-500',
 };
 
+/** Map backend/editor category ids (e.g. workflow/control) to mini-graph palette keys. */
+function resolveMiniNodeCategory(raw: string): string {
+  const normalized = raw
+    .toLowerCase()
+    .replace(/&/g, 'and')
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '');
+  if (normalized in CATEGORY_CARD) return normalized;
+
+  const tail = raw.includes('/') ? raw.split('/').pop() ?? raw : raw;
+  const tailNorm = tail
+    .toLowerCase()
+    .replace(/&/g, 'and')
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '');
+  if (tailNorm in CATEGORY_CARD) return tailNorm;
+
+  const aliases: Record<string, string> = {
+    workflow_control: 'trigger',
+    workflow: 'trigger',
+    control: 'trigger',
+    start: 'trigger',
+    end: 'trigger',
+    tool_call: 'web',
+    toolcall: 'web',
+    llm_call: 'llm',
+    llmcall: 'llm',
+    parallel: 'loop',
+    human_review: 'notification',
+    error_handler: 'transform',
+    subworkflow: 'transform',
+  };
+  return aliases[normalized] ?? aliases[tailNorm] ?? 'default';
+}
+
 function ChatWorkflowMiniNodeInner({ data }: NodeProps<FlowNode>) {
   const label = typeof data.label === 'string' && data.label.trim() ? data.label.trim() : 'Node';
   const rawCat = typeof data.category === 'string' ? data.category : 'default';
-  const cat = rawCat in CATEGORY_CARD ? rawCat : 'default';
+  const cat = resolveMiniNodeCategory(rawCat);
   const card = CATEGORY_CARD[cat] ?? CATEGORY_CARD.default;
   const dot = CATEGORY_DOT[cat] ?? CATEGORY_DOT.default;
 

@@ -112,7 +112,13 @@ class CLIStreamHandler:
             self._token_buffer.clear()
         console.print()  # newline after streamed content
 
-        if self._verbose:
+        if response.error:
+            console.print(Panel(
+                f"[red]Error:[/] {response.error}",
+                title=response.terminal_reason.replace("_", " ").title(),
+                border_style="red",
+            ))
+        elif self._verbose:
             elapsed = time.monotonic() - self._start_time
             parts = []
             if self._tool_count:

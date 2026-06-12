@@ -857,8 +857,43 @@ def _count_nodes_depth(node: dict[str, Any], depth: int) -> tuple[int, int]:
     return total, max_d
 
 
+def coerce_ui_patch_tool_params(params: dict[str, Any]) -> dict[str, Any]:
+    """Normalize ``emit_ui_patch`` tool args (unwrap nested ``payload``, drop null optionals)."""
+    data = dict(params or {})
+    inner = data.get("payload")
+    if not isinstance(data.get("patches"), list) and isinstance(inner, dict) and isinstance(
+        inner.get("patches"), list
+    ):
+        merged = dict(inner)
+        for key, value in data.items():
+            if key != "payload" and key not in merged:
+                merged[key] = value
+        data = merged
+
+    patches = data.get("patches")
+    if not isinstance(patches, list):
+        raise ValueError("'patches' is a required property")
+
+    out: dict[str, Any] = {"patches": patches}
+    canvas_id = data.get("canvas_id")
+    if isinstance(canvas_id, str) and canvas_id.strip():
+        out["canvas_id"] = canvas_id.strip()
+    seq = data.get("seq")
+    if isinstance(seq, int) and seq >= 0:
+        out["seq"] = seq
+    return out
+
+
 def validate_ui_patch(payload: dict[str, Any]) -> None:
-    jsonschema.validate(instance=payload, schema=UI_PATCH_SCHEMA)
+    try:
+        normalized = coerce_ui_patch_tool_params(payload)
+    except ValueError:
+        normalized = {
+            k: v
+            for k, v in dict(payload).items()
+            if v is not None and k in ("patches", "canvas_id", "seq")
+        }
+    jsonschema.validate(instance=normalized, schema=UI_PATCH_SCHEMA)
 
 
 def ui_tree_from_json_bytes(raw: bytes | str) -> dict[str, Any]:

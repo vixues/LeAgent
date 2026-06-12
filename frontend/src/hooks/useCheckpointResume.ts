@@ -62,7 +62,7 @@ export function useCheckpointResume(t: TFunction) {
       } catch (err) {
         handleChatStreamFailure(err, sessionId, assistantMsgId, t);
       } finally {
-        useChatStore.getState().releaseChatStreamSession(sessionId);
+        useChatStore.getState().releaseChatStreamSessionAndResync(sessionId);
         useChatStore.getState().releaseStreamAbortController(controller);
       }
     },

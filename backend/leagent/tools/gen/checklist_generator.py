@@ -38,7 +38,7 @@ class ChecklistGeneratorTool(SyncTool):
     category = ToolCategory.GEN
     version = "1.0.0"
     timeout_sec = 60
-    aliases = ["checklist", "todo_gen", "task_list_gen"]
+    aliases = ["checklist", "checklist_demo", "todo_gen", "task_list_gen"]
     search_hint = "checklist generate workflow status priority export markdown JSON HTML PDF"
     is_concurrency_safe = True
     is_read_only = False
@@ -55,8 +55,9 @@ class ChecklistGeneratorTool(SyncTool):
                 "output_path": {
                     "type": "string",
                     "description": (
-                        "Path where the checklist will be saved. Use only when the user "
-                        "asked to save or export."
+                        "Optional path to save the checklist. Omit for inline chat display "
+                        "(returns content in the tool result). When saving, use a session-relative "
+                        "path or filename under the upload workspace, not system paths like /dev/null."
                     ),
                 },
                 "output_format": {
@@ -166,7 +167,7 @@ class ChecklistGeneratorTool(SyncTool):
                     "description": "Include status legend. Defaults to true.",
                 },
             },
-            "required": ["output_path"],
+            "required": [],
             "additionalProperties": False,
         }
 
@@ -188,16 +189,23 @@ class ChecklistGeneratorTool(SyncTool):
             ValueError: If checklist configuration is invalid.
             RuntimeError: If checklist generation fails.
         """
-        output_path = Path(params["output_path"])
+        output_path_raw = params.get("output_path")
+        write_to_file = isinstance(output_path_raw, str) and output_path_raw.strip()
         output_format = params.get("output_format", "markdown")
         source_type = params.get("source_type", "manual")
         source_path = params.get("source_path")
 
-        output_path.parent.mkdir(parents=True, exist_ok=True)
+        if write_to_file:
+            output_path = Path(output_path_raw.strip())
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            log_output = str(output_path)
+        else:
+            output_path = None
+            log_output = "(inline)"
 
         logger.info(
             "Generating checklist",
-            output_path=str(output_path),
+            output_path=log_output,
             format=output_format,
             source=source_type,
         )
@@ -217,31 +225,51 @@ class ChecklistGeneratorTool(SyncTool):
         stats = self._calculate_stats(checklist_data)
         checklist_data["stats"] = stats
 
+        if write_to_file and output_path is not None:
+            if output_format == "markdown":
+                self._export_markdown(output_path, checklist_data, params)
+            elif output_format == "json":
+                self._export_json(output_path, checklist_data)
+            elif output_format == "html":
+                self._export_html(output_path, checklist_data, params)
+            elif output_format == "pdf":
+                self._export_pdf(output_path, checklist_data, params)
+            else:
+                raise ValueError(f"Unsupported output format: {output_format}")
+
+            file_size = output_path.stat().st_size
+            logger.info(
+                "Checklist generated successfully",
+                output_path=str(output_path),
+                file_size=file_size,
+                **stats,
+            )
+            return {
+                "success": True,
+                "output_path": str(output_path),
+                "output_format": output_format,
+                "file_size_bytes": file_size,
+                "stats": stats,
+                "title": checklist_data["title"],
+            }
+
+        inline_content: str | None = None
         if output_format == "markdown":
-            self._export_markdown(output_path, checklist_data, params)
+            inline_content = self._build_markdown_content(checklist_data, params)
         elif output_format == "json":
-            self._export_json(output_path, checklist_data)
+            inline_content = json.dumps(checklist_data, indent=2, ensure_ascii=False)
         elif output_format == "html":
-            self._export_html(output_path, checklist_data, params)
+            inline_content = self._build_html_content(checklist_data, params)
         elif output_format == "pdf":
-            self._export_pdf(output_path, checklist_data, params)
+            raise ValueError("PDF export requires output_path; inline PDF is not supported")
         else:
             raise ValueError(f"Unsupported output format: {output_format}")
 
-        file_size = output_path.stat().st_size
-
-        logger.info(
-            "Checklist generated successfully",
-            output_path=str(output_path),
-            file_size=file_size,
-            **stats,
-        )
-
+        logger.info("Checklist generated inline", format=output_format, **stats)
         return {
             "success": True,
-            "output_path": str(output_path),
             "output_format": output_format,
-            "file_size_bytes": file_size,
+            "content": inline_content,
             "stats": stats,
             "title": checklist_data["title"],
         }
@@ -514,13 +542,12 @@ class ChecklistGeneratorTool(SyncTool):
             "by_priority": by_priority,
         }
 
-    def _export_markdown(
+    def _build_markdown_content(
         self,
-        output_path: Path,
         checklist: dict[str, Any],
         params: dict[str, Any],
-    ) -> None:
-        """Export checklist to Markdown format."""
+    ) -> str:
+        """Build checklist Markdown without writing to disk."""
         lines: list[str] = []
 
         lines.append(f"# {checklist['title']}")
@@ -595,19 +622,30 @@ class ChecklistGeneratorTool(SyncTool):
             lines.append("- `[ ]` Pending")
             lines.append("")
 
-        output_path.write_text("\n".join(lines), encoding="utf-8")
+        return "\n".join(lines)
 
-    def _export_json(self, output_path: Path, checklist: dict[str, Any]) -> None:
-        """Export checklist to JSON format."""
-        output_path.write_text(json.dumps(checklist, indent=2, ensure_ascii=False), encoding="utf-8")
-
-    def _export_html(
+    def _export_markdown(
         self,
         output_path: Path,
         checklist: dict[str, Any],
         params: dict[str, Any],
     ) -> None:
-        """Export checklist to HTML format."""
+        """Export checklist to Markdown format."""
+        output_path.write_text(
+            self._build_markdown_content(checklist, params),
+            encoding="utf-8",
+        )
+
+    def _export_json(self, output_path: Path, checklist: dict[str, Any]) -> None:
+        """Export checklist to JSON format."""
+        output_path.write_text(json.dumps(checklist, indent=2, ensure_ascii=False), encoding="utf-8")
+
+    def _build_html_content(
+        self,
+        checklist: dict[str, Any],
+        params: dict[str, Any],
+    ) -> str:
+        """Build checklist HTML without writing to disk."""
         stats = checklist.get("stats", {})
 
         status_colors = {
@@ -734,7 +772,19 @@ class ChecklistGeneratorTool(SyncTool):
 </body>
 </html>
 """
-        output_path.write_text(html, encoding="utf-8")
+        return html
+
+    def _export_html(
+        self,
+        output_path: Path,
+        checklist: dict[str, Any],
+        params: dict[str, Any],
+    ) -> None:
+        """Export checklist to HTML format."""
+        output_path.write_text(
+            self._build_html_content(checklist, params),
+            encoding="utf-8",
+        )
 
     def _export_pdf(
         self,

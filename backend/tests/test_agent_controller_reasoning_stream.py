@@ -22,36 +22,29 @@ from leagent.agent.controller import AgentController
 from leagent.agent.query_engine import SDKMessage
 
 
-class _FakeQueryEngine:
-    def __init__(self, _config: object) -> None:
-        pass
+class _FakeEngineBase:
+    """Minimal QueryEngine stand-in compatible with ``run_loop``."""
+
+    def __init__(self, config: object) -> None:
+        self.config = config
+        self.abort_event = getattr(config, "abort_event", None) or asyncio.Event()
 
     def abort(self) -> None:
-        pass
+        self.abort_event.set()
 
+
+class _FakeQueryEngine(_FakeEngineBase):
     async def submit_message(self, *_a: object, **_kw: object):
         yield SDKMessage(type="stream_delta", data={"reasoning_delta": "hel"})
         yield SDKMessage(type="stream_delta", data={"reasoning_delta": "lo"})
 
 
-class _AnswerOnlyQueryEngine:
-    def __init__(self, _config: object) -> None:
-        pass
-
-    def abort(self) -> None:
-        pass
-
+class _AnswerOnlyQueryEngine(_FakeEngineBase):
     async def submit_message(self, *_a: object, **_kw: object):
         yield SDKMessage(type="stream_delta", data={"content": "fresh answer"})
 
 
-class _ToolUsingQueryEngine:
-    def __init__(self, _config: object) -> None:
-        pass
-
-    def abort(self) -> None:
-        pass
-
+class _ToolUsingQueryEngine(_FakeEngineBase):
     async def submit_message(self, *_a: object, **_kw: object):
         yield SDKMessage(
             type="assistant_tools",

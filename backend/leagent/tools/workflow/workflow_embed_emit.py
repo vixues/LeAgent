@@ -24,8 +24,10 @@ class ChatWorkflowEmbedEmitTool(BaseTool):
         "Publish a workflow graph in the chat using the SAME JSON shape as the Flow "
         "editor / Flow.data: top-level keys like nodes (array or dict), edges, optional "
         "ui, control/start/end, id, name. The graph is validated by the workflow engine "
-        "(no separate chat-only schema). Use for multi-step DAGs with ToolCallNode, "
-        "StartNode, EndNode, etc. Pass: title (short), optional summary, flow_data (object)."
+        "(no separate chat-only schema). Use for multi-step DAGs with canonical "
+        "class_type values: StartNode, ToolCallNode, EndNode (aliases like tool, input, "
+        "default, output are normalized). Pass: title (short), optional summary, "
+        "flow_data (object)."
     )
     category = ToolCategory.WORKFLOW
     is_read_only = True

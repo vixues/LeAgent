@@ -95,7 +95,7 @@ export function ChatPanel({ className }: ChatPanelProps) {
       } catch (err) {
         handleChatStreamFailure(err, sessionId, assistantMsgId, t);
       } finally {
-        useChatStore.getState().releaseChatStreamSession(sessionId);
+        useChatStore.getState().releaseChatStreamSessionAndResync(sessionId);
         useChatStore.getState().releaseStreamAbortController(controller);
       }
     },
@@ -156,7 +156,7 @@ export function ChatPanel({ className }: ChatPanelProps) {
       } catch (err) {
         handleChatStreamFailure(err, sessionId, assistantMsgId, t);
       } finally {
-        useChatStore.getState().releaseChatStreamSession(sessionId);
+        useChatStore.getState().releaseChatStreamSessionAndResync(sessionId);
         useChatStore.getState().releaseStreamAbortController(controller);
       }
     },

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router-dom';
 import { GitBranch, ChevronDown, ChevronRight, ExternalLink } from 'lucide-react';
@@ -7,6 +7,7 @@ import type { Message } from '@/types/chat';
 import { ChatWorkflowMiniGraph } from './ChatWorkflowMiniGraph';
 import { ChatWorkflowStepRail } from './ChatWorkflowStepRail';
 import { useWorkflowStepRunner } from './useWorkflowStepRunner';
+import { workflowNeedsFileInput } from './workflowStepUtils';
 
 interface ChatWorkflowCardProps {
   message: Message;
@@ -21,6 +22,13 @@ export function ChatWorkflowCard({ message, sessionId, className }: ChatWorkflow
   const { runStep } = useWorkflowStepRunner(sessionId);
   const [userInput, setUserInput] = useState('');
   const [optionalOpen, setOptionalOpen] = useState(false);
+  const needsFileInput = wf ? workflowNeedsFileInput(wf.spec.steps) : false;
+
+  useEffect(() => {
+    if (needsFileInput) {
+      setOptionalOpen(true);
+    }
+  }, [needsFileInput, message.id]);
 
   if (embed) {
     const dataName =
@@ -109,7 +117,9 @@ export function ChatWorkflowCard({ message, sessionId, className }: ChatWorkflow
           </div>
         </div>
         <p className="text-[11px] text-muted-foreground-tertiary mt-2 pl-[1.375rem] leading-snug">
-          {t('chat.workflow.sessionFilesHint')}
+          {needsFileInput
+            ? t('chat.workflow.sessionFilesHintPdf')
+            : t('chat.workflow.sessionFilesHint')}
         </p>
       </div>
 
@@ -136,7 +146,11 @@ export function ChatWorkflowCard({ message, sessionId, className }: ChatWorkflow
               value={userInput}
               onChange={(e) => setUserInput(e.target.value)}
               rows={2}
-              placeholder={t('chat.workflow.optionalInputPlaceholder')}
+              placeholder={
+                needsFileInput
+                  ? t('chat.workflow.optionalInputPlaceholderFile')
+                  : t('chat.workflow.optionalInputPlaceholder')
+              }
               className={cn(
                 'w-full resize-y rounded-lg border border-border-subtle bg-surface-raised/80 px-2.5 py-2 text-xs text-foreground',
                 'placeholder:text-muted-foreground-tertiary focus:outline-none focus:ring-2 focus:ring-primary-500/30',

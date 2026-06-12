@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import {
   Background,
@@ -143,6 +143,13 @@ function EditorInner({ registry }: { registry: ObjectInfo }) {
   const [docInputs, setDocInputs] = useState<WorkflowInputSpec[]>([]);
   const [docOutputs, setDocOutputs] = useState<WorkflowOutputSpec[]>([]);
   const [rightPanel, setRightPanel] = useState<'run' | 'io' | null>(null);
+  const [searchParams] = useSearchParams();
+
+  useEffect(() => {
+    if (searchParams.get('panel') === 'run') {
+      setRightPanel('run');
+    }
+  }, [searchParams]);
 
   const rf = useReactFlow();
   const wrapperRef = useRef<HTMLDivElement>(null);

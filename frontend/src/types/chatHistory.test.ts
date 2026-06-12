@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { normalizeMessageList, normalizeToolCallList, type MessageResponse } from './chatHistory';
+import {
+  ensureChronologicalMessages,
+  normalizeMessageList,
+  normalizeToolCallList,
+  type MessageResponse,
+} from './chatHistory';
+import type { Message } from '@/types/chat';
 
 describe('chat history normalization', () => {
   it('parses JSON-string tool calls', () => {
@@ -213,6 +219,20 @@ describe('chat history normalization', () => {
     const m2 = normalizeMessageList(rowsB);
 
     expect(m1.map((m) => m.id)).toEqual(m2.map((m) => m.id));
+  });
+
+  it('sorts Message rows by createdAt then id', () => {
+    const ts = '2026-04-28T00:00:00.000Z';
+    const rows: Message[] = [
+      { id: 'b-asst', role: 'assistant', content: 'A', createdAt: ts },
+      { id: 'a-user', role: 'user', content: 'Q', createdAt: ts },
+      { id: 'c-asst', role: 'assistant', content: 'Later', createdAt: '2026-04-28T00:00:01.000Z' },
+    ];
+    expect(ensureChronologicalMessages(rows).map((m) => m.id)).toEqual([
+      'a-user',
+      'b-asst',
+      'c-asst',
+    ]);
   });
 
   it('parses attachment JSON strings on reopened user messages', () => {

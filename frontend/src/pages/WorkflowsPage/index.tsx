@@ -10,7 +10,7 @@
  * `ChatWorkflowTemplatesPage`) were folded in here; their old routes
  * redirect to this namespace.
  */
-import { useLocation, useNavigate, useParams } from 'react-router-dom';
+import { Navigate, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { GitBranch, LayoutList, Workflow } from 'lucide-react';
 
@@ -29,6 +29,15 @@ export default function WorkflowsPage() {
   const { id } = useParams<{ id?: string }>();
   const location = useLocation();
   const navigate = useNavigate();
+
+  // Legacy menu links used `/workflows/:id/executions` — open the editor run panel.
+  if (
+    id &&
+    id !== 'templates' &&
+    location.pathname.endsWith('/executions')
+  ) {
+    return <Navigate to={`/workflows/${id}?panel=run`} replace />;
+  }
 
   // `/workflows/new` and `/workflows/:uuid` open the full-bleed editor.
   const isEditor = Boolean(id && id !== 'templates') ||

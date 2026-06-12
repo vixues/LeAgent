@@ -23,9 +23,12 @@ class ChatWorkflowEmitTool(BaseTool):
     name = "chat_workflow_emit"
     description = (
         "Publish a structured workflow card in the chat. Use when the user asks for a "
-        "repeatable plan with executable steps. Each step must call a read-only tool "
-        "(e.g. date_calculator, json_parser) with JSON arguments; use placeholders "
+        "repeatable plan with executable steps. Each step calls a registered tool "
+        "(destructive tools blocked; e.g. date_calculator, cache_manager, todo_write) "
+        "with JSON arguments; use placeholders "
         "${session_id}, ${user_id}, ${user_input} in string values where needed. "
+        "For file_path on doc tools, omit the key or use ${user_input} — the runner "
+        "auto-picks the session PDF when one is uploaded. "
         "Pass: version (1), title, optional summary, steps[{id, label, optional hint, "
         "action: {kind: 'tool', tool_id, arguments}}]."
     )

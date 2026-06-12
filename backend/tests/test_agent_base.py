@@ -93,6 +93,22 @@ class TestAgentResponse:
         )
         assert resp.tool_calls_count == 2
 
+    def test_to_stream_events_includes_error_and_complete_for_failed_turn(self) -> None:
+        resp = AgentResponse(
+            session_id=uuid4(),
+            error="DNS failure",
+            terminal_reason="model_error",
+        )
+        types = [event.type for event in resp.to_stream_events()]
+        assert types == ["error", "complete"]
+        assert resp.to_stream_events()[0].data["terminal_reason"] == "model_error"
+
+    def test_to_stream_events_complete_only_on_success(self) -> None:
+        resp = AgentResponse(session_id=uuid4(), text="ok", terminal_reason="completed")
+        events = resp.to_stream_events()
+        assert len(events) == 1
+        assert events[0].type == "complete"
+
 
 # ===========================================================================
 # AgentContext
@@ -160,6 +176,22 @@ class TestAgentContext:
         resp = ctx.to_response(text="", error="something went wrong")
         assert resp.error == "something went wrong"
         assert not resp.success
+
+    async def test_finalize_turn_maps_kernel_model_error(self) -> None:
+        ctx = AgentContext(session_id=uuid4())
+        conv = ConversationContext(session_id=ctx.session_id)
+        resp = ctx.finalize_turn(
+            text="",
+            reason="model_error",
+            conversation=conv,
+            turn_message_start=0,
+            error="DNS lookup failed",
+            usage={"total_tokens": 0},
+        )
+        assert resp.terminal_reason == "model_error"
+        assert resp.error == "DNS lookup failed"
+        assert resp.success is False
+        assert any(step.type == StepType.ANSWER for step in resp.steps)
 
 
 # ===========================================================================

@@ -130,7 +130,7 @@ class TodoWriteTool(BaseTool):
     category = ToolCategory.UTIL
     is_read_only = False
     is_concurrency_safe = False
-    aliases = ["todo", "create_todo", "update_todo"]
+    aliases = ["todo", "create_todo", "todo_create", "update_todo"]
     search_hint = "todo task list create update status track progress"
     interrupt_behavior = "cancel"
     max_result_size_chars = 50_000

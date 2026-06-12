@@ -1,5 +1,6 @@
 """Tests for canvas companion SSE events and generative UI schema validation."""
 
+import json
 from pathlib import Path
 from uuid import uuid4
 
@@ -9,10 +10,12 @@ from leagent.api.v1 import chat as chat_mod
 from jsonschema.exceptions import ValidationError
 
 from leagent.services.gen_ui.schema import (
+    coerce_ui_patch_tool_params,
     normalize_ui_tree,
     validate_ui_patch,
     validate_ui_tree,
 )
+from leagent.tools.executor import normalize_tool_parameters
 from leagent.services.canvas.service import (
     build_preview_html,
     mint_preview_token,
@@ -25,7 +28,7 @@ from leagent.tools.base import ToolContext
 from leagent.tools.canvas.canvas_publish import CanvasPublishTool
 from leagent.tools.canvas.genui_guide import GetGenuiGuideTool
 from leagent.tools.canvas.html_guide import GetHtmlCanvasGuideTool
-from leagent.tools.canvas.ui_components import EmitUiTreeTool
+from leagent.tools.canvas.ui_components import EmitUiPatchTool, EmitUiTreeTool
 
 
 def test_canvas_publish_params_accepts_html_blob_id() -> None:
@@ -503,6 +506,147 @@ async def test_emit_ui_tree_invalid_json_string_includes_decode_hint():
     assert "tree is not valid JSON" in msg
     assert "byte" in msg
     assert "Near:" in msg
+
+
+@pytest.mark.asyncio
+async def test_emit_ui_tree_repairs_superfluous_closing_brackets():
+    """LLM over-closes nested arrays/objects before the next sibling node."""
+    valid = {
+        "schemaVersion": "1",
+        "root": {
+            "kind": "Stack",
+            "props": {"gap": 12},
+            "children": [
+                {
+                    "kind": "Grid",
+                    "props": {"columns": 2},
+                    "children": [
+                        {
+                            "kind": "Select",
+                            "props": {
+                                "options": [
+                                    {"label": "IF/ELSE 逻辑"},
+                                    {"label": "触发器", "value": "Cron / Webhook"},
+                                ],
+                            },
+                        },
+                    ],
+                },
+                {
+                    "kind": "Card",
+                    "props": {"title": "运行指标", "padding": 12},
+                },
+            ],
+        },
+    }
+    bad = json.dumps(valid, ensure_ascii=False)
+    bad = bad.replace(
+        "Cron / Webhook\"}}]},",
+        "Cron / Webhook\"}}]}]}]},",
+        1,
+    )
+    result = await EmitUiTreeTool().execute(
+        {"tree": bad}, ToolContext(user_id="u1", session_id="s1")
+    )
+    root = result["payload"]["tree"]["root"]
+    kinds = [c.get("kind") for c in root.get("children", [])]
+    assert "Card" in kinds
+
+
+def test_emit_ui_tree_recover_raw_args_from_broken_outer_json():
+    """``recover_raw_args`` salvages tree when outer tool-call JSON is malformed."""
+    inner = {
+        "schemaVersion": "1",
+        "root": {
+            "kind": "Stack",
+            "children": [
+                {
+                    "kind": "Select",
+                    "props": {
+                        "options": [
+                            {"label": "触发器", "value": "Cron / Webhook"},
+                        ],
+                    },
+                },
+                {"kind": "Card", "props": {"title": "运行指标"}},
+            ],
+        },
+    }
+    inner_bad = json.dumps(inner, ensure_ascii=False)
+    inner_bad = inner_bad.replace(
+        "Cron / Webhook\"}}]},",
+        "Cron / Webhook\"}}]}]}]},",
+        1,
+    )
+    broken_outer = '{"tree":' + inner_bad + '}'
+    recovered = EmitUiTreeTool().recover_raw_args(broken_outer)
+    assert recovered is not None
+    assert isinstance(recovered.get("tree"), dict)
+    kinds = [c.get("kind") for c in recovered["tree"]["root"].get("children", [])]
+    assert "Card" in kinds
+
+
+def test_recover_emit_ui_tree_truncated_mid_stream():
+    """Truncated provider output (mid-key) should salvage a partial tree."""
+    from leagent.tools.executor import _recover_emit_ui_tree_args
+
+    raw = (
+        '{"tree": {"root":{"kind":"DesignSurface","props":{"preset":"editorial"},'
+        '"children":[{"kind":"Stepper","props":{"steps":[{"title":"Receive",'
+        '"status":"completed"},{"t'
+    )
+    recovered = _recover_emit_ui_tree_args(raw)
+    assert recovered is not None
+    tree = recovered["tree"]
+    root = tree.get("root") or tree
+    assert root.get("kind") == "DesignSurface"
+
+
+def test_recover_emit_ui_patch_truncated_mid_stream():
+    from leagent.tools.executor import _recover_emit_ui_patch_args
+
+    raw = (
+        '{"patches":[{"op":"add","path":"/root","value":{"kind":"Card","props":'
+        '{"title":"Workflow"},"children":[{"kind":"Text","props":{"value":"ok"}'
+    )
+    recovered = _recover_emit_ui_patch_args(raw)
+    assert recovered is not None
+    assert isinstance(recovered.get("patches"), list)
+    assert recovered["patches"][0]["op"] == "add"
+
+
+def test_emit_ui_patch_omits_null_canvas_id():
+    payload = {"patches": [{"op": "replace", "path": "/root/props/title", "value": "Hi"}]}
+    validate_ui_patch(payload)
+
+
+@pytest.mark.asyncio
+async def test_emit_ui_patch_execute_without_canvas_id():
+    tool = EmitUiPatchTool()
+    patches = [{"op": "replace", "path": "/root/props/title", "value": "LeAgent Workflow 引擎"}]
+    result = await tool.execute({"patches": patches, "seq": 1}, ToolContext(user_id="u1", session_id="s1"))
+    assert result["payload"]["patches"] == patches
+    assert "canvas_id" not in result["payload"]
+    assert result["payload"]["seq"] == 1
+
+
+def test_emit_ui_patch_unwraps_nested_payload_wrapper():
+    patches = [{"op": "add", "path": "/root/children/-", "value": {"kind": "Text", "props": {"value": "x"}}}]
+    coerced = coerce_ui_patch_tool_params({"payload": {"patches": patches, "seq": 2}})
+    assert coerced["patches"] == patches
+    assert coerced["seq"] == 2
+    ok, err = EmitUiPatchTool().validate_params({"payload": {"patches": patches}})
+    assert ok, err
+
+
+def test_emit_ui_patch_recovers_payload_wrapper_from_raw():
+    patches = [{"op": "replace", "path": "/root/props/title", "value": "Title"}]
+    raw = json.dumps({"payload": {"patches": patches, "seq": 1}}, ensure_ascii=False)
+    tool = EmitUiPatchTool()
+    normalized, err = normalize_tool_parameters({"__raw__": raw}, tool=tool)
+    assert err is None
+    assert normalized["patches"] == patches
+    assert normalized["seq"] == 1
 
 
 @pytest.mark.asyncio

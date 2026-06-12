@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import StrEnum
@@ -11,6 +13,8 @@ from uuid import UUID, uuid4
 
 import structlog
 from pydantic import BaseModel, Field
+
+from leagent.agent.transitions import TerminalReason
 
 if TYPE_CHECKING:
     from leagent.llm import LLMService
@@ -177,6 +181,52 @@ class AgentResponse(BaseModel):
     def tool_calls_count(self) -> int:
         return sum(1 for s in self.steps if s.type == StepType.TOOL_CALL)
 
+    def apply_usage(self, usage: dict[str, Any] | None) -> None:
+        """Merge provider token counters onto this response."""
+        if not usage:
+            return
+        with contextlib.suppress(Exception):
+            tu = {
+                "prompt_tokens": int(usage.get("prompt_tokens", 0) or 0),
+                "completion_tokens": int(usage.get("completion_tokens", 0) or 0),
+                "total_tokens": int(usage.get("total_tokens", 0) or 0),
+                "reasoning_tokens": int(usage.get("reasoning_tokens", 0) or 0),
+            }
+            for cache_key in ("prompt_cache_hit_tokens", "prompt_cache_miss_tokens"):
+                if cache_key in usage:
+                    tu[cache_key] = int(usage.get(cache_key, 0) or 0)
+            self.token_usage = tu
+
+    def to_stream_events(self) -> list[StreamEvent]:
+        """Wire events emitted when a turn finishes (SSE / ``run_stream``)."""
+        events: list[StreamEvent] = []
+        if self.error:
+            events.append(
+                StreamEvent(
+                    type="error",
+                    data={
+                        "error": self.error,
+                        "terminal_reason": self.terminal_reason,
+                    },
+                )
+            )
+        events.append(
+            StreamEvent(
+                type="complete",
+                data={
+                    "text": self.text,
+                    "files": self.files,
+                    "success": self.success,
+                    "partial": self.partial,
+                    "metadata": dict(self.metadata or {}),
+                    "token_usage": dict(self.token_usage) if self.token_usage else None,
+                    "terminal_reason": self.terminal_reason,
+                    "checkpoint_id": self.checkpoint_id,
+                },
+            )
+        )
+        return events
+
 
 class StreamEvent(BaseModel):
     """Event emitted during streaming agent execution."""
@@ -223,7 +273,7 @@ class StreamHandler(Protocol):
         ...
 
     async def on_error(self, error: Exception) -> None:
-        """Called when an error occurs."""
+        """Called when an unexpected error occurs outside the query loop."""
         ...
 
 
@@ -256,6 +306,94 @@ class NoOpStreamHandler:
 
     async def on_error(self, error: Exception) -> None:
         pass
+
+
+class QueuedStreamHandler:
+    """StreamHandler that enqueues :class:`StreamEvent` s for :meth:`AgentController.run_stream`.
+
+    Turn termination always flows through :meth:`on_complete`; the handler
+    delegates wire-format derivation to :meth:`AgentResponse.to_stream_events`.
+    """
+
+    def __init__(
+        self,
+        *,
+        session_id: UUID,
+        put_event: Callable[[StreamEvent | None], Awaitable[None]],
+    ) -> None:
+        self._session_id = session_id
+        self._put_event = put_event
+
+    async def on_thinking(self, thought: str) -> None:
+        await self._put_event(StreamEvent(type="thinking", data={"thought": thought}))
+
+    async def on_tool_call(self, tool_call: ToolCall) -> None:
+        await self._put_event(
+            StreamEvent(
+                type="tool_call",
+                data={
+                    "id": tool_call.id,
+                    "name": tool_call.name,
+                    "arguments": tool_call.arguments,
+                },
+            )
+        )
+
+    async def on_tool_call_delta(self, payload: dict[str, Any]) -> None:
+        await self._put_event(StreamEvent(type="tool_call_delta", data=dict(payload)))
+
+    async def on_nested_agent_preview(self, payload: dict[str, Any]) -> None:
+        await self._put_event(StreamEvent(type="nested_agent_preview", data=dict(payload)))
+
+    async def on_tool_result(self, result: ToolResult) -> None:
+        await self._put_event(
+            StreamEvent(
+                type="tool_result",
+                data={
+                    "tool_call_id": result.tool_call_id,
+                    "name": result.name,
+                    "success": result.success,
+                    "content": result.content[:1000],
+                    "data": result.data if isinstance(result.data, (dict, list)) else None,
+                    "error": result.error,
+                    "duration_ms": result.duration_ms,
+                    "metadata": result.metadata,
+                },
+            )
+        )
+
+    async def on_workspace_attachments(self, items: list[dict[str, Any]]) -> None:
+        if not items:
+            return
+        await self._put_event(
+            StreamEvent(
+                type="workspace_attachments",
+                data={
+                    "session_id": str(self._session_id),
+                    "attachments": items,
+                },
+            )
+        )
+
+    async def on_token(self, token: str) -> None:
+        await self._put_event(StreamEvent(type="token", data={"token": token}))
+
+    async def on_user_input_request(self, payload: dict[str, Any]) -> None:
+        await self._put_event(StreamEvent(type="user_input_request", data=payload))
+
+    async def on_complete(self, response: AgentResponse) -> None:
+        for event in response.to_stream_events():
+            await self._put_event(event)
+        await self._put_event(None)
+
+    async def on_error(self, error: Exception) -> None:
+        await self._put_event(
+            StreamEvent(
+                type="error",
+                data={"error": str(error), "terminal_reason": "error"},
+            )
+        )
+        await self._put_event(None)
 
 
 @dataclass
@@ -398,6 +536,37 @@ class AgentContext:
             metadata={"iteration": self.iteration},
         )
 
+    def finalize_turn(
+        self,
+        *,
+        text: str,
+        reason: str,
+        conversation: ConversationContext,
+        turn_message_start: int,
+        error: Any | None = None,
+        usage: dict[str, Any] | None = None,
+        checkpoint_id: str | None = None,
+        partial: bool = False,
+        metadata: dict[str, Any] | None = None,
+    ) -> AgentResponse:
+        """Build the canonical turn outcome after a kernel ``result`` frame."""
+        self.record_step(ExecutionStep(type=StepType.ANSWER, content=text))
+        response = self.to_response(text=text)
+        response.terminal_reason = reason
+        response.checkpoint_id = checkpoint_id
+        response.partial = partial
+
+        if metadata is not None:
+            response.metadata = metadata
+        else:
+            err_text = str(error).strip() if error is not None else ""
+            if err_text and reason != TerminalReason.COMPLETED.value:
+                response.error = err_text
+            response.metadata = conversation.turn_metadata(turn_message_start)
+
+        response.apply_usage(usage)
+        return response
+
 
 class PlanStep(BaseModel):
     """A single step in an execution plan."""
@@ -539,6 +708,28 @@ class ConversationContext(BaseModel):
                 tool_call_id=tool_call_id,
             )
         )
+
+    def turn_metadata(self, since_index: int) -> dict[str, Any]:
+        """Assistant tool-call and reasoning metadata for the current turn."""
+        merged_tc_by_id: dict[str, dict[str, Any]] = {}
+        last_reasoning: str | None = None
+        for msg in self.messages[since_index:]:
+            if msg.role != "assistant":
+                continue
+            if msg.tool_calls:
+                for tc in msg.tool_calls:
+                    if isinstance(tc, dict):
+                        tid = str(tc.get("id") or "").strip()
+                        if tid:
+                            merged_tc_by_id[tid] = tc
+            if isinstance(msg.reasoning_content, str) and msg.reasoning_content.strip():
+                last_reasoning = msg.reasoning_content.strip()
+        meta: dict[str, Any] = {}
+        if merged_tc_by_id:
+            meta["assistant_tool_calls"] = list(merged_tc_by_id.values())
+        if last_reasoning:
+            meta["reasoning_content"] = last_reasoning
+        return meta
 
     def to_messages(self, include_system: bool = True) -> list[dict[str, Any]]:
         """Convert to list of OpenAI-format messages."""

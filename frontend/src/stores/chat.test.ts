@@ -1,9 +1,29 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ChatSession, Message } from '@/types/chat';
+import { apiClient } from '@/api/client';
 import { dedupeMessagesByIdPreserveOrder, useChatStore } from './chat';
 
+vi.mock('@/api/client', () => ({
+  apiClient: {
+    get: vi.fn(),
+    post: vi.fn(),
+    patch: vi.fn(),
+    delete: vi.fn(),
+  },
+  HttpError: class HttpError extends Error {
+    readonly status: number;
+    constructor(message: string, status: number) {
+      super(message);
+      this.name = 'HttpError';
+      this.status = status;
+    }
+  },
+}));
+
+const SESSION_ID = '00000000-0000-4000-8000-000000000001';
+
 const session: ChatSession = {
-  id: 's1',
+  id: SESSION_ID,
   title: 'Session',
   createdAt: new Date(0).toISOString(),
   updatedAt: new Date(0).toISOString(),
@@ -126,5 +146,75 @@ describe('useChatStore message operations', () => {
       'a1',
     ]);
     expect(useChatStore.getState().sessions[0]?.messageCount).toBe(2);
+  });
+});
+
+describe('fetchMessages stream guard', () => {
+  beforeEach(() => {
+    vi.mocked(apiClient.get).mockReset();
+    localStorage.clear();
+    useChatStore.setState({
+      sessions: [session],
+      currentSessionId: session.id,
+      messages: {
+        [SESSION_ID]: [
+          {
+            id: 'asst-1',
+            role: 'assistant',
+            content: 'streaming…',
+            createdAt: new Date().toISOString(),
+            isStreaming: false,
+          },
+        ],
+      },
+      messagePages: {},
+      messagesLoadingSessionId: null,
+      activeStreamSessionId: SESSION_ID,
+      isLoading: true,
+      isStreaming: true,
+      error: null,
+      synced: false,
+      pendingUserInput: null,
+      streamAbortController: null,
+    });
+  });
+
+  it('skips fetch while the HTTP stream is still active even if assistant isStreaming is false', async () => {
+    await useChatStore.getState().fetchMessages(SESSION_ID);
+    expect(apiClient.get).not.toHaveBeenCalled();
+  });
+
+  it('resyncs from the server after releaseChatStreamSessionAndResync', async () => {
+    vi.mocked(apiClient.get).mockResolvedValue({
+      items: [
+        {
+          id: 'user-1',
+          role: 'user',
+          content: 'Q',
+          created_at: '2026-04-28T00:00:00.000Z',
+        },
+        {
+          id: 'asst-1',
+          role: 'assistant',
+          content: 'A',
+          created_at: '2026-04-28T00:00:01.000Z',
+        },
+      ],
+      total: 2,
+      page: 1,
+      page_size: 80,
+      has_next: false,
+      has_prev: false,
+    });
+
+    useChatStore.getState().releaseChatStreamSessionAndResync(SESSION_ID);
+    await vi.waitFor(() => {
+      expect(useChatStore.getState().messages[SESSION_ID]?.map((m) => m.id)).toEqual([
+        'user-1',
+        'asst-1',
+      ]);
+    });
+
+    expect(useChatStore.getState().activeStreamSessionId).toBeNull();
   });
 });

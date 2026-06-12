@@ -127,6 +127,25 @@ def test_to_canonical_flattens_react_flow_node_with_outer_type_and_tool_inputs()
     assert spec["inputs"]["params"] == {"operation": "read"}
 
 
+def test_to_canonical_maps_short_tool_type_alias():
+    raw = {
+        "id": "x",
+        "name": "x",
+        "nodes": [
+            {
+                "id": "t1",
+                "type": "tool",
+                "data": {"tool": "echo", "params": {"text": "hi"}},
+            }
+        ],
+        "start_node": "t1",
+        "end_node": "end",
+    }
+    canonical = to_canonical(raw)
+    assert canonical["nodes"]["t1"]["class_type"] == "ToolCallNode"
+    assert canonical["nodes"]["end"]["class_type"] == "EndNode"
+
+
 def test_to_canonical_maps_camel_case_tool_call_type():
     raw = {
         "id": "x",

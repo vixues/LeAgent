@@ -578,6 +578,130 @@ def _close_truncated_json_object(raw: str) -> str | None:
     return text + suffix
 
 
+def _close_truncated_json_array(raw: str) -> str | None:
+    """Close a truncated JSON array prefix after provider truncation."""
+    text = raw.strip()
+    if not text.startswith("["):
+        return None
+    stack: list[str] = []
+    in_string = False
+    escaped = False
+    for ch in text:
+        if in_string:
+            if escaped:
+                escaped = False
+            elif ch == "\\":
+                escaped = True
+            elif ch == '"':
+                in_string = False
+            continue
+        if ch == '"':
+            in_string = True
+        elif ch == "{":
+            stack.append("}")
+        elif ch == "[":
+            stack.append("]")
+        elif ch in "}]":
+            if not stack or stack[-1] != ch:
+                return None
+            stack.pop()
+
+    if not in_string and not stack:
+        return None
+    suffix = ""
+    if in_string:
+        if escaped:
+            suffix += "\\"
+        suffix += '"'
+    suffix += "".join(reversed(stack))
+    return text + suffix
+
+
+def _try_parse_closed_json_prefix(text: str) -> Any | None:
+    """Bracket-close a truncated object/array prefix and parse when possible."""
+    stripped = text.strip()
+    if not stripped:
+        return None
+    closed: str | None = None
+    if stripped.startswith("{"):
+        closed = _close_truncated_json_object(stripped)
+    elif stripped.startswith("["):
+        closed = _close_truncated_json_array(stripped)
+    if closed is None:
+        return None
+    for candidate in (closed, _repair_trailing_commas(closed)):
+        try:
+            return json.loads(candidate)
+        except json.JSONDecodeError:
+            continue
+    return None
+
+
+def _salvage_truncated_json_prefix(raw: str, *, max_trim: int = 4000) -> Any | None:
+    """Trim a truncated JSON prefix until bracket-closing yields valid parse."""
+    text = raw.strip()
+    if not text or text[0] not in "{[":
+        return None
+    min_len = max(1, len(text) - max_trim)
+    for end in range(len(text), min_len - 1, -1):
+        prefix = text[:end].rstrip()
+        if not prefix:
+            continue
+        while prefix and prefix[-1] in ",:":
+            prefix = prefix[:-1].rstrip()
+        parsed = _try_parse_closed_json_prefix(prefix)
+        if parsed is not None:
+            return parsed
+    return None
+
+
+def _looks_like_stream_truncation(raw: str) -> bool:
+    """Heuristic: provider cut the JSON stream mid-token (not a mid-string syntax error)."""
+    text = raw.rstrip()
+    if len(text) < 2:
+        return False
+    if text[-1] in "{[,:":
+        return True
+    in_string = False
+    escaped = False
+    for ch in text:
+        if in_string:
+            if escaped:
+                escaped = False
+            elif ch == "\\":
+                escaped = True
+            elif ch == '"':
+                in_string = False
+        elif ch == '"':
+            in_string = True
+    if in_string:
+        return True
+    try:
+        json.loads(text)
+        return False
+    except json.JSONDecodeError as exc:
+        pos = getattr(exc, "pos", None)
+        if isinstance(pos, int) and pos >= max(0, len(text) - 8):
+            return True
+        return False
+
+
+def _salvage_truncated_json_after_key(raw: str, key: str) -> Any | None:
+    """Salvage the JSON value for *key* when the stream was truncated mid-value."""
+    match = re.search(rf'"{re.escape(key)}"\s*:\s*', raw)
+    if not match:
+        return None
+    value_start = match.end()
+    while value_start < len(raw) and raw[value_start].isspace():
+        value_start += 1
+    if value_start >= len(raw):
+        return None
+    fragment = raw[value_start:]
+    if not _looks_like_stream_truncation(fragment):
+        return None
+    return _salvage_truncated_json_prefix(fragment)
+
+
 def _extract_truncated_string_value(raw: str, key: str) -> str | None:
     """Extract a string value for *key* even when the closing quote is missing (truncated output)."""
     match = re.search(rf'"{re.escape(key)}"\s*:\s*"', raw)
@@ -684,6 +808,15 @@ def _recover_emit_ui_tree_args(raw: str) -> dict[str, Any] | None:
         if tree is None:
             tree = _extract_and_close_truncated_tree(candidate)
 
+        if tree is None and _looks_like_stream_truncation(candidate):
+            outer = _salvage_truncated_json_prefix(candidate)
+            if isinstance(outer, dict):
+                inner = outer.get("tree")
+                if isinstance(inner, dict):
+                    tree = inner
+                elif "root" in outer or "schemaVersion" in outer:
+                    tree = outer
+
         if tree is None:
             continue
         recovered: dict[str, Any] = {"tree": tree}
@@ -695,12 +828,7 @@ def _recover_emit_ui_tree_args(raw: str) -> dict[str, Any] | None:
 
 
 def _extract_and_close_truncated_tree(raw: str) -> dict[str, Any] | None:
-    """Extract the ``"tree"`` value from *raw* even when it is truncated mid-stream.
-
-    Locates ``"tree":`` then bracket-closes the truncated object suffix so
-    ``json.loads`` can parse whatever prefix the model managed to emit.
-    Trailing commas left by the truncation are repaired automatically.
-    """
+    """Extract the ``"tree"`` value from *raw* even when it is truncated mid-stream."""
     match = re.search(r'"tree"\s*:\s*', raw)
     if not match:
         return None
@@ -710,15 +838,58 @@ def _extract_and_close_truncated_tree(raw: str) -> dict[str, Any] | None:
     if value_start >= len(raw) or raw[value_start] != "{":
         return None
     tree_fragment = raw[value_start:]
+
     closed = _close_truncated_json_object(tree_fragment)
-    if closed is None:
-        return None
-    repaired = _repair_trailing_commas(closed)
-    try:
-        parsed = json.loads(repaired)
-    except json.JSONDecodeError:
-        return None
-    return parsed if isinstance(parsed, dict) else None
+    if closed is not None:
+        try:
+            parsed = json.loads(_repair_trailing_commas(closed))
+            if isinstance(parsed, dict):
+                return parsed
+        except json.JSONDecodeError:
+            pass
+
+    for wrapped in (tree_fragment, f'{{"tree":{tree_fragment}}}'):
+        repaired = _try_repair_superfluous_closing_delimiter(wrapped, max_deletions=16)
+        if isinstance(repaired, dict):
+            inner = repaired.get("tree")
+            if isinstance(inner, dict):
+                return inner
+
+    salvaged = _salvage_truncated_json_after_key(raw, "tree")
+    return salvaged if isinstance(salvaged, dict) else None
+
+
+def _recover_emit_ui_patch_args(raw: str) -> dict[str, Any] | None:
+    """Recover ``emit_ui_patch`` args when outer JSON is malformed or nested under ``payload``."""
+    from leagent.services.gen_ui.schema import coerce_ui_patch_tool_params
+
+    for candidate in _candidate_json_texts(_strip_json_code_fence(raw)):
+        parsed = _loads_json_dict(candidate)
+        if parsed is None:
+            parsed = _try_json_dict_raw_decode_trailing_junk(candidate)
+        if parsed is None:
+            parsed = _try_repair_superfluous_closing_delimiter(candidate, max_deletions=16)
+        if parsed is not None:
+            try:
+                return coerce_ui_patch_tool_params(parsed)
+            except ValueError:
+                pass
+
+        patches = _salvage_truncated_json_after_key(candidate, "patches")
+        if isinstance(patches, list) and patches:
+            try:
+                return coerce_ui_patch_tool_params({"patches": patches})
+            except ValueError:
+                pass
+
+        if _looks_like_stream_truncation(candidate):
+            outer = _salvage_truncated_json_prefix(candidate)
+            if isinstance(outer, dict):
+                try:
+                    return coerce_ui_patch_tool_params(outer)
+                except ValueError:
+                    pass
+    return None
 
 
 def _try_parse_raw_tool_args(raw: str) -> dict[str, Any] | None:
@@ -735,6 +906,7 @@ def _try_parse_raw_tool_args(raw: str) -> dict[str, Any] | None:
             return parsed
     return (
         _recover_tool_argument_blob_args(raw)
+        or _recover_emit_ui_patch_args(raw)
         or _recover_emit_ui_tree_args(raw)
         or _recover_canvas_publish_args(raw)
         or _recover_project_write_args(raw)
@@ -908,6 +1080,13 @@ def normalize_tool_parameters(
 
     parsed = _try_parse_raw_tool_args(raw_payload)
     if parsed is not None:
+        if tool is not None and tool.name == "emit_ui_patch":
+            try:
+                from leagent.services.gen_ui.schema import coerce_ui_patch_tool_params
+
+                parsed = coerce_ui_patch_tool_params(parsed)
+            except ValueError:
+                pass
         return parsed, None
 
     if tool is not None:

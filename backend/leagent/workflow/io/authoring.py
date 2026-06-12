@@ -28,6 +28,13 @@ logger = logging.getLogger(__name__)
 _TYPE_TO_CLASS: dict[str, str] = {
     "start": "StartNode",
     "end": "EndNode",
+    # ComfyUI / LiteGraph shorthand LLMs often emit instead of StartNode/EndNode.
+    "input": "StartNode",
+    "output": "EndNode",
+    # Generic processing step (not a socket/widget default).
+    "default": "ToolCallNode",
+    "generic": "ToolCallNode",
+    "tool": "ToolCallNode",
     "tool_call": "ToolCallNode",
     "llm_call": "LLMCallNode",
     "condition": "ConditionNode",
@@ -49,6 +56,12 @@ for _snake_key, _cls in list(_TYPE_TO_CLASS.items()):
     _parts = _snake_key.split("_")
     _camel = _parts[0] + "".join(p[:1].upper() + p[1:] if p else "" for p in _parts[1:])
     _TYPE_TO_CLASS.setdefault(_camel, _cls)
+
+# LLMs often emit camelCase + ``Node`` suffix (e.g. ``startNode``, ``toolCallNode``).
+for _cls in set(_TYPE_TO_CLASS.values()):
+    if _cls.endswith("Node") and len(_cls) > 4:
+        _camel_node = _cls[0].lower() + _cls[1:]
+        _TYPE_TO_CLASS.setdefault(_camel_node, _cls)
 
 # Prefer snake_case as the canonical authoring id when reversing class_type.
 _CLASS_TO_TYPE: dict[str, str] = {}
@@ -95,9 +108,80 @@ _CONTROL_KEYS: tuple[str, ...] = (
 )
 
 
+def _normalize_registered_class_type(class_type: str) -> str:
+    """Map short LLM aliases (e.g. ``tool``) to registered ``*Node`` class names."""
+    text = class_type.strip()
+    if not text:
+        return text
+    mapped = _TYPE_TO_CLASS.get(text)
+    if mapped is not None:
+        return mapped
+    if text in _CLASS_TO_TYPE:
+        return text
+    return class_type_for(text)
+
+
+def _finalize_canonical_document(canon: dict[str, Any]) -> dict[str, Any]:
+    """Normalize node class aliases and synthesize missing start/end boundary nodes."""
+    out = dict(canon)
+    nodes_raw = out.get("nodes")
+    if not isinstance(nodes_raw, dict):
+        return out
+
+    nodes: dict[str, dict[str, Any]] = {}
+    for node_id, node_def in nodes_raw.items():
+        if not isinstance(node_def, dict):
+            continue
+        spec = dict(node_def)
+        class_type = spec.get("class_type")
+        if isinstance(class_type, str):
+            spec["class_type"] = _normalize_registered_class_type(class_type)
+        nodes[str(node_id)] = spec
+
+    control_raw = out.get("control")
+    control = dict(control_raw) if isinstance(control_raw, dict) else {}
+    start_id = _safe_str(control.get("start")) or "start"
+    end_id = _safe_str(control.get("end")) or "end"
+    control["start"] = start_id
+    control["end"] = end_id
+
+    if start_id not in nodes:
+        entry = next(iter(nodes.keys()), None)
+        start_control: dict[str, Any] = {}
+        if entry is not None:
+            start_control["next"] = entry
+        nodes[start_id] = {
+            "class_type": "StartNode",
+            "inputs": {},
+            "meta": {"name": "Start"},
+            "control": start_control,
+        }
+
+    if end_id not in nodes:
+        nodes[end_id] = {
+            "class_type": "EndNode",
+            "inputs": {},
+            "meta": {"name": "End"},
+            "control": {},
+        }
+
+    out["nodes"] = nodes
+    out["control"] = control
+    return out
+
+
 def class_type_for(type_str: str) -> str:
     """Map an authoring type string to its canonical ``class_type``."""
-    return _TYPE_TO_CLASS.get(type_str, type_str)
+    mapped = _TYPE_TO_CLASS.get(type_str)
+    if mapped is not None:
+        return mapped
+    if type_str.endswith("Node") and type_str[0].islower() and len(type_str) > 4:
+        pascal = type_str[0].upper() + type_str[1:]
+        mapped = _TYPE_TO_CLASS.get(pascal)
+        if mapped is not None:
+            return mapped
+        return pascal
+    return type_str
 
 
 def _safe_str(value: Any) -> str | None:
@@ -157,7 +241,7 @@ def to_canonical(raw: dict[str, Any]) -> dict[str, Any]:
         raw = raw["workflow"]
 
     if isinstance(raw.get("nodes"), dict) and isinstance(raw.get("control"), dict):
-        return dict(raw)
+        return _finalize_canonical_document(dict(raw))
 
     legacy_nodes: list[dict[str, Any]] = list(raw.get("nodes", []) or [])
 
@@ -229,7 +313,7 @@ def to_canonical(raw: dict[str, Any]) -> dict[str, Any]:
         "tags": list(raw.get("tags", []) or []),
     }
 
-    return {
+    return _finalize_canonical_document({
         "id": raw.get("id", "") or "",
         "name": raw.get("name", "Unnamed Workflow") or "Unnamed Workflow",
         "description": raw.get("description", "") or "",
@@ -238,4 +322,4 @@ def to_canonical(raw: dict[str, Any]) -> dict[str, Any]:
         "metadata": dict(raw.get("metadata", {}) or {}),
         "nodes": canonical_nodes,
         "control": control_block,
-    }
+    })

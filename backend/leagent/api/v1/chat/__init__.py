@@ -1788,6 +1788,10 @@ async def run_chat_workflow_step(
     chat_svc: ChatSvc,
 ) -> dict[str, Any]:
     """Execute a single workflow step tool call after digest verification."""
+    from leagent.chat_workflow.arguments import (
+        coerce_workflow_step_arguments,
+        validate_workflow_step_paths,
+    )
     from leagent.chat_workflow.schema import (
         ValidationError as ChatWorkflowValidationError,
         chat_workflow_digest,
@@ -1795,6 +1799,7 @@ async def run_chat_workflow_step(
         resolve_argument_templates,
     )
     from leagent.main import get_service_manager
+    from leagent.tools.base import ToolPermissionContext
     from leagent.tools.context import build_tool_context
     from leagent.tools.executor import get_executor
     from leagent.tools.registry import get_registry
@@ -1878,10 +1883,36 @@ async def run_chat_workflow_step(
         user_id=str(user_id),
         user_input=body.user_input or "",
     )
+    resolved = coerce_workflow_step_arguments(step.action.tool_id, resolved, tool_ctx, registry=registry)
+    path_error = validate_workflow_step_paths(
+        step.action.tool_id, resolved, tool_ctx, registry=registry,
+    )
+    if path_error:
+        runs: dict[str, Any] = ext.get("chat_workflow_step_runs")
+        if not isinstance(runs, dict):
+            runs = {}
+        runs[step_id] = {"status": "error", "error": path_error}
+        await chat_svc.merge_message_extensions(
+            session_id,
+            body.message_id,
+            user_id=user_id,
+            patch={"chat_workflow_step_runs": runs},
+        )
+        return {
+            "success": False,
+            "data": None,
+            "error": path_error,
+            "duration_ms": 0,
+        }
 
-    executor = get_executor()
-    if sm is not None:
-        executor.set_service_manager(sm)
+    controller = build_agent_controller(sm)
+    if controller is not None:
+        executor = controller.executor
+    else:
+        executor = get_executor()
+        executor.set_permission_context(ToolPermissionContext())
+        if sm is not None:
+            executor.set_service_manager(sm)
 
     result = await executor.run_tool(step.action.tool_id, resolved, tool_ctx)
 
@@ -1913,7 +1944,7 @@ async def run_chat_workflow_step(
 async def list_chat_workflow_templates(
     _user_id: CurrentUserId,
 ) -> list[ChatWorkflowTemplateRead]:
-    """Return curated, server-validated chat workflow templates (read-only tools only)."""
+    """Return curated, server-validated chat workflow templates."""
     from leagent.chat_workflow.templates import build_chat_workflow_template_catalog
     from leagent.tools.registry import get_registry
 
