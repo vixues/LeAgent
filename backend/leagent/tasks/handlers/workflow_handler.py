@@ -62,7 +62,7 @@ class WorkflowTaskHandler:
             + "\n"
         )
 
-        result = await wf_service.run(
+        result = await wf_service.start(
             flow_id=flow_id,
             user_id=user_id,
             inputs=inputs if isinstance(inputs, dict) else {},

@@ -116,7 +116,7 @@ class WorkflowRunTool(BaseTool):
             else:
                 user_id = LOCAL_USER_ID
 
-            result = await svc.run(
+            result = await svc.start(
                 flow_id=flow_id,
                 user_id=user_id,
                 inputs=kwargs.get("inputs", {}),

@@ -1049,6 +1049,15 @@ html.dark .chat-surface .workspace-code-hljs {
   position: relative;
 }
 
+/* Pinned todo bar — match composer horizontal inset so card shadow/ring aren't clipped */
+.chat-todo-panel-row {
+  flex-shrink: 0;
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  padding: 8px 16px;
+}
+
 /* Picker anchored above composer */
 .chat-picker-anchor {
   position: absolute;

@@ -216,7 +216,7 @@ class AgentController:
         self.tools = tools
         self.agent_memory = agent_memory
         self.session_manager = session_manager
-        self.planner = planner
+        self.planner = planner  # Dormant: Plan-Execute path not wired; reserved for future kernel integration.
         self.executor = executor
         self.workflow_engine = workflow_engine
         self.config = config or AgentConfig()
@@ -806,6 +806,16 @@ class AgentController:
             await handler.on_nested_agent_preview(payload)
 
         tool_extra["nested_preview_emit"] = _emit_nested_preview
+
+        if self.session_manager is not None:
+            try:
+                session_todos = await self.session_manager.get_todos(context.session_id)
+                if session_todos:
+                    tool_extra["todos"] = self.session_manager.todos_as_tool_dicts(
+                        session_todos
+                    )
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("session_todos_load_failed", error=str(exc))
 
         # Set the skills manager on the shared runtime context (lazy import
         # to avoid an import cycle at module load).

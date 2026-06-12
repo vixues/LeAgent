@@ -12,7 +12,8 @@ any turn:
   reads across turns;
 * cumulative token usage;
 * a fingerprint of the system prompt, so controllers can detect when the
-  prompt has changed and therefore the LLM cache should be invalidated.
+  prompt has changed and therefore the LLM cache should be invalidated;
+* the session-scoped agent todo list (``todo_write`` / ``todo_read``).
 
 Every field serialises to JSON via :meth:`SessionState.to_dict` so it can be
 stored in Redis (for warm reads) *and* the relational database (for durability).
@@ -24,8 +25,14 @@ import hashlib
 import json
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import Any, Iterable, Mapping
+from typing import Any, Iterable, Literal, Mapping
 from uuid import UUID, uuid4
+
+SessionTodoStatus = Literal["pending", "in_progress", "completed", "cancelled"]
+
+SESSION_TODO_STATUSES: frozenset[str] = frozenset(
+    {"pending", "in_progress", "completed", "cancelled"}
+)
 
 ATTACHMENT_KIND_IMAGE = "image"
 ATTACHMENT_KIND_DOCUMENT = "document"
@@ -190,6 +197,94 @@ class SessionMessage:
 
 
 @dataclass(slots=True)
+class SessionTodo:
+    """One item in the session-scoped agent todo list."""
+
+    id: str
+    content: str
+    status: SessionTodoStatus = "pending"
+    order: int = 0
+    updated_at: datetime = field(default_factory=_utc_now)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "id": self.id,
+            "content": self.content,
+            "status": self.status,
+            "order": self.order,
+            "updated_at": _serialise_dt(self.updated_at),
+        }
+
+    @classmethod
+    def from_dict(cls, data: Mapping[str, Any]) -> SessionTodo:
+        raw_status = str(data.get("status") or "pending").strip().lower()
+        status: SessionTodoStatus = (
+            raw_status if raw_status in SESSION_TODO_STATUSES else "pending"  # type: ignore[assignment]
+        )
+        return cls(
+            id=str(data.get("id") or ""),
+            content=str(data.get("content") or ""),
+            status=status,
+            order=int(data.get("order") or 0),
+            updated_at=_parse_dt(data.get("updated_at")),
+        )
+
+
+def session_todos_to_tool_dicts(todos: Iterable[SessionTodo]) -> list[dict[str, Any]]:
+    """Render session todos for ``ToolContext.extra['todos']``."""
+    return [
+        {"id": t.id, "content": t.content, "status": t.status}
+        for t in sorted(todos, key=lambda x: (x.order, x.id))
+    ]
+
+
+def session_todos_from_tool_dicts(items: Iterable[Mapping[str, Any]]) -> list[SessionTodo]:
+    """Normalise tool-layer todo dicts into :class:`SessionTodo` rows."""
+    now = _utc_now()
+    out: list[SessionTodo] = []
+    for index, raw in enumerate(items):
+        todo_id = str(raw.get("id") or "").strip() or f"todo-{index}"
+        raw_status = str(raw.get("status") or "pending").strip().lower()
+        status: SessionTodoStatus = (
+            raw_status if raw_status in SESSION_TODO_STATUSES else "pending"  # type: ignore[assignment]
+        )
+        out.append(
+            SessionTodo(
+                id=todo_id,
+                content=str(raw.get("content") or todo_id),
+                status=status,
+                order=int(raw.get("order") if raw.get("order") is not None else index),
+                updated_at=now,
+            )
+        )
+    return out
+
+
+def enforce_single_in_progress_todos(todos: list[SessionTodo]) -> list[SessionTodo]:
+    """Keep at most one ``in_progress`` item (Cursor-style convention)."""
+    seen_in_progress = False
+    normalised: list[SessionTodo] = []
+    for todo in todos:
+        if todo.status != "in_progress":
+            normalised.append(todo)
+            continue
+        if seen_in_progress:
+            normalised.append(
+                SessionTodo(
+                    id=todo.id,
+                    content=todo.content,
+                    status="pending",
+                    order=todo.order,
+                    updated_at=todo.updated_at,
+                )
+            )
+        else:
+            seen_in_progress = True
+            normalised.append(todo)
+    return normalised
+
+
+@dataclass(slots=True)
 class SessionUsage:
     """Cumulative LLM usage counters for the session."""
 
@@ -251,6 +346,7 @@ class SessionState:
     usage: SessionUsage = field(default_factory=SessionUsage)
     system_prompt_fingerprint: str | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
+    todos: list[SessionTodo] = field(default_factory=list)
     created_at: datetime = field(default_factory=_utc_now)
     updated_at: datetime = field(default_factory=_utc_now)
     version: int = 1
@@ -305,6 +401,7 @@ class SessionState:
             "usage": self.usage.to_dict(),
             "system_prompt_fingerprint": self.system_prompt_fingerprint,
             "metadata": dict(self.metadata or {}),
+            "todos": [t.to_dict() for t in self.todos],
             "created_at": _serialise_dt(self.created_at),
             "updated_at": _serialise_dt(self.updated_at),
             "version": self.version,
@@ -337,6 +434,7 @@ class SessionState:
                 else None
             ),
             metadata=dict(data.get("metadata") or {}),
+            todos=[SessionTodo.from_dict(t) for t in data.get("todos") or []],
             created_at=_parse_dt(data.get("created_at")),
             updated_at=_parse_dt(data.get("updated_at")),
             version=int(data.get("version") or 1),

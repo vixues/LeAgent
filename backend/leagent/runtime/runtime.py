@@ -290,8 +290,23 @@ class AgentRuntime:
             # Single execution path: every turn flows through the SDK kernel
             # run loop, which maintains a RunState and checkpoints on a
             # turn pause (``awaiting_user_input``) via the pluggable store.
+            from leagent.runtime.execution_registry import get_execution_run_registry
+            from leagent.runtime.execution_run import ExecutionRun, ExecutionScope
             from leagent.sdk.kernel.loop import run_loop
             from leagent.sdk.kernel.state import RunState
+
+            parent_run_id = None
+            if tool_extra and isinstance(tool_extra, dict):
+                parent_run_id = tool_extra.get("run_id")
+
+            exec_run = get_execution_run_registry().register(
+                ExecutionRun(
+                    scope=ExecutionScope.CHAT_TURN,
+                    session_id=str(session_id or ""),
+                    user_id=str(user_id or "") if user_id else None,
+                    parent_run_id=str(parent_run_id) if parent_run_id else None,
+                )
+            )
 
             state = RunState(
                 session_id=str(session_id or ""),
@@ -303,6 +318,10 @@ class AgentRuntime:
                 run_state=state,
                 checkpoint_store=self.checkpoint_store,
             ):
+                if hasattr(span, "set_attribute"):
+                    span.set_attribute("agent.run_id", exec_run.run_id)
+                    if exec_run.parent_run_id:
+                        span.set_attribute("agent.parent_run_id", exec_run.parent_run_id)
                 yield event
 
     async def run(

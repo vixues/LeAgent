@@ -99,6 +99,34 @@ class AgentTaskHandler:
         if authorized_roots:
             tool_extra["authorized_roots"] = authorized_roots
 
+        from leagent.runtime.execution_registry import get_execution_run_registry
+        from leagent.runtime.execution_run import ExecutionRun, ExecutionScope
+        from leagent.services.event.manager import EventType
+
+        exec_run = get_execution_run_registry().register(
+            ExecutionRun(
+                scope=ExecutionScope.TASK,
+                task_id=task_ctx.task_id,
+                session_id=str(session_id) if session_id else None,
+                user_id=str(user_id) if user_id else None,
+            )
+        )
+        tool_extra["run_id"] = exec_run.run_id
+
+        task_uuid = _uuid_param(params.get("__task_db_id"))
+        event_manager = getattr(sm, "event", None) if sm is not None else None
+        if event_manager is not None and task_uuid is not None:
+            try:
+                await event_manager.emit_task_event(
+                    EventType.TASK_STARTED,
+                    task_uuid,
+                    "agent_task_handler",
+                    task_name=prompt_variant,
+                    data={"run_id": exec_run.run_id, "prompt_preview": prompt[:200]},
+                )
+            except Exception:
+                logger.debug("agent_task_event_start_failed", exc_info=True)
+
         task_ctx.append_output(
             json.dumps(
                 {
@@ -111,10 +139,8 @@ class AgentTaskHandler:
             + "\n"
         )
 
-        # Drive the run through the unified runtime. The task handler keeps
-        # its budget-aware executor (via the runtime context) and stays
-        # behaviour-neutral with the previous QueryEngine wiring: cognitive
-        # memory is left detached for background agent tasks.
+        # Drive the run through the SDK kernel (run_loop) via AgentRuntime.stream
+        # so background tasks share checkpoint/hook semantics with chat SSE.
         runtime = AgentRuntime.from_service_manager(sm, executor=executor)
         definition = AgentDefinition(
             name=prompt_variant,
@@ -125,25 +151,24 @@ class AgentTaskHandler:
             max_tool_calls_per_turn=max_tool_calls,
             memory=MemoryPolicy(enabled=False, formation=False),
         )
-        engine = runtime.build_engine(
-            definition,
-            session_id=session_id,
-            user_id=user_id,
-            cwd=cwd,
-            tool_extra=tool_extra,
-            abort_event=task_ctx.abort_event,
-        )
 
         final_text = ""
         final_usage: dict[str, Any] = {}
         tool_calls = 0
         last_progress_write = 0.0
 
-        async for msg in engine.submit_message(prompt):
+        async for event in runtime.stream(
+            definition,
+            prompt,
+            session_id=session_id,
+            user_id=user_id,
+            cwd=cwd,
+            tool_extra=tool_extra,
+            abort_event=task_ctx.abort_event,
+        ):
             if task_ctx.is_aborted:
-                engine.abort()
                 break
-            payload = {"type": msg.type, **msg.data}
+            payload = {"type": event.type, **event.data}
             # Keep individual log lines modest; full transcripts are
             # reconstructable from the DB/memory systems.
             try:
@@ -151,24 +176,25 @@ class AgentTaskHandler:
             except Exception:
                 logger.debug("append_output failed", exc_info=True)
 
-            if msg.type == "stream_delta":
-                final_text += msg.data.get("content", "") or ""
-            elif msg.type == "assistant":
-                content = msg.data.get("content") or ""
+            if event.type == "stream_delta":
+                final_text += event.data.get("content", "") or ""
+            elif event.type == "assistant":
+                content = event.data.get("content") or ""
                 if content:
                     final_text = content
-            elif msg.type == "tool_use":
+            elif event.type == "tool_use":
                 tool_calls += 1
-            elif msg.type == "result":
-                final_usage = msg.data.get("usage", {}) or {}
+            elif event.type == "result":
+                final_usage = event.data.get("usage", {}) or {}
             now = time.monotonic()
-            if msg.type != "stream_delta" or now - last_progress_write >= 10:
+            msg_type = event.type
+            if msg_type != "stream_delta" or now - last_progress_write >= 10:
                 last_progress_write = now
                 await _update_task_progress(
                     session,
                     params.get("__task_db_id"),
                     progress=min(95, max(1, tool_calls * 5)),
-                    message=_progress_message(msg.type, tool_calls),
+                    message=_progress_message(msg_type, tool_calls),
                     output_offset=task_ctx.output_offset,
                 )
 
@@ -178,11 +204,28 @@ class AgentTaskHandler:
                     "event": "task_complete" if not task_ctx.is_aborted else "task_cancelled",
                     "task_id": task_ctx.task_id,
                     "tool_calls": tool_calls,
+                    "run_id": exec_run.run_id,
                 },
                 default=str,
             )
             + "\n"
         )
+        if event_manager is not None and task_uuid is not None:
+            try:
+                await event_manager.emit_task_event(
+                    EventType.TASK_CANCELLED if task_ctx.is_aborted else EventType.TASK_COMPLETED,
+                    task_uuid,
+                    "agent_task_handler",
+                    task_name=prompt_variant,
+                    data={
+                        "run_id": exec_run.run_id,
+                        "tool_calls": tool_calls,
+                        "usage": final_usage,
+                    },
+                )
+            except Exception:
+                logger.debug("agent_task_event_complete_failed", exc_info=True)
+        get_execution_run_registry().remove(exec_run.run_id)
         return {
             "text": final_text,
             "tool_calls": tool_calls,

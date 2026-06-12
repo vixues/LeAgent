@@ -28,6 +28,22 @@
       "clickGreeting6": "休息一下也不错～"
     },
     "confirmClear": "确定清空所有消息吗？",
+    "sessionTodos": {
+      "title": "任务清单",
+      "pinnedTitle": "置顶任务",
+      "completed": "已完成 {{done}}/{{total}}",
+      "inProgress": "实时更新中",
+      "collapsed": "{{count}} 项任务",
+      "pin": "置顶到顶部",
+      "unpin": "取消置顶",
+      "close": "关闭",
+      "statusPending": "待办",
+      "statusInProgress": "进行中",
+      "statusCompleted": "已完成",
+      "statusCancelled": "已取消",
+      "statusFailed": "失败",
+      "cycleStatus": "标记为{{status}}"
+    },
     "contextUsageButtonAria": "上下文占用",
     "contextUsageTitle": "上下文",
     "contextUsageBudget": "模型上下文长度",

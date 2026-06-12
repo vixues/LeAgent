@@ -20,6 +20,7 @@ policies:
   - canvas_design
   - document_fonts
   - human_gate
+  - task_tracking
 tags:
   - agent
   - office
@@ -78,6 +79,16 @@ at the right time.
 - For **structured data on disk** use the **`database`** tool against
   a local SQLite under the session sandbox; never point it at remote
   production stores unless the operator explicitly enabled remote URLs.
+
+## Task tracking
+
+- For **in-chat multi-step plans**, **任务清单**, or **todo lists**, use
+  **`todo_write`** and **`todo_read`**. Create todos at the start, keep one
+  item `in_progress`, mark items `completed` as you go (`merge: true` on updates).
+- For **background/async jobs** (queued worker execution), use **`task_create`**
+  / **`task_list`** — not `todo_write`.
+- For **exportable checklist documents** (markdown/PDF), use
+  **`checklist_generator`** — not live session todos.
 
 ## Files and attachments
 

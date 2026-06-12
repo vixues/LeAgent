@@ -256,7 +256,7 @@ async def _run_engine(
     engine: "QueryEngine",
     prompt: str,
 ) -> dict[str, Any]:
-    """Drive ``engine.submit_message`` to completion, collecting metrics.
+    """Drive the agent kernel ``run_loop`` to completion, collecting metrics.
 
     Mirrors the adapter that :meth:`AgentController._run_via_query_engine`
     uses but flattened to what a tool call needs: a text blob and coarse
@@ -265,6 +265,9 @@ async def _run_engine(
     Also collects ``activity`` (tool / path / short result summary) and
     ``changed_files`` for workspace UIs when the child uses ``project_*``.
     """
+    from leagent.sdk.kernel.loop import run_loop
+    from leagent.sdk.kernel.state import RunState
+
     response_text = ""
     tool_calls_count = 0
     partial = False
@@ -275,7 +278,14 @@ async def _run_engine(
     images: list[dict[str, Any]] = []
     consumer = getattr(engine.config, "nested_sdk_consumer", None)
 
-    async for sdk_msg in engine.submit_message(prompt):
+    cfg = engine.config
+    run_state = RunState(
+        session_id=str(getattr(cfg, "session_id", "") or ""),
+        agent_name=str(getattr(cfg, "agent_id", "") or ""),
+    )
+
+    async for event in run_loop(engine, prompt, run_state=run_state):
+        sdk_msg = event.to_sdk_message()
         if consumer is not None:
             try:
                 await consumer(sdk_msg)

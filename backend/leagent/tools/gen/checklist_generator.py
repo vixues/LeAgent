@@ -38,7 +38,7 @@ class ChecklistGeneratorTool(SyncTool):
     category = ToolCategory.GEN
     version = "1.0.0"
     timeout_sec = 60
-    aliases = ["checklist", "checklist_demo", "todo_gen", "task_list_gen"]
+    aliases = ["checklist", "checklist_demo", "todo_gen"]
     search_hint = "checklist generate workflow status priority export markdown JSON HTML PDF"
     is_concurrency_safe = True
     is_read_only = False

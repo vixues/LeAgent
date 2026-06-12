@@ -91,6 +91,7 @@ class WorkflowExecutor:
         node_registry: NodeRegistry | None = None,
         progress_handlers: list[ProgressHandler] | None = None,
         cache_mode: str = "classic",
+        state_store: Any = None,
     ) -> None:
         self.tool_registry = tool_registry
         self.tool_executor = tool_executor
@@ -106,6 +107,7 @@ class WorkflowExecutor:
         self._active_lists: dict[str, ExecutionList] = {}
         self._states: dict[str, WorkflowState] = {}
         self._abort_events: dict[str, asyncio.Event] = {}
+        self.state_store = state_store
 
     # ------------------------------------------------------------------
     # Convenience facade
@@ -367,6 +369,9 @@ class WorkflowExecutor:
                           "ui": _sanitize_ui(output.ui),
                           "metadata": output.metadata},
                 ))
+                await self._persist_run_snapshot(
+                    state, prompt_id=prompt_id, exec_list=exec_list,
+                )
                 return  # pause the run; caller drives resume
 
             if output.expand:
@@ -447,6 +452,14 @@ class WorkflowExecutor:
         ``prompt_id`` keeps the resumed run on the original event channel."""
         doc = _ensure_document(definition)
         state = self._states.get(str(state_id))
+        if state is None and self.state_store is not None:
+            snap = await self.state_store.load(state_id)
+            if snap is None and prompt_id:
+                snap = await self.state_store.load_by_prompt_id(prompt_id)
+            if snap is not None:
+                state = snap.state
+                self._states[str(state.id)] = state
+                self._restore_output_cache(snap.output_cache)
         if state is None:
             state = WorkflowState(workflow_id=doc.id or str(state_id),
                                   status=WorkflowStatus.RUNNING,
@@ -479,6 +492,39 @@ class WorkflowExecutor:
 
     def register_progress_handler(self, handler: ProgressHandler) -> None:
         self._progress_handlers.append(handler)
+
+    async def _persist_run_snapshot(
+        self,
+        state: WorkflowState,
+        *,
+        prompt_id: str,
+        exec_list: ExecutionList | None,
+        execution_id: UUID | None = None,
+    ) -> None:
+        if self.state_store is None:
+            return
+        from leagent.workflow.state_store import WorkflowRunSnapshot
+
+        blocked: list[str] = []
+        if exec_list is not None:
+            blocked = sorted(exec_list.state.blocked.keys())
+        cache_data: dict[str, Any] = {}
+        outputs = self.cache_set.outputs
+        if hasattr(outputs, "snapshot_entries"):
+            cache_data = outputs.snapshot_entries()
+        snap = WorkflowRunSnapshot(
+            state=state,
+            output_cache=cache_data,
+            blocked_nodes=blocked,
+            prompt_id=prompt_id,
+            execution_id=execution_id,
+        )
+        await self.state_store.save(snap)
+
+    def _restore_output_cache(self, data: dict[str, Any]) -> None:
+        outputs = self.cache_set.outputs
+        if hasattr(outputs, "restore_entries"):
+            outputs.restore_entries(data)
 
     # ------------------------------------------------------------------
     # Helpers

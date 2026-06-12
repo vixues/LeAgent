@@ -6,6 +6,7 @@ import { buildComposerSendParams, getComposerModelMode, resetComposerAfterSend }
 import { generateId } from '@/lib/utils';
 import { GenUiActionBridge } from '@/components/canvas/genUi/GenUiActionBridge';
 import { ChatHeader } from './ChatHeader';
+import { SessionTodoPanel } from './SessionTodoPanel';
 import { ChatMessages } from './ChatMessages';
 import { ChatInput } from './ChatInput';
 import { ChatComposerUserInputGate } from '@/components/chat/ChatComposerUserInputGate';
@@ -208,6 +209,8 @@ export function ChatPanel({ className }: ChatPanelProps) {
         onNewSession={handleNewSession}
         onClearMessages={handleClearMessages}
       />
+
+      <SessionTodoPanel sessionId={currentSessionId} />
 
       {error && (
         <div className="px-4 py-2 bg-red-50 dark:bg-red-900/20 border-b border-red-200 dark:border-red-800 flex-shrink-0 flex items-center justify-between gap-2">

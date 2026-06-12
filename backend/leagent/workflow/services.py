@@ -177,6 +177,54 @@ class WorkflowService:
         return await self.resume_execution(eid, flow_id, resume_data)
 
     # ------------------------------------------------------------------
+    # Unified start API
+    # ------------------------------------------------------------------
+
+    async def start(
+        self,
+        flow_id: UUID,
+        user_id: UUID,
+        inputs: dict[str, Any] | None = None,
+        *,
+        trigger_type: str = "manual",
+        cron_job_id: UUID | None = None,
+        extra_data: dict[str, Any] | None = None,
+        priority: int = 5,
+    ) -> WorkflowResult:
+        """Single entry point for workflow runs (API, cron, agent tools, chat steps)."""
+        if trigger_type in ("manual", "agent", "cron") and extra_data is None:
+            return await self.run(
+                flow_id,
+                user_id,
+                inputs=inputs,
+                trigger_type=trigger_type,
+                cron_job_id=cron_job_id,
+            )
+        prompt_id = str(uuid4())
+        await self.enqueue(
+            prompt_id=prompt_id,
+            flow_id=flow_id,
+            user_id=user_id,
+            inputs=inputs or {},
+            trigger_type=trigger_type,
+            priority=priority,
+            extra_data=extra_data,
+        )
+        record = await self.get_by_prompt_id(prompt_id)
+        if record is None:
+            raise RuntimeError("Failed to create workflow execution record")
+        eid = UUID(record["id"])
+        return await self._execute_inline(
+            prompt_id,
+            flow_id,
+            user_id,
+            inputs or {},
+            trigger_type,
+            eid,
+            extra_data=extra_data,
+        )
+
+    # ------------------------------------------------------------------
     # Legacy API (preserved)
     # ------------------------------------------------------------------
 

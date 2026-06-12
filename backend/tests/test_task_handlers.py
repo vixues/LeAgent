@@ -154,7 +154,7 @@ async def test_workflow_handler_invokes_service(tmp_path) -> None:
     wf_result.to_dict.return_value = {"status": "completed", "node_count": 2}
 
     svc = MagicMock()
-    svc.run = AsyncMock(return_value=wf_result)
+    svc.start = AsyncMock(return_value=wf_result)
 
     sm = MagicMock()
     sm.workflow_service = svc
@@ -170,7 +170,7 @@ async def test_workflow_handler_invokes_service(tmp_path) -> None:
         },
         session=MagicMock(),
     )
-    svc.run.assert_awaited_once()
+    svc.start.assert_awaited_once()
     assert summary["status"] == "completed"
 
 
@@ -220,19 +220,30 @@ async def test_agent_handler_requires_llm(tmp_path) -> None:
 async def test_agent_handler_streams_query_engine(tmp_path) -> None:
     sm = MagicMock()
     sm.llm_service = MagicMock()
+    ctx = MagicMock()
+    ctx.llm = sm.llm_service
+    ctx.tools = MagicMock()
+    ctx.executor = MagicMock()
+    ctx.agent_memory = None
+    ctx.session_manager = None
+    ctx.hook_manager = None
+    ctx.permission_context = None
+    ctx.checkpoint_store = None
+    sm.runtime_context = ctx
     handler = AgentTaskHandler(service_manager=sm)
     ctx = _ctx(TaskType.AGENT, tmp_path)
 
-    fake_engine = MagicMock()
+    async def _fake_stream(*_args, **_kwargs):
+        async for msg in _fake_submit(""):
+            from leagent.sdk.events import AgentEvent
 
-    def _submit(_prompt):
-        return _fake_submit(_prompt)
+            yield AgentEvent.from_sdk_message(msg)
 
-    fake_engine.submit_message = _submit
-    fake_engine.abort = MagicMock()
+    fake_runtime = MagicMock()
+    fake_runtime.stream = _fake_stream
 
     with patch(
-        "leagent.agent.query_engine.QueryEngine", return_value=fake_engine
+        "leagent.sdk.AgentRuntime.from_service_manager", return_value=fake_runtime
     ), patch(
         "leagent.tools.executor.ToolExecutor", return_value=MagicMock()
     ), patch(
@@ -250,21 +261,36 @@ async def test_agent_handler_streams_query_engine(tmp_path) -> None:
 async def test_agent_handler_applies_runtime_profile(tmp_path) -> None:
     sm = MagicMock()
     sm.llm_service = MagicMock()
+    rt_ctx = MagicMock()
+    rt_ctx.llm = sm.llm_service
+    rt_ctx.tools = MagicMock()
+    rt_ctx.executor = MagicMock()
+    rt_ctx.agent_memory = None
+    rt_ctx.session_manager = None
+    rt_ctx.hook_manager = None
+    rt_ctx.permission_context = None
+    rt_ctx.checkpoint_store = None
+    sm.runtime_context = rt_ctx
     handler = AgentTaskHandler(service_manager=sm)
     ctx = _ctx(TaskType.AGENT, tmp_path)
 
-    fake_engine = MagicMock()
+    captured: dict[str, Any] = {}
 
-    def _submit(_prompt):
-        return _fake_submit(_prompt)
+    fake_runtime = MagicMock()
 
-    fake_engine.submit_message = _submit
-    fake_engine.abort = MagicMock()
-    query_engine_ctor = MagicMock(return_value=fake_engine)
+    async def _capturing_stream(definition, prompt, **kwargs):
+        captured["definition"] = definition
+        captured["kwargs"] = kwargs
+        async for msg in _fake_submit(prompt):
+            from leagent.sdk.events import AgentEvent
+
+            yield AgentEvent.from_sdk_message(msg)
+
+    fake_runtime.stream = _capturing_stream
     executor_ctor = MagicMock(return_value=MagicMock())
 
     with patch(
-        "leagent.agent.query_engine.QueryEngine", query_engine_ctor
+        "leagent.sdk.AgentRuntime.from_service_manager", return_value=fake_runtime
     ), patch(
         "leagent.tools.executor.ToolExecutor", executor_ctor
     ), patch(
@@ -280,11 +306,12 @@ async def test_agent_handler_applies_runtime_profile(tmp_path) -> None:
             session=MagicMock(),
         )
 
-    cfg = query_engine_ctor.call_args.args[0]
-    assert cfg.prompt_variant == "default_agent"
-    assert cfg.max_turns == 60
-    assert cfg.tool_extra["runtime_profile"] == "coding_long"
-    assert cfg.tool_extra["project_roots"] == [str(tmp_path)]
+    definition = captured["definition"]
+    assert definition.prompt_variant == "default_agent"
+    assert definition.max_turns == 60
+    kwargs = captured["kwargs"]
+    assert kwargs["tool_extra"]["runtime_profile"] == "coding_long"
+    assert kwargs["tool_extra"]["project_roots"] == [str(tmp_path)]
     assert executor_ctor.call_args.kwargs["default_timeout"] == 1800.0
     assert result["runtime_profile"] == "coding_long"
 

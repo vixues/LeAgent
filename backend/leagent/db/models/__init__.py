@@ -19,6 +19,7 @@ from leagent.db.models.workflow_execution import (
     WorkflowExecution,
     WorkflowExecutionRead,
 )
+from leagent.db.models.workflow_state_snapshot import WorkflowStateSnapshot
 from leagent.db.models.base import (
     BaseModel,
     SoftDeleteMixin,
@@ -108,6 +109,7 @@ __all__ = [
     # Workflow execution
     "WorkflowExecution",
     "WorkflowExecutionRead",
+    "WorkflowStateSnapshot",
     # Base
     "BaseModel",
     "TimestampMixin",

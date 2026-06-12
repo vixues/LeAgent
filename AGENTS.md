@@ -48,6 +48,8 @@ LeAgent/
 
 Default database is **SQLite** (zero-config). Optional PostgreSQL via `DATABASE_URL`, optional Milvus for vector memory.
 
+Execution topology (agent loop, workflow engine, state ownership): [`docs/technical/execution-topology.md`](../docs/technical/execution-topology.md).
+
 ### Layered Domain Model: File → Code → Project
 
 The backend uses a strict three-layer architecture. Dependencies flow downward only.

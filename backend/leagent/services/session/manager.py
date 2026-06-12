@@ -39,6 +39,10 @@ from leagent.services.session.state import (
     SessionAttachment,
     SessionMessage,
     SessionState,
+    SessionTodo,
+    enforce_single_in_progress_todos,
+    session_todos_from_tool_dicts,
+    session_todos_to_tool_dicts,
 )
 from leagent.services.session.paths import SessionPathRegistry
 from leagent.services.session.store import TieredSessionStore
@@ -134,6 +138,93 @@ class SessionManager:
 
     async def load(self, session_id: UUID) -> SessionState | None:
         return await self._store.load(session_id)
+
+    async def get_todos(self, session_id: UUID) -> list[SessionTodo]:
+        """Return the session-scoped agent todo list."""
+        state = await self._store.load(session_id)
+        if state is None:
+            return []
+        return list(state.todos)
+
+    async def set_todos(
+        self,
+        session_id: UUID,
+        todos: list[SessionTodo] | list[dict[str, Any]],
+    ) -> list[SessionTodo]:
+        """Replace session todos and persist."""
+        if not todos:
+            normalised: list[SessionTodo] = []
+        elif isinstance(todos[0], dict):
+            normalised = session_todos_from_tool_dicts(todos)  # type: ignore[arg-type]
+        else:
+            normalised = list(todos)  # type: ignore[arg-type]
+        normalised = enforce_single_in_progress_todos(normalised)
+        async with self.locked(session_id) as state:
+            state.todos = normalised
+            return list(state.todos)
+
+    async def update_todo_status(
+        self,
+        session_id: UUID,
+        todo_id: str,
+        status: str,
+    ) -> list[SessionTodo]:
+        """Update one todo status (user or API); demote other in_progress when needed."""
+        from leagent.services.session.state import SessionTodoStatus, _utc_now
+
+        raw = str(status or "pending").strip().lower()
+        if raw not in {"pending", "in_progress", "completed", "cancelled"}:
+            msg = f"Invalid todo status: {status!r}"
+            raise ValueError(msg)
+        new_status: SessionTodoStatus = raw  # type: ignore[assignment]
+        tid = str(todo_id or "").strip()
+        if not tid:
+            msg = "Todo id is required"
+            raise ValueError(msg)
+
+        now = _utc_now()
+        async with self.locked(session_id) as state:
+            if not state.todos:
+                msg = f"Todo {tid!r} not found"
+                raise ValueError(msg)
+
+            found = False
+            updated: list[SessionTodo] = []
+            for todo in state.todos:
+                if todo.id != tid:
+                    if new_status == "in_progress" and todo.status == "in_progress":
+                        updated.append(
+                            SessionTodo(
+                                id=todo.id,
+                                content=todo.content,
+                                status="pending",
+                                order=todo.order,
+                                updated_at=now,
+                            )
+                        )
+                    else:
+                        updated.append(todo)
+                    continue
+                found = True
+                updated.append(
+                    SessionTodo(
+                        id=todo.id,
+                        content=todo.content,
+                        status=new_status,
+                        order=todo.order,
+                        updated_at=now,
+                    )
+                )
+
+            if not found:
+                msg = f"Todo {tid!r} not found"
+                raise ValueError(msg)
+
+            state.todos = enforce_single_in_progress_todos(updated)
+            return list(state.todos)
+
+    def todos_as_tool_dicts(self, todos: Iterable[SessionTodo]) -> list[dict[str, Any]]:
+        return session_todos_to_tool_dicts(todos)
 
     async def append_user(
         self,

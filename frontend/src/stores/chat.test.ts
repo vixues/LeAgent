@@ -217,4 +217,119 @@ describe('fetchMessages stream guard', () => {
 
     expect(useChatStore.getState().activeStreamSessionId).toBeNull();
   });
+
+  it('setSessionTodos replaces session todo list', () => {
+    useChatStore.getState().setSessionTodos(session.id, [
+      { taskId: 't1', label: 'First', status: 'pending', order: 0 },
+      { taskId: 't2', label: 'Second', status: 'in_progress', order: 1 },
+    ]);
+    expect(useChatStore.getState().sessions[0]?.todos).toHaveLength(2);
+    expect(useChatStore.getState().sessions[0]?.todos?.[1]?.status).toBe('in_progress');
+  });
+
+  it('upsertSessionTodoFromProgress merges by taskId without regressing status', () => {
+    useChatStore.getState().setSessionTodos(session.id, [
+      { taskId: 't1', label: 'First', status: 'completed', order: 0 },
+    ]);
+    useChatStore.getState().upsertSessionTodoFromProgress(session.id, {
+      taskId: 't1',
+      label: 'First',
+      status: 'pending',
+      order: 0,
+    });
+    expect(useChatStore.getState().sessions[0]?.todos?.[0]?.status).toBe('completed');
+
+    useChatStore.getState().upsertSessionTodoFromProgress(session.id, {
+      taskId: 't2',
+      label: 'Second',
+      status: 'in_progress',
+      order: 1,
+    });
+    expect(useChatStore.getState().sessions[0]?.todos).toHaveLength(2);
+  });
+
+  it('setSessionTodoPinned toggles pinned state and clears dismissed when pinning', () => {
+    useChatStore.getState().dismissSessionTodoPanel(session.id);
+    expect(useChatStore.getState().sessionTodoUi[session.id]?.dismissed).toBe(true);
+
+    useChatStore.getState().setSessionTodoPinned(session.id, true);
+    expect(useChatStore.getState().sessionTodoUi[session.id]).toEqual({
+      pinned: true,
+      dismissed: false,
+    });
+
+    useChatStore.getState().setSessionTodoPinned(session.id, false);
+    expect(useChatStore.getState().sessionTodoUi[session.id]?.pinned).toBe(false);
+  });
+
+  it('dismissSessionTodoPanel hides pinned panel without unpinning', () => {
+    useChatStore.getState().setSessionTodoPinned(session.id, true);
+    useChatStore.getState().dismissSessionTodoPanel(session.id);
+    expect(useChatStore.getState().sessionTodoUi[session.id]).toEqual({
+      pinned: true,
+      dismissed: true,
+    });
+  });
+
+  it('patchSessionTodoStatus optimistically updates and calls API', async () => {
+    useChatStore.getState().setSessionTodos(session.id, [
+      { taskId: 't1', label: 'First', status: 'pending', order: 0 },
+      { taskId: 't2', label: 'Second', status: 'in_progress', order: 1 },
+    ]);
+
+    vi.mocked(apiClient.patch).mockResolvedValue({
+      id: session.id,
+      name: session.title,
+      message_count: 0,
+      created_at: session.createdAt,
+      updated_at: session.updatedAt,
+      todos: [
+        { id: 't1', content: 'First', status: 'in_progress', order: 0 },
+        { id: 't2', content: 'Second', status: 'pending', order: 1 },
+      ],
+    });
+
+    await useChatStore.getState().patchSessionTodoStatus(session.id, 't1', 'in_progress');
+
+    expect(apiClient.patch).toHaveBeenCalledWith(
+      `/chat/sessions/${session.id}/todos/t1`,
+      { status: 'in_progress' },
+    );
+    expect(useChatStore.getState().sessions[0]?.todos?.[0]?.status).toBe('in_progress');
+    expect(useChatStore.getState().sessions[0]?.todos?.[1]?.status).toBe('pending');
+  });
+
+  it('patchSessionTodoStatus seeds from anchor message taskProgress when session todos are empty', async () => {
+    useChatStore.setState({
+      messages: {
+        [session.id]: [
+          {
+            id: 'a1',
+            role: 'assistant',
+            content: 'Planning',
+            createdAt: session.createdAt,
+            taskProgress: [
+              { taskId: 't1', label: 'First', status: 'pending', order: 0 },
+            ],
+          },
+        ],
+      },
+    });
+
+    vi.mocked(apiClient.patch).mockResolvedValue({
+      id: session.id,
+      name: session.title,
+      message_count: 1,
+      created_at: session.createdAt,
+      updated_at: session.updatedAt,
+      todos: [{ id: 't1', content: 'First', status: 'in_progress', order: 0 }],
+    });
+
+    await useChatStore.getState().patchSessionTodoStatus(session.id, 't1', 'in_progress');
+
+    expect(useChatStore.getState().sessions[0]?.todos?.[0]?.status).toBe('in_progress');
+    expect(useChatStore.getState().messages[session.id]?.[0]?.taskProgress?.[0]?.status).toBe(
+      'in_progress',
+    );
+  });
 });

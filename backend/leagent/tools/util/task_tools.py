@@ -294,7 +294,7 @@ class TaskUpdateTool(BaseTool):
     category = ToolCategory.UTIL
     is_read_only = False
     is_concurrency_safe = False
-    aliases = ["update_task", "task_progress"]
+    aliases = ["update_task"]
     search_hint = "task update status progress output"
     interrupt_behavior = "cancel"
     max_result_size_chars = 50_000

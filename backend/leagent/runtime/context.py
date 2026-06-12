@@ -83,6 +83,18 @@ class RuntimeContext:
         except Exception:  # noqa: BLE001 - prompt builder is resolved lazily downstream
             prompt_builder = None
 
+        if permission_context is None:
+            from leagent.tools.base import ToolPermissionContext
+
+            permission_context = ToolPermissionContext()
+
+        if hook_manager is None:
+            from leagent.agent.hooks import HookManager, create_default_hooks
+
+            hook_manager = HookManager()
+            for hook in create_default_hooks(getattr(sm, "agent_memory", None)):
+                hook_manager.register(hook)
+
         if executor is None:
             from leagent.tools.executor import ToolExecutor
 

@@ -455,6 +455,84 @@ class EventManager(Service):
         await self.emit(event)
         return event
 
+    async def publish_flow_lifecycle(
+        self,
+        event_type: EventType,
+        *,
+        run_id: str | None = None,
+        parent_run_id: str | None = None,
+        data: dict[str, Any] | None = None,
+    ) -> None:
+        """Publish a workflow lifecycle event with optional execution trace ids."""
+        payload = dict(data or {})
+        if run_id:
+            payload["run_id"] = run_id
+        if parent_run_id:
+            payload["parent_run_id"] = parent_run_id
+        try:
+            await self.emit(Event(type=event_type, source="workflow", data=payload))
+        except Exception:
+            logger.debug("flow_event_publish_failed", exc_info=True)
+
+    async def publish_agent_lifecycle(
+        self,
+        event_type: EventType,
+        *,
+        session_id: str | None = None,
+        run_id: str | None = None,
+        parent_run_id: str | None = None,
+        data: dict[str, Any] | None = None,
+    ) -> None:
+        """Publish an agent lifecycle event with optional session and trace ids."""
+        payload = dict(data or {})
+        if session_id:
+            payload["session_id"] = session_id
+        if run_id:
+            payload["run_id"] = run_id
+        if parent_run_id:
+            payload["parent_run_id"] = parent_run_id
+        session_uuid: UUID | None = None
+        if session_id:
+            try:
+                session_uuid = UUID(session_id)
+            except (TypeError, ValueError):
+                session_uuid = None
+        try:
+            await self.emit(
+                Event(
+                    type=event_type,
+                    source="agent",
+                    data=payload,
+                    session_id=session_uuid,
+                )
+            )
+        except Exception:
+            logger.debug("agent_event_publish_failed", exc_info=True)
+
+    async def bridge_workflow_progress_event(
+        self,
+        progress_event: Any,
+        *,
+        run_id: str | None = None,
+    ) -> None:
+        """Map workflow executor progress events to ``FLOW_*`` event types."""
+        etype = getattr(progress_event, "type", "") or ""
+        mapping = {
+            "execution_start": EventType.FLOW_STARTED,
+            "executing": EventType.FLOW_NODE_ENTERED,
+            "executed": EventType.FLOW_NODE_COMPLETED,
+            "execution_success": EventType.FLOW_COMPLETED,
+            "execution_error": EventType.FLOW_FAILED,
+            "execution_blocked": EventType.FLOW_NODE_ENTERED,
+        }
+        mapped = mapping.get(etype)
+        if mapped is None:
+            return
+        data = dict(getattr(progress_event, "data", None) or {})
+        data["prompt_id"] = getattr(progress_event, "prompt_id", None)
+        data["node_id"] = getattr(progress_event, "node_id", None)
+        await self.publish_flow_lifecycle(mapped, run_id=run_id, data=data)
+
     def get_history(
         self,
         *,

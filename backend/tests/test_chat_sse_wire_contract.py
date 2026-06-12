@@ -98,9 +98,13 @@ async def test_run_agent_stream_derives_task_progress_from_todo_write() -> None:
     ]
 
     progress = [data for etype, data in out if etype == "task_progress"]
-    # One progress event for the call (UI spinner) + one per derived todo item.
     assert any(p.get("label") == "Step A" and p["status"] == "in_progress" for p in progress)
     assert any(p.get("label") == "Step B" and p["status"] == "pending" for p in progress)
+
+    snapshots = [data for etype, data in out if etype == "session_todos"]
+    assert len(snapshots) == 1
+    assert snapshots[0]["todos"][0]["id"] == "a"
+    assert snapshots[0]["todos"][1]["content"] == "Step B"
 
 
 @pytest.mark.asyncio

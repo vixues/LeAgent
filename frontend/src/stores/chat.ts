@@ -42,6 +42,11 @@ interface MessagePageState {
   isLoadingOlder: boolean;
 }
 
+interface SessionTodoUiState {
+  pinned: boolean;
+  dismissed: boolean;
+}
+
 interface ChatStore {
   sessions: ChatSession[];
   currentSessionId: string | null;
@@ -147,6 +152,18 @@ interface ChatStore {
 
   /** GET /chat/sessions/:id — refresh pins (and title/count) for one session. */
   fetchSessionDetail: (sessionId: string) => Promise<void>;
+  setSessionTodos: (sessionId: string, todos: TaskProgressStep[]) => void;
+  upsertSessionTodoFromProgress: (sessionId: string, step: TaskProgressStep) => void;
+  /** Persist a manual todo status change (Cursor-style click cycle). */
+  patchSessionTodoStatus: (
+    sessionId: string,
+    taskId: string,
+    status: TaskProgressStep['status'],
+  ) => Promise<void>;
+  /** Per-session todo panel: pinned to chat top + user dismissed state. */
+  sessionTodoUi: Record<string, SessionTodoUiState>;
+  setSessionTodoPinned: (sessionId: string, pinned: boolean) => void;
+  dismissSessionTodoPanel: (sessionId: string) => void;
   /** Replace ordered pin list; persists via metadata_patch. */
   setPinnedMessageIds: (sessionId: string, messageIds: string[]) => Promise<void>;
   /** Toggle one message id in the pin list (optimistic + PATCH). */
@@ -168,6 +185,12 @@ interface SessionResponse {
   created_at: string;
   updated_at: string;
   pinned_message_ids?: string[];
+  todos?: Array<{
+    id: string;
+    content: string;
+    status: TaskProgressStep['status'];
+    order?: number;
+  }>;
 }
 
 interface PaginatedResponse<T> {
@@ -184,6 +207,7 @@ const TASK_STATUS_RANK: Record<TaskProgressStep['status'], number> = {
   in_progress: 1,
   completed: 2,
   failed: 2,
+  cancelled: 2,
 };
 
 /** Skip server fetch while the HTTP stream for this session is still active. */
@@ -203,9 +227,84 @@ export function dedupeMessagesByIdPreserveOrder(messages: Message[]): Message[] 
   return out;
 }
 
+function mapApiTodosToSteps(
+  todos: SessionResponse['todos'],
+): TaskProgressStep[] | undefined {
+  if (!Array.isArray(todos) || todos.length === 0) return undefined;
+  return todos
+    .map((item, index) => ({
+      taskId: String(item.id),
+      label: String(item.content || item.id),
+      status: item.status,
+      order: item.order ?? index,
+    }))
+    .sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+}
+
+const TODO_WRITE_TOOL_NAMES = new Set([
+  'todo_write',
+  'todo',
+  'todo_create',
+  'update_todo',
+  'create_todo',
+]);
+
+function findLatestTodoAnchorMessage(messages: Message[]): Message | undefined {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const m = messages[i];
+    if (!m || m.role !== 'assistant') continue;
+    if (m.taskProgress?.length) return m;
+    if (m.toolCalls?.some((tc) => TODO_WRITE_TOOL_NAMES.has(tc.name))) return m;
+  }
+  return undefined;
+}
+
+function resolveSessionTodoBaseline(
+  sessionId: string,
+  state: Pick<ChatStore, 'sessions' | 'messages'>,
+): TaskProgressStep[] {
+  const fromSession = state.sessions.find((s) => s.id === sessionId)?.todos;
+  if (fromSession?.length) return fromSession;
+  return findLatestTodoAnchorMessage(state.messages[sessionId] ?? [])?.taskProgress ?? [];
+}
+
+function applyTodoStatusUpdate(
+  todos: TaskProgressStep[],
+  taskId: string,
+  status: TaskProgressStep['status'],
+): TaskProgressStep[] {
+  return todos.map((item) => {
+    if (item.taskId === taskId) {
+      return { ...item, status };
+    }
+    if (status === 'in_progress' && item.status === 'in_progress') {
+      return { ...item, status: 'pending' as const };
+    }
+    return item;
+  });
+}
+
+function syncTodoAnchorMessageProgress(
+  sessionId: string,
+  todos: TaskProgressStep[],
+  set: (partial: Partial<ChatStore> | ((state: ChatStore) => Partial<ChatStore>)) => void,
+  get: () => ChatStore,
+) {
+  const anchor = findLatestTodoAnchorMessage(get().messages[sessionId] ?? []);
+  if (!anchor) return;
+  set((state) => ({
+    messages: {
+      ...state.messages,
+      [sessionId]: (state.messages[sessionId] || []).map((m) =>
+        m.id === anchor.id ? { ...m, taskProgress: todos } : m,
+      ),
+    },
+  }));
+}
+
 function mapSession(s: SessionResponse): ChatSession {
   const pins = s.pinned_message_ids;
-  return {
+  const base: ChatSession = {
     id: s.id,
     title: s.name || i18n.t('chat.defaultSessionName'),
     createdAt: s.created_at,
@@ -213,6 +312,11 @@ function mapSession(s: SessionResponse): ChatSession {
     messageCount: s.message_count,
     pinnedMessageIds: Array.isArray(pins) ? pins.map(String) : [],
   };
+  const todos = mapApiTodosToSteps(s.todos);
+  if (todos?.length) {
+    base.todos = todos;
+  }
+  return base;
 }
 
 export const useChatStore = create<ChatStore>()(
@@ -236,6 +340,7 @@ export const useChatStore = create<ChatStore>()(
       lastCheckpointId: null,
       nestedAgentPreviewBySession: {},
       codingProjectIdsBySession: {},
+      sessionTodoUi: {},
 
       registerCodingProjectForSession: (sessionId, projectId) => {
         const id = projectId.trim();
@@ -446,12 +551,116 @@ export const useChatStore = create<ChatStore>()(
           const res = await apiClient.get<SessionResponse>(`/chat/sessions/${sessionId}`);
           const mapped = mapSession(res);
           set((state) => ({
-            sessions: state.sessions.map((s) => (s.id === sessionId ? { ...s, ...mapped } : s)),
+            sessions: state.sessions.map((s) => {
+              if (s.id !== sessionId) return s;
+              const streaming = isChatStreamBusyForSession(sessionId, state);
+              const next: ChatSession = { ...s, ...mapped };
+              if (mapped.todos?.length) {
+                next.todos = mapped.todos;
+              } else if (Array.isArray(res.todos) && !streaming) {
+                delete next.todos;
+              } else {
+                next.todos = s.todos;
+              }
+              return next;
+            }),
           }));
         } catch (e) {
           if (e instanceof HttpError && e.status === 404) {
             get().dropStaleSession(sessionId);
           }
+        }
+      },
+
+      setSessionTodos: (sessionId, todos) => {
+        set((state) => ({
+          sessions: state.sessions.map((s) =>
+            s.id === sessionId ? { ...s, todos: todos.length ? todos : undefined } : s,
+          ),
+        }));
+      },
+
+      setSessionTodoPinned: (sessionId, pinned) => {
+        set((state) => ({
+          sessionTodoUi: {
+            ...state.sessionTodoUi,
+            [sessionId]: {
+              pinned,
+              dismissed: pinned ? false : (state.sessionTodoUi[sessionId]?.dismissed ?? false),
+            },
+          },
+        }));
+      },
+
+      dismissSessionTodoPanel: (sessionId) => {
+        set((state) => ({
+          sessionTodoUi: {
+            ...state.sessionTodoUi,
+            [sessionId]: {
+              pinned: state.sessionTodoUi[sessionId]?.pinned ?? true,
+              dismissed: true,
+            },
+          },
+        }));
+      },
+
+      upsertSessionTodoFromProgress: (sessionId, step) => {
+        set((state) => ({
+          sessions: state.sessions.map((s) => {
+            if (s.id !== sessionId) return s;
+            const existing = s.todos ?? [];
+            const idx = existing.findIndex((item) => item.taskId === step.taskId);
+            if (idx === -1) {
+              return { ...s, todos: [...existing, step] };
+            }
+            const prev = existing[idx];
+            if (!prev) return s;
+            const prevRank = TASK_STATUS_RANK[prev.status];
+            const nextRank = TASK_STATUS_RANK[step.status];
+            if (nextRank < prevRank) return s;
+            if (
+              nextRank === prevRank &&
+              prev.status === step.status &&
+              prev.label === step.label &&
+              prev.progress === step.progress &&
+              prev.order === step.order
+            ) {
+              return s;
+            }
+            const next = [...existing];
+            next[idx] = {
+              ...prev,
+              ...step,
+              order: step.order ?? prev.order,
+            };
+            return { ...s, todos: next };
+          }),
+        }));
+      },
+
+      patchSessionTodoStatus: async (sessionId, taskId, status) => {
+        if (!isUuid(sessionId)) return;
+        const state = get();
+        const prev = resolveSessionTodoBaseline(sessionId, state);
+        if (!prev.length) return;
+
+        const optimistic = applyTodoStatusUpdate(prev, taskId, status);
+        get().setSessionTodos(sessionId, optimistic);
+        syncTodoAnchorMessageProgress(sessionId, optimistic, set, get);
+
+        try {
+          const res = await apiClient.patch<SessionResponse>(
+            `/chat/sessions/${sessionId}/todos/${encodeURIComponent(taskId)}`,
+            { status },
+          );
+          const mapped = mapApiTodosToSteps(res.todos);
+          if (mapped?.length) {
+            get().setSessionTodos(sessionId, mapped);
+            syncTodoAnchorMessageProgress(sessionId, mapped, set, get);
+          }
+        } catch {
+          get().setSessionTodos(sessionId, prev);
+          syncTodoAnchorMessageProgress(sessionId, prev, set, get);
         }
       },
 
@@ -929,6 +1138,7 @@ export const useChatStore = create<ChatStore>()(
       releaseChatStreamSessionAndResync: (sessionId) => {
         get().releaseChatStreamSession(sessionId);
         void get().fetchMessages(sessionId);
+        void get().fetchSessionDetail(sessionId);
       },
       abortActiveStreamUnlessSession: (sessionId) => {
         const s = get();

@@ -200,6 +200,25 @@ class BasicCache(BaseCache):
         with self._lock:
             self._store.clear()
 
+    def snapshot_entries(self) -> dict[str, Any]:
+        """Serialize cache entries for durable workflow resume."""
+        with self._lock:
+            return {
+                key: {"value": entry.value, "metadata": dict(entry.metadata or {})}
+                for key, entry in self._store.items()
+            }
+
+    def restore_entries(self, data: dict[str, Any]) -> None:
+        """Restore cache entries from a snapshot."""
+        with self._lock:
+            for key, raw in (data or {}).items():
+                if not isinstance(raw, dict):
+                    continue
+                self._store[key] = CacheEntry(
+                    value=raw.get("value"),
+                    metadata=dict(raw.get("metadata") or {}),
+                )
+
 
 class LRUCache(BaseCache):
     def __init__(self, max_size: int = 128) -> None:

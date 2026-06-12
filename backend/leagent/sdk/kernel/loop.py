@@ -46,8 +46,8 @@ def _run_context_from_engine(engine: QueryEngine) -> RunContext:
     cfg = engine.config
     return RunContext(
         abort_event=engine.abort_event,
-        session_id=cfg.session_id,
-        user_id=cfg.user_id,
+        session_id=getattr(cfg, "session_id", None),
+        user_id=getattr(cfg, "user_id", None),
         agent_id=getattr(cfg, "agent_id", None),
     )
 

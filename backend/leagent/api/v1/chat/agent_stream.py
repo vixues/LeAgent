@@ -14,7 +14,7 @@ import json
 import time
 from collections.abc import AsyncIterator
 from typing import Any
-from uuid import UUID, uuid4
+from uuid import UUID
 
 import structlog
 
@@ -28,6 +28,7 @@ TASK_STATUS_RANK: dict[str, int] = {
     "in_progress": 1,
     "completed": 2,
     "failed": 2,
+    "cancelled": 2,
 }
 
 
@@ -51,6 +52,17 @@ async def run_agent_stream(
     todo_order_by_id: dict[str, int] = {}
     _stream_start = time.monotonic()
 
+    from leagent.runtime.execution_registry import get_execution_run_registry
+    from leagent.runtime.execution_run import ExecutionRun, ExecutionScope
+
+    exec_run = get_execution_run_registry().register(
+        ExecutionRun(
+            scope=ExecutionScope.CHAT_TURN,
+            session_id=str(session_id),
+            user_id=str(user_id),
+        )
+    )
+
     def _normalize_task_status(raw: str | None) -> str:
         value = (raw or "").strip().lower()
         if value in {"in_progress", "running"}:
@@ -59,31 +71,48 @@ async def run_agent_stream(
             return "completed"
         if value in {"failed", "error"}:
             return "failed"
+        if value in {"cancelled", "canceled"}:
+            return "cancelled"
         return "pending"
+
+    def _extract_todo_items_from_tool_result(data: dict[str, Any]) -> list[dict[str, Any]]:
+        payload_data = data.get("data")
+        if isinstance(payload_data, dict) and isinstance(payload_data.get("todos"), list):
+            return [item for item in payload_data["todos"] if isinstance(item, dict)]
+        raw_content = data.get("content")
+        if isinstance(raw_content, str) and raw_content.strip():
+            try:
+                parsed = json.loads(raw_content)
+            except json.JSONDecodeError:
+                parsed = None
+            if isinstance(parsed, dict) and isinstance(parsed.get("todos"), list):
+                return [item for item in parsed["todos"] if isinstance(item, dict)]
+        return []
+
+    def _session_todos_snapshot(data: dict[str, Any]) -> dict[str, Any] | None:
+        if data.get("name") != "todo_write":
+            return None
+        todo_items = _extract_todo_items_from_tool_result(data)
+        if not todo_items:
+            return None
+        todos: list[dict[str, Any]] = []
+        for index, item in enumerate(todo_items):
+            task_id = str(item.get("id") or "").strip() or f"todo-{index}"
+            todos.append({
+                "id": task_id,
+                "content": str(item.get("content") or task_id),
+                "status": _normalize_task_status(item.get("status")),
+                "order": index,
+            })
+        return {"todos": todos}
 
     def _next_progress_events(event_type: str, data: dict[str, Any]) -> list[dict[str, Any]]:
         if event_type == "tool_call" and data.get("name") == "todo_write":
-            return [{
-                "task_id": data.get("id") or f"todo-write-{uuid4().hex}",
-                "label": "Updating task list",
-                "status": "in_progress",
-            }]
+            return []
         if event_type != "tool_result" or data.get("name") != "todo_write":
             return []
 
-        payload_data = data.get("data")
-        todo_items: list[dict[str, Any]] = []
-        if isinstance(payload_data, dict) and isinstance(payload_data.get("todos"), list):
-            todo_items = [item for item in payload_data["todos"] if isinstance(item, dict)]
-        else:
-            raw_content = data.get("content")
-            if isinstance(raw_content, str) and raw_content.strip():
-                try:
-                    parsed = json.loads(raw_content)
-                except json.JSONDecodeError:
-                    parsed = None
-                if isinstance(parsed, dict) and isinstance(parsed.get("todos"), list):
-                    todo_items = [item for item in parsed["todos"] if isinstance(item, dict)]
+        todo_items = _extract_todo_items_from_tool_result(data)
 
         progress_events: list[dict[str, Any]] = []
         for index, item in enumerate(todo_items):
@@ -141,6 +170,24 @@ async def run_agent_stream(
             elif event.type == "complete":
                 if not response_content:
                     response_content = event.data.get("text", "")
+                try:
+                    from leagent.main import get_service_manager
+                    from leagent.services.event.manager import EventType
+
+                    sm = get_service_manager()
+                    event_manager = getattr(sm, "event", None)
+                    if event_manager is not None:
+                        await event_manager.publish_agent_lifecycle(
+                            EventType.AGENT_MESSAGE,
+                            session_id=str(session_id),
+                            run_id=exec_run.run_id,
+                            data={
+                                "reason": event.data.get("reason"),
+                                "text_len": len(response_content),
+                            },
+                        )
+                except Exception:
+                    pass
                 yield event.type, event.data, response_content
             elif event.type in (
                 "thinking",
@@ -155,6 +202,10 @@ async def run_agent_stream(
                 yield event.type, event.data, response_content
                 for progress_event in _next_progress_events(event.type, event.data):
                     yield "task_progress", progress_event, response_content
+                if event.type == "tool_result":
+                    snapshot = _session_todos_snapshot(event.data)
+                    if snapshot is not None:
+                        yield "session_todos", snapshot, response_content
                 if event.type == "tool_result" and event.data.get("success"):
                     inner = event.data.get("data")
                     tname = event.data.get("name")

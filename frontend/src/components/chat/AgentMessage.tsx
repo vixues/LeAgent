@@ -1,5 +1,6 @@
 import { Fragment, memo, useState, useCallback, useMemo, useRef, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useShallow } from 'zustand/react/shallow';
 import {
   Copy,
   Check,
@@ -25,6 +26,8 @@ import { useChatStore } from '@/stores/chat';
 import { ChatAgentRolePet } from '@/components/chat/ChatAgentRolePet';
 import { PetSpeechBubble } from '@/components/chat/PetSpeechBubble';
 import { TypingIndicator } from './TypingIndicator';
+import { TodoListBlock } from './TodoListBlock';
+import { findLatestTodoAnchorMessageId, messageHasTodoActivity } from './todoAnchorUtils';
 import { ArtifactCard } from './ArtifactCard';
 import { AttachmentCard } from './AttachmentCard';
 import { Markdown } from './markdown/Markdown';
@@ -39,6 +42,8 @@ import type {
   ToolCall,
 } from '@/types/chat';
 import { ChatWorkflowCard } from './workflow/ChatWorkflowCard';
+
+const EMPTY_TODO_STEPS: TaskProgressStep[] = [];
 import { GenUiInline } from '@/components/canvas/GenUiInline';
 import {
   CanvasGenUiToolCall,
@@ -187,6 +192,50 @@ function AgentMessageInner({
     });
   }, [message.taskProgress]);
 
+  const sessionTodos = useChatStore(
+    useShallow((state) => {
+      if (!sessionId) return EMPTY_TODO_STEPS;
+      return state.sessions.find((s) => s.id === sessionId)?.todos ?? EMPTY_TODO_STEPS;
+    }),
+  );
+  const todoPinned = useChatStore(
+    (state) => Boolean(sessionId && state.sessionTodoUi[sessionId]?.pinned),
+  );
+  const setSessionTodoPinned = useChatStore((s) => s.setSessionTodoPinned);
+  const patchSessionTodoStatus = useChatStore((s) => s.patchSessionTodoStatus);
+
+  const latestTodoAnchorId = useChatStore((state) => {
+    if (!sessionId) return null;
+    return findLatestTodoAnchorMessageId(state.messages[sessionId] ?? []);
+  });
+
+  const isTodoAnchorMessage = message.id === latestTodoAnchorId;
+
+  const inlineTodoSteps = useMemo(() => {
+    if (!isTodoAnchorMessage || !messageHasTodoActivity(message)) {
+      return [];
+    }
+    if (sessionTodos.length > 0) {
+      return sessionTodos;
+    }
+    return sortedTaskProgress;
+  }, [isTodoAnchorMessage, message, sessionTodos, sortedTaskProgress]);
+
+  const todoInteractive = Boolean(
+    sessionId &&
+      isTodoAnchorMessage &&
+      messageHasTodoActivity(message) &&
+      inlineTodoSteps.length > 0,
+  );
+
+  const handleTodoStatusChange = useCallback(
+    (taskId: string, status: TaskProgressStep['status']) => {
+      if (!sessionId) return Promise.resolve();
+      return patchSessionTodoStatus(sessionId, taskId, status);
+    },
+    [patchSessionTodoStatus, sessionId],
+  );
+
   const genUiSourceToolCallId = useGenUiStore((s) =>
     sessionId ? s.sourceToolCallByMessage[genUiTreeKey(sessionId, message.id)] : undefined,
   );
@@ -264,7 +313,7 @@ function AgentMessageInner({
     !assistantStreamingLive &&
       (message.content?.trim() ||
         message.toolCalls?.length ||
-        sortedTaskProgress.length ||
+        inlineTodoSteps.length ||
         message.workflow ||
         message.workflowEmbed ||
         messageArtifacts.length ||
@@ -277,7 +326,7 @@ function AgentMessageInner({
       message.isStreaming ||
       Boolean(message.content) ||
       Boolean(message.petBubble?.text) ||
-      sortedTaskProgress.length > 0 ||
+      inlineTodoSteps.length > 0 ||
       Boolean(message.toolCalls?.length) ||
       Boolean(message.thinking?.trim()) ||
       Boolean(message.workflow || message.workflowEmbed) ||
@@ -358,14 +407,20 @@ function AgentMessageInner({
         </div>
       )}
 
-      {/* Task/todo progress */}
-      {sortedTaskProgress.length > 0 && (
-        <TaskProgressBlock
-          steps={sortedTaskProgress}
+      {/* Task/todo list inline in agent response */}
+      {inlineTodoSteps.length > 0 ? (
+        <TodoListBlock
+          steps={inlineTodoSteps}
           isStreaming={assistantStreamingLive}
+          variant="inline"
+          interactive={todoInteractive}
+          sessionId={sessionId ?? undefined}
+          onStatusChange={handleTodoStatusChange}
+          showPin={Boolean(sessionId && !todoPinned)}
+          onPin={sessionId ? () => setSessionTodoPinned(sessionId, true) : undefined}
           className="mb-3"
         />
-      )}
+      ) : null}
 
       {(message.workflow || message.workflowEmbed) && sessionId ? (
         <ChatWorkflowCard message={message} sessionId={sessionId} className="mb-3" />
@@ -611,58 +666,6 @@ function UsageStats({ usage }: { usage: MessageUsage }) {
       <span>{usage.total_tokens.toLocaleString()} tokens</span>
       {parts.length > 0 && (
         <span className="text-border">({parts.join(' · ')})</span>
-      )}
-    </div>
-  );
-}
-
-interface TaskProgressBlockProps {
-  steps: TaskProgressStep[];
-  isStreaming: boolean;
-  className?: string;
-}
-
-function TaskProgressBlock({ steps, isStreaming, className }: TaskProgressBlockProps) {
-  const { t } = useTranslation();
-  return (
-    <div
-      className={cn(
-        'rounded-xl border border-border-subtle bg-surface-sunken/40 px-3 py-2.5',
-        className,
-      )}
-    >
-      <div className="mb-2 text-xs font-medium text-muted-foreground">
-        {t('chat.taskProgress', { defaultValue: 'Task progress' })}
-      </div>
-      <div className="space-y-1.5">
-        {steps.map((step) => {
-          const icon =
-            step.status === 'completed' ? (
-              <Check className="h-3.5 w-3.5 text-mint-500" />
-            ) : step.status === 'failed' ? (
-              <AlertCircle className="h-3.5 w-3.5 text-red-500" />
-            ) : step.status === 'in_progress' ? (
-              <Loader2 className="h-3.5 w-3.5 text-sky-500 animate-spin" />
-            ) : (
-              <Loader2 className="h-3.5 w-3.5 text-muted-foreground-tertiary" />
-            );
-          return (
-            <div key={step.taskId} className="flex items-center gap-2 text-sm">
-              {icon}
-              <span className="flex-1 text-foreground/95">{step.label}</span>
-              {step.progress !== undefined && (
-                <span className="text-xs tabular-nums text-muted-foreground-tertiary">
-                  {Math.round(step.progress)}%
-                </span>
-              )}
-            </div>
-          );
-        })}
-      </div>
-      {isStreaming && (
-        <div className="mt-2 text-xs text-muted-foreground-tertiary">
-          {t('chat.taskProgressStreaming', { defaultValue: 'Updating in real time' })}
-        </div>
       )}
     </div>
   );

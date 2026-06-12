@@ -22,7 +22,7 @@ export interface ToolCall {
   duration_ms?: number;
 }
 
-export type TaskProgressStatus = 'pending' | 'in_progress' | 'completed' | 'failed';
+export type TaskProgressStatus = 'pending' | 'in_progress' | 'completed' | 'failed' | 'cancelled';
 
 export interface TaskProgressStep {
   taskId: string;
@@ -221,6 +221,8 @@ export interface ChatSession {
   preview?: string;
   /** Server-backed pin order; message UUID strings from ``SessionRead.pinned_message_ids``. */
   pinnedMessageIds?: string[];
+  /** Session-scoped agent todos (from SessionRead.todos / SSE session_todos). */
+  todos?: TaskProgressStep[];
   /**
    * `true` while the optimistic temp UUID has not yet been swapped for a server-issued one.
    * Background queries (agent-memory, prompt-preview) skip these to avoid spurious 404s.
@@ -327,6 +329,7 @@ export interface StreamEvent {
     | 'attachments'
     | 'workspace_attachments'
     | 'task_progress'
+    | 'session_todos'
     | 'workflow'
     | 'workflow_done'
     | 'canvas'
@@ -350,6 +353,15 @@ export interface TaskProgressEventPayload {
   status: TaskProgressStatus;
   order?: number;
   progress?: number;
+}
+
+export interface SessionTodosEventPayload {
+  todos: Array<{
+    id: string;
+    content: string;
+    status: TaskProgressStatus;
+    order?: number;
+  }>;
 }
 
 /**

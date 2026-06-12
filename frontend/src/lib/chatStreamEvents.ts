@@ -16,6 +16,7 @@ import type {
   PendingUserInput,
   PetBubblePayload,
   TaskProgressEventPayload,
+  SessionTodosEventPayload,
   ToolCall,
   UserInputQuestion,
 } from '@/types/chat';
@@ -506,13 +507,30 @@ export function applyChatStreamEvent(
     case 'task_progress': {
       const payload = event.data as TaskProgressEventPayload;
       if (!payload?.task_id || !payload?.label || !payload?.status) break;
-      s.upsertTaskProgress(sessionId, assistantMsgId, {
+      const step = {
         taskId: payload.task_id,
         label: payload.label,
         status: payload.status,
         order: payload.order,
         progress: payload.progress,
-      });
+      };
+      s.upsertTaskProgress(sessionId, assistantMsgId, step);
+      s.upsertSessionTodoFromProgress(sessionId, step);
+      break;
+    }
+
+    case 'session_todos': {
+      const payload = event.data as SessionTodosEventPayload;
+      if (!Array.isArray(payload?.todos)) break;
+      s.setSessionTodos(
+        sessionId,
+        payload.todos.map((item, index) => ({
+          taskId: String(item.id),
+          label: String(item.content || item.id),
+          status: item.status,
+          order: item.order ?? index,
+        })),
+      );
       break;
     }
 

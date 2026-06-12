@@ -23,6 +23,7 @@ if TYPE_CHECKING:
     from leagent.services.file_processing.service import FileProcessingService
     from leagent.services.session.manager import SessionManager
     from leagent.services.task_manager import TaskManager
+    from leagent.runtime.context import RuntimeContext
     from leagent.services.variable.service import VariableService
     from leagent.workflow.services import WorkflowService
 
@@ -58,6 +59,7 @@ class ServiceManager:
         self._task_manager: TaskManager | None = None
         self._session_manager: SessionManager | None = None
         self._agent_memory: AgentMemory | None = None
+        self._runtime_context: RuntimeContext | None = None
 
         self._started = False
 
@@ -160,6 +162,20 @@ class ServiceManager:
     @property
     def workflow_service(self) -> "WorkflowService | None":
         return self._workflow_service
+
+    @property
+    def runtime_context(self) -> "RuntimeContext":
+        """Process-wide :class:`RuntimeContext` (lazy singleton).
+
+        Central wiring point for agent execution: tool executor, hooks,
+        checkpoint store, session manager, and LLM. Callers should prefer
+        this over hand-constructing :class:`ToolExecutor` instances.
+        """
+        if self._runtime_context is None:
+            from leagent.runtime.context import RuntimeContext
+
+            self._runtime_context = RuntimeContext.from_service_manager(self)
+        return self._runtime_context
 
     @property
     def file_service(self) -> "FileService | None":
@@ -423,10 +439,10 @@ class ServiceManager:
             tool_registry = None
             tool_executor = None
             try:
-                from leagent.tools.executor import ToolExecutor
                 from leagent.tools.registry import get_registry as _get_tool_registry
+
                 tool_registry = _get_tool_registry()
-                tool_executor = ToolExecutor(registry=tool_registry, service_manager=self)
+                tool_executor = self.runtime_context.executor
             except Exception:
                 logger.warning("Tool registry/executor not available for workflow engine", exc_info=True)
 
@@ -434,9 +450,13 @@ class ServiceManager:
             try:
                 from leagent.runtime import AgentRuntime
 
-                agent_runtime = AgentRuntime.from_service_manager(self, executor=tool_executor)
+                agent_runtime = AgentRuntime(self.runtime_context)
             except Exception:
                 logger.warning("Agent runtime not available for workflow engine", exc_info=True)
+
+            from leagent.workflow.state_store import build_workflow_state_store
+
+            state_store = build_workflow_state_store(self._db)
 
             executor = WorkflowExecutor(
                 tool_registry=tool_registry,
@@ -447,6 +467,7 @@ class ServiceManager:
                 agent_runtime=agent_runtime,
                 cache_mode=wf_settings.cache_mode,
                 cache_provider=None,
+                state_store=state_store,
             )
 
             async def _publish_to_event_bus(event: Any) -> None:
@@ -454,6 +475,11 @@ class ServiceManager:
                     await event_bus.publish_event(event.prompt_id, event)
                 except Exception:
                     logger.warning("Workflow event bus publish failed", exc_info=True)
+                try:
+                    if self._event is not None:
+                        await self._event.bridge_workflow_progress_event(event)
+                except Exception:
+                    logger.debug("Workflow EventManager bridge failed", exc_info=True)
 
             executor.register_progress_handler(_publish_to_event_bus)
             registry = FlowWorkflowRegistry(self._db)
@@ -494,6 +520,7 @@ class ServiceManager:
             executor = CronExecutor(
                 workflow_executor=workflow_executor,
                 workflow_registry=workflow_registry,
+                workflow_service=self._workflow_service,
                 default_timeout_sec=3600,
                 max_concurrent_executions=10,
             )

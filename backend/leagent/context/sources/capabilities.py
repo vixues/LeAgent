@@ -75,6 +75,18 @@ _ALWAYS_VISIBLE_TOOL_DESCRIPTIONS: dict[str, str] = {
         "Emit validated inline GenUI; for non-trivial trees, use get_genui_guide then "
         "list_ui_components before this tool."
     ),
+    "todo_write": (
+        "Session task list (Cursor-style): create/update in-chat todos with "
+        "pending/in_progress/completed/cancelled. Use for multi-step plans, "
+        "任务清单, and todo lists — not background jobs or export checklists."
+    ),
+    "todo_read": "Read the current session todo list.",
+    "task_create": (
+        "Background async job queue — creates queued worker tasks, not the in-chat todo list."
+    ),
+    "checklist_generator": (
+        "Generate exportable checklist documents (markdown/PDF) — not live session todos."
+    ),
 }
 
 

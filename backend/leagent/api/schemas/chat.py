@@ -8,7 +8,7 @@ for backward compatibility.
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -111,6 +111,12 @@ class SessionUpdateRequest(BaseModel):
         default=None,
         description="Shallow-merged into chat_sessions.session_metadata (merge_session_metadata).",
     )
+
+
+class SessionTodoStatusPatchRequest(BaseModel):
+    """Patch one session-scoped agent todo status (manual UI updates)."""
+
+    status: Literal["pending", "in_progress", "completed", "cancelled"]
 
 
 class ChatWorkflowStepRunRequest(BaseModel):

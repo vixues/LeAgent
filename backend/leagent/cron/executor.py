@@ -83,6 +83,7 @@ class CronExecutor:
         self,
         workflow_executor: WorkflowExecutor | None = None,
         workflow_registry: Any = None,
+        workflow_service: Any = None,
         channel_manager: ChannelManager | None = None,
         execution_logger: ExecutionLogger | None = None,
         default_timeout_sec: int = 3600,
@@ -93,6 +94,7 @@ class CronExecutor:
         Args:
             workflow_executor: Executor for running workflows.
             workflow_registry: Registry for loading workflow definitions.
+            workflow_service: Optional :class:`WorkflowService` for unified ``start()``.
             channel_manager: Manager for sending notifications.
             execution_logger: Logger for execution records.
             default_timeout_sec: Default execution timeout.
@@ -100,6 +102,7 @@ class CronExecutor:
         """
         self.workflow_executor = workflow_executor
         self.workflow_registry = workflow_registry
+        self.workflow_service = workflow_service
         self.channel_manager = channel_manager
         self.execution_logger = execution_logger or InMemoryExecutionLogger()
         self.default_timeout_sec = default_timeout_sec
@@ -253,7 +256,7 @@ class CronExecutor:
         Returns:
             Workflow outputs.
         """
-        if not self.workflow_executor:
+        if not self.workflow_executor and not self.workflow_service:
             raise RuntimeError("Workflow executor not configured")
 
         workflow_id = job.workflow_id or job.target_id
@@ -261,10 +264,6 @@ class CronExecutor:
             raise ValueError("No workflow ID specified for job")
 
         execution.workflow_id = workflow_id
-
-        definition = await self._load_workflow_definition(workflow_id)
-        if not definition:
-            raise ValueError(f"Workflow not found: {workflow_id}")
 
         inputs = {**job.payload, **(execution.inputs or {})}
 
@@ -275,7 +274,24 @@ class CronExecutor:
             execution_id=str(execution.id),
         )
 
-        result = await self.workflow_executor.execute(definition, inputs)
+        from uuid import UUID
+
+        flow_uuid = UUID(str(workflow_id))
+        user_uuid = UUID(str(job.user_id)) if getattr(job, "user_id", None) else UUID(int=0)
+
+        if self.workflow_service is not None:
+            result = await self.workflow_service.start(
+                flow_uuid,
+                user_uuid,
+                inputs=inputs,
+                trigger_type="cron",
+                cron_job_id=job.id,
+            )
+        else:
+            definition = await self._load_workflow_definition(workflow_id)
+            if not definition:
+                raise ValueError(f"Workflow not found: {workflow_id}")
+            result = await self.workflow_executor.execute(definition, inputs)
 
         execution.workflow_state_id = result.state_id
         execution.node_count = len(result.execution_history)

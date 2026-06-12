@@ -14,6 +14,7 @@ import {
   type ResumeWorkflowActionPayload,
   type RunWorkflowActionPayload,
 } from '@/lib/genUiActionBus';
+import { resumeWorkflowExecution } from '@/hooks/useExecutionResume';
 
 import { useExecutionOverlay } from '../store/executionOverlay';
 import { coerceFormValues, type WorkflowInputSpec } from './inputsToGenUiTree';
@@ -61,7 +62,13 @@ export function useWorkflowGenUiBridge(opts: WorkflowGenUiBridgeOptions = {}): v
       async resumeWorkflow(p: ResumeWorkflowActionPayload) {
         const o = optsRef.current;
         try {
-          await apiClient.post(`/workflow/prompts/${p.promptId}/resume`, p.values ?? {});
+          await resumeWorkflowExecution({
+            promptId: p.promptId,
+            answer: typeof p.values?.answer === 'string' ? p.values.answer : undefined,
+            prompt: typeof p.values?.prompt === 'string' ? p.values.prompt : undefined,
+            checkpointId:
+              typeof p.values?.checkpoint_id === 'string' ? p.values.checkpoint_id : undefined,
+          });
           useExecutionOverlay.getState().setBlocked(null);
           o.onResumed?.(p.promptId);
         } catch (err) {

@@ -17,54 +17,62 @@ const API_BASE = import.meta.env.VITE_API_BASE_URL || '/api/v1';
  * 1. Validate the checkpoint exists (POST /resume-checkpoint).
  * 2. Stream a new turn (POST /stream with checkpoint context).
  */
+export async function resumeChatCheckpoint(
+  sessionId: string,
+  prompt: string,
+  t: TFunction,
+): Promise<void> {
+  const store = useChatStore.getState();
+  const checkpointId = store.lastCheckpointId;
+  if (!checkpointId || isChatStreamBusyForSession(sessionId, store)) return;
+
+  try {
+    await apiClient.post(`${API_BASE}/chat/sessions/${sessionId}/resume-checkpoint`, {
+      checkpoint_id: checkpointId,
+      prompt,
+    });
+  } catch {
+    store.setError(t('chat.errors.genericRetry'));
+    return;
+  }
+
+  const assistantMsgId = generateId();
+  store.addMessage(sessionId, {
+    id: assistantMsgId,
+    role: 'assistant',
+    content: '',
+    isStreaming: true,
+  } as import('@/types/chat').Message);
+
+  store.abortActiveStreamUnlessSession(sessionId);
+  store.beginChatStreamSession(sessionId);
+  store.setError(null);
+
+  const controller = new AbortController();
+  store.setStreamAbortController(controller);
+
+  try {
+    await runChatStream({
+      sessionId,
+      userMessageId: assistantMsgId,
+      assistantMsgId,
+      content: prompt || 'Continue',
+      modelMode: getComposerModelMode(),
+      signal: controller.signal,
+      t,
+    });
+  } catch (err) {
+    handleChatStreamFailure(err, sessionId, assistantMsgId, t);
+  } finally {
+    useChatStore.getState().releaseChatStreamSessionAndResync(sessionId);
+    useChatStore.getState().releaseStreamAbortController(controller);
+  }
+}
+
 export function useCheckpointResume(t: TFunction) {
   return useCallback(
     async (sessionId: string, prompt = '') => {
-      const store = useChatStore.getState();
-      const checkpointId = store.lastCheckpointId;
-      if (!checkpointId || isChatStreamBusyForSession(sessionId, store)) return;
-
-      try {
-        await apiClient.post(`${API_BASE}/chat/sessions/${sessionId}/resume-checkpoint`, {
-          checkpoint_id: checkpointId,
-          prompt,
-        });
-      } catch {
-        store.setError(t('chat.errors.genericRetry'));
-        return;
-      }
-
-      const assistantMsgId = generateId();
-      store.addMessage(sessionId, {
-        id: assistantMsgId,
-        role: 'assistant',
-        content: '',
-        isStreaming: true,
-      } as import('@/types/chat').Message);
-
-      store.abortActiveStreamUnlessSession(sessionId);
-      store.beginChatStreamSession(sessionId);
-      store.setError(null);
-
-      const controller = new AbortController();
-      store.setStreamAbortController(controller);
-
-      try {
-        await runChatStream({
-          sessionId,
-          userMessageId: assistantMsgId,
-          assistantMsgId,
-          content: prompt || 'Continue',
-          modelMode: getComposerModelMode(),
-          signal: controller.signal,
-          t,
-        });
-      } catch (err) {
-        handleChatStreamFailure(err, sessionId, assistantMsgId, t);
-      } finally {
-        useChatStore.getState().releaseChatStreamSessionAndResync(sessionId);
-        useChatStore.getState().releaseStreamAbortController(controller);
-      }
+      await resumeChatCheckpoint(sessionId, prompt, t);
     },
     [t],
   );

@@ -90,6 +90,7 @@ from leagent.api.schemas.chat import (  # noqa: E402
     ResumeCheckpointRequest,
     ResumeCheckpointResponse,
     SessionCancelResponse,
+    SessionTodoStatusPatchRequest,
     SessionUpdateRequest,
 )
 
@@ -547,6 +548,8 @@ async def chat_stream_endpoint(
                             if tid is not None:
                                 task_progress_by_id[str(tid)] = dict(edata)
                         yield _format_frontend_event("task_progress", edata)
+                    elif etype == "session_todos":
+                        yield _format_frontend_event("session_todos", edata)
                     elif etype == "user_input_request":
                         yield _format_frontend_event("user_input_request", edata)
                     elif etype == "workflow":
@@ -1661,6 +1664,49 @@ async def update_session(
     return chat_session_to_read(final)
 
 
+@router.patch(
+    "/sessions/{session_id}/todos/{todo_id}",
+    response_model=SessionRead,
+)
+async def patch_session_todo_status(
+    session_id: UUID,
+    todo_id: str,
+    body: SessionTodoStatusPatchRequest,
+    user_id: CurrentUserId,
+    chat_svc: ChatSvc,
+) -> SessionRead:
+    """Update one session-scoped agent todo status (manual UI interaction)."""
+    existing = await chat_svc.get_session(session_id, user_id=user_id)
+    if not existing:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
+
+    from leagent.main import get_service_manager
+
+    try:
+        sm = get_service_manager()
+    except Exception:  # noqa: BLE001
+        sm = None
+
+    if sm is None or sm.session_manager is None:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Session manager unavailable",
+        )
+
+    try:
+        await sm.session_manager.update_todo_status(session_id, todo_id, body.status)
+    except ValueError as exc:
+        detail = str(exc)
+        if "not found" in detail.lower():
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=detail) from exc
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=detail) from exc
+
+    final = await chat_svc.get_session(session_id, user_id=user_id)
+    if not final:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
+    return chat_session_to_read(final)
+
+
 # ---------------------------------------------------------------------------
 # Message Endpoints
 # ---------------------------------------------------------------------------
@@ -1905,16 +1951,17 @@ async def run_chat_workflow_step(
             "duration_ms": 0,
         }
 
-    controller = build_agent_controller(sm)
-    if controller is not None:
-        executor = controller.executor
-    else:
-        executor = get_executor()
-        executor.set_permission_context(ToolPermissionContext())
-        if sm is not None:
-            executor.set_service_manager(sm)
+    from leagent.chat_workflow.runner import run_chat_workflow_step_via_engine
 
-    result = await executor.run_tool(step.action.tool_id, resolved, tool_ctx)
+    result = await run_chat_workflow_step_via_engine(
+        spec=spec,
+        step_id=step_id,
+        resolved_args=resolved,
+        tool_ctx=tool_ctx,
+        service_manager=sm,
+        user_id=str(user_id),
+        session_id=str(session_id),
+    )
 
     runs: dict[str, Any] = ext.get("chat_workflow_step_runs")
     if not isinstance(runs, dict):

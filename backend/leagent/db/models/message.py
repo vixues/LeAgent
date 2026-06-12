@@ -174,6 +174,7 @@ class SessionCreate(SQLModel):
 
 
 PINNED_MESSAGE_IDS_KEY = "pinned_message_ids"
+SESSION_STATE_METADATA_KEY = "session_state_v1"
 # Session-scoped directories the user explicitly granted for tool filesystem access.
 AUTHORIZED_ROOTS_META_KEY = "authorized_roots"
 
@@ -233,6 +234,52 @@ def parse_pinned_message_ids_from_session_metadata(raw: Optional[str]) -> list[U
     return out
 
 
+    return out
+
+
+def parse_todos_from_session_metadata(raw: Optional[str]) -> list[dict[str, Any]]:
+    """Read session-scoped agent todos from ``session_metadata`` JSON."""
+    if not raw:
+        return []
+    try:
+        meta = json.loads(raw)
+    except (TypeError, ValueError):
+        return []
+    if not isinstance(meta, dict):
+        return []
+    snapshot = meta.get(SESSION_STATE_METADATA_KEY)
+    if not isinstance(snapshot, dict):
+        return []
+    todos_raw = snapshot.get("todos")
+    if not isinstance(todos_raw, list):
+        return []
+    out: list[dict[str, Any]] = []
+    for index, item in enumerate(todos_raw):
+        if not isinstance(item, dict):
+            continue
+        todo_id = str(item.get("id") or "").strip() or f"todo-{index}"
+        status = str(item.get("status") or "pending").strip().lower()
+        if status not in {"pending", "in_progress", "completed", "cancelled", "failed"}:
+            status = "pending"
+        out.append({
+            "id": todo_id,
+            "content": str(item.get("content") or todo_id),
+            "status": status,
+            "order": int(item.get("order") if item.get("order") is not None else index),
+        })
+    out.sort(key=lambda t: (t.get("order", 0), t.get("id", "")))
+    return out
+
+
+class SessionTodoRead(SQLModel):
+    """One session-scoped agent todo exposed on session API reads."""
+
+    id: str
+    content: str
+    status: str
+    order: int = 0
+
+
 class SessionRead(SQLModel):
     """Schema for reading a chat session."""
 
@@ -246,10 +293,12 @@ class SessionRead(SQLModel):
     created_at: datetime
     updated_at: datetime
     pinned_message_ids: list[UUID] = Field(default_factory=list)
+    todos: list[SessionTodoRead] = Field(default_factory=list)
 
 
 def chat_session_to_read(cs: ChatSession) -> SessionRead:
     """Map ORM :class:`ChatSession` to API :class:`SessionRead` (incl. pins)."""
+    todo_rows = parse_todos_from_session_metadata(cs.session_metadata)
     return SessionRead(
         id=cs.id,
         name=cs.name,
@@ -261,4 +310,13 @@ def chat_session_to_read(cs: ChatSession) -> SessionRead:
         created_at=cs.created_at,
         updated_at=cs.updated_at,
         pinned_message_ids=parse_pinned_message_ids_from_session_metadata(cs.session_metadata),
+        todos=[
+            SessionTodoRead(
+                id=str(t["id"]),
+                content=str(t["content"]),
+                status=str(t["status"]),
+                order=int(t.get("order") or 0),
+            )
+            for t in todo_rows
+        ],
     )

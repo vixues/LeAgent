@@ -8,14 +8,60 @@ Implements the reference pattern:
 
 from __future__ import annotations
 
-import json
 from typing import Any
+from uuid import UUID
 
 import structlog
 
+from leagent.services.session.state import (
+    enforce_single_in_progress_todos,
+    session_todos_from_tool_dicts,
+    session_todos_to_tool_dicts,
+)
 from leagent.tools.base import BaseTool, ToolCategory, ToolContext
 
 logger = structlog.get_logger(__name__)
+
+
+async def _hydrate_todos_from_session(context: ToolContext) -> list[dict[str, Any]]:
+    """Load session todos into ``context.extra`` when empty."""
+    cached = context.extra.get("todos")
+    if isinstance(cached, list) and cached:
+        return cached
+    if not context.session_id:
+        return []
+    try:
+        from leagent.main import get_service_manager
+
+        sm = get_service_manager()
+        if sm.session_manager is None:
+            return []
+        todos = await sm.session_manager.get_todos(UUID(context.session_id))
+        as_dicts = session_todos_to_tool_dicts(todos)
+        context.extra["todos"] = as_dicts
+        return as_dicts
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("todo_hydrate_failed", session=context.session_id, error=str(exc))
+        return []
+
+
+async def _persist_todos(context: ToolContext, items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Normalise, enforce in-progress rule, persist, and refresh context.extra."""
+    normalised = session_todos_from_tool_dicts(items)
+    normalised = enforce_single_in_progress_todos(normalised)
+    as_dicts = session_todos_to_tool_dicts(normalised)
+    context.extra["todos"] = as_dicts
+    if not context.session_id:
+        return as_dicts
+    try:
+        from leagent.main import get_service_manager
+
+        sm = get_service_manager()
+        if sm.session_manager is not None:
+            await sm.session_manager.set_todos(UUID(context.session_id), normalised)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("todo_persist_failed", session=context.session_id, error=str(exc))
+    return as_dicts
 
 
 class EnterPlanModeTool(BaseTool):
@@ -172,7 +218,7 @@ class TodoWriteTool(BaseTool):
         incoming = params["todos"]
         merge = params.get("merge", False)
 
-        existing: list[dict[str, Any]] = context.extra.get("todos", [])
+        existing: list[dict[str, Any]] = await _hydrate_todos_from_session(context)
 
         if merge and existing:
             existing_map = {t["id"]: t for t in existing}
@@ -182,7 +228,7 @@ class TodoWriteTool(BaseTool):
         else:
             updated = list(incoming)
 
-        context.extra["todos"] = updated
+        updated = await _persist_todos(context, updated)
 
         logger.info(
             "todos_updated",
@@ -231,7 +277,7 @@ class TodoReadTool(BaseTool):
         }
 
     async def execute(self, params: dict[str, Any], context: ToolContext) -> Any:
-        todos: list[dict[str, Any]] = context.extra.get("todos", [])
+        todos: list[dict[str, Any]] = await _hydrate_todos_from_session(context)
         status_filter = params.get("status_filter", "all")
 
         if status_filter != "all":

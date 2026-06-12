@@ -5,8 +5,11 @@ instance across queued jobs. Responsibilities:
 
 - Bootstrap the node registry (built-ins + entrypoints + custom dirs).
 - Subscribe to a :class:`PromptQueue`.
-- Drive :meth:`WorkflowExecutor.execute_async` per job.
-- Publish lifecycle events to the shared :class:`ExecutionEventBus`.
+- Drive :meth:`WorkflowExecutor.execute_async` per job (HTTP/cron use
+  :meth:`WorkflowService.start` as the unified entry; the worker consumes
+  the queue directly).
+- Publish lifecycle events to the shared :class:`ExecutionEventBus` and
+  :class:`EventManager` (via ``ServiceManager`` wiring).
 - Graceful drain on SIGTERM / SIGINT.
 
 The worker is deliberately transport-agnostic: it uses only the

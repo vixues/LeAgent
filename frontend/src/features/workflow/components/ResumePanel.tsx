@@ -2,8 +2,8 @@ import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { MessageCircleQuestion, Send } from 'lucide-react';
 
-import { apiClient } from '@/api/client';
 import { Button } from '@/components/ui';
+import { useExecutionResume } from '@/hooks/useExecutionResume';
 
 import { useExecutionOverlay } from '../store/executionOverlay';
 
@@ -15,6 +15,7 @@ import { useExecutionOverlay } from '../store/executionOverlay';
  */
 export function ResumePanel() {
   const { t } = useTranslation();
+  const resumeExecution = useExecutionResume(t);
   const promptId = useExecutionOverlay((s) => s.promptId);
   const blocked = useExecutionOverlay((s) => s.blocked);
   const setBlocked = useExecutionOverlay((s) => s.setBlocked);
@@ -28,9 +29,11 @@ export function ResumePanel() {
     setSubmitting(true);
     setError(null);
     try {
-      await apiClient.post(`/workflow/prompts/${promptId}/resume`, {
+      await resumeExecution({
+        scope: 'workflow',
+        promptId,
+        checkpointId: blocked.checkpointId,
         answer,
-        checkpoint_id: blocked.checkpointId,
       });
       setBlocked(null);
       setAnswer('');

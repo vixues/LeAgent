@@ -28,6 +28,22 @@
       "clickGreeting6": "A quick break works too."
     },
     "confirmClear": "Clear all messages in this chat?",
+    "sessionTodos": {
+      "title": "Tasks",
+      "pinnedTitle": "Pinned tasks",
+      "completed": "{{done}}/{{total}} completed",
+      "inProgress": "Updating in real time",
+      "collapsed": "{{count}} tasks",
+      "pin": "Pin to top",
+      "unpin": "Unpin",
+      "close": "Close",
+      "statusPending": "Pending",
+      "statusInProgress": "In progress",
+      "statusCompleted": "Done",
+      "statusCancelled": "Cancelled",
+      "statusFailed": "Failed",
+      "cycleStatus": "Mark as {{status}}"
+    },
     "contextUsageButtonAria": "Context usage",
     "contextUsageTitle": "Context",
     "contextUsageBudget": "Model context window",

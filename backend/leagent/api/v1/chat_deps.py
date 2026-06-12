@@ -37,47 +37,27 @@ def build_agent_controller(
     status_label = "success"
     try:
         from leagent.agent.controller import AgentConfig, AgentController
-        from leagent.agent.hooks import HookManager, create_default_hooks
         from leagent.services.runtime import get_service_manager
-        from leagent.tools.base import ToolPermissionContext
-        from leagent.tools.executor import ToolExecutor
-        from leagent.tools.registry import get_registry
 
         sm = service_manager if service_manager is not None else get_service_manager()
         if sm.llm_service is None:
             return None
 
-        registry = get_registry()
-        # Shared with AgentController so deny/allow rules apply on the QueryEngine
-        # tool path (executor enforces only when permission_context is set).
-        permission_context = ToolPermissionContext()
-        executor = ToolExecutor(
-            registry=registry,
-            service_manager=sm,
-            permission_context=permission_context,
-        )
-
-        hook_manager = HookManager()
-        for hook in create_default_hooks(sm.agent_memory):
-            hook_manager.register(hook)
-
-        # Durable, resumable chat turns: back the checkpoint store with the DB
-        # when available so a paused turn (awaiting_user_input) can be resumed.
-        from leagent.sdk.kernel.checkpoint import build_checkpoint_store
-
-        checkpoint_store = build_checkpoint_store(getattr(sm, "database_service", None))
+        ctx = sm.runtime_context
+        if ctx.llm is None or ctx.tools is None or ctx.executor is None:
+            return None
 
         config = AgentConfig(enable_streaming=True)
         controller = AgentController(
-            llm=sm.llm_service,
-            tools=registry,
-            agent_memory=sm.agent_memory,
-            session_manager=sm.session_manager,
-            executor=executor,
-            hook_manager=hook_manager,
+            llm=ctx.llm,
+            tools=ctx.tools,
+            agent_memory=ctx.agent_memory,
+            session_manager=ctx.session_manager,
+            executor=ctx.executor,
+            hook_manager=ctx.hook_manager,
             config=config,
-            permission_context=permission_context,
-            checkpoint_store=checkpoint_store,
+            permission_context=ctx.permission_context,
+            checkpoint_store=ctx.checkpoint_store,
         )
         return controller
     except Exception as exc:
