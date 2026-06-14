@@ -77,23 +77,11 @@ class PoliciesSource:
 
             bodies: list[str] = []
             for policy_name in variant.policies:
-                resolved = policy_name
-                if policy_name == "file_access":
-                    try:
-                        from leagent.config.settings import get_settings
-
-                        if get_settings().is_single_machine_profile:
-                            if (
-                                ctx.prompt_registry.try_get(
-                                    "policies/file_access_local", variant="default"
-                                )
-                                is not None
-                            ):
-                                resolved = "file_access_local"
-                    except Exception:  # noqa: BLE001
-                        pass
                 try:
-                    policy = ctx.prompt_registry.get(f"policies/{resolved}", variant="default")
+                    policy = ctx.prompt_registry.get(
+                        f"policies/{policy_name}",
+                        variant="default",
+                    )
                 except Exception:
                     logger.warning("policies_snippet_missing", policy=policy_name)
                     continue

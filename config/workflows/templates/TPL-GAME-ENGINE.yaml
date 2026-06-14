@@ -1,0 +1,105 @@
+id: TPL-GAME-ENGINE
+name: 会话游戏引擎演示
+description: 初始化会话游戏状态、推进一回合并记分，适合回合制聊天游戏演示。
+inputs:
+- name: game_id
+  type: string
+  description: 游戏实例 ID
+  required: false
+  default: playbook_demo
+- name: score_delta
+  type: number
+  description: 本回合得分增量
+  required: false
+  default: 10
+outputs:
+- name: result
+  type: object
+  description: 初始化、更新与记分结果
+  value: &id001
+    init: ${game_init}
+    update: ${game_update}
+    score: ${game_score}
+metadata:
+  category: game
+  original_category: game
+  playbook_id: game_engine
+nodes:
+  start:
+    class_type: StartNode
+    inputs: {}
+    meta:
+      name: ''
+      description: ''
+    control:
+      next: init_game
+  init_game:
+    class_type: ToolCallNode
+    inputs:
+      tool: game_state
+      params:
+        operation: init
+        game_id: ${input.game_id}
+        phase: init
+        payload:
+          level: 1
+          player: demo
+      output: game_init
+    meta:
+      name: 初始化游戏
+      description: ''
+    control:
+      next: update_game
+  update_game:
+    class_type: ToolCallNode
+    inputs:
+      tool: game_state
+      params:
+        operation: update
+        game_id: ${input.game_id}
+        phase: playing
+        advance_turn: true
+        payload:
+          last_action: move_north
+          position:
+          - 1
+          - 0
+      output: game_update
+    meta:
+      name: 推进回合
+      description: ''
+    control:
+      next: score_game
+  score_game:
+    class_type: ToolCallNode
+    inputs:
+      tool: game_state
+      params:
+        operation: score
+        game_id: ${input.game_id}
+        score_delta: ${input.score_delta}
+        rule_tag: turn_bonus
+      output: game_score
+    meta:
+      name: 记分
+      description: ''
+    control:
+      next: end
+  end:
+    class_type: EndNode
+    inputs: {}
+    meta:
+      name: ''
+      description: ''
+      end_output:
+        result: *id001
+    control: {}
+control:
+  start: start
+  end: end
+  edges: []
+  timeout_sec: 3600
+  max_retries: 3
+  tags:
+  - game
+  - playbook

@@ -1,0 +1,109 @@
+id: TPL-DOC-EDIT
+name: 文档编辑演示（PDF → Markdown）
+description: 生成示例 PDF，读取元数据与正文摘要，再创建 Markdown 编辑草稿。
+inputs:
+- name: pdf_title
+  type: string
+  description: 示例 PDF 标题
+  required: false
+  default: 文档编辑演示
+- name: draft_title
+  type: string
+  description: Markdown 草稿标题
+  required: false
+  default: 文档编辑草稿
+outputs:
+- name: result
+  type: object
+  description: PDF 读取摘要与 Markdown 草稿路径
+  value: &id001
+    pdf_meta: ${pdf_meta}
+    md_draft: ${md_draft}
+metadata:
+  category: document
+  original_category: document
+  playbook_id: document_editing
+nodes:
+  start:
+    class_type: StartNode
+    inputs: {}
+    meta:
+      name: ''
+      description: ''
+    control:
+      next: prep_pdf
+  prep_pdf:
+    class_type: ScriptNode
+    inputs:
+      timeout_sec: 10.0
+      output: pdf_ctx
+      source: "from pathlib import Path\nimport tempfile\n\ntry:\n    import fitz\nexcept ImportError:\n\
+        \    fitz = None\n\nroot = Path(tempfile.mkdtemp(prefix=\"wf-doc-edit-\"))\npath = root / \"\
+        demo_brief.pdf\"\nif fitz is not None:\n    doc = fitz.open()\n    page = doc.new_page()\n  \
+        \  page.insert_text(\n        (72, 72),\n        f\"{str(pdf_title).strip() or 'Document Editing\
+        \ Demo'}\\n\\n\"\n        \"Section 1: Executive summary\\n\"\n        \"Section 2: Proposed edits\\\
+        n\",\n    )\n    doc.set_metadata({\"title\": str(pdf_title).strip() or \"Document Editing Demo\"\
+        })\n    doc.save(str(path))\n    doc.close()\nelse:\n    path.write_bytes(\n        b\"%PDF-1.4\\\
+        n1 0 obj\\n<</Type/Catalog/Pages 2 0 R>>\\nendobj\\n\"\n        b\"2 0 obj\\n<</Type/Pages/Kids[3\
+        \ 0 R]/Count 1>>\\nendobj\\n\"\n        b\"3 0 obj\\n<</Type/Page/Parent 2 0 R/MediaBox[0 0 612\
+        \ 792]>>\\nendobj\\n\"\n        b\"xref\\n0 4\\n0000000000 65535 f \\n0000000009 00000 n \\\
+        n0000000058 00000 n \\n0000000115 00000 n \\n\"\n        b\"trailer\\n<</Size 4/Root 1 0 R>>\\\
+        nstartxref\\n190\\n%%EOF\\n\"\n    )\nresult = {\"pdf_path\": str(path), \"md_path\": str(root\
+        \ / \"draft.md\")}\nprint(\"pdf_ready\")\n"
+      inputs:
+        pdf_title: ${input.pdf_title}
+    meta:
+      name: 生成示例 PDF
+      description: ''
+    control:
+      next: read_pdf
+  read_pdf:
+    class_type: ToolCallNode
+    inputs:
+      tool: pdf_reader
+      params:
+        operation: metadata
+        file_path: ${pdf_ctx.pdf_path}
+      output: pdf_meta
+    meta:
+      name: 读取 PDF 元数据
+      description: ''
+    control:
+      next: draft_md
+  draft_md:
+    class_type: ToolCallNode
+    inputs:
+      tool: markdown_processor
+      params:
+        operation: create
+        file_path: ${pdf_ctx.md_path}
+        title: ${input.draft_title}
+        sections:
+        - heading: Summary
+          content: Key points extracted from the PDF metadata and outline.
+        - heading: Proposed edits
+          content: List structural and wording changes for review.
+      output: md_draft
+    meta:
+      name: 创建 Markdown 草稿
+      description: ''
+    control:
+      next: end
+  end:
+    class_type: EndNode
+    inputs: {}
+    meta:
+      name: ''
+      description: ''
+      end_output:
+        result: *id001
+    control: {}
+control:
+  start: start
+  end: end
+  edges: []
+  timeout_sec: 3600
+  max_retries: 3
+  tags:
+  - document
+  - playbook

@@ -94,7 +94,7 @@ string assembly needed.
   generated files with relative paths (`Path("report.csv")`); these
   surface as `produced_files` in the chat workspace automatically.
 - Files written into the **session uploads directory** (the parent of
-  `session_attachments[*].path`, e.g. `<upload_root>/<session_id>/`)
+  `session_attachments[*].file_path`, e.g. `<upload_root>/<session_id>/`)
   are also picked up as `produced_files`.
 - When a file must live at any other authorised path, set
   `result = {"saved_to": output_path, ...}` so the controller can

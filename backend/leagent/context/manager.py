@@ -142,6 +142,7 @@ class ContextManager:
         append_extra: str = "",
         workflow_hint: str = "",
         template_vars: dict[str, Any] | None = None,
+        playbook_ids: list[str] | None = None,
         recall_handle: "RecallProvider | None" = None,
         project_roots: list[str] | None = None,
         budget_max_chars: int | None = None,
@@ -159,6 +160,7 @@ class ContextManager:
             append_extra=append_extra,
             workflow_hint=workflow_hint,
             template_vars=template_vars or {},
+            playbook_ids=playbook_ids or [],
             recall_handle=recall_handle,
             project_roots=project_roots or [],
         )
@@ -193,9 +195,10 @@ class ContextManager:
             "identity": 0,
             "capabilities": 1,
             "policies": 2,
-            "project_memory": 3,
-            "active_project": 4,
-            "user_instructions": 5,
+            "playbooks": 3,
+            "project_memory": 4,
+            "active_project": 5,
+            "user_instructions": 6,
         }
         _VOLATILE_SOURCES = frozenset({
             "environment", "session_attachments", "session_artifacts",
@@ -461,6 +464,7 @@ class ContextManager:
         append_extra: str,
         workflow_hint: str,
         template_vars: dict[str, Any],
+        playbook_ids: list[str] | None = None,
         recall_handle: Any,
         project_roots: list[str] | None = None,
     ) -> ResolveContext:
@@ -473,6 +477,7 @@ class ContextManager:
             append_extra=append_extra,
             workflow_hint=workflow_hint,
             template_vars=template_vars,
+            playbook_ids=list(playbook_ids or []),
             agent_id=self.agent_id,
             tools=self.tools,
             permission_context=self.permission_context,

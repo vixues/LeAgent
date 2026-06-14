@@ -1,0 +1,86 @@
+id: TPL-COPY-DESIGN
+name: 文案与设计演示
+description: 创建营销 Markdown 文案草稿，并统计字数与行数。
+inputs:
+- name: draft_path
+  type: string
+  description: Markdown 草稿路径
+  required: false
+  default: playbook-copy.md
+- name: headline
+  type: string
+  description: 活动标题
+  required: false
+  default: Launch Announcement
+outputs:
+- name: result
+  type: object
+  description: 文案草稿与统计结果
+  value: &id001
+    draft: ${draft}
+    stats: ${stats}
+metadata:
+  category: copywriting
+  original_category: copywriting
+  playbook_id: copywriting_design
+nodes:
+  start:
+    class_type: StartNode
+    inputs: {}
+    meta:
+      name: ''
+      description: ''
+    control:
+      next: draft_copy
+  draft_copy:
+    class_type: ToolCallNode
+    inputs:
+      tool: markdown_processor
+      params:
+        operation: create
+        file_path: ${input.draft_path}
+        title: ${input.headline}
+        sections:
+        - heading: Headline
+          content: Introducing the next release — built for clarity and speed.
+        - heading: Body
+          content: Product benefits, social proof, and a clear call to action.
+        - heading: CTA
+          content: Start your free trial today.
+      output: draft
+    meta:
+      name: 撰写 Markdown 文案
+      description: ''
+    control:
+      next: measure_copy
+  measure_copy:
+    class_type: ToolCallNode
+    inputs:
+      tool: text_processor
+      params:
+        operation: stats
+        file_path: ${input.draft_path}
+      output: stats
+    meta:
+      name: 统计文案长度
+      description: ''
+    control:
+      next: end
+  end:
+    class_type: EndNode
+    inputs: {}
+    meta:
+      name: ''
+      description: ''
+      end_output:
+        result: *id001
+    control: {}
+control:
+  start: start
+  end: end
+  edges: []
+  timeout_sec: 3600
+  max_retries: 3
+  tags:
+  - copywriting
+  - playbook

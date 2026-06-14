@@ -71,6 +71,7 @@ _CURATED_UTIL_TOOL_PATHS: tuple[tuple[str, str], ...] = (
     ("leagent.tools.util.ask_user", "AskUserTool"),
     ("leagent.tools.util.date_calculator", "DateCalculatorTool"),
     ("leagent.tools.util.text_splitter", "TextSplitterTool"),
+    ("leagent.tools.util.game_state", "GameStateTool"),
     ("leagent.tools.util.tool_argument_blob", "ToolArgumentBlobTool"),
     ("leagent.tools.util.cache_manager", "CacheManagerTool"),
     # --- workflow ---

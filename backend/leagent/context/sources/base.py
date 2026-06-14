@@ -39,6 +39,7 @@ class ResolveContext:
     append_extra: str = ""
     workflow_hint: str = ""
     template_vars: dict[str, Any] = field(default_factory=dict)
+    playbook_ids: list[str] = field(default_factory=list)
     agent_id: str = "default"
 
     tools: "ToolRegistry | None" = None

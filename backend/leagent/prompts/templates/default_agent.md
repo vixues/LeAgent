@@ -92,8 +92,9 @@ at the right time.
 
 ## Files and attachments
 
-- Prefer the exact `path` from `session_attachments` when the user
-  references an attached file (including ID-based lookup).
+- Prefer the exact `file_path` from `session_attachments` when the user
+  references an attached file (including ID-based lookup). Example:
+  `markdown_processor(operation="write", file_path="<from manifest>", content="…")`.
 - Save files only when the user asks you to **save / export / persist
   / download**. Otherwise answer inline.
 - When you do save an output, point the user at the attachment chip on

@@ -1,0 +1,129 @@
+id: TPL-DATA-ANALYSIS
+name: 数据分析演示（CSV → 聚合 → 图表）
+description: 写入示例销售 CSV，按区域聚合指标，并生成柱状图。
+inputs:
+- name: csv_path
+  type: string
+  description: 输出 CSV 路径（相对会话工作区）
+  required: false
+  default: playbook-sales.csv
+- name: chart_path
+  type: string
+  description: 输出图表路径
+  required: false
+  default: playbook-sales-chart.png
+outputs:
+- name: result
+  type: object
+  description: CSV 写入、聚合与图表结果
+  value: &id001
+    csv_write: ${csv_write}
+    aggregated: ${aggregated}
+    chart: ${chart}
+metadata:
+  category: analytics
+  original_category: analytics
+  playbook_id: data_analysis
+nodes:
+  start:
+    class_type: StartNode
+    inputs: {}
+    meta:
+      name: ''
+      description: ''
+    control:
+      next: write_csv
+  write_csv:
+    class_type: ToolCallNode
+    inputs:
+      tool: csv_processor
+      params:
+        operation: write
+        file_path: ${input.csv_path}
+        data:
+        - region: north
+          sales: 120
+          units: 40
+        - region: south
+          sales: 95
+          units: 32
+        - region: east
+          sales: 140
+          units: 55
+      output: csv_write
+    meta:
+      name: 写入示例 CSV
+      description: ''
+    control:
+      next: aggregate
+  aggregate:
+    class_type: ToolCallNode
+    inputs:
+      tool: data_aggregate
+      params:
+        operation: groupby
+        group_by:
+        - region
+        aggregations:
+          sales: sum
+          units: sum
+        data:
+        - region: north
+          sales: 120
+          units: 40
+        - region: south
+          sales: 95
+          units: 32
+        - region: east
+          sales: 140
+          units: 55
+      output: aggregated
+    meta:
+      name: 按区域聚合
+      description: ''
+    control:
+      next: chart
+  chart:
+    class_type: ToolCallNode
+    inputs:
+      tool: chart_generator
+      params:
+        chart_type: bar
+        title: Sales by region
+        theme: report
+        output_path: ${input.chart_path}
+        data:
+          categories:
+          - north
+          - south
+          - east
+          series:
+          - name: Sales
+            values:
+            - 120
+            - 95
+            - 140
+      output: chart
+    meta:
+      name: 生成柱状图
+      description: ''
+    control:
+      next: end
+  end:
+    class_type: EndNode
+    inputs: {}
+    meta:
+      name: ''
+      description: ''
+      end_output:
+        result: *id001
+    control: {}
+control:
+  start: start
+  end: end
+  edges: []
+  timeout_sec: 3600
+  max_retries: 3
+  tags:
+  - analytics
+  - playbook

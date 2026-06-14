@@ -44,6 +44,7 @@ def _lazy_load() -> None:
         capabilities,
         environment,
         identity,
+        playbooks,
         policies,
         project_memory,
         recall,

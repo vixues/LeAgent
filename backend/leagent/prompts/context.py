@@ -36,6 +36,7 @@ class PromptContext:
     workflow_hint: str = ""
     render_target: RenderTarget = RenderTarget.OPENAI
     template_vars: dict[str, Any] = field(default_factory=dict)
+    playbook_ids: list[str] = field(default_factory=list)
     agent_id: str = "default"
     recall_limit: int = 5
 

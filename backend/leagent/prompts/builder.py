@@ -64,6 +64,7 @@ class PromptBuilder:
             append_extra=context.append_extra,
             workflow_hint=context.workflow_hint,
             template_vars=context.template_vars,
+            playbook_ids=context.playbook_ids,
         )
 
         duration_ms = int((time.perf_counter() - start) * 1000)

@@ -37,6 +37,7 @@ class TemplateListItem(BaseModel):
     node_count: int = 0
     version: str = "1.0"
     source: str = "yaml"
+    preview_ui: dict[str, Any] | None = None
 
 
 class TemplateListResponse(BaseModel):
@@ -66,6 +67,7 @@ class TemplateDetail(BaseModel):
     node_count: int = 0
     version: str = "1.0"
     source: str = "yaml"
+    preview_ui: dict[str, Any] | None = None
     definition: dict[str, Any] = {}
 
 
