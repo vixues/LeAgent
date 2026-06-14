@@ -9,7 +9,7 @@ from typing import Any
 
 import structlog
 
-from leagent.tools._data import build_result, load_records
+from leagent.tools._data import build_result, extend_input_schema, load_records
 from leagent.tools._data.tool_helpers import INPUT_SCHEMA_FRAGMENT
 from leagent.tools.base import SyncTool, ToolCategory, ToolContext
 
@@ -75,9 +75,7 @@ class DataMergeTool(SyncTool):
 
     @property
     def parameters(self) -> dict[str, Any]:
-        return {
-            "type": "object",
-            "properties": {
+        properties: dict[str, Any] = {
                 "left_data": {
                     "type": "array",
                     "description": "Left dataset as list of records.",
@@ -170,7 +168,11 @@ class DataMergeTool(SyncTool):
                     "description": "Output format.",
                     "default": "records",
                 },
-            },
+        }
+        extend_input_schema(properties)
+        return {
+            "type": "object",
+            "properties": properties,
             "required": [],
             "additionalProperties": False,
         }

@@ -85,9 +85,6 @@ class PDFReaderTool(SyncTool):
                     "type": "string",
                     "enum": [
                         "read",
-                        "extract_text",
-                        "full_text",
-                        "text",
                         "extract_tables",
                         "extract_images",
                         "extract_links",
@@ -102,27 +99,9 @@ class PDFReaderTool(SyncTool):
                     ],
                     "default": "read",
                     "description": (
-                        "Operation (default: read): read/extract_text/full_text/text|"
-                        "extract_tables|extract_images|extract_links|search|page_info|outline|"
-                        "convert_to_images|split|merge|extract_pages|metadata"
-                    ),
-                },
-                "mode": {
-                    "type": "string",
-                    "enum": [
-                        "full",
-                        "text",
-                        "metadata",
-                        "pages",
-                        "page_info",
-                        "outline",
-                        "tables",
-                        "images",
-                        "links",
-                    ],
-                    "description": (
-                        "Legacy/shortcut mode. full/text/pages map to read; "
-                        "tables/images/links map to extraction operations."
+                        "Operation (default: read): read|extract_tables|extract_images|"
+                        "extract_links|search|page_info|outline|convert_to_images|split|"
+                        "merge|extract_pages|metadata"
                     ),
                 },
                 "file_path": {
@@ -197,7 +176,7 @@ class PDFReaderTool(SyncTool):
 
     async def validate_input(self, params: dict[str, Any], context: ToolContext) -> ValidationResult:
         fp = params.get("file_path", "")
-        operation = self._normalize_operation(params)
+        operation = (params.get("operation") or "read").strip().lower()
 
         if operation == "merge":
             merge_files = params.get("merge_files", [])
@@ -230,11 +209,11 @@ class PDFReaderTool(SyncTool):
         return ValidationResult(valid=True)
 
     def get_activity_description(self, params: dict[str, Any] | None = None) -> str | None:
-        op = self._normalize_operation(params or {})
+        op = (params or {}).get("operation") or "read"
         return f"PDF: {op}"
 
     def execute_sync(self, params: dict[str, Any], context: ToolContext) -> dict[str, Any]:
-        operation = self._normalize_operation(params)
+        operation = (params.get("operation") or "read").strip().lower()
         logger.info("pdf_processor", operation=operation, file_path=params.get("file_path"))
 
         dispatch = {
@@ -254,33 +233,6 @@ class PDFReaderTool(SyncTool):
         if operation not in dispatch:
             raise ValueError(f"Unknown operation: {operation}")
         return dispatch[operation](params)
-
-    def _normalize_operation(self, params: dict[str, Any]) -> str:
-        """Normalize legacy modes and intuitive aliases to canonical operations."""
-        operation = (params.get("operation") or "").strip().lower()
-        mode = (params.get("mode") or "").strip().lower()
-
-        aliases = {
-            "extract_text": "read",
-            "full_text": "read",
-            "text": "read",
-            "full": "read",
-            "pages": "read",
-            "table": "extract_tables",
-            "tables": "extract_tables",
-            "image": "extract_images",
-            "images": "extract_images",
-            "link": "extract_links",
-            "links": "extract_links",
-            "bookmarks": "outline",
-            "toc": "outline",
-        }
-
-        if operation:
-            return aliases.get(operation, operation)
-        if mode:
-            return aliases.get(mode, mode)
-        return "read"
 
     def _open_doc(self, file_path: str):
         fitz = _import_fitz()

@@ -8,7 +8,6 @@ from typing import Any
 import jsonschema
 
 from leagent.services.gen_ui.schema import (
-    coerce_ui_patch_tool_params,
     list_component_catalog,
     validate_ui_patch,
     validate_ui_tree,
@@ -287,17 +286,7 @@ class EmitUiPatchTool(BaseTool):
         return None
 
     def validate_params(self, params: dict[str, Any]) -> tuple[bool, str | None]:
-        try:
-            coerced = coerce_ui_patch_tool_params(dict(params or {}))
-        except ValueError as exc:
-            return False, str(exc)
-        try:
-            jsonschema.validate(instance=coerced, schema=self.parameters)
-            return True, None
-        except jsonschema.ValidationError as exc:
-            return False, str(exc.message)
-        except jsonschema.SchemaError as exc:
-            return False, f"Invalid tool schema: {exc.message}"
+        return super().validate_params(params)
 
     @property
     def parameters(self) -> dict[str, Any]:
@@ -324,6 +313,10 @@ class EmitUiPatchTool(BaseTool):
         }
 
     async def execute(self, params: dict[str, Any], context: ToolContext) -> Any:
-        payload = coerce_ui_patch_tool_params(params)
-        validate_ui_patch(payload)
+        validate_ui_patch(params)
+        payload = {
+            k: v
+            for k, v in params.items()
+            if k in ("patches", "canvas_id", "seq") and v is not None
+        }
         return {"payload": payload}

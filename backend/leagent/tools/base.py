@@ -319,7 +319,37 @@ class BaseTool(ABC):
     # -- Validation (mirrors reference validateInput) ----------------------
 
     def validate_params(self, params: dict[str, Any]) -> tuple[bool, str | None]:
-        """Validate parameters against the JSON schema."""
+        """Validate parameters against the JSON schema and tool contract."""
+        from leagent.tools.contract import (
+            detect_unknown_keys,
+            format_operation_required_errors,
+            format_unknown_key_errors,
+            suggest_canonical_key,
+            validate_operation_required,
+        )
+
+        violations = detect_unknown_keys(params, self.parameters)
+        if violations:
+            for key in violations:
+                logger.warning(
+                    "tool_contract_violation",
+                    tool=self.name,
+                    wrong_key=key,
+                    expected_key=suggest_canonical_key(key, self.parameters),
+                )
+            return False, format_unknown_key_errors(violations, self.parameters)
+
+        missing = validate_operation_required(params, self.name)
+        if missing:
+            for field in missing:
+                logger.warning(
+                    "tool_contract_violation",
+                    tool=self.name,
+                    missing_field=field,
+                    operation=params.get("operation"),
+                )
+            return False, format_operation_required_errors(missing)
+
         try:
             jsonschema.validate(instance=params, schema=self.parameters)
             return True, None
@@ -328,6 +358,14 @@ class BaseTool(ABC):
         except jsonschema.SchemaError as e:
             logger.error("Invalid tool schema", tool=self.name, error=str(e))
             return False, f"Invalid tool schema: {e.message}"
+
+    def require_param(self, params: dict[str, Any], key: str) -> Any:
+        """Return a required parameter or raise a non-retryable contract error."""
+        if key not in params or params[key] is None:
+            raise NonRetryableToolError(
+                f"Missing required parameter '{key}' for tool '{self.name}'"
+            )
+        return params[key]
 
     async def validate_input(self, params: dict[str, Any], context: ToolContext) -> ValidationResult:
         """Semantic input validation beyond JSON schema.
@@ -582,8 +620,15 @@ class BaseTool(ABC):
     # -- Path accessor (mirrors reference getPath) -------------------------
 
     def get_path(self, params: dict[str, Any]) -> str | None:
-        """Return the file path this tool operates on, if applicable."""
-        return params.get("file_path") or params.get("path")
+        """Return the canonical file path parameter when declared in the schema."""
+        props = self.parameters.get("properties") or {}
+        if "file_path" in props:
+            val = params.get("file_path")
+            return val if isinstance(val, str) else None
+        if "path" in props:
+            val = params.get("path")
+            return val if isinstance(val, str) else None
+        return None
 
     # -- Schema generation -------------------------------------------------
 

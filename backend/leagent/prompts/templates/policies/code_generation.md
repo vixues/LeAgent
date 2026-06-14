@@ -27,10 +27,10 @@ Code generation policy:
   minutes, README, changelog, or any saved markdown), use
   **`markdown_processor`** directly — *never* `code_execution`.
   Key operations:
-  - `write` — save arbitrary markdown content to a file in one call.
-  - `create` — build structured document from title + sections + metadata.
-  - `template` — generate from templates: `story`, `report`, `notes`,
-    `article`, `meeting`, `readme`, `changelog`.
+  - `write` — requires `file_path` + `content`.
+  - `create` — requires `file_path`; optional `title`, `sections`, `metadata`.
+  - `template` — requires `file_path`, `template_name` (`story`, `report`, `notes`,
+    `article`, `meeting`, `readme`, `changelog`).
   - `append` / `prepend` — add content to an existing file.
   - `insert_section` / `replace_section` / `delete_section` — surgical
     editing by heading name.

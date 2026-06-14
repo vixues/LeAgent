@@ -501,6 +501,7 @@ class TextFileProcessorTool(SyncTool):
                 },
             },
             "required": ["operation", "file_path"],
+            "additionalProperties": False,
         }
 
     def get_activity_description(self, params: dict[str, Any] | None = None) -> str | None:
@@ -513,9 +514,8 @@ class TextFileProcessorTool(SyncTool):
         return recover_doc_tool_args(raw, content_key="data")
 
     def execute_sync(self, params: dict[str, Any], context: ToolContext) -> dict[str, Any]:
-        params = self._normalize_params(params)
-        operation = params["operation"]
-        file_path = Path(params["file_path"]).expanduser().resolve()
+        operation = self.require_param(params, "operation")
+        file_path = Path(self.require_param(params, "file_path")).expanduser().resolve()
 
         dispatch: dict[str, Any] = {
             "read": self._read,
@@ -540,18 +540,6 @@ class TextFileProcessorTool(SyncTool):
             raise ValueError(f"Unknown operation: {operation}")
 
         return dispatch[operation](file_path, params)
-
-    @staticmethod
-    def _normalize_params(params: dict[str, Any]) -> dict[str, Any]:
-        """Normalize LLM-generated parameter variations to canonical names."""
-        p = dict(params)
-        # Accept content/text/body as aliases for data
-        if "data" not in p or p["data"] is None:
-            for alias in ("content", "text", "body", "markdown"):
-                if alias in p and p[alias] is not None:
-                    p["data"] = p[alias]
-                    break
-        return p
 
     def _read_raw_sample(self, file_path: Path, n: int) -> bytes:
         if not file_path.exists():

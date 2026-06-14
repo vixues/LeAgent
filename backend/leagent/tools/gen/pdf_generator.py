@@ -70,21 +70,6 @@ def _header_footer_to_dict(value: Any) -> dict[str, Any]:
     return {}
 
 
-def _coerce_params_header_footer(params: dict[str, Any]) -> None:
-    """Mutate params so jsonschema and execute_sync see objects, not JSON strings."""
-    for key in ("header", "footer"):
-        if key not in params:
-            continue
-        v = params[key]
-        if isinstance(v, str) and v.strip().startswith("{"):
-            try:
-                parsed = json.loads(v)
-            except json.JSONDecodeError:
-                continue
-            if isinstance(parsed, dict):
-                params[key] = parsed
-
-
 def _find_existing_path(candidates: list[str]) -> str | None:
     for path in candidates:
         if Path(path).exists():
@@ -660,11 +645,6 @@ class PDFGeneratorTool(SyncTool):
     def get_activity_description(self, params: dict[str, Any] | None = None) -> str | None:
         return "Generating PDF document"
 
-    def validate_params(self, params: dict[str, Any]) -> tuple[bool, str | None]:
-        """Allow ``header`` / ``footer`` as JSON strings (common LLM output)."""
-        _coerce_params_header_footer(params)
-        return super().validate_params(params)
-
     def execute_sync(self, params: dict[str, Any], context: ToolContext) -> dict[str, Any]:
         """Generate a PDF document with the specified content.
 
@@ -707,7 +687,6 @@ class PDFGeneratorTool(SyncTool):
                 "reportlab is not installed. Install with: pip install reportlab"
             ) from e
 
-        _coerce_params_header_footer(params)
         font_regular, font_bold, _cjk_meta = _setup_cjk_fonts(
             pdfmetrics, TTFont, params
         )

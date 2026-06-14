@@ -514,6 +514,7 @@ class MarkdownProcessorTool(SyncTool):
                 },
             },
             "required": ["operation"],
+            "additionalProperties": False,
         }
 
     def get_activity_description(self, params: dict[str, Any] | None = None) -> str | None:
@@ -526,8 +527,7 @@ class MarkdownProcessorTool(SyncTool):
         return recover_doc_tool_args(raw, content_key="content")
 
     def execute_sync(self, params: dict[str, Any], context: ToolContext) -> dict[str, Any]:
-        params = self._normalize_params(params)
-        operation = params["operation"]
+        operation = self.require_param(params, "operation")
         logger.info("markdown_processor", operation=operation)
 
         dispatch = {
@@ -553,20 +553,8 @@ class MarkdownProcessorTool(SyncTool):
             raise ValueError(f"Unknown operation: {operation}")
         return dispatch[operation](params)
 
-    @staticmethod
-    def _normalize_params(params: dict[str, Any]) -> dict[str, Any]:
-        """Normalize LLM-generated parameter variations to canonical names."""
-        p = dict(params)
-        # Accept text/data/body as aliases for content
-        if "content" not in p or p["content"] is None:
-            for alias in ("text", "data", "body", "markdown"):
-                if alias in p and p[alias] is not None:
-                    p["content"] = p[alias]
-                    break
-        return p
-
     def _read(self, params: dict[str, Any]) -> dict[str, Any]:
-        file_path = Path(params["file_path"])
+        file_path = Path(self.require_param(params, "file_path"))
         if not file_path.exists():
             raise FileNotFoundError(f"File not found: {file_path}")
         if not file_path.is_file():
@@ -593,7 +581,7 @@ class MarkdownProcessorTool(SyncTool):
         }
 
     def _write(self, params: dict[str, Any]) -> dict[str, Any]:
-        file_path = Path(params["file_path"])
+        file_path = Path(self.require_param(params, "file_path"))
         content = params.get("content")
         if content is None:
             raise ValueError("'content' is required for write operation")
@@ -608,7 +596,7 @@ class MarkdownProcessorTool(SyncTool):
         }
 
     def _create(self, params: dict[str, Any]) -> dict[str, Any]:
-        file_path = Path(params["file_path"])
+        file_path = Path(self.require_param(params, "file_path"))
         title = params.get("title", "Untitled")
         sections = params.get("sections") or []
         metadata = params.get("metadata")
@@ -654,7 +642,7 @@ class MarkdownProcessorTool(SyncTool):
         }
 
     def _append(self, params: dict[str, Any]) -> dict[str, Any]:
-        file_path = Path(params["file_path"])
+        file_path = Path(self.require_param(params, "file_path"))
         content = params.get("content")
         if content is None:
             raise ValueError("'content' is required for append operation")
@@ -674,7 +662,7 @@ class MarkdownProcessorTool(SyncTool):
         }
 
     def _prepend(self, params: dict[str, Any]) -> dict[str, Any]:
-        file_path = Path(params["file_path"])
+        file_path = Path(self.require_param(params, "file_path"))
         content = params.get("content")
         if content is None:
             raise ValueError("'content' is required for prepend operation")
@@ -694,7 +682,7 @@ class MarkdownProcessorTool(SyncTool):
         }
 
     def _insert_section(self, params: dict[str, Any]) -> dict[str, Any]:
-        file_path = Path(params["file_path"])
+        file_path = Path(self.require_param(params, "file_path"))
         if not file_path.exists():
             raise FileNotFoundError(f"File not found: {file_path}")
 
@@ -733,7 +721,7 @@ class MarkdownProcessorTool(SyncTool):
         }
 
     def _replace_section(self, params: dict[str, Any]) -> dict[str, Any]:
-        file_path = Path(params["file_path"])
+        file_path = Path(self.require_param(params, "file_path"))
         if not file_path.exists():
             raise FileNotFoundError(f"File not found: {file_path}")
 
@@ -764,7 +752,7 @@ class MarkdownProcessorTool(SyncTool):
         }
 
     def _delete_section(self, params: dict[str, Any]) -> dict[str, Any]:
-        file_path = Path(params["file_path"])
+        file_path = Path(self.require_param(params, "file_path"))
         if not file_path.exists():
             raise FileNotFoundError(f"File not found: {file_path}")
 
@@ -791,7 +779,7 @@ class MarkdownProcessorTool(SyncTool):
         }
 
     def _extract_toc(self, params: dict[str, Any]) -> dict[str, Any]:
-        file_path = Path(params["file_path"])
+        file_path = Path(self.require_param(params, "file_path"))
         if not file_path.exists():
             raise FileNotFoundError(f"File not found: {file_path}")
 
@@ -804,7 +792,7 @@ class MarkdownProcessorTool(SyncTool):
 
     def _generate_toc(self, params: dict[str, Any]) -> dict[str, Any]:
         """Generate a markdown TOC string and optionally insert it into the file."""
-        file_path = Path(params["file_path"])
+        file_path = Path(self.require_param(params, "file_path"))
         if not file_path.exists():
             raise FileNotFoundError(f"File not found: {file_path}")
 
@@ -834,7 +822,7 @@ class MarkdownProcessorTool(SyncTool):
         return result
 
     def _extract_code_blocks(self, params: dict[str, Any]) -> dict[str, Any]:
-        file_path = Path(params["file_path"])
+        file_path = Path(self.require_param(params, "file_path"))
         if not file_path.exists():
             raise FileNotFoundError(f"File not found: {file_path}")
 
@@ -930,7 +918,7 @@ class MarkdownProcessorTool(SyncTool):
         }
 
     def _format(self, params: dict[str, Any]) -> dict[str, Any]:
-        file_path = Path(params["file_path"])
+        file_path = Path(self.require_param(params, "file_path"))
         if not file_path.exists():
             raise FileNotFoundError(f"File not found: {file_path}")
 
@@ -945,7 +933,7 @@ class MarkdownProcessorTool(SyncTool):
         }
 
     def _convert(self, params: dict[str, Any]) -> dict[str, Any]:
-        file_path = Path(params["file_path"])
+        file_path = Path(self.require_param(params, "file_path"))
         if not file_path.exists():
             raise FileNotFoundError(f"File not found: {file_path}")
 

@@ -213,7 +213,7 @@ allowed directories.
 | Per request (dirs) | `ToolContext.extra["project_roots"]` | Code-project / Folder `project_path` directories for `project_*` and `coding_agent` (`AgentController._run_via_query_engine`). |
 | Per request (dirs) | `ToolContext.extra["authorized_roots"]` | Directories the user explicitly granted for this chat session (`POST /api/v1/chat/sessions/{id}/authorized-paths`). Same directory rules as `project_roots`. |
 
-Prompt policy `policies/file_access.md` (server mode) tells the model to stay within attachments; `policies/file_access_local.md` matches the relaxed sandbox for desktop/local.
+Prompt policy `policies/file_access.md` defines file-access governance (attachment priority, save-on-request, path safety). Operational playbooks live under `prompts/templates/playbooks/` and attach at runtime when the workflow or agent harness sets `playbook_ids`.
 
 **Knowledge vs chat uploads:** chat session files live under `upload_dir/<session_id>/`; knowledge documents live under `resolved_knowledge_storage_dir()/documents/`. Migrating from the old layout (`upload_dir/documents/`) is a one-time copy — see `CHANGELOG.md`.
 

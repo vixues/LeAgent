@@ -860,35 +860,32 @@ def _extract_and_close_truncated_tree(raw: str) -> dict[str, Any] | None:
 
 
 def _recover_emit_ui_patch_args(raw: str) -> dict[str, Any] | None:
-    """Recover ``emit_ui_patch`` args when outer JSON is malformed or nested under ``payload``."""
-    from leagent.services.gen_ui.schema import coerce_ui_patch_tool_params
-
+    """Recover ``emit_ui_patch`` args when outer JSON is malformed."""
     for candidate in _candidate_json_texts(_strip_json_code_fence(raw)):
         parsed = _loads_json_dict(candidate)
         if parsed is None:
             parsed = _try_json_dict_raw_decode_trailing_junk(candidate)
         if parsed is None:
             parsed = _try_repair_superfluous_closing_delimiter(candidate, max_deletions=16)
-        if parsed is not None:
-            try:
-                return coerce_ui_patch_tool_params(parsed)
-            except ValueError:
-                pass
+        if isinstance(parsed, dict) and isinstance(parsed.get("patches"), list):
+            return {
+                k: v
+                for k, v in parsed.items()
+                if k in ("patches", "canvas_id", "seq") and v is not None
+            }
 
         patches = _salvage_truncated_json_after_key(candidate, "patches")
         if isinstance(patches, list) and patches:
-            try:
-                return coerce_ui_patch_tool_params({"patches": patches})
-            except ValueError:
-                pass
+            return {"patches": patches}
 
         if _looks_like_stream_truncation(candidate):
             outer = _salvage_truncated_json_prefix(candidate)
-            if isinstance(outer, dict):
-                try:
-                    return coerce_ui_patch_tool_params(outer)
-                except ValueError:
-                    pass
+            if isinstance(outer, dict) and isinstance(outer.get("patches"), list):
+                return {
+                    k: v
+                    for k, v in outer.items()
+                    if k in ("patches", "canvas_id", "seq") and v is not None
+                }
     return None
 
 
@@ -1080,13 +1077,6 @@ def normalize_tool_parameters(
 
     parsed = _try_parse_raw_tool_args(raw_payload)
     if parsed is not None:
-        if tool is not None and tool.name == "emit_ui_patch":
-            try:
-                from leagent.services.gen_ui.schema import coerce_ui_patch_tool_params
-
-                parsed = coerce_ui_patch_tool_params(parsed)
-            except ValueError:
-                pass
         return parsed, None
 
     if tool is not None:

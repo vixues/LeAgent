@@ -95,26 +95,34 @@ class TestPDFReaderTool:
         assert result.success
         assert "metadata" in result.data or "pages" in result.data
 
-    async def test_legacy_full_mode(self, sample_pdf: Path) -> None:
+    async def test_legacy_mode_rejected(self, sample_pdf: Path) -> None:
         result = await run("pdf_reader", {
             "file_path": str(sample_pdf),
             "mode": "full",
         })
-        assert result.success
-        assert isinstance(result.data, dict)
-        assert "text" in result.data
+        assert not result.success
+        assert result.error
+        assert "mode" in result.error or "unknown key" in result.error
 
-    async def test_extract_text_operation_alias(self, sample_pdf: Path) -> None:
+    async def test_read_operation(self, sample_pdf: Path) -> None:
         result = await run("pdf_reader", {
             "file_path": str(sample_pdf),
-            "operation": "extract_text",
+            "operation": "read",
         })
         assert result.success
         assert isinstance(result.data, dict)
         assert "text" in result.data
 
+    async def test_extract_text_alias_rejected(self, sample_pdf: Path) -> None:
+        result = await run("pdf_reader", {
+            "file_path": str(sample_pdf),
+            "operation": "extract_text",
+        })
+        assert not result.success
+        assert result.error
+
     async def test_empty_file_path(self) -> None:
-        result = await run("pdf_reader", {"file_path": "", "operation": "extract_text"})
+        result = await run("pdf_reader", {"file_path": "", "operation": "read"})
         assert not result.success
         assert result.error
         assert "file_path is required" in result.error
