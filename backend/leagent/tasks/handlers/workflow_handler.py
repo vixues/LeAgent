@@ -8,6 +8,9 @@ from typing import TYPE_CHECKING, Any
 from uuid import UUID
 
 from leagent.db.models.task import TaskContext, TaskType
+from leagent.runtime.execution_factory import begin_execution, end_execution
+from leagent.runtime.execution_run import ExecutionScope
+from leagent.services.event.manager import EventType
 
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
@@ -51,29 +54,59 @@ class WorkflowTaskHandler:
         user_id = UUID(str(user_id_raw)) if user_id_raw else UUID(int=0)
         inputs = params.get("inputs") or params.get("payload") or {}
 
+        exec_run = begin_execution(
+            scope=ExecutionScope.WORKFLOW,
+            user_id=str(user_id),
+            task_id=str(task_ctx.task_id) if task_ctx.task_id else None,
+        )
+        event_mgr = getattr(self._sm, "event", None)
+        if event_mgr is not None:
+            try:
+                await event_mgr.emit_task_event(
+                    EventType.TASK_STARTED,
+                    task_id=str(task_ctx.task_id),
+                    data={"run_id": exec_run.run_id, "flow_id": str(flow_id)},
+                )
+            except Exception:
+                pass
+
         task_ctx.append_output(
             json.dumps(
                 {
                     "event": "workflow_run_start",
                     "flow_id": str(flow_id),
+                    "run_id": exec_run.run_id,
                     "inputs_keys": list(inputs.keys()) if isinstance(inputs, dict) else None,
                 }
             )
             + "\n"
         )
 
-        result = await wf_service.start(
-            flow_id=flow_id,
-            user_id=user_id,
-            inputs=inputs if isinstance(inputs, dict) else {},
-            trigger_type=params.get("trigger_type", "task"),
-        )
-
-        # ``WorkflowResult`` is either dataclass-like or plain dict; stringify
-        # as JSON for log output and return a structured summary.
-        summary = _summarise_result(result)
-        task_ctx.append_output(json.dumps({"event": "workflow_run_done", **summary}, default=str) + "\n")
-        return summary
+        try:
+            result = await wf_service.start(
+                flow_id=flow_id,
+                user_id=user_id,
+                inputs=inputs if isinstance(inputs, dict) else {},
+                trigger_type=params.get("trigger_type", "task"),
+                extra_data={"parent_run_id": exec_run.run_id, "task_run_id": exec_run.run_id},
+            )
+            summary = _summarise_result(result)
+            summary["run_id"] = exec_run.run_id
+            task_ctx.append_output(
+                json.dumps({"event": "workflow_run_done", **summary}, default=str) + "\n"
+            )
+            if event_mgr is not None:
+                try:
+                    await event_mgr.emit_task_event(
+                        EventType.TASK_COMPLETED,
+                        task_id=str(task_ctx.task_id),
+                        data={"run_id": exec_run.run_id, **summary},
+                    )
+                except Exception:
+                    pass
+            return summary
+        finally:
+            end_execution(exec_run.run_id)
 
     async def kill(self, task_id: str, session: "AsyncSession") -> None:
         return None

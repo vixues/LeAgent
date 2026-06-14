@@ -28,6 +28,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 from leagent.sdk.events import AgentEvent, AgentEventType, AgentResult
+from leagent.utils.logging import get_logger
 from leagent.sdk.kernel.state import RunState
 
 if TYPE_CHECKING:
@@ -37,6 +38,8 @@ if TYPE_CHECKING:
     from leagent.agent.hooks import HookManager
     from leagent.agent.query_engine import QueryEngine
     from leagent.sdk.protocols import CheckpointStore, RunContext
+
+logger = get_logger(__name__)
 
 
 def _run_context_from_engine(engine: QueryEngine) -> RunContext:
@@ -179,6 +182,24 @@ async def run_loop(
                 )
                 await checkpoint_store.save(cp)
                 event.data["checkpoint_id"] = cp.checkpoint_id
+                try:
+                    from leagent.runtime.execution_registry import get_execution_run_registry
+
+                    exec_run = get_execution_run_registry().get_active_chat_turn(
+                        state.session_id
+                    )
+                    if exec_run is not None:
+                        token = exec_run.pause(
+                            reason=state.reason,
+                            checkpoint_id=cp.checkpoint_id,
+                        )
+                        event.data["pause_token"] = token.to_dict()
+                except Exception:
+                    logger.debug(
+                        "execution_pause_registration_failed",
+                        session_id=state.session_id,
+                        exc_info=True,
+                    )
 
         yield event
 

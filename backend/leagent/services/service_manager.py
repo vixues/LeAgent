@@ -477,7 +477,15 @@ class ServiceManager:
                     logger.warning("Workflow event bus publish failed", exc_info=True)
                 try:
                     if self._event is not None:
-                        await self._event.bridge_workflow_progress_event(event)
+                        from leagent.runtime.execution_registry import get_execution_run_registry
+
+                        exec_run = get_execution_run_registry().get_by_prompt_id(
+                            getattr(event, "prompt_id", "") or ""
+                        )
+                        run_id = exec_run.run_id if exec_run else None
+                        await self._event.bridge_workflow_progress_event(
+                            event, run_id=run_id
+                        )
                 except Exception:
                     logger.debug("Workflow EventManager bridge failed", exc_info=True)
 
@@ -541,6 +549,8 @@ class ServiceManager:
         try:
             from leagent.services.task_manager import init_task_manager
             manager = init_task_manager(self.settings)
+            if self._event is not None:
+                manager.attach_event_manager(self._event)
             self._task_manager = manager
             try:
                 from leagent.tasks.registration import register_default_handlers

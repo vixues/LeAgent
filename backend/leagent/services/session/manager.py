@@ -562,7 +562,7 @@ class SessionManager:
                 f"kind={att.kind}",
                 f"type={att.content_type}",
                 f"size={att.size}",
-                f"path={att.storage_path}",
+                f"file_path={att.storage_path}",
                 f"aliases={aliases!r}",
             ]
             if att.preview_url:
@@ -575,7 +575,7 @@ class SessionManager:
             "The user has attached the following files to this conversation.\n"
             "When the user references an attachment by name, match it to "
             "`name`, `stem`, or `aliases` (case-insensitive), then use the "
-            "exact `path` value below in your FIRST file-reading tool call.\n"
+            "exact `file_path` value below in your FIRST file-reading tool call.\n"
             "Do not call list/tree/glob to discover files that are already "
             "listed in this section.\n"
         )

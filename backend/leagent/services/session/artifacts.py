@@ -345,7 +345,15 @@ async def ingest_previewable_produced_files(
             updated.append(dict(raw_entry))
             continue
 
-        raw_path = str(raw_entry.get("path") or raw_entry.get("file_path") or "").strip()
+        raw_path = str(raw_entry.get("file_path") or "").strip()
+        if not raw_path:
+            legacy_path = raw_entry.get("path")
+            if legacy_path:
+                logger.warning(
+                    "produced_file_deprecated_path_key",
+                    extra={"tool_output_key": "path", "expected_key": "file_path"},
+                )
+                raw_path = str(legacy_path).strip()
         if not raw_path:
             updated.append(dict(raw_entry))
             continue

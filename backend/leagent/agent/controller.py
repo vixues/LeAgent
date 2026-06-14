@@ -284,6 +284,7 @@ class AgentController:
         skip_append_user: bool = False,
         persisted_user_message_id: UUID | None = None,
         agent_task_id: UUID | None = None,
+        execution_run_id: str | None = None,
     ) -> AgentResponse:
         """Execute the agent for a user request.
 
@@ -340,6 +341,7 @@ class AgentController:
                     project_roots=project_roots,
                     authorized_roots=authorized_roots,
                     skip_user_append=skip_append_user,
+                    execution_run_id=execution_run_id,
                 )
 
                 if self._hooks:
@@ -394,6 +396,7 @@ class AgentController:
         skip_append_user: bool = False,
         persisted_user_message_id: UUID | None = None,
         agent_task_id: UUID | None = None,
+        execution_run_id: str | None = None,
     ) -> AsyncIterator[StreamEvent]:
         """Execute agent with streaming events."""
         queue_maxsize = 512
@@ -432,6 +435,7 @@ class AgentController:
                     skip_append_user=skip_append_user,
                     persisted_user_message_id=persisted_user_message_id,
                     agent_task_id=agent_task_id,
+                    execution_run_id=execution_run_id,
                 )
             except Exception as exc:
                 logger.exception(
@@ -552,6 +556,40 @@ class AgentController:
                     message.content,
                 )
         return conversation
+
+    async def _playbook_ids_for_session(self, session_id: UUID) -> list[str]:
+        """Collect playbook ids from chat message extensions in the session."""
+        import json
+
+        from leagent.prompts.playbooks import playbook_ids_from_message_extensions
+
+        if self.session_manager is None:
+            return []
+        try:
+            state = await self.session_manager.load(session_id)
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("playbook_ids_session_load_failed", error=str(exc))
+            return []
+        if state is None:
+            return []
+
+        ordered: list[str] = []
+        seen: set[str] = set()
+        for message in state.messages:
+            raw_ext = getattr(message, "extensions", None)
+            if not raw_ext:
+                continue
+            try:
+                ext = json.loads(raw_ext) if isinstance(raw_ext, str) else raw_ext
+            except (json.JSONDecodeError, TypeError):
+                continue
+            if not isinstance(ext, dict):
+                continue
+            for pid in playbook_ids_from_message_extensions(ext):
+                if pid not in seen:
+                    seen.add(pid)
+                    ordered.append(pid)
+        return ordered
 
     async def _save_conversation(
         self, session_id: UUID, conversation: ConversationContext
@@ -741,6 +779,7 @@ class AgentController:
         project_roots: list[str] | None = None,
         authorized_roots: list[str] | None = None,
         skip_user_append: bool = False,
+        execution_run_id: str | None = None,
     ) -> AgentResponse:
         """Delegate the think-act loop to the new ``QueryEngine``.
 
@@ -806,6 +845,17 @@ class AgentController:
             await handler.on_nested_agent_preview(payload)
 
         tool_extra["nested_preview_emit"] = _emit_nested_preview
+
+        if execution_run_id:
+            tool_extra["run_id"] = execution_run_id
+
+        session_playbook_ids = await self._playbook_ids_for_session(context.session_id)
+        if session_playbook_ids:
+            existing = list(tool_extra.get("playbook_ids") or [])
+            for pid in session_playbook_ids:
+                if pid not in existing:
+                    existing.append(pid)
+            tool_extra["playbook_ids"] = existing
 
         if self.session_manager is not None:
             try:

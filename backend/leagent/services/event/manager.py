@@ -24,6 +24,19 @@ T = TypeVar("T", bound=BaseModel)
 EventCallback = Callable[[Any], Coroutine[Any, Any, None]]
 
 
+def _run_id_as_uuid(run_id: str | None) -> UUID | None:
+    if not run_id:
+        return None
+    try:
+        return UUID(str(run_id))
+    except (TypeError, ValueError):
+        pass
+    try:
+        return UUID(hex=str(run_id))
+    except (TypeError, ValueError):
+        return None
+
+
 class EventType(str, Enum):
     """Standard event types."""
 
@@ -469,8 +482,16 @@ class EventManager(Service):
             payload["run_id"] = run_id
         if parent_run_id:
             payload["parent_run_id"] = parent_run_id
+        corr = _run_id_as_uuid(run_id)
         try:
-            await self.emit(Event(type=event_type, source="workflow", data=payload))
+            await self.emit(
+                Event(
+                    type=event_type,
+                    source="workflow",
+                    data=payload,
+                    correlation_id=corr,
+                )
+            )
         except Exception:
             logger.debug("flow_event_publish_failed", exc_info=True)
 
@@ -497,6 +518,7 @@ class EventManager(Service):
                 session_uuid = UUID(session_id)
             except (TypeError, ValueError):
                 session_uuid = None
+        corr = _run_id_as_uuid(run_id)
         try:
             await self.emit(
                 Event(
@@ -504,6 +526,7 @@ class EventManager(Service):
                     source="agent",
                     data=payload,
                     session_id=session_uuid,
+                    correlation_id=corr,
                 )
             )
         except Exception:

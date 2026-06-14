@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import StrEnum
+from time import monotonic
 from typing import Any
 from uuid import UUID, uuid4
 
@@ -57,6 +58,12 @@ class ExecutionRun:
     task_id: str | None = None
     pause_token: PauseToken | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
+    registered_at: float = field(default_factory=monotonic)
+
+    @property
+    def is_blocked(self) -> bool:
+        """True when the run is paused and should remain in the registry."""
+        return self.pause_token is not None
 
     def pause(self, *, reason: str, **refs: Any) -> PauseToken:
         token = PauseToken(

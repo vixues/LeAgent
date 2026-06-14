@@ -16,6 +16,7 @@ from typing import TYPE_CHECKING, Any, AsyncIterator
 from uuid import UUID, uuid4
 
 from leagent.agent.deps import QueryDeps, production_deps
+from leagent.agent.tool_use_context import ToolUseContext
 from leagent.code.artifacts import CodeArtifactRegistry, SessionArtifactStore
 from leagent.code.operations import JOURNAL_CONTEXT_KEY, OperationJournal
 from leagent.code.pipeline import _CONTEXT_ARTIFACT_STORE_KEY, _CONTEXT_REGISTRY_KEY
@@ -25,7 +26,7 @@ from leagent.agent.query import (
     ToolResultMessage,
     query,
 )
-from leagent.agent.tool_use_context import ToolUseContext
+from leagent.prompts.playbooks import playbook_ids_from_context
 from leagent.agent.transitions import Terminal, TerminalReason
 from leagent.context import ContextManager, FileState
 from leagent.prompts import PromptBuilder, get_prompt_builder
@@ -387,6 +388,8 @@ class QueryEngine:
                 except Exception:
                     logger.debug("tool_schema_metrics_failed", exc_info=True)
 
+        _playbook_ids = playbook_ids_from_context(tool_extra=self.config.tool_extra)
+
         turn, tools_schema = await asyncio.gather(
             self._context.prepare_turn(
                 query_text or "",
@@ -394,6 +397,7 @@ class QueryEngine:
                 persona_override=self.config.system_prompt or "",
                 append_extra=append_extra_turn,
                 template_vars={},
+                playbook_ids=_playbook_ids,
                 recall_handle=recall_handle,
                 project_roots=_project_roots_for_turn,
             ),
@@ -406,6 +410,8 @@ class QueryEngine:
         messages_for_query = list(turn.attachment_messages) + list(self.mutable_messages)
 
         _tool_extra = dict(self.config.tool_extra)
+        if _playbook_ids:
+            _tool_extra["playbook_ids"] = _playbook_ids
         if _CONTEXT_REGISTRY_KEY not in _tool_extra:
             _tool_extra[_CONTEXT_REGISTRY_KEY] = CodeArtifactRegistry()
         if _CONTEXT_ARTIFACT_STORE_KEY not in _tool_extra:

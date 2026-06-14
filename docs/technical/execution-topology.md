@@ -105,3 +105,68 @@ Use `WorkflowService.start(trigger=...)` for all flow runs:
 - Subworkflow nodes
 
 Trigger metadata records `manual`, `agent`, `cron`, `chat_step`, or `subworkflow`.
+
+## Unified Execution Plane
+
+All ingress surfaces mint an `ExecutionRun` via `leagent.runtime.execution_factory`
+and publish lifecycle signals through `EventManager` with shared correlation keys.
+
+```
+Ingress (Chat SSE / Chat step HTTP / Workflow WS / Task / GenUI / Cron)
+        │
+        ▼
+ExecutionRun registry (run_id, parent_run_id, scope, prompt_id)
+        │
+        ├──► Facade (AgentRuntime, WorkflowService.run_compiled_document)
+        │         │
+        │         ▼
+        │    Kernel (run_loop → QueryEngine → ToolExecutor)
+        │
+        ▼
+Durable state (SessionState, CheckpointStore, WorkflowStateStore, step_runs)
+        │
+        ▼
+Observability (EventManager FLOW_*/TASK_*/AGENT_*, OTel, WS/SSE transports)
+```
+
+### Correlation keys
+
+| Key | Purpose |
+|-----|---------|
+| `run_id` | Primary execution unit identifier; set on `Event.correlation_id` |
+| `parent_run_id` | Links child runs (workflow step, sub-agent, task) to parent chat turn |
+| `session_id` | Chat session scope for timeline hydration |
+| `prompt_id` | Workflow WebSocket subscription key (`/workflow/ws/executions/{prompt_id}`) |
+| `task_id` | Background task queue identifier |
+
+### Single run owner rule
+
+One `ExecutionRun` is minted per chat turn in `run_agent_stream`. The `run_id`
+is passed into `AgentController` via `tool_extra["run_id"]`. Child scopes
+(workflow steps, sub-agents, background tasks) register with
+`parent_run_id` pointing at the chat turn or task run.
+
+### Chat-step WebSocket bridge
+
+Chat playbook steps compile via `leagent.chat_workflow.compile` and execute through
+`WorkflowService.run_compiled_document()` (not direct `_executor.execute_async`).
+
+Each step run:
+
+1. Creates a `WorkflowExecution` row (`flow_id=null`, `trigger_type=chat_step`)
+2. Registers `ExecutionRun(scope=workflow, parent_run_id=…, prompt_id=…)`
+3. Persists `prompt_id` and `run_id` in `Message.extensions.chat_workflow_step_runs`
+4. Publishes progress via the same WebSocket stream as editor runs
+
+The chat frontend subscribes to `/workflow/ws/executions/{prompt_id}` for live
+node progress identical to the workflow editor overlay.
+
+### Execution API
+
+- `GET /chat/sessions/{id}/executions` — active/blocked in-process runs for timeline hydration (single-worker; not durable across processes)
+- Chat SSE emits additive `execution_started` with `{ run_id, session_id, scope }`
+
+### Single-process registry note
+
+`ExecutionRunRegistry` is an in-process singleton. Multi-worker deployments require sticky sessions or a future durable run store; blocked runs are retained in-registry until resume or explicit `end_execution`.
+

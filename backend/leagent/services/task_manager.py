@@ -91,6 +91,11 @@ class TaskManager:
         # Optional distributed registry (populated by service manager once
         # Redis is online). Remains None in single-process tests / dev.
         self._distributed: Any | None = None
+        self._event_manager: Any | None = None
+
+    def attach_event_manager(self, event_manager: Any) -> None:
+        """Wire EventManager for TASK_CREATED lifecycle events."""
+        self._event_manager = event_manager
 
     def attach_distributed_registry(self, registry: Any) -> None:
         """Enable cross-replica cancel + global active-task visibility."""
@@ -172,6 +177,23 @@ class TaskManager:
 
         self._active_contexts[str(task.id)] = ctx
         logger.info("task_created", task_id=str(task.id), short_id=short_id, task_type=task_type.value)
+        if self._event_manager is not None:
+            try:
+                from leagent.services.event.manager import EventType
+
+                await self._event_manager.emit_task_event(
+                    EventType.TASK_CREATED,
+                    task.id,
+                    "task_manager",
+                    task_name=name,
+                    data={
+                        "task_type": task_type.value,
+                        "session_id": str(session_id) if session_id else None,
+                        "run_id": str(task.id),
+                    },
+                )
+            except Exception:
+                logger.debug("task_created_event_failed", exc_info=True)
         return task
 
     async def start_task(

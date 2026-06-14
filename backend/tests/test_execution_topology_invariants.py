@@ -48,6 +48,18 @@ def _calls_submit_message(source: str) -> list[int]:
     return lines
 
 
+def _calls_execute_async(source: str) -> list[int]:
+    tree = ast.parse(source)
+    lines: list[int] = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        func = node.func
+        if isinstance(func, ast.Attribute) and func.attr == "execute_async":
+            lines.append(node.lineno)
+    return lines
+
+
 @pytest.mark.parametrize("relative", _AGENT_ENTRY_MODULES)
 def test_production_agent_entries_use_kernel(relative: str) -> None:
     """Production entry modules must not call submit_message outside run_loop."""
@@ -81,6 +93,18 @@ def test_service_manager_exposes_runtime_context() -> None:
     from leagent.services.service_manager import ServiceManager
 
     assert "runtime_context" in dir(ServiceManager)
+
+
+def test_chat_workflow_runner_does_not_call_execute_async_directly() -> None:
+    """Chat step runner must route through WorkflowService, not the raw executor."""
+    path = _module_path("leagent/chat_workflow/runner.py")
+    assert path.exists(), "chat_workflow/runner.py must exist"
+    source = path.read_text(encoding="utf-8")
+    assert "run_compiled_document" in source
+    assert not _calls_execute_async(source), (
+        "runner.py must not call _executor.execute_async directly; "
+        "use WorkflowService.run_compiled_document"
+    )
 
 
 def test_runtime_context_from_service_manager_builds_hooks() -> None:
