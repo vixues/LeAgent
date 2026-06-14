@@ -18,7 +18,7 @@ export function ResumePanel() {
   const resumeExecution = useExecutionResume(t);
   const promptId = useExecutionOverlay((s) => s.promptId);
   const blocked = useExecutionOverlay((s) => s.blocked);
-  const setBlocked = useExecutionOverlay((s) => s.setBlocked);
+  const setBlockedForPrompt = useExecutionOverlay((s) => s.setBlocked);
   const [answer, setAnswer] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -35,7 +35,7 @@ export function ResumePanel() {
         checkpointId: blocked.checkpointId,
         answer,
       });
-      setBlocked(null);
+      setBlockedForPrompt(promptId, null);
       setAnswer('');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Resume failed');

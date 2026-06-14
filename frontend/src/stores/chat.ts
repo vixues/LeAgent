@@ -8,6 +8,7 @@ import { useChatDraftStore } from './chatDraft';
 import { useLayoutStore } from './layout';
 import { hydrateSessionCanvasArtifacts } from './artifact';
 import { hydrateGenUiFromMessages, useGenUiStore } from './genUi';
+import { useExecutionSessionStore } from './executionSession';
 import {
   ensureChronologicalMessages,
   normalizeMessageList,
@@ -21,7 +22,7 @@ import {
 } from '@/lib/persistNamespace';
 import type {
   ChatSession,
-  ChatWorkflowStepRunState,
+  ChatWorkflowStepRunRecord,
   Message,
   NestedAgentPreviewState,
   PendingUserInput,
@@ -103,7 +104,7 @@ interface ChatStore {
     sessionId: string,
     messageId: string,
     stepId: string,
-    partial: Partial<{ status: ChatWorkflowStepRunState; error?: string }>,
+    partial: Partial<ChatWorkflowStepRunRecord>,
   ) => void;
   clearMessages: (sessionId: string) => void;
   /** Keep messages up to and including `messageId`; drop the rest. Returns false if id not found. */
@@ -421,13 +422,20 @@ export const useChatStore = create<ChatStore>()(
           sessions: [tempSession, ...state.sessions],
           currentSessionId: tempId,
           messages: { ...state.messages, [tempId]: [] },
+          sessionTodoUi: {
+            ...state.sessionTodoUi,
+            [tempId]: { pinned: false, dismissed: false },
+          },
+          pendingUserInput: null,
         }));
+        useExecutionSessionStore.getState().clearSession(tempId);
 
         try {
           const res = await apiClient.post<SessionResponse>('/chat/sessions', {
             name: title || i18n.t('chat.defaultSessionName'),
           });
           const session = mapSession(res);
+          delete session.todos;
 
           set((state) => {
             const newMessages = { ...state.messages };
@@ -435,12 +443,24 @@ export const useChatStore = create<ChatStore>()(
             delete newMessages[tempId];
             newMessages[session.id] = tempMessages;
 
+            const nextTodoUi = { ...state.sessionTodoUi };
+            delete nextTodoUi[tempId];
+            nextTodoUi[session.id] = { pinned: false, dismissed: false };
+
             return {
               sessions: state.sessions.map((s) => (s.id === tempId ? session : s)),
               currentSessionId: state.currentSessionId === tempId ? session.id : state.currentSessionId,
               messages: newMessages,
+              sessionTodoUi: nextTodoUi,
+              pendingUserInput:
+                state.pendingUserInput &&
+                (state.pendingUserInput.sessionId === tempId ||
+                  state.pendingUserInput.sessionId === session.id)
+                  ? null
+                  : state.pendingUserInput,
             };
           });
+          useExecutionSessionStore.getState().remapSession(tempId, session.id);
 
           return session.id;
         } catch {
@@ -479,6 +499,7 @@ export const useChatStore = create<ChatStore>()(
         }
         useArtifactStore.getState().clearSessionArtifacts(id);
         useGenUiStore.getState().clearForSession(id);
+        useExecutionSessionStore.getState().clearSession(id);
 
         try {
           await apiClient.delete(`/chat/sessions/${id}`);

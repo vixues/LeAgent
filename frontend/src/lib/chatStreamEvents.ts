@@ -21,6 +21,8 @@ import type {
   UserInputQuestion,
 } from '@/types/chat';
 import { normalizeAttachmentList } from '@/types/chat';
+import { useExecutionSessionStore } from '@/stores/executionSession';
+import { useExecutionOverlay } from '@/features/workflow/store/executionOverlay';
 import type { GenUiTreeV1, UiPatchStreamPayload, UiTreeStreamPayload } from '@/types/genUi';
 import { isDocProcessorWriteStream } from '@/lib/docProcessorStreamPreview';
 
@@ -338,6 +340,13 @@ export function applyChatStreamEvent(
       s.updateMessage(sessionId, assistantMsgId, {
         toolCalls: nextToolCalls,
       });
+      useExecutionSessionStore.getState().appendCapability(sessionId, {
+        id: realId,
+        toolCallId: realId,
+        name: toolName,
+        status: 'running',
+        timestamp: new Date().toISOString(),
+      });
       if (
         toolName === 'coding_agent' ||
         toolName === 'code_execution' ||
@@ -373,6 +382,11 @@ export function applyChatStreamEvent(
       if (toolNameTr === 'coding_agent') {
         s.setNestedAgentPreview(sessionId, null);
       }
+      useExecutionSessionStore.getState().updateCapability(sessionId, toolCallId, {
+        status: tr.error || !tr.success ? 'error' : 'success',
+        error: tr.error,
+        name: toolNameTr || undefined,
+      });
       break;
     }
 
@@ -501,6 +515,60 @@ export function applyChatStreamEvent(
       };
       s.setPendingUserInput(payload);
       s.updateToolCall(sessionId, assistantMsgId, toolCallId, { status: 'awaiting_user' });
+      useExecutionSessionStore.getState().updateCapability(sessionId, toolCallId, {
+        status: 'awaiting_user',
+      });
+      break;
+    }
+
+    case 'execution_started': {
+      const d = event.data as {
+        run_id?: string;
+        session_id?: string;
+        scope?: string;
+        prompt_id?: string | null;
+        parent_run_id?: string | null;
+      };
+      const runId = typeof d.run_id === 'string' ? d.run_id : '';
+      if (!runId) break;
+      useExecutionSessionStore.getState().upsertFromStarted(sessionId, {
+        runId,
+        scope: typeof d.scope === 'string' ? d.scope : undefined,
+        promptId: typeof d.prompt_id === 'string' ? d.prompt_id : d.prompt_id ?? undefined,
+        parentRunId: typeof d.parent_run_id === 'string' ? d.parent_run_id : undefined,
+      });
+      break;
+    }
+
+    case 'agent_task': {
+      const d = event.data as { task_id?: string; session_id?: string };
+      const taskId = typeof d.task_id === 'string' ? d.task_id : '';
+      if (!taskId) break;
+      useExecutionSessionStore.getState().setAgentTaskId(sessionId, taskId);
+      break;
+    }
+
+    case 'workflow_done': {
+      const d = event.data as {
+        prompt_id?: string;
+        run_id?: string;
+        success?: boolean;
+        pause_token?: Record<string, unknown> | null;
+      };
+      useExecutionSessionStore.getState().markWorkflowDone(sessionId, {
+        promptId: typeof d.prompt_id === 'string' ? d.prompt_id : undefined,
+        runId: typeof d.run_id === 'string' ? d.run_id : undefined,
+        success: d.success,
+      });
+      if (d.pause_token) {
+        useExecutionSessionStore.getState().setPauseToken(sessionId, d.pause_token);
+      }
+      if (typeof d.prompt_id === 'string' && d.prompt_id) {
+        useExecutionOverlay.getState().finish(
+          d.prompt_id,
+          d.success === false ? { errors: ['Workflow step failed'] } : undefined,
+        );
+      }
       break;
     }
 
@@ -737,6 +805,27 @@ export function applyChatStreamEvent(
         s.lastTerminalReason = terminalReason;
         s.lastCheckpointId = checkpointId;
         useChatStore.setState({ lastTerminalReason: terminalReason, lastCheckpointId: checkpointId });
+      }
+
+      const pending = useChatStore.getState().pendingUserInput;
+      const pauseToken =
+        acData && typeof acData.pause_token === 'object' && acData.pause_token !== null
+          ? (acData.pause_token as Record<string, unknown>)
+          : null;
+      const terminalReason =
+        acData && typeof acData.terminal_reason === 'string' ? acData.terminal_reason : null;
+      const awaitingInput =
+        terminalReason === 'awaiting_user_input' ||
+        pauseToken != null ||
+        (pending?.sessionId === sessionId && Boolean(pending.checkpointId));
+
+      if (awaitingInput) {
+        useExecutionSessionStore.getState().setStatus(sessionId, 'blocked');
+        if (pauseToken) {
+          useExecutionSessionStore.getState().setPauseToken(sessionId, pauseToken);
+        }
+      } else {
+        useExecutionSessionStore.getState().setStatus(sessionId, 'completed');
       }
       break;
     }

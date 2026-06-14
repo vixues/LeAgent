@@ -8,7 +8,7 @@ import { useLayoutStore } from '@/stores/layout';
 import { generateId } from '@/lib/utils';
 import { ChatMessages } from '@/components/chat/ChatMessages';
 import { ChatPinnedStrip } from '@/components/chat/ChatPinnedStrip';
-import { SessionTodoPanel } from '@/components/chat/SessionTodoPanel';
+import { ChatExecutionPanel } from '@/components/chat/ChatExecutionPanel';
 import { ChatInput } from '@/components/chat/ChatInput';
 import { ChatComposerUserInputGate } from '@/components/chat/ChatComposerUserInputGate';
 import { ChatTerminalReasonBanner } from '@/components/chat/ChatTerminalReasonBanner';
@@ -402,7 +402,7 @@ export default function ChatView() {
         onToggleFocus={toggleFocusMode}
         focusMode={focusMode}
       />
-      <SessionTodoPanel sessionId={currentSessionId} />
+      <ChatExecutionPanel sessionId={currentSessionId} />
       <div className="chat-center-main">
         <ChatPinnedStrip />
         <ChatMessages

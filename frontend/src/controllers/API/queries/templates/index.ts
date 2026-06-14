@@ -15,6 +15,10 @@ export interface TemplateListItem {
   node_count: number;
   version: string;
   source: string;
+  preview_ui?: {
+    nodes?: unknown[];
+    edges?: unknown[];
+  } | null;
 }
 
 export interface TemplateListResponse {

@@ -12,6 +12,8 @@ export type NodeRunStatus =
   | 'cached'
   | 'skipped';
 
+export type OverlaySurface = 'editor' | 'chat';
+
 export interface NodeRunState {
   status: NodeRunStatus;
   /** 0..1 progress (for nodes that report intermediate progress). */
@@ -32,31 +34,96 @@ export interface BlockedInfo {
   ui?: Record<string, unknown>;
 }
 
-interface ExecutionOverlayState {
+export interface PromptOverlayState {
+  running: boolean;
+  nodes: Record<string, NodeRunState>;
+  blocked: BlockedInfo | null;
+  outputs: Record<string, unknown> | null;
+  genUiTrees: GenUiTreeV1[];
+  errors: string[];
+}
+
+function emptyOverlay(): PromptOverlayState {
+  return {
+    running: false,
+    nodes: {},
+    blocked: null,
+    outputs: null,
+    genUiTrees: [],
+    errors: [],
+  };
+}
+
+function primaryOverlay(
+  overlays: Record<string, PromptOverlayState>,
+  editorActivePromptId: string | null,
+): PromptOverlayState {
+  if (!editorActivePromptId) return emptyOverlay();
+  return overlays[editorActivePromptId] ?? emptyOverlay();
+}
+
+function withEditorSync(
+  overlays: Record<string, PromptOverlayState>,
+  editorActivePromptId: string | null,
+): {
+  overlays: Record<string, PromptOverlayState>;
+  editorActivePromptId: string | null;
+  activePromptId: string | null;
   promptId: string | null;
   running: boolean;
   nodes: Record<string, NodeRunState>;
-  /** Set when the run paused on a blocking node (resume affordance). */
   blocked: BlockedInfo | null;
-  /** Resolved `WorkflowDocument.outputs` from the terminal event. */
   outputs: Record<string, unknown> | null;
-  /** Explicit `NodeOutput.ui.gen_ui` trees collected from `executed` events. */
   genUiTrees: GenUiTreeV1[];
   errors: string[];
-  start: (promptId: string) => void;
-  setNode: (nodeId: string, patch: Partial<NodeRunState>) => void;
-  setBlocked: (info: BlockedInfo | null) => void;
-  addGenUiTree: (tree: GenUiTreeV1) => void;
-  finish: (result?: { outputs?: Record<string, unknown>; errors?: string[] }) => void;
-  reset: () => void;
+} {
+  const primary = primaryOverlay(overlays, editorActivePromptId);
+  return {
+    overlays,
+    editorActivePromptId,
+    activePromptId: editorActivePromptId,
+    promptId: editorActivePromptId,
+    running: primary.running,
+    nodes: primary.nodes,
+    blocked: primary.blocked,
+    outputs: primary.outputs,
+    genUiTrees: primary.genUiTrees,
+    errors: primary.errors,
+  };
+}
+
+interface ExecutionOverlayState {
+  overlays: Record<string, PromptOverlayState>;
+  /** Editor-scoped primary overlay; chat runs do not repoint this. */
+  editorActivePromptId: string | null;
+  activePromptId: string | null;
+  promptId: string | null;
+  running: boolean;
+  nodes: Record<string, NodeRunState>;
+  blocked: BlockedInfo | null;
+  outputs: Record<string, unknown> | null;
+  genUiTrees: GenUiTreeV1[];
+  errors: string[];
+  start: (promptId: string, surface?: OverlaySurface) => void;
+  setNode: (promptId: string, nodeId: string, patch: Partial<NodeRunState>) => void;
+  setBlocked: (promptId: string, info: BlockedInfo | null) => void;
+  addGenUiTree: (promptId: string, tree: GenUiTreeV1) => void;
+  finish: (
+    promptId: string,
+    result?: { outputs?: Record<string, unknown>; errors?: string[] },
+  ) => void;
+  reset: (promptId?: string) => void;
+  getOverlay: (promptId: string) => PromptOverlayState | undefined;
 }
 
 /**
- * Holds the live execution overlay the canvas renders on top of nodes. Fed by
- * the workflow execution WebSocket (`/ws/executions/{prompt_id}`), mirroring
- * ComfyUI's progressive node highlighting.
+ * Holds live execution overlays keyed by `promptId`. Fed by the workflow
+ * execution WebSocket (`/ws/executions/{prompt_id}`).
  */
-export const useExecutionOverlay = create<ExecutionOverlayState>((set) => ({
+export const useExecutionOverlay = create<ExecutionOverlayState>((set, get) => ({
+  overlays: {},
+  editorActivePromptId: null,
+  activePromptId: null,
   promptId: null,
   running: false,
   nodes: {},
@@ -64,40 +131,91 @@ export const useExecutionOverlay = create<ExecutionOverlayState>((set) => ({
   outputs: null,
   genUiTrees: [],
   errors: [],
-  start: (promptId) =>
-    set({
-      promptId,
-      running: true,
-      nodes: {},
-      blocked: null,
-      outputs: null,
-      genUiTrees: [],
-      errors: [],
+
+  getOverlay: (promptId) => get().overlays[promptId],
+
+  start: (promptId, surface = 'editor') =>
+    set((state) => {
+      const overlays = {
+        ...state.overlays,
+        [promptId]: {
+          ...emptyOverlay(),
+          running: true,
+        },
+      };
+      if (surface === 'chat') {
+        return { overlays };
+      }
+      return withEditorSync(overlays, promptId);
     }),
-  setNode: (nodeId, patch) =>
-    set((state) => ({
-      nodes: {
-        ...state.nodes,
-        [nodeId]: { status: 'pending', ...state.nodes[nodeId], ...patch },
-      },
-    })),
-  setBlocked: (info) => set({ blocked: info }),
-  addGenUiTree: (tree) =>
-    set((state) => ({ genUiTrees: [...state.genUiTrees, tree] })),
-  finish: (result) =>
-    set((state) => ({
-      running: false,
-      outputs: result?.outputs ?? state.outputs,
-      errors: result?.errors ?? state.errors,
-    })),
-  reset: () =>
-    set({
-      promptId: null,
-      running: false,
-      nodes: {},
-      blocked: null,
-      outputs: null,
-      genUiTrees: [],
-      errors: [],
+
+  setNode: (promptId, nodeId, patch) =>
+    set((state) => {
+      const prev = state.overlays[promptId] ?? emptyOverlay();
+      const existing: NodeRunState = prev.nodes[nodeId] ?? { status: 'pending' };
+      const nextNode: NodeRunState = { ...existing, ...patch };
+      const overlays: Record<string, PromptOverlayState> = {
+        ...state.overlays,
+        [promptId]: {
+          ...prev,
+          nodes: {
+            ...prev.nodes,
+            [nodeId]: nextNode,
+          },
+        },
+      };
+      return withEditorSync(overlays, state.editorActivePromptId);
+    }),
+
+  setBlocked: (promptId, info) =>
+    set((state) => {
+      const prev = state.overlays[promptId] ?? emptyOverlay();
+      const overlays = {
+        ...state.overlays,
+        [promptId]: { ...prev, blocked: info },
+      };
+      return withEditorSync(overlays, state.editorActivePromptId);
+    }),
+
+  addGenUiTree: (promptId, tree) =>
+    set((state) => {
+      const prev = state.overlays[promptId] ?? emptyOverlay();
+      const overlays = {
+        ...state.overlays,
+        [promptId]: { ...prev, genUiTrees: [...prev.genUiTrees, tree] },
+      };
+      return withEditorSync(overlays, state.editorActivePromptId);
+    }),
+
+  finish: (promptId, result) =>
+    set((state) => {
+      const prev = state.overlays[promptId] ?? emptyOverlay();
+      if (!prev.running && !result?.errors?.length) {
+        return state;
+      }
+      const overlays = {
+        ...state.overlays,
+        [promptId]: {
+          ...prev,
+          running: false,
+          outputs: result?.outputs ?? prev.outputs,
+          errors: result?.errors ?? prev.errors,
+        },
+      };
+      return withEditorSync(overlays, state.editorActivePromptId);
+    }),
+
+  reset: (promptId) =>
+    set((state) => {
+      if (!promptId) {
+        return withEditorSync({}, null);
+      }
+      const overlays = { ...state.overlays };
+      delete overlays[promptId];
+      const editorActivePromptId =
+        state.editorActivePromptId === promptId
+          ? Object.keys(overlays)[0] ?? null
+          : state.editorActivePromptId;
+      return withEditorSync(overlays, editorActivePromptId);
     }),
 }));

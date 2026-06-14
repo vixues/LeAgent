@@ -44,6 +44,23 @@
       "statusFailed": "Failed",
       "cycleStatus": "Mark as {{status}}"
     },
+    "execution": {
+      "panel": {
+        "title": "Execution",
+        "titleBlocked": "Execution paused",
+        "titleRunning": "Running",
+        "capabilities": "Capabilities",
+        "workflow": "Workflow",
+        "workflowBlocked": "Waiting for input",
+        "workflowRunning": "Workflow running…",
+        "workflowIdle": "Workflow idle",
+        "liveNodes": "{{count}} nodes running",
+        "resumePrompt": "Provide input to continue",
+        "resumePlaceholder": "Your answer…",
+        "resume": "Resume",
+        "resumeFailed": "Resume failed"
+      }
+    },
     "contextUsageButtonAria": "Context usage",
     "contextUsageTitle": "Context",
     "contextUsageBudget": "Model context window",

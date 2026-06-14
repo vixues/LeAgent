@@ -34,6 +34,13 @@ export interface TaskProgressStep {
 
 export type ChatWorkflowStepRunState = 'idle' | 'running' | 'success' | 'error';
 
+export interface ChatWorkflowStepRunRecord {
+  status: ChatWorkflowStepRunState;
+  error?: string;
+  prompt_id?: string;
+  run_id?: string;
+}
+
 export interface ChatWorkflowToolActionModel {
   kind: 'tool';
   tool_id: string;
@@ -57,7 +64,7 @@ export interface ChatWorkflowSpecModel {
 export interface ChatWorkflowUiState {
   spec: ChatWorkflowSpecModel;
   digest: string;
-  stepRuns: Record<string, { status: ChatWorkflowStepRunState; error?: string }>;
+  stepRuns: Record<string, ChatWorkflowStepRunRecord>;
 }
 
 /** Flow.data-shaped DAG persisted in extensions (same format as Flow editor). */
@@ -94,16 +101,20 @@ export function parseWorkflowFromExtensions(
   const s = spec as Partial<ChatWorkflowSpecModel>;
   if (typeof s.title !== 'string' || !Array.isArray(s.steps)) return undefined;
 
-  const stepRuns: Record<string, { status: ChatWorkflowStepRunState; error?: string }> = {};
+  const stepRuns: Record<string, ChatWorkflowStepRunRecord> = {};
   const rawRuns = obj.chat_workflow_step_runs;
   if (rawRuns && typeof rawRuns === 'object' && !Array.isArray(rawRuns)) {
     for (const [key, v] of Object.entries(rawRuns)) {
       if (!v || typeof v !== 'object' || Array.isArray(v)) continue;
       const st = (v as Record<string, unknown>).status;
       if (st === 'idle' || st === 'running' || st === 'success' || st === 'error') {
-        const rec: { status: ChatWorkflowStepRunState; error?: string } = { status: st };
+        const rec: ChatWorkflowStepRunRecord = { status: st };
         const err = (v as Record<string, unknown>).error;
         if (typeof err === 'string' && err) rec.error = err;
+        const promptId = (v as Record<string, unknown>).prompt_id;
+        if (typeof promptId === 'string' && promptId) rec.prompt_id = promptId;
+        const runId = (v as Record<string, unknown>).run_id;
+        if (typeof runId === 'string' && runId) rec.run_id = runId;
         stepRuns[key] = rec;
       }
     }
@@ -328,6 +339,7 @@ export interface StreamEvent {
     | 'error'
     | 'attachments'
     | 'workspace_attachments'
+    | 'execution_started'
     | 'task_progress'
     | 'session_todos'
     | 'workflow'

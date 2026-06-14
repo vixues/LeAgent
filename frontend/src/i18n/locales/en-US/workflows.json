@@ -72,6 +72,20 @@
       "workflow": "Workflow",
       "chat": "Chat",
       "tool": "Tool"
+    },
+    "hub": {
+      "savedFlowsTab": "Saved flows",
+      "playbooksTab": "Chat playbooks",
+      "savedFlowsHint": "Flows you created or imported — open in the graph editor, run, or schedule.",
+      "playbooksHint": "Runnable step cards for chat: linear tool sequences you can try in a test lab session.",
+      "openTemplateGallery": "Browse DAG template gallery",
+      "playbookBadge": "Playbook",
+      "demoBadge": "Demo",
+      "openDagTemplate": "View full DAG template",
+      "advancedSpec": "Advanced: spec JSON",
+      "playbooksBlurbTitle": "Try playbooks in chat",
+      "playbooksBlurbBody": "Each card is a validated tool-step sequence. Open the test lab to run every playbook against the real API.",
+      "playbooksVsGallery": "Need a full node graph for the editor? Use the"
     }
   },
   "tasks": {
@@ -281,7 +295,8 @@
     "emptyNoneHint": "Workflow templates will appear here when configured.",
     "clearFilters": "Clear filters",
     "viewGrid": "Grid",
-    "viewList": "List"
+    "viewList": "List",
+    "galleryHint": "Pre-built DAG workflows with connected nodes — apply to open in the graph editor. For chat step cards, see Workflows → Chat playbooks."
   },
   "flowEditor": {
     "zoomOut": "Zoom out",

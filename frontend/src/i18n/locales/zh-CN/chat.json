@@ -44,6 +44,23 @@
       "statusFailed": "失败",
       "cycleStatus": "标记为{{status}}"
     },
+    "execution": {
+      "panel": {
+        "title": "执行",
+        "titleBlocked": "执行已暂停",
+        "titleRunning": "运行中",
+        "capabilities": "能力调用",
+        "workflow": "工作流",
+        "workflowBlocked": "等待输入",
+        "workflowRunning": "工作流运行中…",
+        "workflowIdle": "工作流空闲",
+        "liveNodes": "{{count}} 个节点运行中",
+        "resumePrompt": "提供输入以继续",
+        "resumePlaceholder": "你的回答…",
+        "resume": "继续",
+        "resumeFailed": "继续执行失败"
+      }
+    },
     "contextUsageButtonAria": "上下文占用",
     "contextUsageTitle": "上下文",
     "contextUsageBudget": "模型上下文长度",

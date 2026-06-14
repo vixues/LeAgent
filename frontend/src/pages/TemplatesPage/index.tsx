@@ -32,6 +32,8 @@ import {
   type TemplateCategory,
   type TemplateListItem,
 } from '@/controllers/API/queries/templates';
+import { WorkflowMiniGraphPreview } from '@/features/workflow/components/WorkflowMiniGraphPreview';
+import type { FlowEdge, FlowNode } from '@/stores/flow';
 
 const CATEGORY_COLORS: Record<string, string> = {
   finance: 'bg-peach-50 dark:bg-peach-900/20 text-peach-700 dark:text-peach-300 border-peach-200 dark:border-peach-800',
@@ -53,6 +55,7 @@ const CATEGORY_COLORS: Record<string, string> = {
   inventory: 'bg-mint-100 dark:bg-mint-900/30 text-mint-800 dark:text-mint-200 border-mint-300 dark:border-mint-700',
   audit: 'bg-rose-50 dark:bg-rose-900/20 text-rose-700 dark:text-rose-300 border-rose-200 dark:border-rose-800',
   general: 'bg-surface-sunken text-muted-foreground border-border',
+  game: 'bg-violet-50 dark:bg-violet-900/20 text-violet-700 dark:text-violet-300 border-violet-200 dark:border-violet-800',
 };
 
 function TemplateCard({
@@ -87,6 +90,19 @@ function TemplateCard({
             <span>{template.node_count}</span>
           </div>
         </div>
+
+        <WorkflowMiniGraphPreview
+          previewUi={
+            template.preview_ui
+              ? {
+                  nodes: template.preview_ui.nodes as FlowNode[] | undefined,
+                  edges: template.preview_ui.edges as FlowEdge[] | undefined,
+                }
+              : null
+          }
+          variant="card"
+          className="mb-3"
+        />
 
         <p className="text-xs text-muted-foreground line-clamp-2 mb-4 flex-1">
           {template.description || t('templates.noDescription')}
@@ -197,19 +213,25 @@ function TemplateRow({
 
 function CardSkeleton() {
   return (
-    <div className="rounded-xl border border-border p-5">
-      <div className="flex items-start gap-2.5 mb-3">
-        <Skeleton className="w-8 h-8 rounded-lg" />
-        <div className="flex-1">
-          <Skeleton className="w-3/4 h-4 mb-1.5" />
-          <Skeleton className="w-16 h-4 rounded-full" />
+    <div className="rounded-xl border border-border overflow-hidden">
+      <div className="p-5 pb-3">
+        <div className="flex items-start gap-2.5 mb-3">
+          <Skeleton className="w-8 h-8 rounded-lg" />
+          <div className="flex-1">
+            <Skeleton className="w-3/4 h-4 mb-1.5" />
+            <Skeleton className="w-16 h-4 rounded-full" />
+          </div>
+        </div>
+        <Skeleton className="w-full h-[148px] rounded-lg mb-3" />
+        <Skeleton className="w-full h-3 mb-1.5" />
+        <Skeleton className="w-2/3 h-3 mb-4" />
+        <div className="flex gap-1">
+          <Skeleton className="w-12 h-4 rounded" />
+          <Skeleton className="w-14 h-4 rounded" />
         </div>
       </div>
-      <Skeleton className="w-full h-3 mb-1.5" />
-      <Skeleton className="w-2/3 h-3 mb-4" />
-      <div className="flex gap-1">
-        <Skeleton className="w-12 h-4 rounded" />
-        <Skeleton className="w-14 h-4 rounded" />
+      <div className="px-5 pb-4">
+        <Skeleton className="w-full h-9 rounded-lg" />
       </div>
     </div>
   );
@@ -269,6 +291,10 @@ export default function TemplatesPage() {
       description={t('templates.pageDescription', { count: totalCount })}
       icon={<LayoutTemplate className="w-5 h-5" />}
     >
+        <p className="text-xs text-muted-foreground -mt-4 mb-2 max-w-3xl">
+          {t('templates.galleryHint')}
+        </p>
+
         {/* Category pills + Search */}
         <div className="flex items-center gap-3">
           <CategoryFilter

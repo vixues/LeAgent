@@ -2,6 +2,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ChatSession, Message } from '@/types/chat';
 import { apiClient } from '@/api/client';
 import { dedupeMessagesByIdPreserveOrder, useChatStore } from './chat';
+import { applyChatStreamEvent } from '@/lib/chatStreamEvents';
+import { useExecutionSessionStore } from './executionSession';
 
 vi.mock('@/api/client', () => ({
   apiClient: {
@@ -331,5 +333,53 @@ describe('fetchMessages stream guard', () => {
     expect(useChatStore.getState().messages[session.id]?.[0]?.taskProgress?.[0]?.status).toBe(
       'in_progress',
     );
+  });
+
+  it('createSession resets todo panel state and strips todos from the new session', async () => {
+    useChatStore.getState().setSessionTodos(session.id, [
+      { taskId: 't1', label: 'Old', status: 'pending', order: 0 },
+    ]);
+    useChatStore.getState().setSessionTodoPinned(session.id, true);
+
+    const newId = '00000000-0000-4000-8000-000000000099';
+    vi.mocked(apiClient.post).mockResolvedValue({
+      id: newId,
+      name: 'New Chat',
+      message_count: 0,
+      created_at: session.createdAt,
+      updated_at: session.updatedAt,
+      todos: [{ id: 't1', content: 'Should strip', status: 'pending', order: 0 }],
+    });
+
+    const createdId = await useChatStore.getState().createSession('New Chat');
+
+    expect(createdId).toBe(newId);
+    expect(useChatStore.getState().currentSessionId).toBe(newId);
+    const created = useChatStore.getState().sessions.find((s) => s.id === newId);
+    expect(created?.todos).toBeUndefined();
+    expect(useChatStore.getState().sessionTodoUi[newId]).toEqual({
+      pinned: false,
+      dismissed: false,
+    });
+  });
+});
+
+describe('execution stream integration', () => {
+  beforeEach(() => {
+    useExecutionSessionStore.getState().clearSession(SESSION_ID);
+  });
+
+  it('applyChatStreamEvent records execution_started on session store', () => {
+    applyChatStreamEvent(
+      {
+        type: 'execution_started',
+        data: { run_id: 'run-xyz', session_id: SESSION_ID, scope: 'chat_turn' },
+      },
+      { sessionId: SESSION_ID, assistantMsgId: 'a1' },
+    );
+
+    const entry = useExecutionSessionStore.getState().bySession[SESSION_ID];
+    expect(entry?.runId).toBe('run-xyz');
+    expect(entry?.scope).toBe('chat_turn');
   });
 });

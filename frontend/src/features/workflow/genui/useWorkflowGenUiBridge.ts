@@ -69,7 +69,7 @@ export function useWorkflowGenUiBridge(opts: WorkflowGenUiBridgeOptions = {}): v
             checkpointId:
               typeof p.values?.checkpoint_id === 'string' ? p.values.checkpoint_id : undefined,
           });
-          useExecutionOverlay.getState().setBlocked(null);
+          useExecutionOverlay.getState().setBlocked(p.promptId, null);
           o.onResumed?.(p.promptId);
         } catch (err) {
           o.onError?.(err instanceof Error ? err.message : 'Resume failed');

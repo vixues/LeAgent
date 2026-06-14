@@ -8,7 +8,18 @@ import { getComposerModelMode } from '@/stores/chatDraft';
 import { generateId } from '@/lib/utils';
 import { handleChatStreamFailure, runChatStream } from '@/lib/runChatStream';
 import { registerGenUiActionAdapters } from '@/lib/genUiActionBus';
+import { apiClient } from '@/api/client';
+import { resumeWorkflowExecution } from '@/hooks/useExecutionResume';
+import { useExecutionOverlay } from '@/features/workflow/store/executionOverlay';
+import { useExecutionSessionStore } from '@/stores/executionSession';
 import type { Message } from '@/types/chat';
+
+interface WorkflowRunResponse {
+  execution_id: string;
+  prompt_id: string;
+  flow_id: string;
+  status: string;
+}
 
 /**
  * Mounts once near the chat root and wires the singleton GenUi action bus to
@@ -111,6 +122,50 @@ export function GenUiActionBridge() {
         const messageId = payload.messageId ?? ctx.messageId;
         if (!sessionId || !messageId) return;
         useGenUiStore.getState().applyPatch(sessionId, messageId, { patches: payload.patches });
+      },
+      async runWorkflow(payload, ctx) {
+        try {
+          const res = await apiClient.post<WorkflowRunResponse>(
+            `/workflow/flows/${payload.flowId}/run`,
+            {
+              input_data: payload.values ?? {},
+              priority: 5,
+              trigger_type: 'manual',
+              session_id: ctx.sessionId ?? useChatStore.getState().currentSessionId,
+            },
+          );
+          useExecutionOverlay.getState().start(res.prompt_id, 'chat');
+          const sid = ctx.sessionId ?? useChatStore.getState().currentSessionId;
+          if (sid) {
+            useExecutionSessionStore.getState().upsertFromStarted(sid, {
+              runId: res.execution_id,
+              scope: 'workflow',
+              promptId: res.prompt_id,
+            });
+          }
+        } catch {
+          /* GenUI surfaces errors inline when wired */
+        }
+      },
+      async resumeWorkflow(payload, ctx) {
+        try {
+          await resumeWorkflowExecution({
+            promptId: payload.promptId,
+            answer: typeof payload.values?.answer === 'string' ? payload.values.answer : undefined,
+            prompt: typeof payload.values?.prompt === 'string' ? payload.values.prompt : undefined,
+            checkpointId:
+              typeof payload.values?.checkpoint_id === 'string'
+                ? payload.values.checkpoint_id
+                : undefined,
+          });
+          useExecutionOverlay.getState().setBlocked(payload.promptId, null);
+          const sid = ctx.sessionId ?? useChatStore.getState().currentSessionId;
+          if (sid) {
+            useExecutionSessionStore.getState().setPromptId(sid, payload.promptId);
+          }
+        } catch {
+          /* GenUI surfaces errors inline when wired */
+        }
       },
     });
   }, []);
