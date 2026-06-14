@@ -160,6 +160,9 @@ present — wired via `RuntimeContext.from_service_manager`.
 
 ## Adding New Tools
 
+Parameter naming conventions and strict contract rules:
+[`docs/technical/tool-parameters.md`](../docs/technical/tool-parameters.md).
+
 1. Create `tools/<category>/new_tool.py`
 2. Implement `BaseTool`:
 

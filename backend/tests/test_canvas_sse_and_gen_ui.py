@@ -630,18 +630,23 @@ async def test_emit_ui_patch_execute_without_canvas_id():
     assert result["payload"]["seq"] == 1
 
 
-def test_emit_ui_patch_unwraps_nested_payload_wrapper():
+def test_emit_ui_patch_rejects_nested_payload_wrapper():
     patches = [{"op": "add", "path": "/root/children/-", "value": {"kind": "Text", "props": {"value": "x"}}}]
-    coerced = coerce_ui_patch_tool_params({"payload": {"patches": patches, "seq": 2}})
-    assert coerced["patches"] == patches
-    assert coerced["seq"] == 2
-    ok, err = EmitUiPatchTool().validate_params({"payload": {"patches": patches}})
-    assert ok, err
+    ok, err = EmitUiPatchTool().validate_params({"payload": {"patches": patches, "seq": 2}})
+    assert not ok
+    assert err is not None
+    assert "payload" in err or "patches" in err
 
 
-def test_emit_ui_patch_recovers_payload_wrapper_from_raw():
+def test_emit_ui_patch_coerce_helper_requires_top_level_patches():
+    patches = [{"op": "add", "path": "/root/children/-", "value": {"kind": "Text", "props": {"value": "x"}}}]
+    with pytest.raises(ValueError, match="patches"):
+        coerce_ui_patch_tool_params({"payload": {"patches": patches, "seq": 2}})
+
+
+def test_emit_ui_patch_recovers_top_level_patches_from_raw():
     patches = [{"op": "replace", "path": "/root/props/title", "value": "Title"}]
-    raw = json.dumps({"payload": {"patches": patches, "seq": 1}}, ensure_ascii=False)
+    raw = json.dumps({"patches": patches, "seq": 1}, ensure_ascii=False)
     tool = EmitUiPatchTool()
     normalized, err = normalize_tool_parameters({"__raw__": raw}, tool=tool)
     assert err is None
