@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from leagent.chat_workflow.compile import compile_chat_workflow_to_document
 from leagent.chat_workflow.schema import ChatWorkflowSpec, ChatWorkflowStep, ChatWorkflowToolAction
 
@@ -29,3 +31,13 @@ def test_compile_linear_document() -> None:
     assert doc["nodes"]["s1"]["inputs"]["tool"] == "echo"
     assert any(e["source"] == "start" and e["target"] == "s1" for e in doc["edges"])
     assert any(e["target"] == "end" for e in doc["edges"])
+
+
+def test_runner_imports_workflow_service_path() -> None:
+    """Runner module must delegate to WorkflowService, not WorkflowExecutor."""
+    runner_path = (
+        Path(__file__).resolve().parents[1] / "leagent" / "chat_workflow" / "runner.py"
+    )
+    source = runner_path.read_text(encoding="utf-8")
+    assert "run_compiled_document" in source
+    assert "execute_async" not in source

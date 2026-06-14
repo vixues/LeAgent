@@ -52,15 +52,17 @@ async def run_agent_stream(
     todo_order_by_id: dict[str, int] = {}
     _stream_start = time.monotonic()
 
-    from leagent.runtime.execution_registry import get_execution_run_registry
-    from leagent.runtime.execution_run import ExecutionRun, ExecutionScope
+    from leagent.runtime.execution_factory import (
+        attach_run_id,
+        begin_execution,
+        end_execution_unless_blocked,
+    )
+    from leagent.runtime.execution_run import ExecutionScope
 
-    exec_run = get_execution_run_registry().register(
-        ExecutionRun(
-            scope=ExecutionScope.CHAT_TURN,
-            session_id=str(session_id),
-            user_id=str(user_id),
-        )
+    exec_run = begin_execution(
+        scope=ExecutionScope.CHAT_TURN,
+        session_id=str(session_id),
+        user_id=str(user_id),
     )
 
     def _normalize_task_status(raw: str | None) -> str:
@@ -135,6 +137,16 @@ async def run_agent_stream(
             })
         return progress_events
 
+    yield (
+        "execution_started",
+        {
+            "run_id": exec_run.run_id,
+            "session_id": str(session_id),
+            "scope": ExecutionScope.CHAT_TURN.value,
+        },
+        response_content,
+    )
+
     try:
         async for event in agent.run_stream(
             message,
@@ -146,6 +158,7 @@ async def run_agent_stream(
             skip_append_user=skip_append_user,
             persisted_user_message_id=persisted_user_message_id,
             agent_task_id=agent_task_id,
+            execution_run_id=exec_run.run_id,
         ):
             elapsed = time.monotonic() - _stream_start
             if elapsed > conversation_timeout_sec:
@@ -159,14 +172,17 @@ async def run_agent_stream(
                     agent.abort()
                 yield (
                     "error",
-                    {"error": f"Conversation exceeded {conversation_timeout_sec}s time limit"},
+                    attach_run_id(
+                        {"error": f"Conversation exceeded {conversation_timeout_sec}s time limit"},
+                        exec_run.run_id,
+                    ),
                     response_content,
                 )
                 return
             if event.type == "token":
                 token = event.data.get("token", "")
                 response_content += token
-                yield event.type, event.data, response_content
+                yield event.type, attach_run_id(event.data, exec_run.run_id), response_content
             elif event.type == "complete":
                 if not response_content:
                     response_content = event.data.get("text", "")
@@ -188,7 +204,7 @@ async def run_agent_stream(
                         )
                 except Exception:
                     pass
-                yield event.type, event.data, response_content
+                yield event.type, attach_run_id(event.data, exec_run.run_id), response_content
             elif event.type in (
                 "thinking",
                 "tool_call",
@@ -199,12 +215,14 @@ async def run_agent_stream(
                 "user_input_request",
                 "nested_agent_preview",
             ):
-                yield event.type, event.data, response_content
+                yield event.type, attach_run_id(event.data, exec_run.run_id), response_content
                 for progress_event in _next_progress_events(event.type, event.data):
+                    progress_event["run_id"] = exec_run.run_id
                     yield "task_progress", progress_event, response_content
                 if event.type == "tool_result":
                     snapshot = _session_todos_snapshot(event.data)
                     if snapshot is not None:
+                        snapshot["run_id"] = exec_run.run_id
                         yield "session_todos", snapshot, response_content
                 if event.type == "tool_result" and event.data.get("success"):
                     inner = event.data.get("data")
@@ -216,6 +234,7 @@ async def run_agent_stream(
                                 "spec": inner["workflow"],
                                 "digest": inner.get("digest"),
                                 "partial": False,
+                                "run_id": exec_run.run_id,
                             },
                             response_content,
                         )
@@ -231,12 +250,15 @@ async def run_agent_stream(
                                     "flow_id": inner.get("flow_id"),
                                 },
                                 "partial": False,
+                                "run_id": exec_run.run_id,
                             },
                             response_content,
                         )
     except asyncio.CancelledError:
         logger.warning("agent_stream_cancelled session_id=%s", session_id)
-        yield "error", {"error": "Stream cancelled"}, response_content
+        yield "error", {"error": "Stream cancelled", "run_id": exec_run.run_id}, response_content
     except Exception as exc:
         logger.exception("agent_stream_error session_id=%s", session_id)
-        yield "error", {"error": str(exc)}, response_content
+        yield "error", {"error": str(exc), "run_id": exec_run.run_id}, response_content
+    finally:
+        end_execution_unless_blocked(exec_run.run_id)

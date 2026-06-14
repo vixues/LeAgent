@@ -192,15 +192,34 @@ def _safe_str(value: Any) -> str | None:
     return None
 
 
+def _config_authoring_type(node: dict[str, Any]) -> str | None:
+    """Return ``config.node_type`` when it is a concrete authoring type."""
+    for container in (node, node.get("data") if isinstance(node.get("data"), dict) else None):
+        if not isinstance(container, dict):
+            continue
+        config = container.get("config")
+        if not isinstance(config, dict):
+            continue
+        cfg_type = _safe_str(config.get("node_type"))
+        if not cfg_type or cfg_type in {"default", "generic"}:
+            continue
+        if cfg_type in _KNOWN_AUTHORING_TYPES:
+            return cfg_type
+    return None
+
+
 def _infer_authoring_type(node: dict[str, Any], node_id: str) -> str:
     """Best-effort infer authoring node type from editor-shaped payloads."""
-    raw_type = _safe_str(node.get("type"))
-    if raw_type and raw_type != "generic":
-        return raw_type
+    cfg_type = _config_authoring_type(node)
+    if cfg_type:
+        return cfg_type
 
     class_type = _safe_str(node.get("class_type"))
-    if class_type and class_type in _CLASS_TO_TYPE:
-        return _CLASS_TO_TYPE[class_type]
+    if class_type:
+        if class_type in _CLASS_TO_TYPE:
+            return _CLASS_TO_TYPE[class_type]
+        if class_type.endswith("Node") and class_type in set(_TYPE_TO_CLASS.values()):
+            return _CLASS_TO_TYPE.get(class_type, class_type)
 
     data = node.get("data")
     if isinstance(data, dict):
@@ -208,6 +227,10 @@ def _infer_authoring_type(node: dict[str, Any], node_id: str) -> str:
             candidate = _safe_str(data.get(key))
             if candidate and candidate in _KNOWN_AUTHORING_TYPES:
                 return candidate
+
+    raw_type = _safe_str(node.get("type"))
+    if raw_type and raw_type not in {"generic", "default"}:
+        return raw_type
 
     for key in ("icon", "node_type"):
         candidate = _safe_str(node.get(key))
@@ -220,6 +243,31 @@ def _infer_authoring_type(node: dict[str, Any], node_id: str) -> str:
             extra={"node_id": node_id, "fallback_type": "tool_call"},
         )
     return "tool_call"
+
+
+def _collect_node_inputs(node: dict[str, Any]) -> dict[str, Any]:
+    """Gather engine input sockets from flattened editor / LLM node payloads."""
+    inputs: dict[str, Any] = {}
+    for key in _INPUT_KEYS:
+        if key in node and node[key] is not None:
+            inputs[key] = node[key]
+
+    config = node.get("config")
+    if isinstance(config, dict):
+        if config.get("source") is not None and "source" not in inputs:
+            inputs["source"] = config["source"]
+        if config.get("inputs") is not None and "inputs" not in inputs:
+            inputs["inputs"] = config["inputs"]
+        if config.get("output") is not None and "output" not in inputs:
+            inputs["output"] = config["output"]
+        if config.get("timeout_sec") is not None and "timeout_sec" not in inputs:
+            inputs["timeout_sec"] = config["timeout_sec"]
+        if config.get("tool") is not None and "tool" not in inputs:
+            inputs["tool"] = config["tool"]
+        if config.get("params") is not None and "params" not in inputs:
+            inputs["params"] = config["params"]
+
+    return inputs
 
 
 def to_canonical(raw: dict[str, Any]) -> dict[str, Any]:
@@ -268,6 +316,16 @@ def to_canonical(raw: dict[str, Any]) -> dict[str, Any]:
                 merged["type"] = node["type"]
             if merged.get("class_type") is None and node.get("class_type") is not None:
                 merged["class_type"] = node["class_type"]
+            # React Flow / editor: hoist nested config (node_type, source, inputs, …).
+            cfg = merged.get("config")
+            if isinstance(cfg, dict):
+                if merged.get("class_type") is None and cfg.get("node_type") == "start":
+                    merged["class_type"] = "StartNode"
+                if merged.get("class_type") is None and cfg.get("node_type") == "end":
+                    merged["class_type"] = "EndNode"
+                for cfg_key in ("source", "inputs", "output", "timeout_sec", "tool", "params"):
+                    if cfg_key in cfg and merged.get(cfg_key) is None:
+                        merged[cfg_key] = cfg[cfg_key]
             # React Flow / editor: tool_inputs matches engine input id ``params``.
             if merged.get("params") is None and merged.get("tool_inputs") is not None:
                 merged["params"] = merged["tool_inputs"]
@@ -283,10 +341,7 @@ def to_canonical(raw: dict[str, Any]) -> dict[str, Any]:
         raw_type = _infer_authoring_type(node, str(node_id))
         class_type = class_type_for(raw_type)
 
-        inputs: dict[str, Any] = {}
-        for key in _INPUT_KEYS:
-            if key in node and node[key] is not None:
-                inputs[key] = node[key]
+        inputs = _collect_node_inputs(node)
 
         control: dict[str, Any] = {}
         for key in _CONTROL_KEYS:

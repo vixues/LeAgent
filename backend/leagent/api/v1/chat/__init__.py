@@ -75,6 +75,7 @@ from leagent.api.schemas.chat import (  # noqa: E402
     ChatCompletionResponse,
     ChatCompletionUsage,
     ChatWorkflowStepRunRequest,
+    SessionExecutionRead,
     ChatWorkflowTemplateRead,
     CompactContextRequest,
     CompactContextResponse,
@@ -1952,8 +1953,15 @@ async def run_chat_workflow_step(
         }
 
     from leagent.chat_workflow.runner import run_chat_workflow_step_via_engine
+    from leagent.runtime.execution_registry import get_execution_run_registry
 
-    result = await run_chat_workflow_step_via_engine(
+    parent_run_id = body.parent_run_id
+    if not parent_run_id:
+        active = get_execution_run_registry().get_active_chat_turn(str(session_id))
+        if active is not None:
+            parent_run_id = active.run_id
+
+    outcome = await run_chat_workflow_step_via_engine(
         spec=spec,
         step_id=step_id,
         resolved_args=resolved,
@@ -1961,14 +1969,27 @@ async def run_chat_workflow_step(
         service_manager=sm,
         user_id=str(user_id),
         session_id=str(session_id),
+        parent_run_id=parent_run_id,
     )
+    result = outcome.tool_result
+
+    from datetime import datetime, timezone
 
     runs: dict[str, Any] = ext.get("chat_workflow_step_runs")
     if not isinstance(runs, dict):
         runs = {}
     step_entry: dict[str, Any] = {
-        "status": "success" if result.success else "error",
+        "started_at": datetime.now(timezone.utc).isoformat(),
     }
+    if outcome.prompt_id:
+        step_entry["status"] = "running"
+    else:
+        step_entry["status"] = "success" if result.success else "error"
+        step_entry["completed_at"] = datetime.now(timezone.utc).isoformat()
+    if outcome.prompt_id:
+        step_entry["prompt_id"] = outcome.prompt_id
+    if outcome.run_id:
+        step_entry["run_id"] = outcome.run_id
     if not result.success and result.error:
         step_entry["error"] = str(result.error)
     runs[step_id] = step_entry
@@ -1984,7 +2005,33 @@ async def run_chat_workflow_step(
         "data": result.data,
         "error": result.error,
         "duration_ms": result.duration_ms,
+        "prompt_id": outcome.prompt_id,
+        "run_id": outcome.run_id,
     }
+
+
+@router.get("/sessions/{session_id}/executions", response_model=list[SessionExecutionRead])
+async def list_session_executions(
+    session_id: UUID,
+    user_id: CurrentUserId,
+    chat_svc: ChatSvc,
+) -> list[SessionExecutionRead]:
+    """Return active in-process execution runs for a chat session."""
+    await chat_svc.get_session(session_id, user_id=user_id)
+    from leagent.runtime.execution_registry import get_execution_run_registry
+
+    runs = get_execution_run_registry().list_for_session(str(session_id))
+    return [
+        SessionExecutionRead(
+            run_id=r.run_id,
+            scope=r.scope.value,
+            parent_run_id=r.parent_run_id,
+            prompt_id=r.prompt_id,
+            status="blocked" if r.pause_token else "running",
+            pause_token=r.pause_token.to_dict() if r.pause_token else None,
+        )
+        for r in runs
+    ]
 
 
 @router.get("/workflow-templates", response_model=list[ChatWorkflowTemplateRead])
@@ -2018,6 +2065,7 @@ async def materialize_chat_workflow_templates(
         ext = json.dumps({
             "chat_workflow": item["spec"],
             "chat_workflow_digest": item["digest"],
+            **({"playbook_id": item["playbook_id"]} if item.get("playbook_id") else {}),
         })
         msg = await chat_svc.add_message(
             session.id,

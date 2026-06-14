@@ -8,11 +8,14 @@ server can publish WebSocket events.
 
 from __future__ import annotations
 
+import asyncio
 import contextvars
+import inspect
 import threading
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Callable
+from typing import Any
 
 
 class NodeStatus(str, Enum):
@@ -39,7 +42,7 @@ class NodeProgressState:
     metadata: dict[str, Any] = field(default_factory=dict)
 
 
-ProgressHandler = Callable[["ProgressEvent"], None]
+ProgressHandler = Callable[["ProgressEvent"], None | Awaitable[None]]
 
 
 @dataclass
@@ -105,7 +108,12 @@ class ProgressRegistry:
             handlers = list(self._handlers)
         for h in handlers:
             try:
-                h(event)
+                result = h(event)
+                if inspect.iscoroutine(result):
+                    try:
+                        asyncio.get_running_loop().create_task(result)
+                    except RuntimeError:
+                        result.close()
             except Exception:  # noqa: BLE001
                 continue
 

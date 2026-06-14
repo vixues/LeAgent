@@ -36,7 +36,7 @@ from uuid import UUID
 
 import structlog
 
-from leagent.sdk.events import AgentEventType
+from leagent.prompts.playbooks import playbook_ids_from_context
 from leagent.workflow.io import HiddenHolder, NodeOutput
 
 logger = structlog.get_logger(__name__)
@@ -251,6 +251,14 @@ async def run_agent_node(
     meta: dict[str, Any] = {"agent": agent_name, **(extra_metadata or {})}
     state = hidden.workflow_state
 
+    merged_tool_extra = dict(tool_extra or {})
+    playbook_ids = playbook_ids_from_context(
+        tool_extra=merged_tool_extra,
+        metadata=getattr(state, "metadata", None) if state is not None else None,
+    )
+    if playbook_ids:
+        merged_tool_extra["playbook_ids"] = playbook_ids
+
     # Resume path: the executor stashes the caller's answer under
     # ``__resume__<node_id>`` when a paused run is resumed. If this node
     # previously checkpointed (awaiting_user_input), continue that turn from
@@ -266,7 +274,7 @@ async def run_agent_node(
                     answer,
                     user_id=_as_uuid(hidden.user_id),
                     cwd=cwd or ".",
-                    tool_extra=tool_extra,
+                    tool_extra=merged_tool_extra,
                     abort_event=hidden.abort_event,
                 ),
                 emit=emit,
@@ -301,7 +309,7 @@ async def run_agent_node(
                 prompt,
                 allowed_tools=allowed_tools,
                 max_turns=max_turns,
-                tool_extra=tool_extra,
+                tool_extra=merged_tool_extra,
                 cwd=cwd,
                 inherit_abort=True,
                 nested_preview_emit=emit,
@@ -330,7 +338,7 @@ async def run_agent_node(
                 prompt=prompt,
                 allowed_tools=allowed_tools,
                 max_turns=max_turns,
-                tool_extra=tool_extra,
+                tool_extra=merged_tool_extra,
                 cwd=cwd,
                 emit=emit,
             )

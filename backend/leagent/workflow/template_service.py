@@ -16,6 +16,7 @@ import structlog
 import yaml
 
 from leagent.workflow.io.loader import load as load_document
+from leagent.workflow.layout.ui import build_ui_block
 
 logger = structlog.get_logger(__name__)
 
@@ -39,6 +40,7 @@ CATEGORY_LABELS = {
     "inventory": "Inventory Management",
     "audit": "Audit & Compliance",
     "general": "General",
+    "game": "Games & Playbooks",
 }
 
 CATEGORY_ICONS = {
@@ -61,6 +63,7 @@ CATEGORY_ICONS = {
     "inventory": "📦",
     "audit": "🔍",
     "general": "📋",
+    "game": "🎮",
 }
 
 CATEGORY_ALIASES: dict[str, str] = {
@@ -84,6 +87,7 @@ class TemplateInfo:
         "node_count",
         "version",
         "source",
+        "preview_ui",
     )
 
     def __init__(
@@ -97,6 +101,7 @@ class TemplateInfo:
         node_count: int = 0,
         version: str = "1.0",
         source: str = "yaml",
+        preview_ui: dict[str, Any] | None = None,
     ):
         self.id = id
         self.name = name
@@ -107,6 +112,7 @@ class TemplateInfo:
         self.node_count = node_count
         self.version = version
         self.source = source
+        self.preview_ui = preview_ui
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -120,6 +126,7 @@ class TemplateInfo:
             "node_count": self.node_count,
             "version": self.version,
             "source": self.source,
+            "preview_ui": self.preview_ui,
         }
 
 
@@ -193,6 +200,7 @@ class TemplateService:
                 meta = canonical.get("metadata", {}) or {}
                 category = meta.get("category") or self._infer_category(canonical)
                 tags = list(canonical.get("control", {}).get("tags", []) or [])
+                preview_ui = build_ui_block(canonical)
                 self._info_cache[tid] = TemplateInfo(
                     id=tid,
                     name=canonical.get("name", tid),
@@ -203,6 +211,7 @@ class TemplateService:
                     node_count=len(canonical.get("nodes", {})),
                     version=str(raw.get("version", "1.0")),
                     source="yaml",
+                    preview_ui=preview_ui,
                 )
             except Exception as e:  # noqa: BLE001
                 logger.warning("yaml_template_load_error", file=str(yaml_file), error=str(e))

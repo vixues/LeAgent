@@ -14,7 +14,6 @@ from __future__ import annotations
 
 import time
 from typing import Any
-from uuid import uuid4
 
 import structlog
 
@@ -183,22 +182,49 @@ class CodingAgentNode(WorkflowNode):
             )
 
         started = time.monotonic()
-        result = await run_agent_node(
-            hidden=hidden,
-            agent_name="coding_agent",
-            prompt=prompt,
-            allowed_tools=allowed,
-            max_turns=max_iter,
-            tool_extra={"project_roots": [str(path)]},
-            cwd=str(path),
-            output_var=output_var,
-            log_event="coding_agent_node",
-            extra_metadata={
-                "node_id": hidden.unique_id,
-                "project_path": str(path),
-                "run_id": str(uuid4()),
-            },
+        extra_meta: dict[str, Any] = {
+            "node_id": hidden.unique_id,
+            "project_path": str(path),
+        }
+        parent_run_id = None
+        if hidden.extra_data and isinstance(hidden.extra_data, dict):
+            parent_run_id = hidden.extra_data.get("run_id")
+
+        from leagent.runtime.execution_factory import begin_execution, end_execution
+        from leagent.runtime.execution_run import ExecutionScope
+
+        session_id = None
+        user_id = None
+        if hidden.extra_data and isinstance(hidden.extra_data, dict):
+            session_id = hidden.extra_data.get("session_id")
+            user_id = hidden.extra_data.get("user_id")
+
+        exec_run = begin_execution(
+            scope=ExecutionScope.WORKFLOW,
+            session_id=str(session_id) if session_id else None,
+            user_id=str(user_id) if user_id else None,
+            parent_run_id=str(parent_run_id) if parent_run_id else None,
         )
+        extra_meta["run_id"] = exec_run.run_id
+
+        try:
+            result = await run_agent_node(
+                hidden=hidden,
+                agent_name="coding_agent",
+                prompt=prompt,
+                allowed_tools=allowed,
+                max_turns=max_iter,
+                tool_extra={
+                    "project_roots": [str(path)],
+                    "run_id": exec_run.run_id,
+                },
+                cwd=str(path),
+                output_var=output_var,
+                log_event="coding_agent_node",
+                extra_metadata=extra_meta,
+            )
+        finally:
+            end_execution(exec_run.run_id)
         result.metadata.setdefault(
             "duration_ms", int((time.monotonic() - started) * 1000)
         )

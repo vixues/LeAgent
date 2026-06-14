@@ -150,7 +150,7 @@ def test_coerce_workflow_step_picks_session_pdf(registry: ToolRegistry) -> None:
     )
     out = coerce_workflow_step_arguments(
         "pdf_reader",
-        {"operation": "extract_text", "file_path": ""},
+        {"operation": "read", "file_path": ""},
         ctx,
         registry=registry,
     )
@@ -162,7 +162,7 @@ def test_validate_workflow_step_paths_when_still_empty(registry: ToolRegistry) -
     ctx = ToolContext(user_id="u1", session_id="s1", extra={})
     err = validate_workflow_step_paths(
         "pdf_reader",
-        {"operation": "extract_text", "file_path": ""},
+        {"operation": "read", "file_path": ""},
         ctx,
         registry=registry,
     )

@@ -153,3 +153,62 @@ def test_build_extensions_payload_roundtrip_keys() -> None:
     ext = build_extensions_payload(flow_data=fd, digest="a" * 64)
     assert ext["workflow_embed"]["data"] == fd
     assert ext["workflow_embed"]["digest"] == ext["workflow_embed_digest"]
+
+
+@pytest.mark.asyncio
+async def test_validate_workflow_embed_accepts_editor_script_nodes_with_default_type(
+    registered_builtins,  # noqa: ARG001
+) -> None:
+    """React Flow graphs with ``type: default`` + ``config.node_type: script``."""
+    from leagent.workflow.nodes import get_registry
+
+    flow = {
+        "id": "TPL-11",
+        "name": "文档多级审批流程",
+        "nodes": [
+            {
+                "id": "start",
+                "type": "default",
+                "class_type": "StartNode",
+                "data": {
+                    "label": "提交",
+                    "config": {"node_type": "start", "inputs": {}, "outputs": {}},
+                },
+            },
+            {
+                "id": "tech_review",
+                "type": "default",
+                "class_type": "ToolCallNode",
+                "data": {
+                    "label": "技术评审",
+                    "config": {
+                        "node_type": "script",
+                        "inputs": {"tech_score": "{{input.tech_score}}"},
+                        "output": "tech_out",
+                        "timeout_sec": 10,
+                        "source": "result = {'passed': tech_score >= 60}",
+                    },
+                },
+            },
+            {
+                "id": "end",
+                "type": "default",
+                "class_type": "EndNode",
+                "data": {
+                    "label": "完成",
+                    "config": {"node_type": "end", "outputs": {}},
+                },
+            },
+        ],
+        "edges": [
+            {"id": "e1", "source": "start", "target": "tech_review"},
+            {"id": "e2", "source": "tech_review", "target": "end"},
+        ],
+    }
+    doc, digest = validate_workflow_embed(flow, node_registry=get_registry())
+    assert doc.nodes["start"]["class_type"] == "StartNode"
+    assert doc.nodes["tech_review"]["class_type"] == "ScriptNode"
+    assert doc.nodes["tech_review"]["inputs"]["source"]
+    assert doc.nodes["end"]["class_type"] == "EndNode"
+    assert len(digest) == 64
+

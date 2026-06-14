@@ -173,6 +173,10 @@ class WorkflowExecutor:
                 {k: v for k, v in extra_data.items() if v is not None}
             )
             state.metadata["prompt_id"] = prompt_id
+        if doc.metadata:
+            state.metadata.update(
+                {k: v for k, v in doc.metadata.items() if v is not None}
+            )
         state_id = str(state.id)
         self._states[state_id] = state
         # Per-run abort signal: ``cancel`` sets it so in-flight long-running
@@ -372,6 +376,21 @@ class WorkflowExecutor:
                 await self._persist_run_snapshot(
                     state, prompt_id=prompt_id, exec_list=exec_list,
                 )
+                try:
+                    from leagent.runtime.execution_registry import get_execution_run_registry
+
+                    exec_run = get_execution_run_registry().get_by_prompt_id(prompt_id)
+                    if exec_run is not None:
+                        exec_run.pause(
+                            reason=str(output.block_execution or "blocked"),
+                            workflow_state_id=state.id,
+                        )
+                except Exception:
+                    logger.debug(
+                        "workflow_execution_pause_registration_failed",
+                        prompt_id=prompt_id,
+                        exc_info=True,
+                    )
                 return  # pause the run; caller drives resume
 
             if output.expand:

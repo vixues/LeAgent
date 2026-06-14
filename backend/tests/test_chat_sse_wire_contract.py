@@ -33,6 +33,33 @@ class _FakeAgent:
 
 
 @pytest.mark.asyncio
+async def test_run_agent_stream_emits_execution_started_first() -> None:
+    """Chat SSE must emit additive execution_started before agent events."""
+    session_id = uuid4()
+    user_id = uuid4()
+    events = [
+        StreamEvent(type="token", data={"token": "Hi"}),
+        StreamEvent(type="complete", data={"text": "Hi"}),
+    ]
+    agent = _FakeAgent(events)
+
+    out = [
+        (etype, data, acc)
+        async for (etype, data, acc) in run_agent_stream(
+            agent, "hello", session_id, user_id
+        )
+    ]
+
+    assert out[0][0] == "execution_started"
+    assert out[0][1]["run_id"]
+    assert out[0][1]["session_id"] == str(session_id)
+    assert out[0][1]["scope"] == "chat_turn"
+    assert out[1][0] == "token"
+    assert out[-1][0] == "complete"
+    assert out[-1][1].get("run_id") == out[0][1]["run_id"]
+
+
+@pytest.mark.asyncio
 async def test_run_agent_stream_preserves_wire_type_strings() -> None:
     events = [
         StreamEvent(type="token", data={"token": "Hel"}),
@@ -56,6 +83,7 @@ async def test_run_agent_stream_preserves_wire_type_strings() -> None:
 
     types = [etype for etype, _, _ in out]
     assert types == [
+        "execution_started",
         "token",
         "token",
         "thinking",
@@ -63,11 +91,12 @@ async def test_run_agent_stream_preserves_wire_type_strings() -> None:
         "tool_result",
         "complete",
     ]
+    assert out[0][1]["run_id"]
+    assert out[-1][1].get("run_id") == out[0][1]["run_id"]
 
     # Token events accumulate text; complete reflects the running buffer.
-    assert out[1][2] == "Hello"
-    assert out[-1][0] == "complete"
-    assert out[-1][2] == "Hello"
+    assert out[1][2] == "Hel"
+    assert out[2][2] == "Hello"
 
 
 @pytest.mark.asyncio

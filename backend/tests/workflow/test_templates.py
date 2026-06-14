@@ -36,6 +36,25 @@ async def test_all_templates_are_canonical_and_loadable():
 
 
 @pytest.mark.asyncio
+async def test_template_list_includes_preview_ui_with_edges():
+    await bootstrap()
+    service = get_template_service()
+    service.load()
+
+    for info in service.list_templates():
+        preview = info.get("preview_ui")
+        assert preview is not None, info["id"]
+        nodes = preview.get("nodes") or []
+        edges = preview.get("edges") or []
+        assert len(nodes) >= 2, info["id"]
+        assert len(edges) >= 1, info["id"]
+        node_ids = {n["id"] for n in nodes}
+        for edge in edges:
+            assert edge["source"] in node_ids, info["id"]
+            assert edge["target"] in node_ids, info["id"]
+
+
+@pytest.mark.asyncio
 async def test_template_categories_returned():
     await bootstrap()
     service = get_template_service()

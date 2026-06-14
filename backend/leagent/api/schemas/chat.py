@@ -125,6 +125,18 @@ class ChatWorkflowStepRunRequest(BaseModel):
     message_id: UUID
     workflow_digest: str = Field(..., min_length=16, max_length=128)
     user_input: str = Field(default="", max_length=50_000)
+    parent_run_id: str | None = Field(default=None, max_length=64)
+
+
+class ChatWorkflowStepRunResponse(BaseModel):
+    """HTTP response for a chat workflow step run."""
+
+    success: bool
+    data: dict[str, Any] | None = None
+    error: str | None = None
+    duration_ms: int | None = None
+    prompt_id: str | None = None
+    run_id: str | None = None
 
 
 class ChatWorkflowTemplateRead(BaseModel):
@@ -135,6 +147,19 @@ class ChatWorkflowTemplateRead(BaseModel):
     description: str = ""
     spec: dict[str, Any]
     digest: str
+    category: str = "demo"
+    playbook_id: str | None = None
+
+
+class SessionExecutionRead(BaseModel):
+    """Active or recent execution run for a chat session."""
+
+    run_id: str
+    scope: str
+    parent_run_id: str | None = None
+    prompt_id: str | None = None
+    status: str = "running"
+    pause_token: dict[str, Any] | None = None
 
 
 class MaterializedTemplateRow(BaseModel):
@@ -320,7 +345,9 @@ __all__ = [
     "SendMessageRequest",
     "SessionUpdateRequest",
     "ChatWorkflowStepRunRequest",
+    "ChatWorkflowStepRunResponse",
     "ChatWorkflowTemplateRead",
+    "SessionExecutionRead",
     "MaterializedTemplateRow",
     "MaterializeWorkflowTemplatesResponse",
     "AgentMemoryEpisodeRead",

@@ -224,6 +224,91 @@ class WorkflowService:
             extra_data=extra_data,
         )
 
+    async def run_compiled_document(
+        self,
+        document: Any,
+        *,
+        user_id: UUID,
+        session_id: str,
+        inputs: dict[str, Any] | None = None,
+        outputs_to_execute: list[str] | None = None,
+        trigger_type: str = "chat_step",
+        parent_run_id: str | None = None,
+        extra_data: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Execute an inline compiled document (chat playbook steps).
+
+        Returns ``{prompt_id, run_id, result}`` for WebSocket subscription and
+        execution-plane correlation.
+        """
+        from leagent.db.models.workflow_execution import WorkflowExecution
+        from leagent.runtime.execution_factory import (
+            begin_execution,
+            end_execution,
+            end_execution_unless_blocked,
+        )
+        from leagent.runtime.execution_run import ExecutionScope
+
+        execution_id = uuid4()
+        prompt_id = f"chat-step-{uuid4().hex[:16]}"
+        started_at = datetime.utcnow()
+        merged_extra = {
+            "session_id": session_id,
+            "user_id": str(user_id),
+            **(extra_data or {}),
+        }
+
+        async with self._db.session() as session:
+            record = WorkflowExecution(
+                id=execution_id,
+                flow_id=None,
+                user_id=user_id,
+                prompt_id=prompt_id,
+                status="running",
+                trigger_type=trigger_type,
+                inputs=json.dumps(inputs or {}),
+                started_at=started_at,
+            )
+            session.add(record)
+            await session.flush()
+
+        await self._prompt_to_execution.set(prompt_id, execution_id)
+
+        exec_run = begin_execution(
+            scope=ExecutionScope.WORKFLOW,
+            session_id=session_id,
+            user_id=str(user_id),
+            parent_run_id=parent_run_id,
+            prompt_id=prompt_id,
+            workflow_execution_id=execution_id,
+        )
+
+        try:
+            result = await self._execute_inline_document(
+                prompt_id,
+                document,
+                user_id,
+                inputs or {},
+                trigger_type,
+                execution_id,
+                merged_extra,
+                outputs_to_execute=outputs_to_execute,
+            )
+        except Exception:
+            end_execution(exec_run.run_id)
+            raise
+
+        blocked_statuses = {WorkflowStatus.PAUSED, WorkflowStatus.WAITING_HUMAN}
+        if result.status in blocked_statuses or exec_run.is_blocked:
+            end_execution_unless_blocked(exec_run.run_id)
+        else:
+            end_execution(exec_run.run_id)
+        return {
+            "prompt_id": prompt_id,
+            "run_id": exec_run.run_id,
+            "result": result,
+        }
+
     # ------------------------------------------------------------------
     # Legacy API (preserved)
     # ------------------------------------------------------------------
@@ -398,6 +483,47 @@ class WorkflowService:
             result = await self._executor.execute_async(
                 doc, inputs, prompt_id=prompt_id,
                 extra_data={"user_id": str(user_id), **(extra_data or {})},
+            )
+        except Exception as exc:
+            await self._update_execution(execution_id, status="failed", error=str(exc))
+            raise
+
+        await self._update_execution(
+            execution_id,
+            status=result.status.value,
+            outputs=result.outputs,
+            execution_history=[r.model_dump() for r in result.execution_history],
+            error="; ".join(result.errors) if result.errors else None,
+            completed_at=datetime.utcnow(),
+            duration_ms=result.duration_ms,
+            node_count=len(result.execution_history),
+            workflow_state_id=result.state_id,
+        )
+        return result
+
+    async def _execute_inline_document(
+        self,
+        prompt_id: str,
+        document: Any,
+        user_id: UUID,
+        inputs: dict[str, Any],
+        trigger_type: str,
+        execution_id: UUID,
+        extra_data: dict[str, Any] | None,
+        *,
+        outputs_to_execute: list[str] | None = None,
+    ) -> WorkflowResult:
+        """Run a pre-loaded document without registry lookup."""
+        started_at = datetime.utcnow()
+        await self._update_execution(execution_id, status="running", started_at=started_at)
+
+        try:
+            result = await self._executor.execute_async(
+                document,
+                inputs,
+                prompt_id=prompt_id,
+                extra_data={"user_id": str(user_id), **(extra_data or {})},
+                outputs_to_execute=outputs_to_execute,
             )
         except Exception as exc:
             await self._update_execution(execution_id, status="failed", error=str(exc))
