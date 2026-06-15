@@ -6,6 +6,7 @@ import pytest
 
 from leagent.chat_workflow.arguments import (
     coerce_workflow_step_arguments,
+    normalize_workflow_step_arguments,
     validate_workflow_step_paths,
 )
 from leagent.chat_workflow.schema import (
@@ -169,6 +170,47 @@ def test_validate_workflow_step_paths_when_still_empty(registry: ToolRegistry) -
     assert err is not None
     assert "file_path" in err
     assert "Upload" in err
+
+
+def test_normalize_csv_source_path_to_file_path(registry: ToolRegistry) -> None:
+    from leagent.tools.doc.csv_processor import CSVProcessorTool
+
+    registry.register(CSVProcessorTool())
+    out = normalize_workflow_step_arguments(
+        "csv_processor",
+        {"operation": "read", "source_path": "sales.csv"},
+        registry=registry,
+    )
+    assert out["file_path"] == "sales.csv"
+    assert "source_path" not in out
+    assert out["operation"] == "read"
+
+
+def test_normalize_data_clean_operation_to_operations(registry: ToolRegistry) -> None:
+    from leagent.tools.data.data_clean import DataCleanTool
+
+    registry.register(DataCleanTool())
+    out = normalize_workflow_step_arguments(
+        "data_clean",
+        {"operation": "remove_duplicates", "source_path": "data.csv"},
+        registry=registry,
+    )
+    assert out["operations"] == [{"type": "remove_duplicates"}]
+    assert "operation" not in out
+    assert out["source_path"] == "data.csv"
+
+
+def test_normalize_data_clean_when_operations_null(registry: ToolRegistry) -> None:
+    from leagent.tools.data.data_clean import DataCleanTool
+
+    registry.register(DataCleanTool())
+    out = normalize_workflow_step_arguments(
+        "clean",
+        {"operation": "clean", "operations": None, "source_path": "data.csv"},
+        registry=registry,
+    )
+    assert out["operations"] == [{"type": "remove_duplicates"}]
+    assert "operation" not in out
 
 
 def test_resolve_templates() -> None:

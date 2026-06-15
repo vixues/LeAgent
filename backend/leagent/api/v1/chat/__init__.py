@@ -1847,6 +1847,7 @@ async def run_chat_workflow_step(
     """Execute a single workflow step tool call after digest verification."""
     from leagent.chat_workflow.arguments import (
         coerce_workflow_step_arguments,
+        normalize_workflow_step_arguments,
         validate_workflow_step_paths,
     )
     from leagent.chat_workflow.schema import (
@@ -1940,6 +1941,7 @@ async def run_chat_workflow_step(
         user_id=str(user_id),
         user_input=body.user_input or "",
     )
+    resolved = normalize_workflow_step_arguments(step.action.tool_id, resolved, registry=registry)
     resolved = coerce_workflow_step_arguments(step.action.tool_id, resolved, tool_ctx, registry=registry)
     path_error = validate_workflow_step_paths(
         step.action.tool_id, resolved, tool_ctx, registry=registry,
@@ -1988,14 +1990,12 @@ async def run_chat_workflow_step(
     runs: dict[str, Any] = ext.get("chat_workflow_step_runs")
     if not isinstance(runs, dict):
         runs = {}
+    completed_at = datetime.now(timezone.utc).isoformat()
     step_entry: dict[str, Any] = {
-        "started_at": datetime.now(timezone.utc).isoformat(),
+        "started_at": completed_at,
+        "status": "success" if result.success else "error",
+        "completed_at": completed_at,
     }
-    if outcome.prompt_id:
-        step_entry["status"] = "running"
-    else:
-        step_entry["status"] = "success" if result.success else "error"
-        step_entry["completed_at"] = datetime.now(timezone.utc).isoformat()
     if outcome.prompt_id:
         step_entry["prompt_id"] = outcome.prompt_id
     if outcome.run_id:

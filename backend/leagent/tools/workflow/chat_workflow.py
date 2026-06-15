@@ -27,8 +27,10 @@ class ChatWorkflowEmitTool(BaseTool):
         "(destructive tools blocked; e.g. date_calculator, cache_manager, todo_write) "
         "with JSON arguments; use placeholders "
         "${session_id}, ${user_id}, ${user_input} in string values where needed. "
-        "For file_path on doc tools, omit the key or use ${user_input} — the runner "
-        "auto-picks the session PDF when one is uploaded. "
+        "For csv_processor use file_path + operation (read/query/stats/write); "
+        "for data_clean use operations (array of {type: ...}), not operation. "
+        "For csv_processor use operation + file_path (not source_path). "
+        "For data_clean use operations[] + source_path (not operation). "
         "Pass: version (1), title, optional summary, steps[{id, label, optional hint, "
         "action: {kind: 'tool', tool_id, arguments}}]."
     )
