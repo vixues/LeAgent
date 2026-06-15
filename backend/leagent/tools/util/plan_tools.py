@@ -108,8 +108,8 @@ class EnterPlanModeTool(BaseTool):
         return {
             "status": "plan_mode_active",
             "message": (
-                "Planning mode activated. Create your plan using todo_write, "
-                "then call exit_plan_mode to begin execution."
+                "Planning mode activated. Create your plan with todo_write "
+                "(top-level todos array), then call exit_plan_mode to begin execution."
             ),
             "reason": reason,
         }
@@ -169,8 +169,9 @@ class TodoWriteTool(BaseTool):
 
     name = "todo_write"
     description = (
-        "Create or update a structured task list. Use this to track multi-step "
-        "work. Each todo has an id, content, and status "
+        "Create or update the in-chat session todo list (not background task_create jobs). "
+        "Pass todos as the top-level todos array parameter (not items). "
+        "Each todo needs id, content, and status "
         "(pending/in_progress/completed/cancelled)."
     )
     category = ToolCategory.UTIL
@@ -191,7 +192,9 @@ class TodoWriteTool(BaseTool):
             "properties": {
                 "todos": {
                     "type": "array",
-                    "description": "Array of todo items to create or update",
+                    "description": (
+                        "Top-level array of todos to create or update (required key name: todos, not items)"
+                    ),
                     "items": {
                         "type": "object",
                         "properties": {

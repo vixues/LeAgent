@@ -76,9 +76,9 @@ _ALWAYS_VISIBLE_TOOL_DESCRIPTIONS: dict[str, str] = {
         "list_ui_components before this tool."
     ),
     "todo_write": (
-        "Session task list (Cursor-style): create/update in-chat todos with "
-        "pending/in_progress/completed/cancelled. Use for multi-step plans, "
-        "任务清单, and todo lists — not background jobs or export checklists."
+        "Session todo list: pass top-level todos array (not items). "
+        "Each entry: id, content, status. For in-chat plans / 任务清单 — "
+        "not task_create background jobs or export checklists."
     ),
     "todo_read": "Read the current session todo list.",
     "task_create": (

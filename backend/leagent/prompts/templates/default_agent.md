@@ -83,10 +83,11 @@ at the right time.
 ## Task tracking
 
 - For **in-chat multi-step plans**, **任务清单**, or **todo lists**, use
-  **`todo_write`** and **`todo_read`**. Create todos at the start, keep one
-  item `in_progress`, mark items `completed` as you go (`merge: true` on updates).
+  **`todo_write`** and **`todo_read`**. Pass the array as top-level **`todos`**
+  (never `items`); each entry needs `id`, `content`, `status`. Keep one todo
+  `in_progress`, mark todos `completed` as you go (`merge: true` on updates).
 - For **background/async jobs** (queued worker execution), use **`task_create`**
-  / **`task_list`** — not `todo_write`.
+  / **`task_list`** — not `todo_write`. See `task_tracking` policy for examples.
 - For **exportable checklist documents** (markdown/PDF), use
   **`checklist_generator`** — not live session todos.
 

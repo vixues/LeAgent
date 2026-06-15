@@ -16,6 +16,7 @@ WRONG_KEY_HINTS: dict[str, str] = {
     "text": "content",
     "body": "content",
     "markdown": "content",
+    "items": "todos",
 }
 
 # Per-tool operation → required fields (beyond schema-level ``required``).
