@@ -102,7 +102,10 @@ export default function App() {
               <Route path="template" element={<Navigate to="/templates" replace />} />
               {/* Unified workflow page: hub (list + chat templates) and editor */}
               <Route path="workflows" element={<WorkflowsPage />} />
-              <Route path="workflows/templates" element={<WorkflowsPage />} />
+              <Route
+                path="workflows/templates"
+                element={<Navigate to="/workflows?tab=playbooks" replace />}
+              />
               <Route path="workflows/new" element={<WorkflowsPage />} />
               <Route path="workflows/:id/executions" element={<WorkflowsPage />} />
               <Route path="workflows/:id" element={<WorkflowsPage />} />
@@ -114,7 +117,7 @@ export default function App() {
               <Route path="playground" element={<PlaygroundPage />} />
               <Route
                 path="chat-workflow-templates"
-                element={<Navigate to="/workflows/templates" replace />}
+                element={<Navigate to="/workflows?tab=playbooks" replace />}
               />
               <Route path="pet-space" element={<PetSpacePage />} />
               <Route path="knowledge" element={<KnowledgePage />} />

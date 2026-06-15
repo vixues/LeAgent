@@ -85,7 +85,19 @@
       "advancedSpec": "高级：Spec JSON",
       "playbooksBlurbTitle": "在对话中试用 Playbook",
       "playbooksBlurbBody": "每张卡片都是已校验的工具步骤序列。打开测试实验室即可对接真实 API 运行全部 Playbook。",
-      "playbooksVsGallery": "需要完整节点图用于编辑器？请使用"
+      "playbooksVsGallery": "需要完整节点图用于编辑器？请使用",
+      "searchPlaybooksPlaceholder": "搜索 Playbook…",
+      "stepsCount": "{{count}} 个步骤",
+      "emptyNone": "暂无 Playbook",
+      "emptyNoneHint": "内置 Playbook 会在服务启动时加载，请检查 API 与工具注册。",
+      "emptyNoMatch": "没有匹配的 Playbook",
+      "emptyNoMatchHint": "试试其他关键词",
+      "filterAll": "全部类型",
+      "filterGroupAria": "按类型筛选",
+      "openTestLabShort": "打开测试台",
+      "tabHintSavedFlows": "您创建或导入的流程 — 在图编辑器中打开、运行或加入计划任务。",
+      "tabHintPlaybooks": "可在对话中运行的步骤卡片 — 线性工具链，可在测试台一键试用。",
+      "tabListAria": "工作流中心分区"
     }
   },
   "tasks": {

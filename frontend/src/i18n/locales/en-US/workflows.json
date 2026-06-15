@@ -85,7 +85,19 @@
       "advancedSpec": "Advanced: spec JSON",
       "playbooksBlurbTitle": "Try playbooks in chat",
       "playbooksBlurbBody": "Each card is a validated tool-step sequence. Open the test lab to run every playbook against the real API.",
-      "playbooksVsGallery": "Need a full node graph for the editor? Use the"
+      "playbooksVsGallery": "Need a full node graph for the editor? Use the",
+      "searchPlaybooksPlaceholder": "Search playbooks…",
+      "stepsCount": "{{count}} steps",
+      "emptyNone": "No playbooks yet",
+      "emptyNoneHint": "Built-in playbooks load at startup — check the API and tool registry.",
+      "emptyNoMatch": "No playbooks match",
+      "emptyNoMatchHint": "Try a different search term",
+      "filterAll": "All types",
+      "filterGroupAria": "Filter by type",
+      "openTestLabShort": "Open test lab",
+      "tabHintSavedFlows": "Flows you created or imported — open in the graph editor, run, or schedule.",
+      "tabHintPlaybooks": "Runnable chat step cards — linear tool chains you can try in a test lab session.",
+      "tabListAria": "Workflow hub sections"
     }
   },
   "tasks": {

@@ -4,8 +4,6 @@ import { useTranslation } from 'react-i18next';
 import {
   GitBranch,
   Plus,
-  Search,
-  RefreshCw,
   Play,
   Edit2,
   Trash2,
@@ -18,13 +16,12 @@ import {
   MessageSquare,
   Wrench,
   ChevronRight,
-  LayoutTemplate,
   type LucideIcon,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { Button, Input, Select } from '@/components/ui';
 import { EmptyState } from '@/components/common/EmptyState';
 import { Skeleton } from '@/components/ui/Skeleton';
+import { WorkflowsHubToolbar } from './WorkflowsHubToolbar';
 import {
   useGetFlows,
   useDeleteFlow,
@@ -241,73 +238,27 @@ export function WorkflowListView() {
 
   return (
     <div className="space-y-6">
-      {/* Filters + actions */}
-      <div className="flex flex-wrap items-center gap-3">
-        <div className="flex-1 min-w-[200px] max-w-sm">
-          <Input
-            type="text"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder={t('list.searchPlaceholder')}
-            leftIcon={<Search className="w-4 h-4" />}
-          />
-        </div>
-        <Select
-          value={typeFilter}
-          onChange={(e) => setTypeFilter(e.target.value)}
-          className="w-40"
-        >
-          <option value="">{t('list.allTypes')}</option>
-          <option value="agent">{t('list.flowType.agent')}</option>
-          <option value="workflow">{t('list.flowType.workflow')}</option>
-          <option value="chat">{t('list.flowType.chat')}</option>
-          <option value="tool">{t('list.flowType.tool')}</option>
-        </Select>
-        {/* Token-backed colors so this segmented toggle matches the rest of the app */}
-        <div className="flex items-center border border-border rounded-lg overflow-hidden">
-          {(['grid', 'list'] as const).map((v) => (
-            <button
-              key={v}
-              onClick={() => setView(v)}
-              className={cn(
-                'px-3 py-2 text-xs transition-colors',
-                view === v
-                  ? 'bg-primary-50 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300'
-                  : 'text-muted-foreground hover:bg-surface-sunken'
-              )}
-            >
-              {v === 'grid' ? t('list.viewGrid') : t('list.viewList')}
-            </button>
-          ))}
-        </div>
-        <div className="ml-auto flex items-center gap-2">
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => refetch()}
-            leftIcon={<RefreshCw className="w-4 h-4" />}
-          >
-            {t('list.refresh')}
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => navigate('/templates')}
-            leftIcon={<LayoutTemplate className="w-4 h-4" />}
-          >
-            {t('list.fromTemplate')}
-          </Button>
-          <Button
-            variant="primary"
-            size="sm"
-            onClick={() => navigate('/workflows/new')}
-            leftIcon={<Plus className="w-4 h-4" />}
-            className="shadow-glow hover:shadow-glow-lg"
-          >
-            {t('list.newWorkflow')}
-          </Button>
-        </div>
-      </div>
+      <WorkflowsHubToolbar
+        search={search}
+        onSearchChange={setSearch}
+        searchPlaceholder={t('list.searchPlaceholder')}
+        filterValue={typeFilter}
+        onFilterChange={setTypeFilter}
+        filterOptions={[
+          { value: '', label: t('list.allTypes') },
+          { value: 'agent', label: t('list.flowType.agent'), icon: <Bot className="h-3 w-3" /> },
+          { value: 'workflow', label: t('list.flowType.workflow'), icon: <Workflow className="h-3 w-3" /> },
+          { value: 'chat', label: t('list.flowType.chat'), icon: <MessageSquare className="h-3 w-3" /> },
+          { value: 'tool', label: t('list.flowType.tool'), icon: <Wrench className="h-3 w-3" /> },
+        ]}
+        view={view}
+        onViewChange={setView}
+        onRefresh={() => void refetch()}
+        onFromTemplate={() => navigate('/templates')}
+        primaryLabel={t('list.newWorkflow')}
+        primaryIcon={<Plus className="h-4 w-4" />}
+        onPrimaryClick={() => navigate('/workflows/new')}
+      />
 
       {/* Content */}
       {isLoading ? (

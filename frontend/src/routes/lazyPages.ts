@@ -101,6 +101,9 @@ const prefetchByHref: Record<string, () => void> = {
   '/workflows/templates': () => {
     void loadWorkflowsPage();
   },
+  '/workflows?tab=playbooks': () => {
+    void loadWorkflowsPage();
+  },
   '/playground': () => {
     void loadPlaygroundPage();
   },
