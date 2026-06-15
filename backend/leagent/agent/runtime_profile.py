@@ -99,3 +99,52 @@ def resolve_runtime_budget(
         max_concurrency_per_user=0,
         max_concurrency_per_workspace=0,
     )
+
+
+def runtime_budget_tool_extra(
+    profile: Any = None,
+    *,
+    settings: Any | None = None,
+) -> dict[str, Any]:
+    """Build a ``tool_extra`` fragment carrying profile name and resolved budgets."""
+
+    budget = resolve_runtime_budget(profile, settings=settings)
+    return {
+        "runtime_profile": budget.name,
+        "runtime_budget": {
+            "task_timeout_sec": budget.task_timeout_sec,
+            "tool_timeout_sec": budget.tool_timeout_sec,
+            "code_execution_default_timeout_sec": budget.code_execution_default_timeout_sec,
+            "code_execution_max_timeout_sec": budget.code_execution_max_timeout_sec,
+        },
+    }
+
+
+def resolve_chat_conversation_timeout_sec(
+    *,
+    project_path: str | None = None,
+    runtime_profile: Any = None,
+    settings: Any | None = None,
+) -> int:
+    """Resolve the SSE conversation wall-clock limit for a chat turn.
+
+    Coding work (explicit profile or bound project folder) uses
+    ``coding_long`` (default 3600s) or ``coding_extended`` (7200s) budgets
+    instead of the standard 600s interactive cap.
+    """
+
+    if settings is None:
+        from leagent.config.settings import get_settings
+
+        settings = get_settings()
+
+    explicit = str(runtime_profile or "").strip()
+    if explicit:
+        name = normalize_runtime_profile(explicit, default="standard")
+        if name in ("coding_long", "coding_extended"):
+            return resolve_runtime_budget(name, settings=settings).conversation_timeout_sec
+
+    if project_path:
+        return resolve_runtime_budget("coding_long", settings=settings).conversation_timeout_sec
+
+    return int(settings.agent.conversation_timeout_sec)

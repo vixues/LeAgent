@@ -285,6 +285,7 @@ class AgentController:
         persisted_user_message_id: UUID | None = None,
         agent_task_id: UUID | None = None,
         execution_run_id: str | None = None,
+        runtime_profile: str | None = None,
     ) -> AgentResponse:
         """Execute the agent for a user request.
 
@@ -296,6 +297,10 @@ class AgentController:
 
         ``authorized_roots`` lists session-scoped directory grants from
         ``POST …/authorized-paths`` (same sandbox semantics as project roots).
+
+        ``runtime_profile`` selects long-running budgets for coding work
+        (``coding_long`` / ``coding_extended``). When omitted but
+        ``project_roots`` is set, ``coding_long`` is applied.
 
         ``agent_task_id`` optional stable id for this run (SSE ``agent_task`` / cancel).
         """
@@ -342,6 +347,7 @@ class AgentController:
                     authorized_roots=authorized_roots,
                     skip_user_append=skip_append_user,
                     execution_run_id=execution_run_id,
+                    runtime_profile=runtime_profile,
                 )
 
                 if self._hooks:
@@ -397,6 +403,7 @@ class AgentController:
         persisted_user_message_id: UUID | None = None,
         agent_task_id: UUID | None = None,
         execution_run_id: str | None = None,
+        runtime_profile: str | None = None,
     ) -> AsyncIterator[StreamEvent]:
         """Execute agent with streaming events."""
         queue_maxsize = 512
@@ -436,6 +443,7 @@ class AgentController:
                     persisted_user_message_id=persisted_user_message_id,
                     agent_task_id=agent_task_id,
                     execution_run_id=execution_run_id,
+                    runtime_profile=runtime_profile,
                 )
             except Exception as exc:
                 logger.exception(
@@ -780,6 +788,7 @@ class AgentController:
         authorized_roots: list[str] | None = None,
         skip_user_append: bool = False,
         execution_run_id: str | None = None,
+        runtime_profile: str | None = None,
     ) -> AgentResponse:
         """Delegate the think-act loop to the new ``QueryEngine``.
 
@@ -830,6 +839,14 @@ class AgentController:
                     existing_roots.append(raw)
             if existing_roots:
                 tool_extra["project_roots"] = existing_roots
+
+        profile_for_turn = (runtime_profile or "").strip() or None
+        if not profile_for_turn and tool_extra.get("project_roots"):
+            profile_for_turn = "coding_long"
+        if profile_for_turn:
+            from leagent.agent.runtime_profile import runtime_budget_tool_extra
+
+            tool_extra.update(runtime_budget_tool_extra(profile_for_turn))
 
         if authorized_roots:
             existing_auth = list(tool_extra.get("authorized_roots") or [])

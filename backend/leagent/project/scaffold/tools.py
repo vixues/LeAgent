@@ -8,6 +8,7 @@ from uuid import UUID
 
 import structlog
 
+from leagent.agent.runtime_profile import resolve_runtime_budget
 from leagent.tools.base import BaseTool, ToolCategory, ToolContext
 from leagent.project.fs import (
     MAX_TEXT_FILE_BYTES,
@@ -192,7 +193,7 @@ class CodingProjectRunTool(BaseTool):
     is_concurrency_safe = False
     is_read_only = False
     interrupt_behavior = "block"
-    timeout_sec = 600  # may include npm install
+    timeout_sec = int(resolve_runtime_budget("coding_long").task_timeout_sec)
     max_result_size_chars = 8000
 
     @property

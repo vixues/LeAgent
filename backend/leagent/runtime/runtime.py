@@ -519,6 +519,14 @@ class AgentRuntime:
 
         definition = self.resolve(agent)
 
+        profile_override = (tool_extra or {}).get("runtime_profile")
+        if profile_override:
+            from leagent.agent.runtime_profile import normalize_runtime_profile
+
+            definition = definition.with_overrides(
+                runtime_profile=normalize_runtime_profile(profile_override),
+            )
+
         if allowed_tools is not None:
             allow: list[str] | None = [str(t) for t in allowed_tools]
         else:
@@ -531,7 +539,16 @@ class AgentRuntime:
                     denied.append(str(name))
 
         budget = resolve_runtime_budget(definition.runtime_profile)
-        eff_max_turns = max_turns or definition.max_turns or budget.max_turns
+        if profile_override:
+            eff_max_turns = max_turns or budget.max_turns
+            eff_max_tool_calls = (
+                max_tool_calls_per_turn
+                if max_tool_calls_per_turn is not None
+                else budget.max_tool_calls_per_turn
+            )
+        else:
+            eff_max_turns = max_turns or definition.max_turns or budget.max_turns
+            eff_max_tool_calls = max_tool_calls_per_turn
 
         parent_controller: AgentController | None = None
         parent_engine: QueryEngine | None = None
@@ -574,8 +591,8 @@ class AgentRuntime:
                     else definition.model.max_output_tokens
                 ),
                 max_tool_calls_per_turn=(
-                    max_tool_calls_per_turn
-                    if max_tool_calls_per_turn is not None
+                    eff_max_tool_calls
+                    if eff_max_tool_calls is not None
                     else definition.max_tool_calls_per_turn
                 ),
                 # Definition fidelity: the child runs under its own context

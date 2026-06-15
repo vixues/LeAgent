@@ -45,6 +45,7 @@ async def run_agent_stream(
     persisted_user_message_id: UUID | None = None,
     conversation_timeout_sec: int = 600,
     agent_task_id: UUID | None = None,
+    runtime_profile: str | None = None,
 ) -> AsyncIterator[tuple[str, dict[str, Any], str]]:
     """Iterate agent events. Yields ``(event_type, event_data, accumulated_text)``."""
     response_content = ""
@@ -159,6 +160,7 @@ async def run_agent_stream(
             persisted_user_message_id=persisted_user_message_id,
             agent_task_id=agent_task_id,
             execution_run_id=exec_run.run_id,
+            runtime_profile=runtime_profile,
         ):
             elapsed = time.monotonic() - _stream_start
             if elapsed > conversation_timeout_sec:

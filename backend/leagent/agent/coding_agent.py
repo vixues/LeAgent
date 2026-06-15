@@ -45,7 +45,12 @@ from uuid import UUID
 
 import structlog
 
-from leagent.tools.base import BaseTool, ToolCategory, ToolContext
+from leagent.agent.runtime_profile import (
+    normalize_runtime_profile,
+    resolve_runtime_budget,
+    runtime_budget_tool_extra,
+)
+from leagent.tools.base import BaseTool, ToolCategory, ToolContext, ToolProgressCallback, ToolResult
 from leagent.tools.registry import ToolRegistry
 
 if TYPE_CHECKING:
@@ -56,6 +61,8 @@ if TYPE_CHECKING:
     from leagent.services.service_manager import ServiceManager
 
 logger = structlog.get_logger(__name__)
+
+CODING_AGENT_DEFAULT_PROFILE = "coding_long"
 
 
 #: Tools the coding agent is allowed to see. The list is intentionally
@@ -250,7 +257,7 @@ class CodingAgentTool(BaseTool):
     is_read_only = False
     interrupt_behavior = "cancel"
     max_result_size_chars = 200_000
-    timeout_sec = 600
+    timeout_sec = resolve_runtime_budget(CODING_AGENT_DEFAULT_PROFILE).task_timeout_sec
     max_retries = 0
 
     def __init__(
@@ -326,6 +333,15 @@ class CodingAgentTool(BaseTool):
                     ),
                     "default": False,
                 },
+                "runtime_profile": {
+                    "type": "string",
+                    "description": (
+                        "Runtime budget profile: `coding_long` (default, "
+                        "1 hour) or `coding_extended` (2 hours)."
+                    ),
+                    "enum": ["coding_long", "coding_extended"],
+                    "default": CODING_AGENT_DEFAULT_PROFILE,
+                },
             },
             "required": ["prompt", "project_path"],
             "additionalProperties": False,
@@ -333,6 +349,34 @@ class CodingAgentTool(BaseTool):
 
     def get_activity_description(self, params: dict[str, Any] | None = None) -> str | None:
         return "Delegating to coding agent"
+
+    def _resolve_runtime_profile(
+        self,
+        params: dict[str, Any],
+        context: ToolContext,
+    ) -> str:
+        extra = getattr(context, "extra", None) or {}
+        raw = params.get("runtime_profile") or extra.get("runtime_profile")
+        return normalize_runtime_profile(
+            raw or CODING_AGENT_DEFAULT_PROFILE,
+            default=CODING_AGENT_DEFAULT_PROFILE,
+        )
+
+    async def run(
+        self,
+        params: dict[str, Any],
+        context: ToolContext,
+        *,
+        on_progress: ToolProgressCallback | None = None,
+    ) -> ToolResult:
+        profile = self._resolve_runtime_profile(params, context)
+        budget = resolve_runtime_budget(profile)
+        original_timeout = self.timeout_sec
+        self.timeout_sec = budget.task_timeout_sec
+        try:
+            return await super().run(params, context, on_progress=on_progress)
+        finally:
+            self.timeout_sec = original_timeout
 
     async def execute(
         self,
@@ -386,6 +430,7 @@ class CodingAgentTool(BaseTool):
             nested_emit = None
         parent_tc = extra.get("current_tool_call_id")
         parent_tc_str = str(parent_tc).strip() if parent_tc is not None else None
+        runtime_profile = self._resolve_runtime_profile(params, context)
 
         return await _run_coding_agent(
             parent_controller=self._parent_controller or (
@@ -399,6 +444,7 @@ class CodingAgentTool(BaseTool):
             goal_summary=params.get("goal_summary"),
             nested_preview_emit=nested_emit,
             parent_tool_call_id=parent_tc_str,
+            runtime_profile=runtime_profile,
         )
 
 
@@ -413,6 +459,7 @@ async def _run_coding_agent(
     goal_summary: str | None,
     nested_preview_emit: Callable[[dict[str, Any]], Awaitable[None]] | None = None,
     parent_tool_call_id: str | None = None,
+    runtime_profile: str = CODING_AGENT_DEFAULT_PROFILE,
 ) -> dict[str, Any]:
     """Build a child :class:`QueryEngine` and drive it to completion.
 
@@ -436,13 +483,15 @@ async def _run_coding_agent(
     # definition; per-call args (turn budget, tool override, project root,
     # output cap derived from the parent) override them.
     runtime = get_delegation_runtime()
+    tool_extra = {"project_roots": [project_path]}
+    tool_extra.update(runtime_budget_tool_extra(runtime_profile))
     return await runtime.delegate(
         parent_engine or parent_controller,
         "coding_agent",
         prompt,
         allowed_tools=allowed_tools,
         max_turns=max_turns,
-        tool_extra={"project_roots": [project_path]},
+        tool_extra=tool_extra,
         cwd=project_path,
         max_output_tokens=min(16384, max(4096, parent_cap)),
         inherit_abort=True,

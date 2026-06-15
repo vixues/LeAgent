@@ -151,6 +151,23 @@ def _sandbox_env() -> dict[str, str]:
     return env
 
 
+def _effective_max_timeout_sec(context: ToolContext) -> float:
+    """Wall-clock cap for one ``project_shell`` invocation."""
+
+    try:
+        extra = getattr(context, "extra", None) or {}
+        profile = extra.get("runtime_profile")
+        if profile:
+            from leagent.agent.runtime_profile import resolve_runtime_budget
+
+            budget = resolve_runtime_budget(profile)
+            if budget.name in ("coding_long", "coding_extended"):
+                return float(budget.task_timeout_sec)
+    except Exception:  # noqa: BLE001
+        pass
+    return MAX_TIMEOUT_SEC
+
+
 class ProjectShellTool(BaseTool):
     """Run a curated build/test/git command inside the project root."""
 
@@ -282,7 +299,8 @@ class ProjectShellTool(BaseTool):
             return {"error": "One of `argv` or `shell` is required."}
 
         timeout = float(params.get("timeout_sec") or DEFAULT_TIMEOUT_SEC)
-        timeout = max(1.0, min(MAX_TIMEOUT_SEC, timeout))
+        max_timeout = _effective_max_timeout_sec(context)
+        timeout = max(1.0, min(max_timeout, timeout))
         extra_env = params.get("env") or {}
         if not isinstance(extra_env, dict):
             return {"error": "`env` must be an object."}

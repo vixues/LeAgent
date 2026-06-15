@@ -155,6 +155,7 @@ async def chat_stream_endpoint(
     file_ids: str | None = Form(default=None),
     tool_replies: str | None = Form(default=None),
     project_folder_id: str | None = Form(default=None),
+    runtime_profile: str | None = Form(default=None),
     model_mode: str | None = Form(default=None),
     model_provider: str | None = Form(default=None),
     model_name: str | None = Form(default=None),
@@ -490,8 +491,16 @@ async def chat_stream_endpoint(
                 )
                 _conv_timeout = 600
                 try:
+                    from leagent.agent.runtime_profile import (
+                        resolve_chat_conversation_timeout_sec,
+                    )
                     from leagent.config.settings import get_settings as _gs
-                    _conv_timeout = _gs().agent.conversation_timeout_sec
+
+                    _conv_timeout = resolve_chat_conversation_timeout_sec(
+                        project_path=project_path_for_turn,
+                        runtime_profile=runtime_profile,
+                        settings=_gs(),
+                    )
                 except Exception:  # noqa: BLE001
                     pass
                 agent_task_id = uuid4()
@@ -511,6 +520,7 @@ async def chat_stream_endpoint(
                     persisted_user_message_id=stream_user_message_id,
                     conversation_timeout_sec=_conv_timeout,
                     agent_task_id=agent_task_id,
+                    runtime_profile=runtime_profile,
                 ):
                     response_content = acc_text
                     if etype == "token":

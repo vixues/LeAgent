@@ -94,9 +94,11 @@ def test_fork_scoped_engine_syncs_context_variant() -> None:
 
 
 def test_coding_agent_tool_timeout_and_retries() -> None:
-    from leagent.agent.coding_agent import CodingAgentTool
+    from leagent.agent.coding_agent import CODING_AGENT_DEFAULT_PROFILE, CodingAgentTool
+    from leagent.agent.runtime_profile import resolve_runtime_budget
 
-    assert CodingAgentTool.timeout_sec == 600
+    budget = resolve_runtime_budget(CODING_AGENT_DEFAULT_PROFILE)
+    assert CodingAgentTool.timeout_sec == budget.task_timeout_sec
     assert CodingAgentTool.max_retries == 0
 
 
