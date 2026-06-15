@@ -117,8 +117,8 @@ function WorkflowStepCard({
     promptId ? Boolean(s.overlays[promptId]?.blocked) : false,
   );
 
-  const overlayErrors = useExecutionOverlay((s) =>
-    promptId ? (s.overlays[promptId]?.errors ?? []) : [],
+  const overlayErrorCount = useExecutionOverlay((s) =>
+    promptId ? (s.overlays[promptId]?.errors.length ?? 0) : 0,
   );
 
   const isRunning = run.status === 'running' || overlayRunning || overlayBlocked;
@@ -128,7 +128,7 @@ function WorkflowStepCard({
     (run.status === 'success' || (run.status === 'running' && overlayTerminal)) &&
     !overlayRunning &&
     !overlayBlocked &&
-    overlayErrors.length === 0;
+    overlayErrorCount === 0;
   const isError = run.status === 'error';
   const isIdle = run.status === 'idle' && !overlayRunning && !overlayBlocked;
 
