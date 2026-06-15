@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useShallow } from 'zustand/react/shallow';
 import {
@@ -27,6 +27,9 @@ interface ChatExecutionPanelProps {
   sessionId: string | null | undefined;
   className?: string;
 }
+
+/** Gate capability log, workflow status, and resume controls — tasks-only for now. */
+const SHOW_EXECUTION_EXTRAS_IN_PANEL = false;
 
 const EMPTY_TODOS: TaskProgressStep[] = [];
 
@@ -76,6 +79,7 @@ export function ChatExecutionPanel({ sessionId, className }: ChatExecutionPanelP
   const [resumeSubmitting, setResumeSubmitting] = useState(false);
   const [resumeError, setResumeError] = useState<string | null>(null);
   const [expanded, setExpanded] = useState(true);
+  const panelRowRef = useRef<HTMLDivElement>(null);
 
   const todos = useChatStore(
     useShallow((state) => {
@@ -163,6 +167,7 @@ export function ChatExecutionPanel({ sessionId, className }: ChatExecutionPanelP
     showResumeWorkflow;
 
   const showForExecution =
+    SHOW_EXECUTION_EXTRAS_IN_PANEL &&
     hasExecutionPanelContent &&
     (!ui?.dismissed ||
       execution?.status === 'blocked' ||
@@ -212,6 +217,9 @@ export function ChatExecutionPanel({ sessionId, className }: ChatExecutionPanelP
   ]);
 
   const panelTitle = useMemo(() => {
+    if (showForTodos && !SHOW_EXECUTION_EXTRAS_IN_PANEL) {
+      return t('chat.sessionTodos.pinnedTitle');
+    }
     if (execution?.status === 'blocked' || showResumeWorkflow) {
       return t('chat.execution.panel.titleBlocked');
     }
@@ -219,14 +227,61 @@ export function ChatExecutionPanel({ sessionId, className }: ChatExecutionPanelP
       return t('chat.execution.panel.titleRunning');
     }
     return t('chat.execution.panel.title');
-  }, [execution?.status, showResumeWorkflow, isStreaming, t]);
+  }, [execution?.status, showForTodos, showResumeWorkflow, isStreaming, t]);
 
-  if (!sessionId || (!showForTodos && !showForExecution)) {
+  const shouldShowPanel =
+    showForTodos || (SHOW_EXECUTION_EXTRAS_IN_PANEL && showForExecution);
+
+  useLayoutEffect(() => {
+    const row = panelRowRef.current;
+    const host = row?.closest('.chat-center-main') as HTMLElement | null;
+    if (!host || !shouldShowPanel) {
+      host?.style.removeProperty('--chat-todo-panel-height');
+      return;
+    }
+
+    const syncHeight = () => {
+      const height = row?.offsetHeight ?? 0;
+      host.style.setProperty('--chat-todo-panel-height', height ? `${height}px` : '0px');
+    };
+
+    syncHeight();
+    const observer = row ? new ResizeObserver(syncHeight) : null;
+    if (row && observer) observer.observe(row);
+
+    return () => {
+      observer?.disconnect();
+      host.style.removeProperty('--chat-todo-panel-height');
+    };
+  }, [shouldShowPanel, expanded, todos.length]);
+
+  if (!sessionId || !shouldShowPanel) {
     return null;
   }
 
+  if (showForTodos && !showForExecution) {
+    return (
+      <div ref={panelRowRef} className={cn('chat-todo-panel-row', className)}>
+        <div className="chat-composer-inner min-w-0">
+          <TodoListBlock
+            steps={todos}
+            isStreaming={isStreaming}
+            variant="pinned"
+            interactive
+            sessionId={sessionId}
+            onStatusChange={handleStatusChange}
+            showUnpin
+            showClose
+            onUnpin={() => setSessionTodoPinned(sessionId, false)}
+            onClose={() => dismissSessionTodoPanel(sessionId)}
+          />
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className={cn('chat-todo-panel-row', className)}>
+    <div ref={panelRowRef} className={cn('chat-todo-panel-row', className)}>
       <div className="chat-composer-inner min-w-0">
         <div
           className={cn(
@@ -287,7 +342,7 @@ export function ChatExecutionPanel({ sessionId, className }: ChatExecutionPanelP
                 />
               ) : null}
 
-              {capabilityLog.length > 0 ? (
+              {SHOW_EXECUTION_EXTRAS_IN_PANEL && capabilityLog.length > 0 ? (
                 <section>
                   <h3 className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground-tertiary">
                     {t('chat.execution.panel.capabilities')}
@@ -315,7 +370,7 @@ export function ChatExecutionPanel({ sessionId, className }: ChatExecutionPanelP
                 </section>
               ) : null}
 
-              {promptId ? (
+              {SHOW_EXECUTION_EXTRAS_IN_PANEL && promptId ? (
                 <section>
                   <h3 className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground-tertiary">
                     {t('chat.execution.panel.workflow')}
@@ -324,7 +379,7 @@ export function ChatExecutionPanel({ sessionId, className }: ChatExecutionPanelP
                 </section>
               ) : null}
 
-              {(showResumeChat || showResumeWorkflow) && (
+              {SHOW_EXECUTION_EXTRAS_IN_PANEL && (showResumeChat || showResumeWorkflow) && (
                 <section className="rounded-lg border border-amber-200/80 bg-amber-50/50 p-2 dark:border-amber-800/50 dark:bg-amber-950/20">
                   <p className="mb-2 text-xs font-medium text-amber-800 dark:text-amber-200">
                     {overlayBlocked?.question ??

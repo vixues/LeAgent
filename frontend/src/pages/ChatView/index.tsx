@@ -402,8 +402,8 @@ export default function ChatView() {
         onToggleFocus={toggleFocusMode}
         focusMode={focusMode}
       />
-      <ChatExecutionPanel sessionId={currentSessionId} />
       <div className="chat-center-main">
+        <ChatExecutionPanel sessionId={currentSessionId} />
         <ChatPinnedStrip />
         <ChatMessages
           className="flex-1 min-h-0"

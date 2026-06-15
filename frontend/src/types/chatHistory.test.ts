@@ -113,6 +113,37 @@ describe('chat history normalization', () => {
     expect(messages[0]?.workflow?.stepRuns['step-a']?.status).toBe('success');
   });
 
+  it('normalizes orphaned running step runs to idle on hydrate', () => {
+    const digest = 'b'.repeat(40);
+    const messages = normalizeMessageList([
+      {
+        id: 'wf-2',
+        role: 'assistant',
+        content: 'Run steps below',
+        extensions: {
+          chat_workflow: {
+            version: 1 as const,
+            title: 'Demo',
+            steps: [
+              {
+                id: 'step-a',
+                label: 'First',
+                action: { kind: 'tool' as const, tool_id: 'noop', arguments: {} },
+              },
+            ],
+          },
+          chat_workflow_digest: digest,
+          chat_workflow_step_runs: {
+            'step-a': { status: 'running', prompt_id: 'chat-step-deadbeef' },
+          },
+        },
+        created_at: '2026-04-28T00:00:00.000Z',
+      },
+    ]);
+
+    expect(messages[0]?.workflow?.stepRuns['step-a']?.status).toBe('idle');
+  });
+
   it('maps persisted extensions (thinking, task_progress, gen_ui) onto Message', () => {
     const ext = {
       thinking: 'Planning step…',

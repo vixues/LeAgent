@@ -108,12 +108,26 @@ export function parseWorkflowFromExtensions(
       if (!v || typeof v !== 'object' || Array.isArray(v)) continue;
       const st = (v as Record<string, unknown>).status;
       if (st === 'idle' || st === 'running' || st === 'success' || st === 'error') {
-        const rec: ChatWorkflowStepRunRecord = { status: st };
-        const err = (v as Record<string, unknown>).error;
+        const raw = v as Record<string, unknown>;
+        let status = st;
+        if (st === 'running') {
+          const err = raw.error;
+          const completedAt = raw.completed_at;
+          if (typeof err === 'string' && err) {
+            status = 'error';
+          } else if (completedAt) {
+            status = 'success';
+          } else {
+            // Sync chat steps cannot stay in-flight after reload (legacy rows).
+            status = 'idle';
+          }
+        }
+        const rec: ChatWorkflowStepRunRecord = { status };
+        const err = raw.error;
         if (typeof err === 'string' && err) rec.error = err;
-        const promptId = (v as Record<string, unknown>).prompt_id;
+        const promptId = raw.prompt_id;
         if (typeof promptId === 'string' && promptId) rec.prompt_id = promptId;
-        const runId = (v as Record<string, unknown>).run_id;
+        const runId = raw.run_id;
         if (typeof runId === 'string' && runId) rec.run_id = runId;
         stepRuns[key] = rec;
       }

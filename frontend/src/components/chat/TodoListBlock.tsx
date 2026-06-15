@@ -177,7 +177,12 @@ export function TodoListBlock({
       </div>
 
       {expanded ? (
-        <div className="space-y-1 border-t border-border-subtle px-2 py-2">
+        <div
+          className={cn(
+            'space-y-1 border-t border-border-subtle px-2 py-2',
+            variant === 'pinned' && 'max-h-48 overflow-y-auto',
+          )}
+        >
           {sortedSteps.map((step) => {
             const statusLabel = t(todoStatusI18nKey(step.status), {
               defaultValue: step.status.replace('_', ' '),

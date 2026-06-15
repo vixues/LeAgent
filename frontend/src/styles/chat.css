@@ -63,6 +63,7 @@
   min-width: 0;
   flex-direction: column;
   overflow: hidden;
+  position: relative;
 }
 
 /* ─────────────────────────────────────────────────────────────
@@ -1049,13 +1050,25 @@ html.dark .chat-surface .workspace-code-hljs {
   position: relative;
 }
 
-/* Pinned todo bar — match composer horizontal inset so card shadow/ring aren't clipped */
+/* Pinned todo bar — overlay at top of chat column so messages keep full height */
 .chat-todo-panel-row {
-  flex-shrink: 0;
-  position: sticky;
+  position: absolute;
   top: 0;
+  left: 0;
+  right: 0;
   z-index: 20;
+  flex-shrink: 0;
   padding: 8px 16px;
+  pointer-events: none;
+}
+
+.chat-todo-panel-row > .chat-composer-inner {
+  pointer-events: auto;
+}
+
+.chat-center-main:has(> .chat-todo-panel-row) .chat-messages-scroll {
+  padding-top: var(--chat-todo-panel-height, 0px);
+  scroll-padding-top: var(--chat-todo-panel-height, 0px);
 }
 
 /* Picker anchored above composer */

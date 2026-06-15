@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { apiClient } from '@/api/client';
 import { useChatStore } from '@/stores/chat';
 import { useExecutionSessionStore } from '@/stores/executionSession';
-import { useExecutionOverlay } from '@/features/workflow/store/executionOverlay';
+import { syncSessionTodosFromWorkflow } from './workflowTodoSync';
 
 interface RunStepResult {
   success: boolean;
@@ -23,6 +23,15 @@ export function useWorkflowStepRunner(sessionId: string) {
   const runStep = useCallback(
     async (messageId: string, stepId: string, workflowDigest: string, userInput?: string) => {
       updateStep(sessionId, messageId, stepId, { status: 'running', error: undefined });
+      const wfAfterStart = useChatStore.getState().messages[sessionId]?.find((m) => m.id === messageId)
+        ?.workflow;
+      if (wfAfterStart) {
+        syncSessionTodosFromWorkflow(
+          sessionId,
+          wfAfterStart.spec.steps,
+          wfAfterStart.stepRuns,
+        );
+      }
       const parentRunId =
         useExecutionSessionStore.getState().bySession[sessionId]?.runId ?? undefined;
       try {
@@ -39,14 +48,14 @@ export function useWorkflowStepRunner(sessionId: string) {
           prompt_id: res.prompt_id ?? undefined,
           run_id: res.run_id ?? undefined,
         };
-        if (res.prompt_id) {
+        const promptId = res.prompt_id ?? undefined;
+        if (promptId) {
           useExecutionSessionStore.getState().upsertFromStarted(sessionId, {
-            runId: res.run_id ?? res.prompt_id,
+            runId: res.run_id ?? promptId,
             scope: 'workflow',
-            promptId: res.prompt_id,
+            promptId,
             parentRunId: parentRunId,
           });
-          useExecutionOverlay.getState().start(res.prompt_id, 'chat');
         }
         if (!res.success) {
           updateStep(sessionId, messageId, stepId, {
@@ -54,16 +63,19 @@ export function useWorkflowStepRunner(sessionId: string) {
             error: res.error || t('chat.workflow.runFailed'),
             ...stepPatch,
           });
-        } else if (!res.prompt_id) {
-          updateStep(sessionId, messageId, stepId, { status: 'success', ...stepPatch });
         } else {
-          updateStep(sessionId, messageId, stepId, { status: 'running', ...stepPatch });
+          updateStep(sessionId, messageId, stepId, { status: 'success', ...stepPatch });
         }
       } catch (e) {
         updateStep(sessionId, messageId, stepId, {
           status: 'error',
           error: e instanceof Error ? e.message : t('chat.workflow.runFailed'),
         });
+      } finally {
+        const wf = useChatStore.getState().messages[sessionId]?.find((m) => m.id === messageId)?.workflow;
+        if (wf) {
+          syncSessionTodosFromWorkflow(sessionId, wf.spec.steps, wf.stepRuns);
+        }
       }
     },
     [sessionId, updateStep, t],

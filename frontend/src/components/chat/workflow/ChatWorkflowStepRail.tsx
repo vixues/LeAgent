@@ -81,20 +81,24 @@ function resolveStepVisualState(run: ChatWorkflowStepRunRecord) {
   const overlay = promptId ? useExecutionOverlay.getState().overlays[promptId] : undefined;
   const liveRunning = Boolean(promptId && overlay?.running);
   const liveBlocked = Boolean(overlay?.blocked);
+  const overlayTerminal = Boolean(promptId) && !liveRunning && !liveBlocked;
+  const overlayErrorCount = overlay?.errors.length ?? 0;
+  const staleRunning =
+    run.status === 'running' && Boolean(promptId) && overlayTerminal && overlayErrorCount === 0;
+  const effectiveStatus = staleRunning ? ('idle' as const) : run.status;
+  const isError =
+    effectiveStatus === 'error' || (overlayTerminal && overlayErrorCount > 0);
+  const isSuccess =
+    !isError &&
+    (effectiveStatus === 'success' ||
+      (effectiveStatus === 'running' && overlayTerminal && overlayErrorCount === 0));
+  const isRunning =
+    !isError &&
+    effectiveStatus !== 'success' &&
+    (effectiveStatus === 'running' || liveRunning || liveBlocked);
+  const isIdle = !isRunning && !isSuccess && !isError;
 
-  if (liveBlocked) {
-    return { isRunning: true, isSuccess: false, isError: false, isIdle: false, promptId };
-  }
-  if (liveRunning || run.status === 'running') {
-    return { isRunning: true, isSuccess: false, isError: false, isIdle: false, promptId };
-  }
-  if (run.status === 'success') {
-    return { isRunning: false, isSuccess: true, isError: false, isIdle: false, promptId };
-  }
-  if (run.status === 'error') {
-    return { isRunning: false, isSuccess: false, isError: true, isIdle: false, promptId };
-  }
-  return { isRunning: false, isSuccess: false, isError: false, isIdle: true, promptId };
+  return { isRunning, isSuccess, isError, isIdle, promptId };
 }
 
 function WorkflowStepCard({
@@ -121,16 +125,24 @@ function WorkflowStepCard({
     promptId ? (s.overlays[promptId]?.errors.length ?? 0) : 0,
   );
 
-  const isRunning = run.status === 'running' || overlayRunning || overlayBlocked;
   const overlayTerminal =
     Boolean(promptId) && !overlayRunning && !overlayBlocked;
+  const staleRunning =
+    run.status === 'running' && Boolean(promptId) && overlayTerminal && overlayErrorCount === 0;
+  const effectiveStatus = staleRunning ? ('idle' as const) : run.status;
+  const isError =
+    effectiveStatus === 'error' || (overlayTerminal && overlayErrorCount > 0);
   const isSuccess =
-    (run.status === 'success' || (run.status === 'running' && overlayTerminal)) &&
-    !overlayRunning &&
-    !overlayBlocked &&
-    overlayErrorCount === 0;
-  const isError = run.status === 'error';
-  const isIdle = run.status === 'idle' && !overlayRunning && !overlayBlocked;
+    !isError &&
+    (effectiveStatus === 'success' ||
+      (effectiveStatus === 'running' && overlayTerminal && overlayErrorCount === 0));
+  const isRunning =
+    !isError &&
+    effectiveStatus !== 'success' &&
+    (effectiveStatus === 'running' || overlayRunning || overlayBlocked);
+  const isIdle =
+    effectiveStatus === 'idle' && !overlayRunning && !overlayBlocked && !isError;
+  const showLiveDetail = run.status === 'running' && Boolean(promptId);
 
   return (
     <div className="flex flex-nowrap items-stretch">
@@ -195,7 +207,7 @@ function WorkflowStepCard({
           ) : null}
         </div>
 
-        {promptId ? <StepLiveDetail promptId={promptId} /> : null}
+        {showLiveDetail ? <StepLiveDetail promptId={promptId!} /> : null}
 
         {isError && run.error ? (
           <p className="mt-1.5 flex items-start gap-1 text-xs leading-snug text-red-600 dark:text-red-400">

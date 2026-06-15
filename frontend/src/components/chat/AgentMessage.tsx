@@ -23,6 +23,7 @@ import { isProjectFamilyTool } from '@/lib/projectToolEnvelope';
 import { apiClient } from '@/api/client';
 import { queryClient } from '@/lib/queryClient';
 import { useChatStore } from '@/stores/chat';
+import { useExecutionOverlay } from '@/features/workflow/store/executionOverlay';
 import { ChatAgentRolePet } from '@/components/chat/ChatAgentRolePet';
 import { PetSpeechBubble } from '@/components/chat/PetSpeechBubble';
 import { TypingIndicator } from './TypingIndicator';
@@ -42,6 +43,7 @@ import type {
   ToolCall,
 } from '@/types/chat';
 import { ChatWorkflowCard } from './workflow/ChatWorkflowCard';
+import { mergeWorkflowIntoTodos } from './workflow/workflowTodoSync';
 
 const EMPTY_TODO_STEPS: TaskProgressStep[] = [];
 import { GenUiInline } from '@/components/canvas/GenUiInline';
@@ -211,15 +213,42 @@ function AgentMessageInner({
 
   const isTodoAnchorMessage = message.id === latestTodoAnchorId;
 
+  const workflowOverlayRevision = useExecutionOverlay(
+    useShallow((state) => {
+      const stepRuns = message.workflow?.stepRuns;
+      if (!stepRuns) return 0;
+      let rev = 0;
+      for (const run of Object.values(stepRuns)) {
+        const promptId = run.prompt_id;
+        if (!promptId) continue;
+        const overlay = state.overlays[promptId];
+        if (!overlay) continue;
+        rev += (overlay.running ? 1 : 0) + overlay.errors.length * 3 + (overlay.blocked ? 5 : 0);
+      }
+      return rev;
+    }),
+  );
+
   const inlineTodoSteps = useMemo(() => {
     if (!isTodoAnchorMessage || !messageHasTodoActivity(message)) {
       return [];
     }
-    if (sessionTodos.length > 0) {
-      return sessionTodos;
+    const base = sessionTodos.length > 0 ? sessionTodos : sortedTaskProgress;
+    if (message.workflow?.spec.steps.length) {
+      return mergeWorkflowIntoTodos(
+        message.workflow.spec.steps,
+        message.workflow.stepRuns,
+        base,
+      );
     }
-    return sortedTaskProgress;
-  }, [isTodoAnchorMessage, message, sessionTodos, sortedTaskProgress]);
+    return base;
+  }, [
+    isTodoAnchorMessage,
+    message,
+    sessionTodos,
+    sortedTaskProgress,
+    workflowOverlayRevision,
+  ]);
 
   const todoInteractive = Boolean(
     sessionId &&

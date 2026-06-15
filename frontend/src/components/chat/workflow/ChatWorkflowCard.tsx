@@ -1,11 +1,13 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router-dom';
-import { GitBranch, ChevronDown, ChevronRight, ExternalLink } from 'lucide-react';
+import { GitBranch, ExternalLink } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { Message } from '@/types/chat';
 import { ChatWorkflowMiniGraph } from './ChatWorkflowMiniGraph';
+import { ChatWorkflowInputPanel } from './ChatWorkflowInputPanel';
 import { ChatWorkflowStepRail } from './ChatWorkflowStepRail';
+import { useWorkflowStepOverlaySync } from './useWorkflowStepOverlaySync';
 import { useWorkflowStepRunner } from './useWorkflowStepRunner';
 import { workflowNeedsFileInput } from './workflowStepUtils';
 
@@ -21,14 +23,9 @@ export function ChatWorkflowCard({ message, sessionId, className }: ChatWorkflow
   const wf = message.workflow;
   const { runStep } = useWorkflowStepRunner(sessionId);
   const [userInput, setUserInput] = useState('');
-  const [optionalOpen, setOptionalOpen] = useState(false);
   const needsFileInput = wf ? workflowNeedsFileInput(wf.spec.steps) : false;
 
-  useEffect(() => {
-    if (needsFileInput) {
-      setOptionalOpen(true);
-    }
-  }, [needsFileInput, message.id]);
+  useWorkflowStepOverlaySync(sessionId, message.id);
 
   if (embed) {
     const dataName =
@@ -118,47 +115,17 @@ export function ChatWorkflowCard({ message, sessionId, className }: ChatWorkflow
         </div>
         <p className="text-[11px] text-muted-foreground-tertiary mt-2 pl-[1.375rem] leading-snug">
           {needsFileInput
-            ? t('chat.workflow.sessionFilesHintPdf')
+            ? t('chat.workflow.sessionFilesHintCsv')
             : t('chat.workflow.sessionFilesHint')}
         </p>
       </div>
 
-      <div className="border-t border-border-subtle px-1 py-1">
-        <button
-          type="button"
-          onClick={() => setOptionalOpen((o) => !o)}
-          className="flex w-full items-center gap-1.5 rounded-lg px-2 py-2 text-left text-xs font-medium text-muted-foreground-tertiary hover:bg-surface-raised/60 hover:text-foreground transition-colors"
-        >
-          {optionalOpen ? (
-            <ChevronDown className="h-3.5 w-3.5 shrink-0" aria-hidden />
-          ) : (
-            <ChevronRight className="h-3.5 w-3.5 shrink-0" aria-hidden />
-          )}
-          {t('chat.workflow.optionalInputToggle')}
-        </button>
-        {optionalOpen ? (
-          <div className="px-2 pb-2">
-            <label htmlFor={`wf-opt-${message.id}`} className="sr-only">
-              {t('chat.workflow.optionalInputLabel')}
-            </label>
-            <textarea
-              id={`wf-opt-${message.id}`}
-              value={userInput}
-              onChange={(e) => setUserInput(e.target.value)}
-              rows={2}
-              placeholder={
-                needsFileInput
-                  ? t('chat.workflow.optionalInputPlaceholderFile')
-                  : t('chat.workflow.optionalInputPlaceholder')
-              }
-              className={cn(
-                'w-full resize-y rounded-lg border border-border-subtle bg-surface-raised/80 px-2.5 py-2 text-xs text-foreground',
-                'placeholder:text-muted-foreground-tertiary focus:outline-none focus:ring-2 focus:ring-primary-500/30',
-              )}
-            />
-          </div>
-        ) : null}
-      </div>
+      <ChatWorkflowInputPanel
+        sessionId={sessionId}
+        value={userInput}
+        onChange={setUserInput}
+        needsFileInput={needsFileInput}
+      />
 
       <ChatWorkflowStepRail
         steps={steps}

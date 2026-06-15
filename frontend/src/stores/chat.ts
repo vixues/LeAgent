@@ -599,6 +599,9 @@ export const useChatStore = create<ChatStore>()(
             s.id === sessionId ? { ...s, todos: todos.length ? todos : undefined } : s,
           ),
         }));
+        if (todos.length) {
+          syncTodoAnchorMessageProgress(sessionId, todos, set, get);
+        }
       },
 
       setSessionTodoPinned: (sessionId, pinned) => {
@@ -657,6 +660,10 @@ export const useChatStore = create<ChatStore>()(
             return { ...s, todos: next };
           }),
         }));
+        const todos = get().sessions.find((s) => s.id === sessionId)?.todos;
+        if (todos?.length) {
+          syncTodoAnchorMessageProgress(sessionId, todos, set, get);
+        }
       },
 
       patchSessionTodoStatus: async (sessionId, taskId, status) => {
