@@ -4,6 +4,7 @@ import {
   Copy,
   Check,
   Download,
+  GraduationCap,
   ZoomIn,
   ZoomOut,
   ExternalLink,
@@ -20,8 +21,12 @@ import { CodeBlock } from '@/components/chat/markdown/CodeBlock';
 import type { Artifact } from '@/types/artifact';
 import { UniversalFilePreview } from '@/components/files/UniversalFilePreview';
 import { useFilePreviewActions } from '@/components/files/useFilePreviewActions';
+import { isPdfTarget, usePdfResearchStore } from '@/features/pdf-reader';
 
 const CanvasPanel = lazy(() => import('../canvas/CanvasPanel'));
+const PdfReader = lazy(() =>
+  import('@/features/pdf-reader/PdfReader').then((m) => ({ default: m.PdfReader })),
+);
 
 /** Matches unpinned `ArtifactHeader` control styling (icon-only). */
 const artifactHeaderIconBtn =
@@ -36,6 +41,11 @@ export function ArtifactViewer() {
   const effectiveId = activeTabId ?? openArtifactId;
   const artifact = effectiveId ? artifacts[effectiveId] : null;
 
+  const researchActive = usePdfResearchStore((s) => s.active);
+  const researchFileId = usePdfResearchStore((s) => s.target?.fileId ?? null);
+  const startResearch = usePdfResearchStore((s) => s.start);
+  const stopResearch = usePdfResearchStore((s) => s.stop);
+
   const rawFileId = artifact?.metadata?.fileId;
   const fileId = typeof rawFileId === 'string' ? rawFileId : '';
   const filePreviewActions = useFilePreviewActions(
@@ -47,6 +57,42 @@ export function ArtifactViewer() {
   if (!artifact) return null;
 
   const isPinned = pinnedIds.includes(artifact.id);
+  const isPdf = Boolean(fileId) && isPdfTarget(
+    typeof artifact.metadata?.mimeType === 'string' ? artifact.metadata.mimeType : null,
+    artifact.title,
+  );
+
+  const readerOpen = isPdf && researchActive && researchFileId === fileId;
+
+  // Research Mode owns the whole panel (its own toolbar replaces the artifact
+  // header) so the reader is not boxed under a redundant title bar.
+  if (readerOpen) {
+    return (
+      <div className={cn('flex min-h-0 min-w-0 flex-1 basis-0 flex-col bg-surface')}>
+        <Suspense
+          fallback={
+            <div className="flex min-h-0 flex-1 items-center justify-center text-sm text-muted-foreground">
+              {t('pdfReader.loading', { defaultValue: 'Loading PDF…' })}
+            </div>
+          }
+        >
+          <PdfReader
+            target={{
+              fileId,
+              fileName: artifact.title,
+              mimeType:
+                typeof artifact.metadata?.mimeType === 'string'
+                  ? artifact.metadata.mimeType
+                  : undefined,
+            }}
+            initialMode="research"
+            externalSidebar
+            onClose={stopResearch}
+          />
+        </Suspense>
+      </div>
+    );
+  }
 
   return (
     <div className={cn('flex min-h-0 min-w-0 flex-1 basis-0 flex-col bg-surface')}>
@@ -61,6 +107,29 @@ export function ArtifactViewer() {
         fileToolbar={
           fileId ? (
             <>
+              {isPdf && (
+                <button
+                  type="button"
+                  onClick={() =>
+                    startResearch({
+                      fileId,
+                      fileName: artifact.title,
+                      mimeType:
+                        typeof artifact.metadata?.mimeType === 'string'
+                          ? artifact.metadata.mimeType
+                          : undefined,
+                    })
+                  }
+                  className={cn(
+                    artifactHeaderIconBtn,
+                    'text-primary-600 dark:text-primary-400',
+                  )}
+                  aria-label={t('pdfReader.researchMode', { defaultValue: 'Research Mode' })}
+                  title={t('pdfReader.researchMode', { defaultValue: 'Research Mode' })}
+                >
+                  <GraduationCap className="w-3.5 h-3.5" aria-hidden />
+                </button>
+              )}
               <a
                 href={filePreviewActions.previewUrl}
                 target="_blank"

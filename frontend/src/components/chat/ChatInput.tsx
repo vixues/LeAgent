@@ -765,6 +765,7 @@ export function ChatInput({
 
         <textarea
           ref={textareaRef}
+          data-composer-input
           value={content}
           onChange={handleChange}
           onKeyDown={handleKeyDown}

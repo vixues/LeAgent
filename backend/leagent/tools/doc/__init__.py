@@ -23,11 +23,21 @@ from leagent.tools.doc.html_processor import HTMLProcessorTool
 from leagent.tools.doc.image_ocr import ImageOCRTool
 from leagent.tools.doc.markdown_processor import MarkdownProcessorTool
 from leagent.tools.doc.pdf_reader import PDFReaderTool
+from leagent.tools.doc.pdf_research import (
+    CitationExtractorTool,
+    PDFStructureTool,
+    PDFTranslateTool,
+    SectionSummarizerTool,
+)
 from leagent.tools.doc.text_processor import TextFileProcessorTool
 from leagent.tools.doc.word_reader import WordReaderTool
 
 __all__ = [
     "PDFReaderTool",
+    "PDFStructureTool",
+    "CitationExtractorTool",
+    "SectionSummarizerTool",
+    "PDFTranslateTool",
     "WordReaderTool",
     "ExcelReaderTool",
     "ImageOCRTool",

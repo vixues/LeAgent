@@ -1,0 +1,34 @@
+/* Minimal pdf.js text-layer styling (selectable transparent glyphs over the canvas). */
+.leagent-pdf-textLayer {
+  position: absolute;
+  inset: 0;
+  text-align: initial;
+  overflow: clip;
+  opacity: 1;
+  line-height: 1;
+  text-size-adjust: none;
+  forced-color-adjust: none;
+  transform-origin: 0 0;
+  z-index: 2;
+}
+
+.leagent-pdf-textLayer :is(span, br) {
+  color: transparent;
+  position: absolute;
+  white-space: pre;
+  cursor: text;
+  transform-origin: 0% 0%;
+}
+
+.leagent-pdf-textLayer span.markedContent {
+  top: 0;
+  height: 0;
+}
+
+.leagent-pdf-textLayer ::selection {
+  background: rgba(56, 130, 246, 0.3);
+}
+
+.leagent-pdf-textLayer br::selection {
+  background: transparent;
+}

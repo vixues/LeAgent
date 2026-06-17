@@ -4,6 +4,9 @@
     "roleUserShort": "You",
     "roleAssistantAria": "Assistant message",
     "roleAssistantShort": "Assistant",
+    "assistantMedia": {
+      "imageAlt": "Generated image"
+    },
     "jumpToLatest": "Jump to latest",
     "loadingThread": "Loading messages",
     "title": "AI Assistant",
@@ -679,6 +682,88 @@
           "collapseAllLayers": "Collapse all",
           "jumpToLayer": "Jump to {{name}} · {{tokens}} tok"
         }
+      }
+    }
+  },
+  "pdfReader": {
+    "openReader": "Open in Reader",
+    "researchMode": "Research Mode",
+    "loading": "Loading PDF…",
+    "error": "Could not load this PDF.",
+    "toolbar": {
+      "thumbnails": "Thumbnails",
+      "outline": "Outline",
+      "prevPage": "Previous page",
+      "nextPage": "Next page",
+      "zoomOut": "Zoom out",
+      "zoomIn": "Zoom in",
+      "fitWidth": "Fit width",
+      "rotate": "Rotate",
+      "search": "Search",
+      "areaSelect": "Area select",
+      "screenshot": "Screenshot",
+      "researchOn": "Research Mode",
+      "researchOff": "Research Mode",
+      "download": "Download"
+    },
+    "search": {
+      "placeholder": "Search in document…",
+      "noResults": "No results found."
+    },
+    "selection": {
+      "insert": "Quote",
+      "translate": "Translate",
+      "ask": "Ask",
+      "copy": "Copy",
+      "explain": "Explain",
+      "explainPrompt": "Explain the following passage from this paper in clear terms:",
+      "explainRegionPrompt": "Explain the attached region from page {{page}} of this paper."
+    },
+    "translate": {
+      "title": "Translation",
+      "working": "Translating…",
+      "failed": "Translation failed."
+    },
+    "toast": {
+      "inserted": "Added to chat input",
+      "regionAttached": "Region attached to chat. Add your question and send.",
+      "screenshotAttached": "Page screenshot attached to chat.",
+      "copied": "Copied to clipboard",
+      "copyFailed": "Copy failed"
+    },
+    "figure": {
+      "askPrompt": "Explain {{label}} (page {{page}}) in this paper."
+    },
+    "sidebar": {
+      "title": "Research Paper",
+      "summarizePaper": "Summarize paper",
+      "outline": "Outline",
+      "figures": "Figures",
+      "formulas": "Formulas",
+      "citations": "Citations",
+      "analyzing": "Analyzing paper…",
+      "analyzingFormulas": "Extracting formulas…",
+      "formulasApprox": "AI service unavailable — showing a best-effort extraction.",
+      "noOutline": "No outline detected.",
+      "noFigures": "No figures or tables detected.",
+      "noFormulas": "No formulas detected.",
+      "noCitations": "No references detected.",
+      "summarize": "Summarize",
+      "explain": "Explain",
+      "analyze": "Analyze",
+      "analyzeFormulaPrompt": "Analyze this formula from the paper{{page}} in depth: define every symbol, explain what it computes and why, and note assumptions or limitations.",
+      "summaryFailed": "Could not generate a summary for this section.",
+      "wholePaper": "Whole paper"
+    },
+    "dock": {
+      "title": "Agent",
+      "empty": "Ask anything about this document. Selections and screenshots land here.",
+      "prompts": {
+        "summary": "Summarize this paper",
+        "contributions": "Key contributions?",
+        "methods": "Explain the methods",
+        "limitations": "Limitations & future work?",
+        "related": "How does it relate to prior work?"
       }
     }
   }

@@ -4,6 +4,9 @@
     "roleUserShort": "你",
     "roleAssistantAria": "助手消息",
     "roleAssistantShort": "助手",
+    "assistantMedia": {
+      "imageAlt": "生成的图片"
+    },
     "jumpToLatest": "回到最新",
     "loadingThread": "正在加载消息…",
     "title": "智能助手",
@@ -679,6 +682,88 @@
           "collapseAllLayers": "全部折叠",
           "jumpToLayer": "跳转到 {{name}} · {{tokens}} tok"
         }
+      }
+    }
+  },
+  "pdfReader": {
+    "openReader": "在阅读器中打开",
+    "researchMode": "论文研读模式",
+    "loading": "正在加载 PDF…",
+    "error": "无法加载该 PDF。",
+    "toolbar": {
+      "thumbnails": "缩略图",
+      "outline": "大纲",
+      "prevPage": "上一页",
+      "nextPage": "下一页",
+      "zoomOut": "缩小",
+      "zoomIn": "放大",
+      "fitWidth": "适应宽度",
+      "rotate": "旋转",
+      "search": "搜索",
+      "areaSelect": "框选区域",
+      "screenshot": "截图",
+      "researchOn": "论文研读模式",
+      "researchOff": "论文研读模式",
+      "download": "下载"
+    },
+    "search": {
+      "placeholder": "在文档中搜索…",
+      "noResults": "未找到结果。"
+    },
+    "selection": {
+      "insert": "引用",
+      "translate": "翻译",
+      "ask": "提问",
+      "copy": "复制",
+      "explain": "解释",
+      "explainPrompt": "请用通俗清晰的语言解释本文中的以下段落：",
+      "explainRegionPrompt": "请解释本文第 {{page}} 页附加的区域内容。"
+    },
+    "translate": {
+      "title": "翻译",
+      "working": "正在翻译…",
+      "failed": "翻译失败。"
+    },
+    "toast": {
+      "inserted": "已添加到对话输入框",
+      "regionAttached": "区域已附加到对话，输入问题后发送。",
+      "screenshotAttached": "页面截图已附加到对话。",
+      "copied": "已复制到剪贴板",
+      "copyFailed": "复制失败"
+    },
+    "figure": {
+      "askPrompt": "请解释本文中的 {{label}}（第 {{page}} 页）。"
+    },
+    "sidebar": {
+      "title": "研究论文",
+      "summarizePaper": "总结全文",
+      "outline": "大纲",
+      "figures": "图表",
+      "formulas": "公式",
+      "citations": "引用",
+      "analyzing": "正在分析论文…",
+      "analyzingFormulas": "正在提取公式…",
+      "formulasApprox": "AI 服务不可用——已为你尽力提取公式。",
+      "noOutline": "未检测到大纲。",
+      "noFigures": "未检测到图表。",
+      "noFormulas": "未检测到公式。",
+      "noCitations": "未检测到参考文献。",
+      "summarize": "总结",
+      "explain": "解释",
+      "analyze": "解析",
+      "analyzeFormulaPrompt": "请深入解析论文中的这个公式{{page}}：定义每一个符号，解释它计算什么、为什么这样设计，并指出其假设或局限。",
+      "summaryFailed": "无法为该章节生成摘要。",
+      "wholePaper": "全文"
+    },
+    "dock": {
+      "title": "智能体",
+      "empty": "可针对该文档提任何问题，划选与截图会出现在这里。",
+      "prompts": {
+        "summary": "总结这篇论文",
+        "contributions": "主要贡献是什么？",
+        "methods": "讲解研究方法",
+        "limitations": "局限与未来工作？",
+        "related": "与已有工作的关系？"
       }
     }
   }

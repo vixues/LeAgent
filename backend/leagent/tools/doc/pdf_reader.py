@@ -85,6 +85,7 @@ class PDFReaderTool(SyncTool):
                     "type": "string",
                     "enum": [
                         "read",
+                        "extract_text",
                         "extract_tables",
                         "extract_images",
                         "extract_links",
@@ -101,7 +102,7 @@ class PDFReaderTool(SyncTool):
                     "description": (
                         "Operation (default: read): read|extract_tables|extract_images|"
                         "extract_links|search|page_info|outline|convert_to_images|split|"
-                        "merge|extract_pages|metadata"
+                        "merge|extract_pages|metadata. Alias: extract_text (= read)."
                     ),
                 },
                 "file_path": {
@@ -116,6 +117,16 @@ class PDFReaderTool(SyncTool):
                 "end_page": {
                     "type": "integer",
                     "description": "Ending page number (1-indexed, inclusive). Defaults to last page.",
+                    "minimum": 1,
+                },
+                "page_start": {
+                    "type": "integer",
+                    "description": "Deprecated alias for start_page (1-indexed).",
+                    "minimum": 1,
+                },
+                "page_end": {
+                    "type": "integer",
+                    "description": "Deprecated alias for end_page (1-indexed, inclusive).",
                     "minimum": 1,
                 },
                 "pages": {
@@ -214,6 +225,8 @@ class PDFReaderTool(SyncTool):
 
     def execute_sync(self, params: dict[str, Any], context: ToolContext) -> dict[str, Any]:
         operation = (params.get("operation") or "read").strip().lower()
+        if operation == "extract_text":
+            operation = "read"
         logger.info("pdf_processor", operation=operation, file_path=params.get("file_path"))
 
         dispatch = {
@@ -249,8 +262,12 @@ class PDFReaderTool(SyncTool):
         if pages:
             return [p - 1 for p in pages if 1 <= p <= total_pages]
 
-        start = params.get("start_page", 1)
-        end = params.get("end_page", total_pages)
+        start = params.get("start_page", None)
+        end = params.get("end_page", None)
+        if start is None:
+            start = params.get("page_start", 1)
+        if end is None:
+            end = params.get("page_end", total_pages)
         start = max(1, min(start, total_pages))
         end = max(start, min(end, total_pages))
         return list(range(start - 1, end))

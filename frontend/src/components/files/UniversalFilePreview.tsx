@@ -1,4 +1,6 @@
 import {
+  lazy,
+  Suspense,
   useEffect,
   useMemo,
   useRef,
@@ -6,10 +8,14 @@ import {
   type ReactNode,
 } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Download, ExternalLink, FileText } from 'lucide-react';
+import { Download, ExternalLink, FileText, GraduationCap } from 'lucide-react';
 import { Button } from '@/components/ui';
 import { getAccessToken } from '@/api/client';
 import { cn } from '@/lib/utils';
+
+const PdfReader = lazy(() =>
+  import('@/features/pdf-reader/PdfReader').then((m) => ({ default: m.PdfReader })),
+);
 import {
   resolveEffectiveMime,
   isTextLikeMime,
@@ -109,6 +115,10 @@ export function UniversalFilePreview({
   const [binarySrc, setBinarySrc] = useState<string | null>(null);
   const [binaryLoading, setBinaryLoading] = useState(false);
   const [binaryError, setBinaryError] = useState(false);
+  const [readerOpen, setReaderOpen] = useState(false);
+  // The artifact panel (showToolbar=false) manages its own reader/header, so
+  // skip the inline affordance there to avoid a redundant trigger + chrome.
+  const showReaderAffordance = showToolbar;
 
   const officeByName = hasOfficePreviewExtension(fileName);
   const isOfficeBlockingText =
@@ -341,16 +351,57 @@ export function UniversalFilePreview({
         </p>
       </div>
     ) : binarySrc ? (
-      <iframe
-        src={binarySrc}
-        title={fileName}
-        className={cn(
-          'w-full rounded-lg border border-border',
-          fill
-            ? 'min-h-0 flex-1'
-            : 'min-h-[50vh] max-h-[min(70vh,28rem)]',
-        )}
-      />
+      readerOpen && showReaderAffordance ? (
+        <div
+          className={cn(
+            'flex w-full flex-col',
+            fill ? 'min-h-0 flex-1' : 'min-h-[60vh] h-[70vh]',
+          )}
+        >
+          <Suspense
+            fallback={
+              <div className="flex min-h-0 flex-1 items-center justify-center text-sm text-muted-foreground">
+                {t('pdfReader.loading', { defaultValue: 'Loading PDF…' })}
+              </div>
+            }
+          >
+            <PdfReader
+              target={{ fileId, fileName, mimeType: effectiveMime, sizeBytes }}
+              initialMode="research"
+              onClose={() => setReaderOpen(false)}
+            />
+          </Suspense>
+        </div>
+      ) : (
+        <div
+          className={cn(
+            'flex w-full flex-col gap-2',
+            fill ? 'min-h-0 flex-1' : '',
+          )}
+        >
+          {showReaderAffordance && (
+            <div className="flex flex-shrink-0 items-center gap-2">
+              <Button
+                type="button"
+                onClick={() => setReaderOpen(true)}
+                leftIcon={<GraduationCap className="h-4 w-4" />}
+              >
+                {t('pdfReader.researchMode', { defaultValue: 'Research Mode' })}
+              </Button>
+            </div>
+          )}
+          <iframe
+            src={binarySrc}
+            title={fileName}
+            className={cn(
+              'w-full rounded-lg border border-border',
+              fill
+                ? 'min-h-0 flex-1'
+                : 'min-h-[50vh] max-h-[min(70vh,28rem)]',
+            )}
+          />
+        </div>
+      )
     ) : null;
   } else if (binaryKind === 'audio') {
     body = binaryLoading ? (

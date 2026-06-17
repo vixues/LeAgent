@@ -16,6 +16,7 @@ import { ChatFabBar } from '@/components/chat/ChatFabBar';
 import { ChatErrorToast } from '@/components/chat/ChatErrorToast';
 import { ChatCommandPalette } from '@/components/chat/ChatCommandPalette';
 import { RightPanel } from '@/components/chat/RightPanel';
+import { ResearchPanel, usePdfResearchStore } from '@/features/pdf-reader';
 import type { Message, SendMessageParams } from '@/types/chat';
 import { handleChatStreamFailure, runChatStream } from '@/lib/runChatStream';
 import { useAskUserResume } from '@/hooks/useAskUserResume';
@@ -48,7 +49,8 @@ export default function ChatView() {
   const toggleFocusMode = useLayoutStore((s) => s.toggleFocusMode);
   const setChatHistoryOpen = useLayoutStore((s) => s.setChatHistoryOpen);
 
-  const showRightPanel = openTabIds.length > 0 || workspaceOpen;
+  const researchActive = usePdfResearchStore((s) => s.active);
+  const showRightPanel = openTabIds.length > 0 || workspaceOpen || researchActive;
   const isLg = useMediaQuery(LG_MIN);
 
   const createSession = useChatStore((state) => state.createSession);
@@ -232,6 +234,8 @@ export default function ChatView() {
       const controller = new AbortController();
       useChatStore.getState().setStreamAbortController(controller);
 
+      const research = usePdfResearchStore.getState();
+
       try {
         await runChatStream({
           sessionId,
@@ -243,6 +247,8 @@ export default function ChatView() {
           fileIds,
           projectFolderId,
           modelMode,
+          researchMode: research.active,
+          researchDoc: research.target?.fileName,
           signal: controller.signal,
           t,
         });
@@ -264,6 +270,14 @@ export default function ChatView() {
       const store = useChatStore.getState();
       const sessionId = store.currentSessionId;
       if (!sessionId || isChatStreamBusyForSession(sessionId, store)) return;
+
+      // Preserve the original message's attachments across the edit-resend by
+      // re-sending their file ids (resolved to paths server-side).
+      const existingAttachments =
+        store.messages[sessionId]?.find((m) => m.id === userMessageId)?.attachments ?? [];
+      const keptFileIds = existingAttachments
+        .map((a) => a.id)
+        .filter((id): id is string => Boolean(id));
 
       if (!store.truncateAfterMessageId(sessionId, userMessageId)) return;
 
@@ -297,13 +311,18 @@ export default function ChatView() {
       const controller = new AbortController();
       useChatStore.getState().setStreamAbortController(controller);
 
+      const research = usePdfResearchStore.getState();
+
       try {
         await runChatStream({
           sessionId,
           userMessageId,
           assistantMsgId,
           content: trimmed,
+          fileIds: keptFileIds.length > 0 ? keptFileIds : undefined,
           modelMode: getComposerModelMode(),
+          researchMode: research.active,
+          researchDoc: research.target?.fileName,
           signal: controller.signal,
           t,
         });
@@ -403,6 +422,7 @@ export default function ChatView() {
         focusMode={focusMode}
       />
       <div className="chat-center-main">
+        {researchActive ? <ResearchPanel /> : null}
         <ChatExecutionPanel sessionId={currentSessionId} />
         <ChatPinnedStrip />
         <ChatMessages

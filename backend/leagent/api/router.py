@@ -69,6 +69,7 @@ _include(
     tags=["v1-admin-tasks"],
 )
 _include(v1_router, "leagent.api.v1.files", prefix="/files", tags=["v1-files"])
+_include(v1_router, "leagent.api.v1.pdf_research", prefix="/pdf", tags=["v1-pdf"])
 _include(v1_router, "leagent.api.v1.streams", prefix="/streams", tags=["v1-streams"])
 _include(v1_router, "leagent.api.v1.folders", prefix="/folders", tags=["v1-folders"])
 _include(
@@ -107,6 +108,7 @@ _include(
 _include(v1_router, "leagent.api.v1.skills", prefix="/skills", tags=["v1-skills"])
 _include(v1_router, "leagent.api.v1.channels", prefix="/channels", tags=["v1-channels"])
 _include(v1_router, "leagent.api.v1.templates", prefix="/templates", tags=["v1-templates"])
+_include(v1_router, "leagent.api.v1.workflow_assets", prefix="/workflow", tags=["v1-workflow-assets"])
 _include(v1_router, "leagent.api.v1.cron", prefix="/cron", tags=["v1-cron"])
 _include(v1_router, "leagent.api.v1.webhooks", prefix="/webhooks", tags=["v1-webhooks"])
 _include(v1_router, "leagent.api.v1.metrics", prefix="/metrics", tags=["v1-metrics"])
