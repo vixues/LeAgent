@@ -35,7 +35,11 @@ def test_demo_workflows_load(filename: str):
         ("demo-fx-rates-public.yaml", {"ToolCallNode"}),
         ("demo-asr-agent-summary.yaml", {"Model.asr.local", "ScriptAgentNode"}),
         ("demo-local-tts.yaml", {"Model.tts.local"}),
-        ("demo-local-sdxl-txt2img.yaml", {"Model.image_gen.local"}),
+        ("demo-local-sdxl-txt2img.yaml", {"Art.ImageGen"}),
+        (
+            "demo-art-pipeline.yaml",
+            {"Art.ImageGen", "QualityGateNode", "IterativeRefineNode", "Art.Mesh3D", "AssetExportNode"},
+        ),
         ("demo-agent-pause-resume.yaml", {"ScriptAgentNode"}),
     ],
 )

@@ -30,6 +30,22 @@ logger = structlog.get_logger(__name__)
 
 _NODE_ID_PREFIX = "Model."
 
+#: Domain-model tasks that are now served by *first-class* art nodes
+#: (``Art.ImageGen`` / ``Art.VideoGen`` / ``Art.Mesh3D``) instead of the
+#: auto-generated ``Model.<task>.<provider>`` factory shim. We deliberately
+#: stop lifting these adapters into workflow nodes — the adapters remain
+#: available to the LLM service's ``generate_image`` path, but the canvas
+#: composes art via the hand-authored, typed-socket art pack. Audio
+#: (``tts`` / ``asr``) is intentionally retained on the factory path.
+_DEPRECATED_FACTORY_TASKS = {"image_gen", "video", "mesh_gen"}
+
+
+def _spec_task(spec: Any) -> str:
+    """Best-effort extraction of the domain task for an adapter/spec."""
+    inner = getattr(spec, "spec", None)
+    task = getattr(inner, "task", None) or getattr(spec, "task", None)
+    return str(task or "").lower()
+
 
 def register_domain_model_nodes(
     node_registry: NodeRegistry,
@@ -71,7 +87,12 @@ def register_domain_model_nodes(
         return []
 
     registered: list[str] = []
+    skipped_art: list[str] = []
     for spec in _iter_domain_specs(domain_registry):
+        if _spec_task(spec) in _DEPRECATED_FACTORY_TASKS:
+            # Art tasks are served by the first-class art node pack.
+            skipped_art.append(_spec_task(spec))
+            continue
         try:
             cls = builder(spec)
             node_registry.register(
@@ -86,7 +107,11 @@ def register_domain_model_nodes(
                 exc_info=True,
             )
 
-    logger.info("domain_model_nodes_registered", count=len(registered))
+    logger.info(
+        "domain_model_nodes_registered",
+        count=len(registered),
+        skipped_art=len(skipped_art),
+    )
     return registered
 
 

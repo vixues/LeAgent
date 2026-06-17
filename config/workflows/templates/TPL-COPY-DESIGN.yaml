@@ -1,6 +1,6 @@
 id: TPL-COPY-DESIGN
-name: 文案与设计演示
-description: 创建营销 Markdown 文案草稿，并统计字数与行数。
+name: 文案工作流（专业流程）
+description: 从需求拆解 → 受众与卖点 → 大纲 → 初稿 → 质量评审 → 修订 → 结构化产出与统计，展示清晰的“agent式”文字处理过程（离线可运行）。
 inputs:
 - name: draft_path
   type: string
@@ -12,12 +12,29 @@ inputs:
   description: 活动标题
   required: false
   default: Launch Announcement
+- name: product
+  type: string
+  description: 产品/功能名称
+  required: false
+  default: LeAgent Workflows
+- name: audience
+  type: string
+  description: 目标受众（角色/行业/场景）
+  required: false
+  default: 面向需要自动化流程与本地优先 AI 工具的团队
+- name: goal
+  type: string
+  description: 文案目标（转化/公告/教育）
+  required: false
+  default: 发布公告并引导试用
 outputs:
 - name: result
   type: object
   description: 文案草稿与统计结果
   value: &id001
     draft: ${draft}
+    review: ${review}
+    revision_notes: ${revision_notes}
     stats: ${stats}
 metadata:
   category: copywriting
@@ -31,28 +48,248 @@ nodes:
       name: ''
       description: ''
     control:
-      next: draft_copy
-  draft_copy:
+      next: brief
+
+  brief:
+    class_type: ScriptNode
+    inputs:
+      timeout_sec: 3.0
+      output: brief
+      source: |
+        def clean(s: str) -> str:
+            return " ".join(str(s or "").strip().split())
+
+        brief = {
+            "headline": clean(headline),
+            "product": clean(product),
+            "audience": clean(audience),
+            "goal": clean(goal),
+            "tone": "专业、清晰、可信（避免夸张）",
+            "constraints": [
+                "短句优先，信息密度高",
+                "避免空泛形容词，尽量用可验证描述",
+                "包含明确 CTA",
+            ],
+        }
+        # Emit a flat dict so downstream ScriptNodes can link it into `inputs`
+        # and receive these keys as injected globals (ComfyUI-style).
+        result = brief
+        print("brief_ready")
+      inputs:
+        headline: ${input.headline}
+        product: ${input.product}
+        audience: ${input.audience}
+        goal: ${input.goal}
+    meta:
+      name: 需求拆解（Brief）
+      description: 明确受众、目标、语气与约束
+    control:
+      next: plan
+
+  plan:
+    class_type: ScriptNode
+    inputs:
+      timeout_sec: 3.0
+      output: plan
+      source: |
+        # 结构化“agent计划”，便于后续每一步可验证
+        result = {"plan": {
+            "steps": [
+                {"id": "messages", "desc": "提炼核心卖点与证据点"},
+                {"id": "outline", "desc": "生成版式大纲（标题-要点-CTA）"},
+                {"id": "draft", "desc": "按大纲写初稿（可读性优先）"},
+                {"id": "review", "desc": "用规则做质量评审（清晰/一致/CTA/可执行性）"},
+                {"id": "revise", "desc": "根据评审意见修订并格式化"},
+            ]
+        }}
+        print("plan_ready")
+      inputs: {}
+    meta:
+      name: 制定写作计划
+      description: 展示清晰的处理步骤
+    control:
+      next: messages
+
+  messages:
+    class_type: ScriptNode
+    inputs:
+      timeout_sec: 3.0
+      output: messages
+      source: |
+        # `inputs` is linked from Brief, so keys like `product/audience/goal`
+        # arrive as injected globals.
+        product_name = str(globals().get("product") or "产品")
+        audience_text = str(globals().get("audience") or "目标用户")
+        goal_text = str(globals().get("goal") or "目标")
+        result = {
+            "one_liner": f"{product_name}：把复杂流程变成可视化工作流，并在本地优先的前提下接入 AI 能力。",
+            "value_props": [
+                "可视化编排：用节点把任务拆成可复用流程",
+                "本地优先：默认 SQLite、可离线跑基础能力",
+                "可观测：每步有输出、可回溯、可复跑",
+            ],
+            "audience": audience_text,
+            "goal": goal_text,
+            "proof_points": [
+                "模板与节点可直接运行验证（减少‘只会讲’）",
+                "输出含结构化结果与预览（便于审阅）",
+            ],
+        }
+        print("messages_ready")
+      inputs:
+        brief: ${brief}
+    meta:
+      name: 提炼卖点与证据
+      description: 将目标与价值转成可写内容
+    control:
+      next: outline
+
+  outline:
+    class_type: ScriptNode
+    inputs:
+      timeout_sec: 3.0
+      output: outline
+      source: |
+        sections = [
+            {"heading": "Headline", "content": str(globals().get("one_liner") or "")},
+            {"heading": "适用场景", "content": f"适用于：{str(globals().get('audience') or '')}".strip("：")},
+            {"heading": "核心价值", "content": "\n".join(f"- {x}" for x in (globals().get("value_props") or []))},
+            {"heading": "为什么可信", "content": "\n".join(f"- {x}" for x in (globals().get("proof_points") or []))},
+            {"heading": "CTA", "content": "现在就创建一个工作流，跑一次模板，10 分钟完成你的第一个可复用流程。"},
+        ]
+        result = {"sections": sections}
+        print("outline_ready")
+      inputs:
+        messages: ${messages}
+    meta:
+      name: 生成大纲
+      description: 标题-要点-CTA
+    control:
+      next: render_md
+
+  render_md:
+    class_type: ScriptNode
+    inputs:
+      timeout_sec: 3.0
+      output: md_text
+      source: |
+        sections = globals().get("sections") or []
+        title = str(headline or "").strip() or "Untitled"
+        parts = [f"# {title}"]
+        for sec in sections:
+            if not isinstance(sec, dict):
+                continue
+            h = str(sec.get("heading") or "").strip()
+            c = str(sec.get("content") or "").strip()
+            if not h:
+                continue
+            parts.append(f"## {h}\n\n{c}".strip())
+        result = "\n\n".join(parts) + "\n"
+        print("md_ready")
+      inputs:
+        outline: ${outline}
+        headline: ${input.headline}
+    meta:
+      name: 渲染 Markdown
+      description: 将大纲转换为 Markdown 文本
+    control:
+      next: write_draft
+
+  write_draft:
     class_type: ToolCallNode
     inputs:
       tool: markdown_processor
       params:
-        operation: create
+        operation: write
         file_path: ${input.draft_path}
-        title: ${input.headline}
-        sections:
-        - heading: Headline
-          content: Introducing the next release — built for clarity and speed.
-        - heading: Body
-          content: Product benefits, social proof, and a clear call to action.
-        - heading: CTA
-          content: Start your free trial today.
+        content: ${md_text}
       output: draft
     meta:
-      name: 撰写 Markdown 文案
-      description: ''
+      name: 输出初稿（Markdown）
+      description: 将大纲落地为可编辑文档
+    control:
+      next: review
+
+  review:
+    class_type: ScriptNode
+    inputs:
+      timeout_sec: 3.0
+      output: review
+      source: |
+        # 基于规则的离线评审：像“agent自检”一样给出可执行修改项
+        text = ""
+        try:
+            # markdown_processor.create 返回 {success, file_path,...}；这里我们不读取文件，直接用 outline 做静态评审
+            text = ""
+        except Exception:
+            pass
+
+        sections = globals().get("sections") or []
+        headings = [s.get("heading","") for s in sections if isinstance(s, dict)]
+        has_cta = any(h.strip().lower() == "cta" for h in headings)
+        score = 0.6
+        issues = []
+        if not has_cta:
+            issues.append("缺少明确 CTA 段落（建议加入‘现在就试用/创建工作流’等动作指令）")
+            score -= 0.15
+        if len(sections) < 4:
+            issues.append("结构过短（建议包含：场景、价值、可信证据、CTA）")
+            score -= 0.1
+        if any("可观测" in (s.get("content","") if isinstance(s, dict) else "") for s in sections):
+            score += 0.05
+
+        suggestions = [
+            "标题尽量具体：说明‘是什么 + 为谁 + 带来什么结果’",
+            "价值点用项目符号，保持并列结构",
+            "CTA 用动词开头，并给出预计耗时/门槛",
+        ]
+
+        result = {
+            "quality_score": max(0.0, min(1.0, float(score))),
+            "issues": issues,
+            "suggestions": suggestions,
+        }
+        print("review_ready")
+      inputs:
+        outline: ${outline}
+    meta:
+      name: 质量评审（规则自检）
+      description: 输出问题清单与改进建议
+    control:
+      next: revise
+
+  revise:
+    class_type: ToolCallNode
+    inputs:
+      tool: markdown_processor
+      params:
+        operation: append
+        file_path: ${input.draft_path}
+        content: |
+          ## CTA
+
+          现在就开始：打开「工作流编辑器」→ 选择一个模板 → 运行一次 → 复用到你的日常流程里（无需额外配置，10 分钟上手）。
+      output: revision_notes
+    meta:
+      name: 修订关键段落（CTA）
+      description: 根据评审建议强化可执行性
+    control:
+      next: format_md
+
+  format_md:
+    class_type: ToolCallNode
+    inputs:
+      tool: markdown_processor
+      params:
+        operation: format
+        file_path: ${input.draft_path}
+      output: formatted
+    meta:
+      name: 格式化文档
+      description: 统一 markdown 排版
     control:
       next: measure_copy
+
   measure_copy:
     class_type: ToolCallNode
     inputs:

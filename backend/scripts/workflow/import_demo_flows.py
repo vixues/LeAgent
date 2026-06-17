@@ -42,7 +42,7 @@ async def _import_all(
     from leagent.config import get_settings
     from leagent.db.models.flow import Flow
     from leagent.db.service import init_database_service
-    from leagent.workflow.io import export, load, validate
+    from leagent.workflow.io import load, validate
     from leagent.workflow.nodes import bootstrap, get_registry
 
     if not demo_dir.is_dir():
@@ -53,6 +53,8 @@ async def _import_all(
     if not yaml_files:
         logger.error("no_demo_yaml", path=str(demo_dir))
         return 2
+
+    from leagent.workflow.layout import layout_document
 
     await bootstrap()
     registry = get_registry()
@@ -81,10 +83,11 @@ async def _import_all(
                     logger.info("demo_flow_skip_existing", name=name)
                     continue
 
+            laid_out = layout_document(doc.to_dict())
             flow = Flow(
                 name=name,
                 description=doc.description or "",
-                data=json.dumps(export(doc)),
+                data=json.dumps(laid_out, ensure_ascii=False),
                 user_id=user_id,
                 folder_id=None,
             )

@@ -1,0 +1,132 @@
+# Demo: agent-style game-art pipeline with a self-correction back-edge.
+#
+# concept -> Art.ImageGen -> QualityGate -> (fail) IterativeRefine -> image
+#                                        \-> (pass) approved -> Art.Mesh3D -> export
+#
+# The QualityGate scores the concept image; on a miss the bounded
+# IterativeRefine node routes back to regenerate (the self-correction loop),
+# and once the bar is met the approved image becomes a 3D mesh and an
+# engine-ready asset manifest. Runs offline with no credentials.
+id: demo_art_pipeline
+name: "Demo: Game-art self-correction pipeline"
+description: >-
+  Concept image generation with a quality gate and a bounded self-correction
+  loop, then 3D mesh generation and asset export — the full agent
+  self-evaluation loop, running offline end-to-end.
+inputs:
+  - name: subject
+    type: string
+    required: false
+    default: "a stylized treasure chest prop"
+outputs:
+  - name: manifest
+    value: "${var.asset_manifest}"
+  - name: quality_score
+    value: "${var.quality_score}"
+metadata:
+  category: game
+  tags:
+    - demo
+    - art
+    - 3d
+    - self-correction
+nodes:
+  start:
+    class_type: StartNode
+    inputs: {}
+    meta:
+      name: Start
+    control:
+      next: concept
+  concept:
+    class_type: TransformNode
+    inputs:
+      transform: >-
+        Game art concept of ${input.subject}, clean silhouette, neutral
+        background, production-ready prop sheet, high detail.
+      output: concept_prompt
+    meta:
+      name: Concept Expansion
+    control:
+      next: image
+  image:
+    class_type: Art.ImageGen
+    inputs:
+      prompt: ["concept", 0]
+      width: 768
+      height: 768
+      style: concept_art
+      provider: offline
+      output: concept_image
+    meta:
+      name: Concept Image
+    control:
+      next: gate
+  gate:
+    class_type: QualityGateNode
+    inputs:
+      asset: ["image", 0]
+      threshold: 0.7
+      base_score: 0.45
+      score_step: 0.35
+      iteration_var: refine_iteration
+    meta:
+      name: Quality Gate
+    control:
+      conditions:
+        - then_node: approved
+      else_node: refine
+  refine:
+    class_type: IterativeRefineNode
+    inputs:
+      max_iterations: 2
+      iteration_var: refine_iteration
+    meta:
+      name: Iterative Refine
+    control:
+      retry_node: image
+      exhausted_node: approved
+  approved:
+    class_type: TransformNode
+    inputs:
+      transform: ["gate", 2]
+      output: approved_image
+    meta:
+      name: Approved Image
+    control: {}
+  mesh:
+    class_type: Art.Mesh3D
+    inputs:
+      image: ["approved", 0]
+      prompt: "${var.concept_prompt}"
+      format: glb
+      provider: offline
+      output: hero_mesh
+    meta:
+      name: 3D Mesh
+    control: {}
+  export:
+    class_type: AssetExportNode
+    inputs:
+      image: ["approved", 0]
+      mesh: ["mesh", 0]
+      asset_name: "${input.subject}"
+      output: asset_manifest
+    meta:
+      name: Asset Export
+    control:
+      next: end
+  end:
+    class_type: EndNode
+    inputs: {}
+    meta:
+      name: End
+    control: {}
+control:
+  start: start
+  end: end
+  edges: []
+  timeout_sec: 1800
+  max_retries: 0
+  tags:
+    - demo

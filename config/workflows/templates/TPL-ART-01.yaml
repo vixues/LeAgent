@@ -1,0 +1,179 @@
+# TPL-ART-01 — Flagship game-art asset pipeline.
+#
+# A fully agent-runnable production pipeline: a text concept is expanded into
+# a rich prompt, an Art.ImageGen node renders the concept image, a QualityGate
+# scores it, and on a miss an IterativeRefine back-edge regenerates (bounded
+# self-correction). Once the bar is met the approved image fans out to a 3D
+# mesh and a turntable clip, and AssetExport collates everything into an
+# engine-ready manifest with a GenUI gallery.
+#
+# Runs end-to-end with zero credentials: every generation node is pinned to
+# the deterministic `offline` backend (set LEAGENT_ART_OFFLINE=1 to force it
+# globally). Assets travel by reference (MediaRef) and never as base64.
+id: TPL-ART-01
+name: "Game Art Asset Pipeline"
+description: >-
+  From a one-line idea to engine-ready assets: concept expansion → concept
+  image → quality gate → bounded self-correction → 3D mesh + turntable clip →
+  asset export. Demonstrates the full agent self-evaluation loop on a canvas.
+inputs:
+  - name: subject
+    type: string
+    required: false
+    default: "a heroic fantasy knight with ornate silver armor"
+  - name: style
+    type: string
+    required: false
+    default: "stylized PBR game art, painterly, cinematic lighting"
+outputs:
+  - name: manifest
+    value: "${var.asset_manifest}"
+  - name: concept_image
+    value: "${var.approved_image}"
+  - name: mesh
+    value: "${var.hero_mesh}"
+  - name: clip
+    value: "${var.hero_clip}"
+  - name: quality_score
+    value: "${var.quality_score}"
+metadata:
+  category: game
+  tags:
+    - game
+    - art
+    - image
+    - 3d
+    - video
+    - self-correction
+nodes:
+  start:
+    class_type: StartNode
+    inputs: {}
+    meta:
+      name: Start
+    control:
+      next: concept
+
+  concept:
+    class_type: TransformNode
+    inputs:
+      transform: >-
+        Game art concept of ${input.subject}. Style: ${input.style}. Full body,
+        T-pose, neutral studio background, clean silhouette, orthographic
+        character sheet, high detail, production-ready.
+      output: concept_prompt
+    meta:
+      name: Concept Expansion
+    control:
+      next: image
+
+  image:
+    class_type: Art.ImageGen
+    inputs:
+      # Link (not ${var}) so the node waits for `concept` before it is ready —
+      # a strong data edge keeps it from being scheduled as a premature seed.
+      prompt: ["concept", 0]
+      width: 1024
+      height: 1024
+      style: concept_art
+      provider: offline
+      output: concept_image
+    meta:
+      name: Concept Image
+    control:
+      next: gate
+
+  gate:
+    class_type: QualityGateNode
+    inputs:
+      asset: ["image", 0]
+      threshold: 0.7
+      base_score: 0.4
+      score_step: 0.35
+      iteration_var: refine_iteration
+      criteria: >-
+        Clear single subject, correct silhouette, no artifacts, on-style,
+        engine-ready framing.
+    meta:
+      name: Quality Gate
+    control:
+      conditions:
+        - then_node: approved
+      else_node: refine
+
+  refine:
+    class_type: IterativeRefineNode
+    inputs:
+      max_iterations: 2
+      iteration_var: refine_iteration
+      feedback: >-
+        Increase clarity and adherence to the requested style; fix silhouette
+        and remove artifacts.
+    meta:
+      name: Iterative Refine
+    control:
+      retry_node: image
+      exhausted_node: approved
+
+  approved:
+    class_type: TransformNode
+    inputs:
+      transform: ["gate", 2]
+      output: approved_image
+    meta:
+      name: Approved Image
+    control: {}
+
+  mesh:
+    class_type: Art.Mesh3D
+    inputs:
+      image: ["approved", 0]
+      prompt: "${var.concept_prompt}"
+      format: glb
+      provider: offline
+      output: hero_mesh
+    meta:
+      name: 3D Mesh
+    control: {}
+
+  clip:
+    class_type: Art.VideoGen
+    inputs:
+      image: ["approved", 0]
+      prompt: "${var.concept_prompt}, slow turntable, 360 degree rotation"
+      duration: 2
+      fps: 24
+      provider: offline
+      output: hero_clip
+    meta:
+      name: Turntable Clip
+    control: {}
+
+  export:
+    class_type: AssetExportNode
+    inputs:
+      image: ["approved", 0]
+      mesh: ["mesh", 0]
+      video: ["clip", 0]
+      asset_name: "${input.subject}"
+      output: asset_manifest
+    meta:
+      name: Asset Export
+    control:
+      next: end
+
+  end:
+    class_type: EndNode
+    inputs: {}
+    meta:
+      name: End
+    control: {}
+control:
+  start: start
+  end: end
+  edges: []
+  timeout_sec: 1800
+  max_retries: 0
+  tags:
+    - game
+    - art

@@ -69,6 +69,8 @@ UI_TREE_SCHEMA: dict[str, Any] = {
                         "Progress",
                         "Avatar",
                         "Image",
+                        "Video",
+                        "Model3D",
                         "LiveCamera",
                         "Icon",
                         "Table",
@@ -208,6 +210,42 @@ _COMPONENT_CATALOG: list[dict[str, Any]] = [
             "aspect": "string (optional CSS aspect-ratio e.g. '16/9')",
             "shadow": "string (none|sm|md|lg)",
             "lightbox": "boolean",
+        },
+    },
+    {
+        "kind": "Video",
+        "description": (
+            "Inline video player for a generated clip (turntable, idle loop). "
+            "src accepts an https URL or /api/v1/files/{uuid}/preview path."
+        ),
+        "props": {
+            "src": "string (https URL or /api/v1/files/{uuid}/preview path)",
+            "poster": "string (optional poster image URL)",
+            "caption": "string",
+            "autoPlay": "boolean (default false)",
+            "loop": "boolean (default true)",
+            "muted": "boolean (default true)",
+            "controls": "boolean (default true)",
+            "rounded": "boolean",
+            "maxHeight": "number (px)",
+        },
+    },
+    {
+        "kind": "Model3D",
+        "description": (
+            "Interactive 3D model viewer (loads a GLB/GLTF asset with Three.js "
+            "GLTFLoader + OrbitControls). Distinct from ThreeJsFrame, which builds "
+            "a procedural scene. src accepts an https URL or "
+            "/api/v1/files/{uuid}/preview path to a .glb/.gltf file."
+        ),
+        "props": {
+            "src": "string (https URL or /api/v1/files/{uuid}/preview path to .glb/.gltf)",
+            "caption": "string",
+            "height": "number|string (px, default 360)",
+            "background": "string (CSS color, default #0f172a)",
+            "autoRotate": "boolean (default true)",
+            "rotateSpeed": "number (0-3)",
+            "wireframe": "boolean",
         },
     },
     {

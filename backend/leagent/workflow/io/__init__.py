@@ -15,6 +15,7 @@ from __future__ import annotations
 
 from .hidden import Hidden, HiddenHolder
 from .loader import WorkflowDocument, WorkflowLoaderError, load
+from .media import MediaRef, to_gen_ui_tree
 from .node_output import NodeOutput
 from .schema import Schema
 from .schema_bridge import json_schema_to_inputs
@@ -41,9 +42,11 @@ __all__ = [
     "IO",
     "Input",
     "InputBase",
+    "MediaRef",
     "NodeOutput",
     "OutputBase",
     "Schema",
+    "to_gen_ui_tree",
     "WidgetInput",
     "WILDCARD_TYPE",
     "WorkflowDocument",

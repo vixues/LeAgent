@@ -1,31 +1,31 @@
-# Demo: self-hosted SDXL text-to-image via the in-process diffusers pipeline.
-# Requires the optional dependency group:  cd backend && uv sync --extra diffusion
-# Put checkpoints in ~/.leagent/models/diffusion (or set LEAGENT_DIFFUSION_MODELS_DIR);
-# LoRA .safetensors go in ~/.leagent/models/lora. The Model.image_gen.local node
-# streams per-step sampling progress onto the canvas.
+# Demo: text-to-image via the first-class art node (Art.ImageGen).
+# Art.ImageGen calls the unified GenerationService, which picks the best
+# available backend (OpenAI / DashScope) and transparently falls back to a
+# deterministic offline backend when no credentials are configured — so this
+# demo runs end-to-end with zero setup. Set LEAGENT_ART_OFFLINE=1 to force
+# the deterministic offline backend.
 id: demo_local_sdxl_txt2img
-name: "Demo: Local SDXL txt2img"
+name: "Demo: Concept image (Art.ImageGen)"
 description: >-
-  Generate an image with a self-hosted Stable Diffusion / SDXL checkpoint
-  (HuggingFace diffusers) running in-process — no API key required.
+  Generate a concept image from a text prompt using the first-class
+  Art.ImageGen node. Assets travel by reference (MediaRef) and render
+  inline on the canvas — no API key required (offline fallback).
 inputs:
   - name: prompt
     type: string
     required: false
     default: "a cozy reading nook by a rainy window, warm lamplight, watercolor"
-  - name: negative_prompt
-    type: string
-    required: false
-    default: "blurry, low quality, watermark"
 outputs:
-  - name: image_b64
-    value: "${var.image_b64}"
+  - name: image
+    value: "${var.concept_image}"
+  - name: preview_url
+    value: "${var.concept_preview}"
 metadata:
   category: demo
   tags:
     - demo
-    - self-hosted
-    - diffusion
+    - art
+    - image
 nodes:
   start:
     class_type: StartNode
@@ -35,30 +35,26 @@ nodes:
     control:
       next: txt2img
   txt2img:
-    class_type: Model.image_gen.local
+    class_type: Art.ImageGen
     inputs:
       prompt: "${input.prompt}"
-      negative_prompt: "${input.negative_prompt}"
       width: 1024
       height: 1024
-      steps: 25
-      cfg_scale: 7.0
-      seed: -1
-      scheduler: euler_a
-      lora: none
-      lora_scale: 0.8
+      style: concept_art
+      provider: auto
+      output: concept_image
     meta:
-      name: SDXL txt2img (local)
+      name: Concept image (Art.ImageGen)
     control:
       next: store
   store:
     class_type: TransformNode
     inputs:
-      # Link the node's data_b64 output (slot 1) into a workflow variable.
+      # Link the node's preview_url output (slot 1) into a workflow variable.
       transform: ["txt2img", 1]
-      output: image_b64
+      output: concept_preview
     meta:
-      name: Store image
+      name: Store preview URL
     control:
       next: end
   end:

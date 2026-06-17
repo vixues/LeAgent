@@ -417,6 +417,36 @@ class IO:
 
         Output = _make_typed("FILE", str)[1]
 
+    # ------------------------------------------------------------------
+    # First-class typed media sockets (game-art assets).
+    #
+    # The wire value is a :class:`leagent.workflow.io.media.MediaRef`
+    # serialized to a dict — assets travel *by reference*
+    # (``/api/v1/files/{id}/preview``), never as inline base64. These are
+    # socket-only (no inline widget); upstream generation nodes produce
+    # them and downstream nodes consume them through typed links.
+    # ------------------------------------------------------------------
+
+    class Image(_Type):
+        io_type = "IMAGE"
+        Type = dict  # MediaRef.to_dict()
+        Input, Output = _make_typed("IMAGE", dict)
+
+    class Video(_Type):
+        io_type = "VIDEO"
+        Type = dict  # MediaRef.to_dict()
+        Input, Output = _make_typed("VIDEO", dict)
+
+    class Mesh3D(_Type):
+        io_type = "MESH3D"
+        Type = dict  # MediaRef.to_dict()
+        Input, Output = _make_typed("MESH3D", dict)
+
+    class Audio(_Type):
+        io_type = "AUDIO"
+        Type = dict  # MediaRef.to_dict()
+        Input, Output = _make_typed("AUDIO", dict)
+
     class Datetime(_Type):
         io_type = "DATETIME"
         Type = str  # ISO-8601
@@ -469,6 +499,7 @@ SOCKET_COLORS: dict[str, str] = {
     "IMAGE": "#64B5F6",
     "AUDIO": "#F06292",
     "VIDEO": "#BA68C8",
+    "MESH3D": "#FF8A65",
     "DATETIME": "#90A4AE",
     "MULTI": "#9E9E9E",
     WILDCARD_TYPE: "#C0C0C0",

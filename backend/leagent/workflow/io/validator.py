@@ -22,7 +22,7 @@ from .loader import WorkflowDocument
 
 
 # Node classes that allow back-edges (e.g. retry/loop semantics).
-_LOOP_SAFE_TYPES = {"ErrorHandlerNode", "WaitNode"}
+_LOOP_SAFE_TYPES = {"ErrorHandlerNode", "WaitNode", "IterativeRefineNode"}
 
 
 def _error(type_: str, message: str, details: str = "", **extra: Any) -> dict[str, Any]:
@@ -129,6 +129,32 @@ def _validate_node_inputs(
                     "dangling_link",
                     f"Input '{inp.id}' on '{node_id}' links to missing node '{up_id}'",
                 ))
+            continue
+
+        # Multi-link reference (ARRAY): [[upstream_id, slot], ...]
+        if (
+            isinstance(value, list)
+            and value
+            and all(
+                isinstance(item, list)
+                and len(item) == 2
+                and isinstance(item[0], str)
+                for item in value
+            )
+        ):
+            if inp.get_io_type() != "ARRAY":
+                errors.append(_error(
+                    "type_mismatch",
+                    f"Input '{inp.id}' on '{node_id}' does not accept multiple links",
+                    details=f"type={inp.get_io_type()}",
+                ))
+                continue
+            for up_id, _slot in value:
+                if up_id not in node_ids:
+                    errors.append(_error(
+                        "dangling_link",
+                        f"Input '{inp.id}' on '{node_id}' links to missing node '{up_id}'",
+                    ))
             continue
 
         # Scalar value — run per-type checks.

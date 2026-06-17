@@ -103,6 +103,19 @@ class TopologicalSort:
         for _, value in (node.get("inputs") or {}).items():
             if isinstance(value, list) and len(value) == 2 and isinstance(value[0], str):
                 links.append((value[0], int(value[1])))
+                continue
+            if (
+                isinstance(value, list)
+                and value
+                and all(
+                    isinstance(item, list)
+                    and len(item) == 2
+                    and isinstance(item[0], str)
+                    for item in value
+                )
+            ):
+                for up_id, slot in value:
+                    links.append((up_id, int(slot)))
         return links
 
     def successors_of(self, node_id: str) -> set[str]:
@@ -139,6 +152,11 @@ class ExecutionState:
     blocked: dict[str, set[str]] = field(default_factory=dict)  # node_id -> tags
     strong_links: dict[str, set[str]] = field(default_factory=dict)  # downstream -> upstream ids
     cache_links: dict[str, set[str]] = field(default_factory=dict)
+    #: (src, dst) edges deactivated by branch selection. A pruned edge does
+    #: not promote ``dst`` when ``src`` completes — this prevents a data
+    #: link that crosses a control branch from prematurely activating a
+    #: gated downstream node (e.g. QualityGate's pass branch on a fail).
+    pruned_edges: set[tuple[str, str]] = field(default_factory=set)
 
 
 class ExecutionList:
@@ -179,13 +197,17 @@ class ExecutionList:
             seen.add(nid)
             if self.prompt.get(nid) is None:
                 continue
+            # Populate this node's strong (data) links *before* the readiness
+            # check — otherwise a seed node with input links is wrongly marked
+            # ready (its own deps haven't been discovered yet).
+            for up_id, _slot in self.topo.upstream_of(nid):
+                if self.prompt.get(up_id) is not None:
+                    self.state.strong_links.setdefault(nid, set()).add(up_id)
+                    if up_id not in seen:
+                        stack.append(up_id)
             if nid not in self.state.completed and nid not in self.state.in_progress:
                 if not self._remaining_deps(nid):
                     self.state.ready.add(nid)
-            for up_id, _slot in self.topo.upstream_of(nid):
-                if up_id not in seen and self.prompt.get(up_id) is not None:
-                    stack.append(up_id)
-                    self.state.strong_links.setdefault(nid, set()).add(up_id)
 
     def add_strong_link(self, upstream: str, slot: int, downstream: str) -> None:
         self.state.strong_links.setdefault(downstream, set()).add(upstream)
@@ -222,8 +244,61 @@ class ExecutionList:
         pruned = all_succ - active
         self.topo.set_active_successors(node_id, active)
         self.topo.prune(node_id, pruned)
+        # Recompute this node's pruned data/control edges: the chosen edge is
+        # reactivated, the others deactivated. Keeps loops correct (a target
+        # pruned on a failing pass is re-enabled when later chosen).
+        self.state.pruned_edges = {
+            (s, d) for (s, d) in self.state.pruned_edges if s != node_id
+        }
+        for p in pruned:
+            self.state.pruned_edges.add((node_id, p))
         for p in pruned:
             self._skip_subtree(p)
+
+    def reopen_or_add(self, node_id: str, *, allow_reopen: bool = False) -> None:
+        """Route to ``node_id``, re-executing it only on a loop back-edge.
+
+        For a normal forward edge (``allow_reopen=False``) this behaves like
+        :meth:`add_node`; an already-completed target is left untouched.
+        For a back-edge from a loop-safe node (``allow_reopen=True``) the
+        target — and the completed nodes downstream of it that must re-run —
+        are reset first so the bounded refine loop executes again.
+        """
+        if allow_reopen and (
+            node_id in self.state.completed or node_id in self.state.skipped
+        ):
+            self.reopen(node_id)
+        else:
+            self.add_node(node_id)
+
+    def reopen(self, node_id: str) -> None:
+        """Reset a completed/skipped node and its completed descendants.
+
+        Used by loop-safe back-edges (e.g. ``IterativeRefineNode``) so the
+        generate -> evaluate -> regenerate cycle re-runs the loop body. The
+        cascade follows both control successors and strong-link dependents,
+        stopping at nodes that have not run yet.
+        """
+        if self.prompt.get(node_id) is None:
+            return
+        stack = [node_id]
+        seen: set[str] = set()
+        while stack:
+            nid = stack.pop()
+            if nid in seen:
+                continue
+            seen.add(nid)
+            self.state.completed.discard(nid)
+            self.state.skipped.discard(nid)
+            self.state.ready.discard(nid)
+            self.state.in_progress.discard(nid)
+            for succ in self.topo.successors_of(nid):
+                if succ in self.state.completed or succ in self.state.skipped:
+                    stack.append(succ)
+            for down, ups in self.state.strong_links.items():
+                if nid in ups and (down in self.state.completed or down in self.state.skipped):
+                    stack.append(down)
+        self.add_node(node_id)
 
     def _skip_subtree(self, node_id: str) -> None:
         """Mark ``node_id`` + downstream graph as skipped (pruned branch)."""
@@ -292,8 +367,12 @@ class ExecutionList:
         self.state.in_progress.discard(node_id)
         self.state.completed.add(node_id)
         # Promote downstream nodes whose strong-link deps are now satisfied.
+        # Skip promotion across a pruned edge so a data link crossing a
+        # control branch cannot prematurely activate a gated node.
         for down, ups in list(self.state.strong_links.items()):
             if node_id in ups and down not in self.state.completed and down not in self.state.skipped:
+                if (node_id, down) in self.state.pruned_edges:
+                    continue
                 if not self._remaining_deps(down):
                     self.state.ready.add(down)
         self._unblocked.set()

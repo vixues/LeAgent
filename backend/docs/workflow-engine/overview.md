@@ -31,6 +31,7 @@ Key properties:
 
 - [Architecture](architecture.md) — package layout and runtime topology.
 - [Node authoring](node-authoring.md) — build custom nodes with typed IO.
+- [Game-art asset nodes](art-asset-nodes.md) — first-class image / video / 3D generation, typed media sockets, self-correction loop, and GenUI previews.
 - [IO reference](io-reference.md) — the canonical document shape and types.
 - [API reference](api-reference.md) — REST + WebSocket endpoints.
 - [Operations](operations.md) — migrations, workers, and monitoring.

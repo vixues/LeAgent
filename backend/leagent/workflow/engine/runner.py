@@ -71,11 +71,30 @@ class NodeRunner:
         # -------------------- input marshalling --------------------
         resolved_inputs: dict[str, Any] = {}
         for key_name, value in (node_def.get("inputs") or {}).items():
+            # Single link reference: [upstream_id, slot]
             if isinstance(value, list) and len(value) == 2 and isinstance(value[0], str):
                 up_id, slot = value
                 resolved_inputs[key_name] = upstream_values.get((up_id, int(slot)))
-            else:
-                resolved_inputs[key_name] = value
+                continue
+
+            # Multi-link reference (ARRAY input): [[upstream_id, slot], ...]
+            if (
+                isinstance(value, list)
+                and value
+                and all(
+                    isinstance(item, list)
+                    and len(item) == 2
+                    and isinstance(item[0], str)
+                    for item in value
+                )
+            ):
+                out: list[Any] = []
+                for up_id, slot in value:
+                    out.append(upstream_values.get((up_id, int(slot))))
+                resolved_inputs[key_name] = out
+                continue
+
+            resolved_inputs[key_name] = value
 
         # -------------------- instance memoization --------------------
         instance_entry = self.object_cache.get(node_id)

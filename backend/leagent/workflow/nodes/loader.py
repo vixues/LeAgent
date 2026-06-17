@@ -55,6 +55,28 @@ async def load_builtins(registry: NodeRegistry | None = None) -> list[str]:
     return registered
 
 
+async def load_art_pack(registry: NodeRegistry | None = None) -> list[str]:
+    """Register the first-class game-art node pack (generation nodes).
+
+    Loaded as a :class:`NodeExtension` bundle rather than auto-generated
+    from adapters — node authoring stays explicit and composable.
+    """
+    reg = registry or get_registry()
+    from .art import ArtNodeExtension  # local import to avoid circularity
+
+    extension = ArtNodeExtension()
+    registered: list[str] = []
+    for cls in await extension.get_node_list():
+        reg.register(cls, module_path=f"art:{extension.name}")
+        registered.append(cls.NODE_ID or cls.__name__)
+    try:
+        await extension.on_load({"registry": reg})
+    except Exception:  # noqa: BLE001
+        logger.warning("art_extension_on_load_failed", exc_info=True)
+    logger.info("art_nodes_registered", count=len(registered))
+    return registered
+
+
 async def load_entrypoints(registry: NodeRegistry | None = None) -> list[str]:
     """Load any installed ``leagent.workflow.nodes`` entry points."""
     reg = registry or get_registry()
@@ -205,6 +227,7 @@ async def bootstrap(
     reg = registry or get_registry()
     summary: dict[str, list[str]] = {}
     summary["builtin"] = await load_builtins(reg)
+    summary["art"] = await load_art_pack(reg)
     summary["entrypoints"] = await load_entrypoints(reg)
     dirs = list(custom_dirs or [])
     env_dir = os.environ.get("LEAGENT_CUSTOM_NODES_DIR")
@@ -232,6 +255,14 @@ async def bootstrap(
         summary["domain_models"] = register_domain_model_nodes(reg)
     except Exception:  # noqa: BLE001 - domain-model nodes are optional palette extras
         logger.warning("domain_model_node_bootstrap_failed", exc_info=True)
+
+    try:
+        from leagent.llm.capabilities.bootstrap import bootstrap_capabilities
+
+        caps = bootstrap_capabilities()
+        summary["capabilities"] = [*caps.get("generation", []), *caps.get("domain", [])]
+    except Exception:  # noqa: BLE001 - capability registry is optional discovery surface
+        logger.warning("capability_bootstrap_failed", exc_info=True)
     return summary
 
 

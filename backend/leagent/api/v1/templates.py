@@ -129,6 +129,7 @@ async def get_template(
         raise HTTPException(status_code=404, detail="Template not found")
 
     definition = svc.get_template(template_id) or {}
+    definition = layout_document(definition)
 
     return TemplateDetail(
         **info,

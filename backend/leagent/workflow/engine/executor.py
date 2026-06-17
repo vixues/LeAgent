@@ -32,6 +32,7 @@ from leagent.workflow.io import (
     load,
     validate,
 )
+from leagent.workflow.io.validator import _LOOP_SAFE_TYPES
 from leagent.workflow.nodes import NodeRegistry, get_registry
 
 from .cache_provider import CacheProvider, NullCacheProvider
@@ -401,16 +402,18 @@ class WorkflowExecutor:
                     cache_keys.invalidate(nid)
                     exec_list.add_node(nid)
 
-            # Choose next branch
+            # Choose next branch. Only loop-safe nodes (e.g. IterativeRefine)
+            # may re-open an already-completed target to form a bounded loop.
+            allow_reopen = class_type in _LOOP_SAFE_TYPES
             if output.next_node is not None or class_type == "ConditionNode":
                 exec_list.select_branch(node_id, output.next_node)
                 if output.next_node:
-                    exec_list.add_node(output.next_node)
+                    exec_list.reopen_or_add(output.next_node, allow_reopen=allow_reopen)
             else:
                 next_id = control.get("next")
                 if next_id:
                     exec_list.select_branch(node_id, next_id)
-                    exec_list.add_node(next_id)
+                    exec_list.reopen_or_add(next_id, allow_reopen=allow_reopen)
 
             exec_list.complete_node_execution(node_id)
             state.record_execution(NodeExecutionResult(

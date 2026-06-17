@@ -228,6 +228,29 @@ def test_layout_document_attaches_ui_block_without_mutating_canonical() -> None:
 
 
 @pytest.mark.asyncio
+async def test_every_template_has_control_flow_edges() -> None:
+    """Every shipped template must declare control-flow exits so the editor can draw links."""
+    from leagent.workflow.nodes import bootstrap
+    from leagent.workflow.template_service import get_template_service
+
+    await bootstrap()
+    service = get_template_service()
+    service.load()
+
+    for info in service.list_templates():
+        tid = info["id"]
+        doc = service.get_template(tid)
+        assert doc is not None, tid
+        edges = extract_edges(doc)
+        node_ids = set(doc.get("nodes", {}).keys())
+        assert node_ids, tid
+        assert edges, f"{tid}: no control-flow edges extracted"
+        for edge in edges:
+            assert edge.source in node_ids, tid
+            assert edge.target in node_ids, tid
+
+
+@pytest.mark.asyncio
 async def test_every_template_lays_out_without_overlap() -> None:
     from leagent.workflow.nodes import bootstrap
     from leagent.workflow.template_service import get_template_service

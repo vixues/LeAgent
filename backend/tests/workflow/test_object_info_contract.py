@@ -107,6 +107,48 @@ def test_registry_snapshot_exposes_hints():
     assert node["input"]["required"]["text"][1]["color"] == SOCKET_COLORS["STRING"]
 
 
+def test_media_socket_types_have_colors_and_are_link_only():
+    # First-class media sockets carry stable colours and render link-only
+    # (no inline widget) — game-art assets travel by reference.
+    for io_type in ("IMAGE", "VIDEO", "MESH3D", "AUDIO"):
+        assert io_type in SOCKET_COLORS
+        assert socket_color(io_type) == SOCKET_COLORS[io_type]
+        assert widget_kind(io_type) == ""
+
+
+class _MediaNode(WorkflowNode):
+    @classmethod
+    def define_schema(cls) -> Schema:
+        return Schema(
+            node_id="MediaNode",
+            display_name="Media",
+            category="test",
+            inputs=[IO.Image.Input(id="image", optional=True)],
+            outputs=[
+                IO.Image.Output(id="image"),
+                IO.Video.Output(id="video"),
+                IO.Mesh3D.Output(id="mesh"),
+            ],
+        )
+
+    async def execute(self, **kwargs) -> NodeOutput:  # pragma: no cover - trivial
+        return NodeOutput(values=({}, {}, {}))
+
+
+def test_media_node_info_dict_exposes_typed_sockets():
+    info = _MediaNode.get_schema().get_info_dict()
+    assert info["output"] == ["IMAGE", "VIDEO", "MESH3D"]
+    assert info["output_colors"] == [
+        SOCKET_COLORS["IMAGE"],
+        SOCKET_COLORS["VIDEO"],
+        SOCKET_COLORS["MESH3D"],
+    ]
+    img_type, img_opts = info["input"]["optional"]["image"]
+    assert img_type == "IMAGE"
+    assert img_opts["color"] == SOCKET_COLORS["IMAGE"]
+    assert "widget" not in img_opts
+
+
 def test_all_socket_colors_is_a_copy():
     legend = all_socket_colors()
     assert legend["STRING"] == SOCKET_COLORS["STRING"]
