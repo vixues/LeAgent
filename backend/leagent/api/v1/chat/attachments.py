@@ -21,6 +21,40 @@ from leagent.api.v1.chat.paths import attachment_local_path_for_sse, dedupe_reso
 
 logger = structlog.get_logger(__name__)
 
+#: Attachment kinds rendered as inline assistant media (ChatGPT-style output).
+_ASSISTANT_MEDIA_KINDS = {"image", "video", "model3d", "audio"}
+
+
+def build_assistant_media_event(
+    workspace_payload: Any,
+    *,
+    native_image_output: bool,
+) -> dict[str, Any] | None:
+    """Build an ``assistant_media`` SSE payload from workspace attachments.
+
+    Filters the assistant's produced attachments down to renderable media so
+    the frontend can show images / video / 3D inline within the message body
+    rather than only as attachment cards. ``native_image_output`` reflects
+    whether the active model's capability profile can itself emit image output
+    (capability-routed), distinguishing model-native media from tool output.
+    """
+    if not isinstance(workspace_payload, dict):
+        return None
+    items = workspace_payload.get("attachments")
+    if not isinstance(items, list):
+        return None
+    media: list[dict[str, Any]] = []
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        kind = str(item.get("kind") or "").lower()
+        ctype = str(item.get("content_type") or item.get("mime") or "").lower()
+        if kind in _ASSISTANT_MEDIA_KINDS or ctype.startswith(("image/", "video/", "audio/")):
+            media.append(item)
+    if not media:
+        return None
+    return {"attachments": media, "native": bool(native_image_output)}
+
 
 async def attach_chat_files(
     user_id: UUID,

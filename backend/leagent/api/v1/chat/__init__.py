@@ -107,6 +107,7 @@ from leagent.api.v1.chat.agent_stream import (  # noqa: E402,F401
 )
 from leagent.api.v1.chat.attachments import (  # noqa: E402,F401
     attach_chat_files as _attach_chat_files,
+    build_assistant_media_event as _build_assistant_media_event,
     merge_agent_attachment_paths as _merge_agent_attachment_paths,
     resolve_request_attachment_paths as _resolve_request_attachment_paths,
 )
@@ -159,6 +160,8 @@ async def chat_stream_endpoint(
     model_mode: str | None = Form(default=None),
     model_provider: str | None = Form(default=None),
     model_name: str | None = Form(default=None),
+    research_mode: str | None = Form(default=None),
+    research_doc: str | None = Form(default=None),
 ):
     """Frontend-compatible streaming endpoint.
 
@@ -177,6 +180,8 @@ async def chat_stream_endpoint(
     has_file_ids = bool(file_ids and str(file_ids).strip())
     parsed_tool_replies = _parse_tool_replies_json(tool_replies)
     has_tool_replies = bool(parsed_tool_replies)
+    research_mode_on = str(research_mode or "").strip().lower() in {"1", "true", "yes", "on"}
+    research_doc_name = (research_doc or "").strip() or None
     if not (has_text or incoming_file_parts or has_folder or has_file_ids or has_tool_replies):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -389,8 +394,24 @@ async def chat_stream_endpoint(
         if agent is not None and selected_model_provider and selected_model_name:
             agent.config.model_provider = selected_model_provider
             agent.config.model_name = selected_model_name
+        _chat_native_image_output = False
+        try:
+            from leagent.agent.multimodal import model_supports_output_modality
+
+            _catalog = getattr(getattr(agent, "llm", None), "model_registry", None)
+            _chat_native_image_output = model_supports_output_modality(
+                "image",
+                provider=selected_model_provider,
+                model=selected_model_name,
+                catalog=_catalog,
+            )
+        except Exception:  # noqa: BLE001 - capability probe is best-effort
+            _chat_native_image_output = False
         from leagent.services.chat.pet_personality import apply_pet_personality_to_agent
         await apply_pet_personality_to_agent(agent, db, user_id)
+        if research_mode_on:
+            from leagent.services.chat.deep_research import apply_deep_research_to_agent
+            apply_deep_research_to_agent(agent, target_name=research_doc_name)
         assistant_row: Any | None = None
 
         accum_tool_calls_by_id: dict[str, dict[str, Any]] = {}
@@ -553,6 +574,12 @@ async def chat_stream_endpoint(
                     elif etype == "workspace_attachments":
                         remember_workspace_attachments(edata)
                         yield _format_frontend_event(etype, edata)
+                        media_event = _build_assistant_media_event(
+                            edata,
+                            native_image_output=_chat_native_image_output,
+                        )
+                        if media_event is not None:
+                            yield _format_frontend_event("assistant_media", media_event)
                     elif etype == "task_progress":
                         if isinstance(edata, dict):
                             tid = edata.get("task_id")

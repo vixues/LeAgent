@@ -656,10 +656,20 @@ class ConversationMessage(BaseModel):
     tool_call_id: str | None = None
     tool_calls: list[dict[str, Any]] | None = None
     reasoning_content: str | None = None
+    #: Structured multimodal content parts (ChatGPT-style), when present.
+    content_parts: list[dict[str, Any]] | None = None
+    #: Local image paths that should (re)build inline vision blocks for this
+    #: turn when the active model supports image input (multi-turn vision).
+    attachment_paths: list[str] | None = None
 
     def to_openai_format(self) -> dict[str, Any]:
         """Convert to OpenAI API message format."""
-        msg: dict[str, Any] = {"role": self.role, "content": self.content}
+        content: Any = self.content
+        if self.content_parts:
+            from leagent.agent.content_parts import MessageContent
+
+            content = MessageContent.from_dict_list(self.content_parts).to_openai_content()
+        msg: dict[str, Any] = {"role": self.role, "content": content}
         if self.name:
             msg["name"] = self.name
         if self.tool_call_id:

@@ -7,6 +7,8 @@ import type { GenUiNode, GenUiTreeV1 } from '@/types/genUi';
 import type { GenUiRenderContextValue } from '@/components/canvas/genUi/GenUiRenderContext';
 import { GenUiRenderProvider } from '@/components/canvas/genUi/GenUiRenderContext';
 import { GenUiImage } from '@/components/canvas/genUi/GenUiImage';
+import { GenUiVideo } from '@/components/canvas/genUi/GenUiVideo';
+import { GenUiModel3D } from '@/components/canvas/genUi/GenUiModel3D';
 import { GenUiLiveCamera } from '@/components/canvas/genUi/GenUiLiveCamera';
 import { GenUiIcon } from '@/components/canvas/genUi/GenUiIcon';
 import { GenUiInlineMarkdown, GenUiMarkdown } from '@/components/canvas/genUi/GenUiMarkdown';
@@ -103,11 +105,14 @@ function GenUiInteractiveButtonNode({ node, ctx }: { node: GenUiNode; ctx: GenUi
       }}
     >
       {!!p.icon && (
-        <span className="inline-flex items-center">
-          <IconGlyph name={p.icon} size={16} tone="default" />
-        </span>
+        <IconGlyph
+          name={p.icon}
+          size={16}
+          tone="default"
+          className="inline-flex shrink-0 items-center leading-none"
+        />
       )}
-      {s(p.label) || 'Action'}
+      <span className="leading-none">{s(p.label) || 'Action'}</span>
     </button>
   );
 }
@@ -557,6 +562,12 @@ function renderNode(node: GenUiNode, depth: number, ctx: GenUiRenderContextValue
 
     case 'Image':
       return <GenUiImage key={node.nodeId} node={node} />;
+
+    case 'Video':
+      return <GenUiVideo key={node.nodeId} node={node} />;
+
+    case 'Model3D':
+      return <GenUiModel3D key={node.nodeId} node={node} />;
 
     case 'LiveCamera':
       return <GenUiLiveCamera key={node.nodeId} node={node} />;

@@ -661,11 +661,23 @@ class QueryEngine:
                 except json.JSONDecodeError:
                     pass
         canvas_id = ""
+        quality_score: float | None = None
+        quality_threshold: float | None = None
         env = item.envelope
         if isinstance(env, dict):
             data = env.get("data")
             if isinstance(data, dict):
                 canvas_id = str(data.get("canvas_id") or "")
+                # Workflow runs are scored: surface quality_score so a run that
+                # "succeeds" but misses the bar still triggers regeneration.
+                if item.name in ("workflow_run", "workflow_resume"):
+                    outputs = data.get("outputs")
+                    if isinstance(outputs, dict) and outputs.get("quality_score") is not None:
+                        try:
+                            quality_score = float(outputs["quality_score"])
+                            quality_threshold = 0.7
+                        except (TypeError, ValueError):
+                            quality_score = None
         tracker.record_from_tool_result(
             tool_name=item.name,
             tool_call_id=item.tool_call_id,
@@ -673,6 +685,8 @@ class QueryEngine:
             error_text=error_text,
             canvas_id=canvas_id,
             error_type=error_type,
+            quality_score=quality_score,
+            quality_threshold=quality_threshold,
         )
 
     async def _register_workspace_attachments(

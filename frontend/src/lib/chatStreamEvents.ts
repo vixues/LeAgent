@@ -464,6 +464,21 @@ export function applyChatStreamEvent(
       break;
     }
 
+    case 'assistant_media': {
+      const payload = event.data as AttachmentEventPayload & { native?: boolean };
+      const hydrated: Attachment[] = normalizeAttachmentList(payload?.attachments);
+      if (hydrated.length === 0) break;
+      const msg = s.messages[sessionId]?.find((m) => m.id === assistantMsgId);
+      const prev = msg?.inlineMedia ?? [];
+      const seen = new Set(prev.map((a) => a.id));
+      const merged = [...prev, ...hydrated.filter((a) => !seen.has(a.id))];
+      s.updateMessage(sessionId, assistantMsgId, {
+        inlineMedia: merged,
+        nativeMedia: Boolean(payload?.native) || Boolean(msg?.nativeMedia),
+      });
+      break;
+    }
+
     case 'user_input_request': {
       const d = event.data as Record<string, unknown>;
       const tc = d.tool_call as Record<string, unknown> | undefined;

@@ -25,6 +25,8 @@ export type GenUiNodeKind =
   | 'Progress'
   | 'Avatar'
   | 'Image'
+  | 'Video'
+  | 'Model3D'
   | 'LiveCamera'
   | 'Icon'
   | 'Table'

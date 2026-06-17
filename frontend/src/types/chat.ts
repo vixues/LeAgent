@@ -195,6 +195,15 @@ export interface Message {
   toolCalls?: ToolCall[];
   taskProgress?: TaskProgressStep[];
   attachments?: Attachment[];
+  /**
+   * Media (image / video / 3D / audio) the assistant produced this turn,
+   * rendered inline ChatGPT-style within the message body. Populated from the
+   * `assistant_media` SSE event. Ids overlap with `attachments`; the renderer
+   * shows these inline and excludes them from the attachment-card grid.
+   */
+  inlineMedia?: Attachment[];
+  /** True when the inline media came from a model with native image output. */
+  nativeMedia?: boolean;
   isStreaming?: boolean;
   thinking?: string;
   /** Token usage statistics from the LLM response. */

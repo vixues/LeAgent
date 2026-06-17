@@ -336,6 +336,9 @@ class AgentController:
                         )
                     )
                     self._last_appended_user_index = len(conversation.messages) - 1
+                    self._tag_user_message_image_paths(
+                        conversation, attachments,
+                    )
 
                 result = await self._run_via_query_engine(
                     user_input,
@@ -732,16 +735,58 @@ class AgentController:
     # ------------------------------------------------------------------
 
     @staticmethod
+    def _tag_user_message_image_paths(
+        conversation: ConversationContext,
+        attachments: list[str] | None,
+    ) -> None:
+        """Record image attachment paths on the last user message for multi-turn vision."""
+        if not attachments or not conversation.messages:
+            return
+        try:
+            from leagent.agent.content_parts import is_image_path
+
+            image_paths = [
+                p for p in attachments
+                if isinstance(p, str) and p and is_image_path(p)
+            ]
+            if image_paths:
+                conversation.messages[-1].attachment_paths = image_paths
+        except Exception:  # noqa: BLE001 - tagging is best-effort
+            logger.debug("user_message_image_tag_failed", exc_info=True)
+
     def _openai_seed_messages_from_conversation(
+        self,
         conversation: ConversationContext,
         *,
         skip_user_trim: bool,
     ) -> list[dict[str, Any]]:
-        msgs = [
-            m.to_openai_format()
-            for m in conversation.messages
-            if m.role in ("user", "assistant", "tool")
-        ]
+        # Capability-aware multi-turn vision: rebuild inline image blocks for
+        # recent user turns the active model can see, strip them otherwise. The
+        # image-path marker stays internal to this builder (popped by rebuild)
+        # so it never reaches a provider.
+        msgs: list[dict[str, Any]] = []
+        for m in conversation.messages:
+            if m.role not in ("user", "assistant", "tool"):
+                continue
+            oai = m.to_openai_format()
+            if m.role == "user" and m.attachment_paths:
+                from leagent.agent.content_parts import ATTACHMENT_IMAGE_PATHS_KEY
+
+                oai[ATTACHMENT_IMAGE_PATHS_KEY] = list(m.attachment_paths)
+            msgs.append(oai)
+        try:
+            from leagent.agent.content_parts import rebuild_vision_history
+            from leagent.agent.multimodal import model_supports_image_input
+
+            catalog = getattr(self.llm, "model_registry", None)
+            supports_image = model_supports_image_input(
+                provider=self.config.model_provider,
+                model=self.config.model_name,
+                catalog=catalog,
+            )
+            msgs = rebuild_vision_history(msgs, supports_image=supports_image)
+        except Exception as exc:  # noqa: BLE001 - vision rebuild is best-effort
+            logger.debug("vision_history_rebuild_failed", error=str(exc))
         if skip_user_trim or not msgs:
             return msgs
         if msgs[-1].get("role") == "user":

@@ -36,6 +36,10 @@ export interface RunChatStreamParams {
   toolReplies?: Array<{ tool_call_id: string; content: string }>;
   /** Model selection from the composer. Usually "provider/model"; legacy modes are still accepted. */
   modelMode?: string;
+  /** When true, the backend folds the deep-research persona into the system prompt. */
+  researchMode?: boolean;
+  /** Active paper file name, surfaced to the deep-research persona. */
+  researchDoc?: string;
   signal: AbortSignal;
   t: TFunction;
 }
@@ -55,6 +59,8 @@ export async function runChatStream({
   projectFolderId,
   toolReplies,
   modelMode,
+  researchMode,
+  researchDoc,
   signal,
   t,
 }: RunChatStreamParams): Promise<void> {
@@ -83,6 +89,13 @@ export async function runChatStream({
 
   if (projectFolderId) {
     formData.append('project_folder_id', projectFolderId);
+  }
+
+  if (researchMode) {
+    formData.append('research_mode', 'true');
+    if (researchDoc) {
+      formData.append('research_doc', researchDoc);
+    }
   }
 
   if (modelMode && modelMode !== 'auto') {

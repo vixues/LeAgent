@@ -84,12 +84,76 @@ def model_supports_image_input(
     catalog: ModelRegistry | None,
 ) -> bool:
     """Return True when the selected model can receive inline image blocks."""
+    return model_supports_input_modality(
+        "image", provider=provider, model=model, catalog=catalog
+    )
+
+
+def model_supports_input_modality(
+    modality: str,
+    *,
+    provider: str | None,
+    model: str | None,
+    catalog: ModelRegistry | None,
+) -> bool:
+    """Whether the selected model accepts *modality* input, via the capability layer.
+
+    Unknown models default to permissive (``True``) so callers fall back to the
+    existing inline-or-tools handling rather than silently dropping content.
+    """
     if catalog is None or not provider or not model:
         return True
     spec = catalog.get_spec(provider, model)
     if spec is None:
         return True
-    return spec.capabilities.supports_input("image")
+    from leagent.llm.capabilities import Modality, from_model_spec
+
+    try:
+        return from_model_spec(spec).supports_input(Modality(modality))
+    except ValueError:
+        return False
+
+
+def model_supports_output_modality(
+    modality: str,
+    *,
+    provider: str | None,
+    model: str | None,
+    catalog: ModelRegistry | None,
+) -> bool:
+    """Whether the selected model can natively produce *modality* output.
+
+    Unlike input checks this defaults to ``False`` for unknown models: native
+    media output is an opt-in capability, not a permissive fallback.
+    """
+    if catalog is None or not provider or not model:
+        return False
+    spec = catalog.get_spec(provider, model)
+    if spec is None:
+        return False
+    from leagent.llm.capabilities import Modality, from_model_spec
+
+    try:
+        return from_model_spec(spec).supports_output(Modality(modality))
+    except ValueError:
+        return False
+
+
+def model_supported_input_modalities(
+    *,
+    provider: str | None,
+    model: str | None,
+    catalog: ModelRegistry | None,
+) -> set[str]:
+    """Return the set of input modalities the selected model accepts."""
+    if catalog is None or not provider or not model:
+        return {"text", "image"}
+    spec = catalog.get_spec(provider, model)
+    if spec is None:
+        return {"text", "image"}
+    from leagent.llm.capabilities import from_model_spec
+
+    return {m.value for m in from_model_spec(spec).inputs}
 
 
 def has_image_attachments(attachment_paths: list[str] | None) -> bool:

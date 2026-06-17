@@ -31,6 +31,7 @@ import { TodoListBlock } from './TodoListBlock';
 import { findLatestTodoAnchorMessageId, messageHasTodoActivity } from './todoAnchorUtils';
 import { ArtifactCard } from './ArtifactCard';
 import { AttachmentCard } from './AttachmentCard';
+import { AssistantInlineMedia } from './AssistantInlineMedia';
 import { Markdown } from './markdown/Markdown';
 import { useArtifactStore } from '@/stores/artifact';
 import type { TFunction } from 'i18next';
@@ -180,6 +181,12 @@ function AgentMessageInner({
   const messageArtifacts = Object.values(artifacts).filter(
     (a) => a.messageId === message.id,
   );
+  // Attachments rendered inline (assistant media) are excluded from the card grid.
+  const cardAttachments = useMemo(() => {
+    const all = Array.isArray(message.attachments) ? message.attachments : [];
+    const inlineIds = new Set((message.inlineMedia ?? []).map((m) => m.id));
+    return all.filter((a) => !inlineIds.has(a.id));
+  }, [message.attachments, message.inlineMedia]);
   const sortedTaskProgress = useMemo(() => {
     if (!message.taskProgress?.length) {
       return [];
@@ -489,9 +496,13 @@ function AgentMessageInner({
         </div>
       )}
 
-      {Array.isArray(message.attachments) && message.attachments.length > 0 && (
+      {Array.isArray(message.inlineMedia) && message.inlineMedia.length > 0 && (
+        <AssistantInlineMedia media={message.inlineMedia} native={message.nativeMedia} />
+      )}
+
+      {cardAttachments.length > 0 && (
         <div className="mt-3 flex flex-wrap items-start gap-2">
-          {message.attachments.map((attachment) => (
+          {cardAttachments.map((attachment) => (
             <AttachmentCard key={attachment.id} attachment={attachment} />
           ))}
         </div>
