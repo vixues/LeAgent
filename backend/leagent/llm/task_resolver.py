@@ -6,9 +6,19 @@ from typing import Any
 
 from leagent.exceptions.llm import LLMServiceError, ModelNotFoundError
 from leagent.llm.base import ChatMessage
+from leagent.llm.capabilities import Modality, from_model_spec
 from leagent.llm.model_registry import ModelRegistry
 from leagent.llm.model_spec import ModelSpec, ModelTask, ResolvedModel, TaskBinding
 from leagent.llm.registry import ProviderRegistry
+
+
+def spec_supports_image_input(spec: ModelSpec) -> bool:
+    """Whether *spec* accepts inline image input, via the unified contract.
+
+    Routes the decision through :class:`CapabilityProfile` so chat vision
+    routing and the rest of the platform share one capability vocabulary.
+    """
+    return from_model_spec(spec).supports_input(Modality.IMAGE)
 
 
 def messages_contain_image(messages: list[ChatMessage] | None) -> bool:
@@ -103,14 +113,14 @@ class TaskResolver:
         if task == ModelTask.CHAT and messages_contain_image(messages):
             chat_provider, chat_model = self._try_resolve_task(ModelTask.CHAT)
             chat_spec = self.catalog.get_spec(chat_provider, chat_model)
-            if chat_spec and not chat_spec.capabilities.supports_input("image"):
+            if chat_spec and not spec_supports_image_input(chat_spec):
                 if user_provider and user_model:
                     user_spec = self.catalog.get_spec(user_provider, user_model)
                     if user_spec is None:
                         raise ModelNotFoundError(
                             f"Model '{user_model}' not found for provider '{user_provider}'"
                         )
-                    if user_spec.capabilities.supports_input("image"):
+                    if spec_supports_image_input(user_spec):
                         return self._build_resolved(
                             ModelTask.CHAT,
                             user_provider,
@@ -186,7 +196,7 @@ class TaskResolver:
         except ValueError:
             return None
         spec = self.catalog.get_spec(provider, model)
-        if spec is None or not spec.enabled or not spec.capabilities.supports_input("image"):
+        if spec is None or not spec.enabled or not spec_supports_image_input(spec):
             return None
         if not self.registry.has_provider(provider):
             return None
@@ -213,7 +223,7 @@ class TaskResolver:
             raise LLMServiceError(
                 f"Task '{task.value}' requires a chat model, got kind={spec.kind}"
             )
-        if task == ModelTask.VISION and not spec.capabilities.supports_input("image"):
+        if task == ModelTask.VISION and not spec_supports_image_input(spec):
             if requested_task == ModelTask.VISION:
                 raise LLMServiceError(
                     f"Task 'vision' requires a model with image input; "

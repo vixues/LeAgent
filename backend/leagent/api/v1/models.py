@@ -773,6 +773,86 @@ async def list_available_models(
     return result
 
 
+class CapabilityProfileInfo(BaseModel):
+    """Unified capability profile for one model/backend (chat + generation + domain)."""
+
+    id: str
+    provider: str
+    backend_class: str
+    inputs: list[str] = Field(default_factory=list)
+    outputs: list[str] = Field(default_factory=list)
+    tasks: list[str] = Field(default_factory=list)
+    default_model: str = ""
+    available: bool = True
+    requires_credentials: bool = False
+
+
+@router.get("/capabilities", response_model=list[CapabilityProfileInfo])
+async def list_capability_profiles(
+    user_id: CurrentUserId,
+    svc: Annotated[ProviderConfigService, Depends(_get_service)],
+) -> list[CapabilityProfileInfo]:
+    """Return the unified capability profiles powering the capability-aware UI.
+
+    Aggregates chat/embedding/image_gen/tts/asr models (from configured
+    providers) with media generation + domain backends (from the global
+    capability registry), each classified by modality, task and backend class.
+    """
+    from leagent.llm.capabilities import from_model_spec, get_capability_registry
+    from leagent.llm.capabilities.bootstrap import (
+        register_domain_capabilities,
+        register_generation_capabilities,
+    )
+    from leagent.llm.model_spec import ModelSpec
+
+    profiles: list[CapabilityProfileInfo] = []
+    seen: set[str] = set()
+
+    def _add(p: Any) -> None:
+        if p.id in seen:
+            return
+        seen.add(p.id)
+        profiles.append(
+            CapabilityProfileInfo(
+                id=p.id,
+                provider=p.provider,
+                backend_class=p.backend_class.value,
+                inputs=sorted(m.value for m in p.inputs),
+                outputs=sorted(m.value for m in p.outputs),
+                tasks=sorted(t.value for t in p.tasks),
+                default_model=p.default_model,
+                available=p.available(),
+                requires_credentials=p.requires_credentials,
+            )
+        )
+
+    # Chat / embedding / image_gen / tts / asr models from provider config.
+    for pc in svc.list_providers():
+        if not pc.enabled:
+            continue
+        for m in pc.models:
+            if m.get("enabled", True) is False:
+                continue
+            try:
+                spec = ModelSpec.from_provider_entry(pc.name, m)
+                if spec.name:
+                    _add(from_model_spec(spec))
+            except Exception:  # noqa: BLE001 - skip malformed model entries
+                continue
+
+    # Media generation + domain backends from the global capability registry.
+    try:
+        registry = get_capability_registry()
+        register_generation_capabilities(registry)
+        register_domain_capabilities(registry)
+        for p in registry.all():
+            _add(p)
+    except Exception:  # noqa: BLE001 - registry is an optional discovery surface
+        _logger.debug("capability_registry_unavailable", exc_info=True)
+
+    return profiles
+
+
 @router.get("/presets", response_model=list[PresetInfo])
 async def get_presets(
     user_id: CurrentUserId,

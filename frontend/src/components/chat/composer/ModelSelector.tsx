@@ -1,6 +1,16 @@
 import { useState, useRef, useEffect, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { ChevronDown, Sparkles, Bot, Wrench, Eye, Brain, DollarSign, Star } from 'lucide-react';
+import {
+  ChevronDown,
+  Sparkles,
+  Bot,
+  Wrench,
+  Eye,
+  Brain,
+  DollarSign,
+  Star,
+  Image as ImageIcon,
+} from 'lucide-react';
 import { useAvailableModels, useDefaultModel } from '@/hooks/useAdmin';
 import {
   formatModelDisplayLabel,
@@ -19,6 +29,8 @@ interface ModelOption {
   supportsTools?: boolean;
   supportsVision?: boolean;
   supportsThinking?: boolean;
+  /** Model can natively produce image output (capability-driven). */
+  supportsImageOut?: boolean;
   isDefault?: boolean;
   description?: string;
   contextWindow?: number;
@@ -72,6 +84,7 @@ export function ModelSelector({ className }: ModelSelectorProps) {
         supportsTools: !!m.capabilities?.tool_call,
         supportsVision: !!m.capabilities?.input?.includes('image'),
         supportsThinking: !!m.capabilities?.reasoning,
+        supportsImageOut: !!m.capabilities?.output?.includes('image'),
         isDefault: m.is_default,
         description: m.description,
         contextWindow: m.context_window,
@@ -297,6 +310,7 @@ function ModelOptionButton({
         {model.supportsTools && <span title="Tools"><Wrench className="h-3 w-3" /></span>}
         {model.supportsVision && <span title="Vision"><Eye className="h-3 w-3" /></span>}
         {model.supportsThinking && <span title="Thinking"><Brain className="h-3 w-3" /></span>}
+        {model.supportsImageOut && <span title="Image output"><ImageIcon className="h-3 w-3" /></span>}
         {model.priceLevel && (
           <span className="inline-flex items-center gap-0.5 text-[10px]">
             <DollarSign className="h-3 w-3" />
