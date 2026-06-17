@@ -34,6 +34,7 @@
 - **100+ offline tools** — documents, web, data, code execution, databases, generative UI, coding projects, and more
 - **Sidebar desk pet** — customizable avatar and background, walk/jump animations, and personality bubbles; upload PNG / SVG / GIF or sprite sheets, synced with chat streaming and session state
 - **Visual workflows** — ReactFlow editor with YAML export, templates, and every tool as a typed node
+- **Game-art asset pipeline** — first-class, composable generation nodes (image / video / 3D mesh) with typed media sockets, a quality gate + bounded self-correction loop, and inline canvas asset previews; runs end-to-end offline with no credentials ([docs](backend/docs/workflow-engine/art-asset-nodes.md))
 - **Multi-provider LLM** — DeepSeek, DashScope (Qwen), OpenAI, Ollama, vLLM, and more (DeepSeek is currently the most thoroughly validated; recommended for first use)
 - **Zero-config default** — SQLite out of the box, single Docker container, optional PostgreSQL / Milvus
 

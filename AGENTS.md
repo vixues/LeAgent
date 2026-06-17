@@ -89,6 +89,35 @@ async def execute(self, context: ToolContext, **kwargs) -> ToolResult:
 
 The `ArtifactRegistrar` will automatically pick up `produced_files` from the result — no path scraping needed.
 
+### Game-art asset nodes (first-class generation pipeline)
+
+The art path is a hand-authored, ComfyUI-style node system — **not** the
+`Model.<task>.<provider>` factory (deprecated for art; audio TTS/ASR still uses
+it). Full reference: [`docs/workflow-engine/art-asset-nodes.md`](backend/docs/workflow-engine/art-asset-nodes.md).
+
+- **Typed media sockets + `MediaRef`.** `IO.Image` / `IO.Video` / `IO.Mesh3D`
+  (`workflow/io/types.py`) carry assets *by reference* as a `MediaRef`
+  (`workflow/io/media.py`) — never base64 — using `/api/v1/files/{id}/preview`.
+- **Generation backends (Strategy + Registry).** `leagent/llm/generation/`:
+  `GenerationBackend` Protocol + `GenerationService` facade (retry + failover).
+  An always-registered deterministic `offline` backend makes the whole pipeline
+  run credential-free; force it with `LEAGENT_ART_OFFLINE=1` or `provider: offline`.
+- **Art node pack.** `workflow/nodes/art/` exports `ArtNodeExtension`;
+  `BaseGenerationNode` (Template Method) owns the execute skeleton. Nodes:
+  `Art.ImageGen`, `Art.Upscale`, `Art.VideoGen`, `Art.Mesh3D`. They emit
+  `NodeOutput.ui.gen_ui` asset previews.
+- **Self-correction (engine-side).** `QualityGateNode` scores a `MediaRef` and
+  routes pass/fail; `IterativeRefineNode` (in `_LOOP_SAFE_TYPES`) provides a
+  bounded regenerate back-edge; `AssetExportNode` emits an engine-ready manifest.
+- **Self-correction (agent-side).** `workflow_save` validates + persists an
+  agent-authored graph (returns `flow_id` + digest); paired with
+  `chat_workflow_embed_emit` and `workflow_run`/`workflow_status` it closes the
+  idea → design → run → evaluate → re-run loop. The `ArtifactErrorTracker` is
+  run-aware: a failed or below-threshold `quality_score` run injects a
+  regeneration directive into the next system prompt.
+- Flagship: `config/workflows/templates/TPL-ART-01.yaml`; demo:
+  `config/demo-workflows/demo-art-pipeline.yaml`.
+
 ## Code Style
 
 ### Python
