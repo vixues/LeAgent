@@ -527,6 +527,78 @@ describe('fromStoredDocument', () => {
     });
   });
 
+  it('rebuilds control-flow edges from control.next when no data links exist', () => {
+    const info = parseObjectInfo(RAW);
+    const linearTemplate = {
+      nodes: {
+        start: {
+          class_type: 'StartNode',
+          inputs: {},
+          control: { next: 'work' },
+        },
+        work: {
+          class_type: 'Tool.echo',
+          inputs: { text: 'hello' },
+          control: { next: 'end' },
+        },
+        end: {
+          class_type: 'EndNode',
+          inputs: {},
+        },
+      },
+      control: { start: 'start', edges: [] },
+    };
+    const restored = fromStoredDocument(linearTemplate, info.definitions);
+    expect(restored.edges).toContainEqual(
+      expect.objectContaining({ source: 'start', target: 'work' }),
+    );
+    expect(restored.edges).toContainEqual(
+      expect.objectContaining({ source: 'work', target: 'end' }),
+    );
+  });
+
+  it('rebuilds typed nodes when the ui block is preview-shaped (templates)', () => {
+    const info = parseObjectInfo(RAW);
+    // Mirrors what `apply_template` stores: canonical nodes + a sibling `ui`
+    // block authored by the backend layout helper (generic, ChatWorkflowMiniNode
+    // shape — no `data.nodeType`). The typed editor must ignore the generic
+    // projection and rebuild `workflow` nodes, reusing the laid-out positions.
+    const stored = {
+      nodes: {
+        a: {
+          class_type: 'Tool.echo',
+          inputs: { text: 'hi' },
+          meta: { name: 'Concept' },
+        },
+        b: {
+          class_type: 'Tool.echo',
+          inputs: { text: ['a', 0] },
+          meta: { name: 'Refine' },
+        },
+      },
+      control: { start: 'a', edges: [] },
+      ui: {
+        nodes: [
+          { id: 'a', type: 'generic', position: { x: 800, y: 80 }, data: { label: 'Concept', icon: 'tool_call' } },
+          { id: 'b', type: 'generic', position: { x: 1520, y: 80 }, data: { label: 'Refine', icon: 'tool_call' } },
+        ],
+        edges: [{ id: 'e-a-b-next', source: 'a', target: 'b', type: 'default' }],
+      },
+    };
+    const restored = fromStoredDocument(stored, info.definitions);
+    // Typed editor nodes, not bare React Flow defaults.
+    expect(restored.nodes.every((n) => n.type === 'workflow')).toBe(true);
+    expect(restored.nodes.map((n) => n.data.nodeType)).toEqual(['Tool.echo', 'Tool.echo']);
+    // The friendly `meta.name` becomes the label.
+    expect(restored.nodes.find((n) => n.id === 'a')!.data.label).toBe('Concept');
+    // The backend-computed layout positions are reused verbatim.
+    expect(restored.nodes.find((n) => n.id === 'b')!.position).toEqual({ x: 1520, y: 80 });
+    // Data-link edges are reconstructed from canonical inputs.
+    expect(restored.edges).toContainEqual(
+      expect.objectContaining({ source: 'a', target: 'b', targetHandle: 'text' }),
+    );
+  });
+
   it('keeps unknown class_types as placeholder nodes with config intact', () => {
     const info = parseObjectInfo(RAW);
     const canonicalOnly = {
@@ -554,6 +626,59 @@ describe('fromStoredDocument', () => {
     expect(restored.edges).toContainEqual(
       expect.objectContaining({ source: 'a', target: 'ghost' }),
     );
+  });
+
+  it('round-trips canvas asset nodes through canonical LoadImage', () => {
+    const info = parseObjectInfo(RAW);
+    const assetId = 'asset-1';
+    const nodes: EditorNode[] = [
+      {
+        id: assetId,
+        type: 'canvas-asset',
+        position: { x: 10, y: 20 },
+        style: { width: 180, height: 120 },
+        data: {
+          assetKind: 'image',
+          fileId: 'file-uuid',
+          fileName: 'demo.png',
+          previewUrl: '/api/v1/files/file-uuid/preview',
+          label: 'demo.png',
+        },
+      } as EditorNode,
+      {
+        id: 'b',
+        type: 'workflow',
+        position: { x: 300, y: 20 },
+        data: {
+          nodeType: 'Tool.echo',
+          label: 'Echo',
+          category: 'tool',
+          values: {},
+        },
+      },
+    ];
+    const edges: EditorEdge[] = [
+      {
+        id: 'e1',
+        source: assetId,
+        target: 'b',
+        sourceHandle: 'image',
+        targetHandle: 'text',
+        type: 'workflow',
+      },
+    ];
+    const doc = toCanonicalDocument({
+      id: 'wf',
+      name: 'asset-test',
+      nodes,
+      edges,
+      definitions: info.definitions,
+    });
+    expect(doc.nodes[assetId]?.class_type).toBe('LoadImage');
+    const restored = fromStoredDocument(doc, info.definitions);
+    const asset = restored.nodes.find((n) => n.id === assetId);
+    expect(asset?.type).toBe('canvas-asset');
+    expect(restored.edges.some((e) => e.source === assetId && e.target === 'b')).toBe(true);
   });
 
   it('returns empty graph for unparseable payloads', () => {

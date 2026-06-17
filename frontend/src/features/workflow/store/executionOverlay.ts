@@ -20,6 +20,11 @@ export interface NodeRunState {
   progress?: number;
   /** Latest streamed preview row (agent activity, deltas, etc.). */
   preview?: unknown;
+  /**
+   * GenUI asset tree emitted by the node on ``executed`` (``NodeOutput.ui.gen_ui``).
+   * Drives the ComfyUI-style inline media thumbnail on the node card.
+   */
+  ui?: GenUiTreeV1 | null;
   error?: string;
 }
 

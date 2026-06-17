@@ -94,13 +94,13 @@ export function NodeSearchPalette({
       onClick={onClose}
     >
       <div
-        className="w-[420px] max-w-[90%] overflow-hidden rounded-lg border border-border bg-popover shadow-xl"
+        className="w-[420px] max-w-[90%] overflow-hidden rounded-lg border border-border bg-surface-elevated shadow-xl"
         onClick={(e) => e.stopPropagation()}
       >
         {typeFilter && (
-          <div className="flex items-center gap-1.5 border-b border-border bg-muted/40 px-3 py-1.5 text-[11px] text-muted-foreground">
+          <div className="flex items-center gap-1.5 border-b border-border bg-surface-sunken px-3 py-1.5 text-[11px] text-muted-foreground">
             {t('palette.typeFilter', 'Compatible with')}
-            <code className="rounded bg-muted px-1 font-mono text-[10px]">
+            <code className="rounded bg-surface-sunken px-1 font-mono text-[10px]">
               {typeFilter.type}
             </code>
           </div>
@@ -136,8 +136,8 @@ export function NodeSearchPalette({
               <button
                 type="button"
                 className={cn(
-                  'flex w-full flex-col items-start gap-0.5 px-3 py-1.5 text-left text-sm hover:bg-accent',
-                  i === active && 'bg-accent',
+                  'flex w-full flex-col items-start gap-0.5 px-3 py-1.5 text-left text-sm hover:bg-surface-sunken',
+                  i === active && 'bg-surface-sunken',
                 )}
                 onMouseEnter={() => setActive(i)}
                 onClick={() => choose(def)}

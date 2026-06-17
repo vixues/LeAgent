@@ -15,6 +15,12 @@
 import type { Edge, Node, Viewport } from '@xyflow/react';
 
 import type { NodeDefinition } from './objectInfo';
+import { CANVAS_ASSET_NODE_TYPE, canvasAssetSourceHandle } from '../components/canvasAsset';
+import {
+  canvasAssetToCanonical,
+  canonicalToCanvasAsset,
+  canvasAssetKindFromCanonical,
+} from '../components/canvasAssetSerialize';
 
 export interface WorkflowNodeData extends Record<string, unknown> {
   /** Backend node id used as `class_type` on serialize. */
@@ -47,10 +53,134 @@ export interface CanonicalDocument {
   };
 }
 
+interface CanonicalNodeControl {
+  next?: string;
+  error_handler?: string;
+  conditions?: Array<{ then?: string; then_node?: string }>;
+  else_node?: string;
+  else?: string;
+  on_reject?: string;
+  branches?: Array<{ id?: string; nodes?: string[] }>;
+}
+
 interface CanonicalNode {
   class_type: string;
   inputs: Record<string, unknown>;
-  meta: { position: { x: number; y: number }; title?: string; mode?: string };
+  meta: { position?: { x: number; y: number }; title?: string; name?: string; mode?: string };
+  control?: CanonicalNodeControl;
+}
+
+const CONTROL_EDGE_COLOR = '#94a3b8';
+
+function edgePairKey(source: string, target: string): string {
+  return `${source}|${target}`;
+}
+
+/** Build editor edges for declared control-flow exits (``control.next``, branches, …). */
+function extractControlFlowEdges(
+  nodesDict: Record<string, CanonicalNode>,
+  definitions: Record<string, NodeDefinition>,
+): EditorEdge[] {
+  const knownIds = new Set(Object.keys(nodesDict));
+  const edges: EditorEdge[] = [];
+  const seen = new Set<string>();
+
+  const add = (source: string, target: string, kind: string) => {
+    if (!source || !target || !knownIds.has(target)) return;
+    const key = edgePairKey(source, target);
+    if (seen.has(key)) return;
+    seen.add(key);
+    const sourceDef = definitions[nodesDict[source]?.class_type ?? ''];
+    const targetDef = definitions[nodesDict[target]?.class_type ?? ''];
+    edges.push({
+      id: `edge-${source}-${target}-${kind}`,
+      source,
+      target,
+      sourceHandle: sourceDef?.outputs[0]?.id,
+      targetHandle: targetDef?.inputs[0]?.id,
+      type: 'workflow',
+      data: { kind: 'control', color: CONTROL_EDGE_COLOR },
+    });
+  };
+
+  for (const [nodeId, spec] of Object.entries(nodesDict)) {
+    const control = spec.control ?? {};
+    if (typeof control.next === 'string') add(nodeId, control.next, 'next');
+    if (typeof control.error_handler === 'string') add(nodeId, control.error_handler, 'error');
+
+    for (const cond of control.conditions ?? []) {
+      const target = cond.then_node ?? cond.then;
+      if (typeof target === 'string') add(nodeId, target, 'condition');
+    }
+
+    const elseTarget = control.else_node ?? control.else;
+    if (typeof elseTarget === 'string') add(nodeId, elseTarget, 'else');
+    if (typeof control.on_reject === 'string') add(nodeId, control.on_reject, 'reject');
+
+    for (const branch of control.branches ?? []) {
+      const branchNodes = branch.nodes ?? [];
+      if (branchNodes.length > 0 && typeof branchNodes[0] === 'string') {
+        add(nodeId, branchNodes[0], 'branch');
+        for (let i = 0; i < branchNodes.length - 1; i++) {
+          const a = branchNodes[i];
+          const b = branchNodes[i + 1];
+          if (typeof a === 'string' && typeof b === 'string') add(a, b, 'sequence');
+        }
+      }
+    }
+  }
+
+  return edges;
+}
+
+/** Convert backend layout ``ui.edges`` (preview-shaped) into typed editor edges. */
+function layoutUiEdgesToEditorEdges(
+  uiEdges: unknown[],
+  nodesDict: Record<string, CanonicalNode>,
+  definitions: Record<string, NodeDefinition>,
+): EditorEdge[] {
+  const edges: EditorEdge[] = [];
+  const seen = new Set<string>();
+
+  for (const raw of uiEdges) {
+    if (!raw || typeof raw !== 'object') continue;
+    const edge = raw as { id?: string; source?: string; target?: string; data?: { kind?: string } };
+    if (typeof edge.source !== 'string' || typeof edge.target !== 'string') continue;
+    if (!nodesDict[edge.source] || !nodesDict[edge.target]) continue;
+
+    const key = edgePairKey(edge.source, edge.target);
+    if (seen.has(key)) continue;
+    seen.add(key);
+
+    const sourceDef = definitions[nodesDict[edge.source]?.class_type ?? ''];
+    const targetDef = definitions[nodesDict[edge.target]?.class_type ?? ''];
+    const kind = typeof edge.data?.kind === 'string' ? edge.data.kind : 'layout';
+    edges.push({
+      id: edge.id || `edge-${edge.source}-${edge.target}-${kind}`,
+      source: edge.source,
+      target: edge.target,
+      sourceHandle: sourceDef?.outputs[0]?.id,
+      targetHandle: targetDef?.inputs[0]?.id,
+      type: 'workflow',
+      data: { kind, color: CONTROL_EDGE_COLOR },
+    });
+  }
+
+  return edges;
+}
+
+/** Prefer explicit data-link edges; fill gaps with control/layout edges. */
+function mergeEditorEdges(primary: EditorEdge[], secondary: EditorEdge[]): EditorEdge[] {
+  const pairs = new Set(primary.map((e) => edgePairKey(e.source, e.target)));
+  const merged = [...primary];
+  for (const edge of secondary) {
+    const key = edgePairKey(edge.source, edge.target);
+    if (!pairs.has(key)) {
+      pairs.add(key);
+      merged.push(edge);
+    }
+  }
+  return merged;
 }
 
 interface CanonicalEdge {
@@ -141,7 +271,35 @@ export function toCanonicalDocument(params: ToCanonicalParams): CanonicalDocumen
   const workflowNodes = nodes.filter((n) => !isUiOnly(n));
 
   const nodeSpecs: Record<string, CanonicalNode> = {};
-  for (const node of workflowNodes) {
+  for (const node of nodes) {
+    if (node.type === CANVAS_ASSET_NODE_TYPE) {
+      const converted = canvasAssetToCanonical(node);
+      if (!converted) continue;
+      const inputs = { ...converted.inputs };
+      for (const edge of flatEdges) {
+        if (edge.target !== node.id) continue;
+        const targetDef = definitions[nodeFor(nodes, edge.target)?.data.nodeType ?? ''];
+        const targetHandle = edge.targetHandle ?? targetDef?.inputs[0]?.id ?? 'input';
+        const sourceNode = nodeFor(nodes, edge.source);
+        let slot = 0;
+        if (sourceNode?.type === CANVAS_ASSET_NODE_TYPE) {
+          slot = 0;
+        } else {
+          const sourceDef = definitions[sourceNode?.data.nodeType ?? ''];
+          slot = outputSlotIndex(sourceDef, edge.sourceHandle);
+        }
+        inputs[targetHandle] = [edge.source, slot];
+      }
+      nodeSpecs[node.id] = {
+        class_type: converted.class_type,
+        inputs,
+        meta: converted.meta,
+      };
+      continue;
+    }
+
+    if (isUiOnly(node)) continue;
+
     const data = node.data;
     const classType = data.nodeType || (node.type ?? '');
     const def = definitions[classType];
@@ -159,9 +317,35 @@ export function toCanonicalDocument(params: ToCanonicalParams): CanonicalDocumen
     for (const edge of flatEdges) {
       if (edge.target !== node.id) continue;
       const targetHandle = edge.targetHandle ?? def?.inputs[0]?.id ?? 'input';
-      const sourceDef = definitions[nodeFor(nodes, edge.source)?.data.nodeType ?? ''];
-      const slot = outputSlotIndex(sourceDef, edge.sourceHandle);
-      inputs[targetHandle] = [edge.source, slot];
+      const sourceNode = nodeFor(nodes, edge.source);
+      const slot =
+        sourceNode?.type === CANVAS_ASSET_NODE_TYPE
+          ? 0
+          : outputSlotIndex(
+              definitions[sourceNode?.data.nodeType ?? ''],
+              edge.sourceHandle,
+            );
+      const slotDef = def?.inputs.find((i) => i.id === targetHandle) ?? def?.inputs[0];
+      const isArray = slotDef?.type === 'ARRAY';
+      if (isArray) {
+        const prev = inputs[targetHandle];
+        const link: [string, number] = [edge.source, slot];
+        if (Array.isArray(prev)) {
+          // Already a multi-link array: [[id, slot], ...]
+          if (prev.length > 0 && Array.isArray(prev[0])) {
+            (prev as unknown[]).push(link);
+            inputs[targetHandle] = prev;
+          } else if (prev.length === 2 && typeof prev[0] === 'string') {
+            inputs[targetHandle] = [prev as [string, number], link];
+          } else {
+            inputs[targetHandle] = [link];
+          }
+        } else {
+          inputs[targetHandle] = [link];
+        }
+      } else {
+        inputs[targetHandle] = [edge.source, slot];
+      }
     }
 
     nodeSpecs[node.id] = {
@@ -175,13 +359,41 @@ export function toCanonicalDocument(params: ToCanonicalParams): CanonicalDocumen
     };
   }
 
+  // Storyboard: honour explicit shot ordering from editor UI.
+  for (const node of nodes) {
+    if (node.type !== 'workflow' || node.data.nodeType !== 'Art.Storyboard') continue;
+    const spec = nodeSpecs[node.id];
+    if (!spec) continue;
+    const order = node.data.values?.shot_order;
+    const shots = spec.inputs.shots;
+    if (!Array.isArray(order) || !Array.isArray(shots) || shots.length === 0) continue;
+    if (!Array.isArray(shots[0])) continue;
+    const byId = new Map((shots as [string, number][]).map((link) => [link[0], link]));
+    const sorted: [string, number][] = [];
+    for (const sid of order as string[]) {
+      const link = byId.get(sid);
+      if (link) {
+        sorted.push(link);
+        byId.delete(sid);
+      }
+    }
+    for (const link of byId.values()) sorted.push(link);
+    spec.inputs.shots = sorted;
+  }
+
   const canonicalEdges: CanonicalEdge[] = flatEdges.map((edge) => {
-    const sourceDef = definitions[nodeFor(nodes, edge.source)?.data.nodeType ?? ''];
-    const targetDef = definitions[nodeFor(nodes, edge.target)?.data.nodeType ?? ''];
+    const sourceNode = nodeFor(nodes, edge.source);
+    const targetNode = nodeFor(nodes, edge.target);
+    const sourceDef = definitions[sourceNode?.data.nodeType ?? ''];
+    const targetDef = definitions[targetNode?.data.nodeType ?? ''];
+    const source_slot =
+      sourceNode?.type === CANVAS_ASSET_NODE_TYPE
+        ? 0
+        : outputSlotIndex(sourceDef, edge.sourceHandle);
     return {
       source: edge.source,
       target: edge.target,
-      source_slot: outputSlotIndex(sourceDef, edge.sourceHandle),
+      source_slot,
       target_slot: inputSlotIndex(targetDef, edge.targetHandle),
     };
   });
@@ -190,6 +402,7 @@ export function toCanonicalDocument(params: ToCanonicalParams): CanonicalDocumen
   const targets = new Set(flatEdges.map((e) => e.target));
   const startNode =
     workflowNodes.find((n) => n.data.nodeType === 'StartNode') ??
+    nodes.find((n) => n.type === CANVAS_ASSET_NODE_TYPE) ??
     workflowNodes.find((n) => !targets.has(n.id));
 
   return {
@@ -245,55 +458,157 @@ export function fromStoredDocument(
   };
 
   const ui = obj.ui as CanonicalDocument['ui'] | undefined;
-  if (ui && Array.isArray(ui.nodes) && ui.nodes.length > 0) {
+  const uiNodes = ui && Array.isArray(ui.nodes) ? (ui.nodes as unknown[]) : [];
+
+  const rawNodes = obj.nodes;
+  const nodesDict =
+    rawNodes && typeof rawNodes === 'object' && !Array.isArray(rawNodes)
+      ? (rawNodes as Record<string, CanonicalNode>)
+      : null;
+
+  // Fast path: a `ui` block authored by THIS editor carries typed editor
+  // nodes (`type: 'workflow'` + `data.nodeType`) and can be used verbatim to
+  // restore the exact saved layout.
+  if (uiNodes.length > 0 && uiBlockIsEditorShaped(uiNodes)) {
+    const storedUiEdges = ui && Array.isArray(ui.edges) ? (ui.edges as EditorEdge[]) : [];
+    const edges =
+      nodesDict !== null
+        ? mergeEditorEdges(
+            storedUiEdges,
+            extractControlFlowEdges(nodesDict, definitions),
+          )
+        : storedUiEdges;
     return {
       ...shared,
-      nodes: ui.nodes as EditorNode[],
-      edges: Array.isArray(ui.edges) ? (ui.edges as EditorEdge[]) : [],
-      viewport: ui.viewport,
+      nodes: uiNodes as EditorNode[],
+      edges,
+      viewport: ui?.viewport,
     };
   }
 
-  // Rebuild from the canonical nodes dict.
-  const rawNodes = obj.nodes;
-  if (rawNodes && typeof rawNodes === 'object' && !Array.isArray(rawNodes)) {
+  // Otherwise rebuild typed `workflow` nodes from the canonical `nodes` dict.
+  // Templates (and any non-editor producer) ship a preview-shaped `ui` block
+  // whose nodes use the ChatWorkflowMiniNode shape (`type: 'generic'`); the
+  // ComfyUI editor cannot render those, so we ignore the projection but reuse
+  // the positions it already computed for a clean first-open layout.
+  if (nodesDict !== null) {
+    const rebuilt = rebuildFromCanonical(nodesDict, definitions, positionsFromUiNodes(uiNodes));
+    const layoutEdges =
+      ui && Array.isArray(ui.edges)
+        ? layoutUiEdgesToEditorEdges(ui.edges as unknown[], nodesDict, definitions)
+        : [];
+    const controlEdges = extractControlFlowEdges(nodesDict, definitions);
     return {
       ...shared,
-      ...rebuildFromCanonical(rawNodes as Record<string, CanonicalNode>, definitions),
+      nodes: rebuilt.nodes,
+      edges: mergeEditorEdges(rebuilt.edges, [...layoutEdges, ...controlEdges]),
+      viewport: ui?.viewport,
     };
   }
   return { nodes: [], edges: [], ...shared };
 }
 
+/**
+ * A `ui` block authored by the typed editor stores `data.nodeType` on every
+ * node (including reroute/group affordances). Preview-shaped blocks emitted by
+ * the backend layout helper carry only `data.label`/`data.icon`, so this lets
+ * us tell the two apart and avoid rendering generic nodes as bare defaults.
+ */
+function uiBlockIsEditorShaped(uiNodes: unknown[]): boolean {
+  return uiNodes.every((n) => {
+    if (!n || typeof n !== 'object') return false;
+    const node = n as { type?: string; data?: { nodeType?: unknown } };
+    if (node.type === CANVAS_ASSET_NODE_TYPE) return true;
+    return typeof node.data?.nodeType === 'string';
+  });
+}
+
+/** Collect `id → position` from a stored `ui` block so a canonical rebuild can
+ * reuse a pre-computed layout instead of falling back to a grid. */
+function positionsFromUiNodes(uiNodes: unknown[]): Map<string, { x: number; y: number }> {
+  const positions = new Map<string, { x: number; y: number }>();
+  for (const node of uiNodes) {
+    if (!node || typeof node !== 'object') continue;
+    const { id, position } = node as { id?: unknown; position?: { x?: unknown; y?: unknown } };
+    if (typeof id !== 'string') continue;
+    if (position && typeof position.x === 'number' && typeof position.y === 'number') {
+      positions.set(id, { x: position.x, y: position.y });
+    }
+  }
+  return positions;
+}
+
 function rebuildFromCanonical(
   nodesDict: Record<string, CanonicalNode>,
   definitions: Record<string, NodeDefinition>,
+  positions?: Map<string, { x: number; y: number }>,
 ): { nodes: EditorNode[]; edges: EditorEdge[] } {
   const nodes: EditorNode[] = [];
   const edges: EditorEdge[] = [];
   let i = 0;
   for (const [id, spec] of Object.entries(nodesDict)) {
+    const assetNode = canonicalToCanvasAsset(id, spec);
+    if (assetNode) {
+      nodes.push(assetNode);
+      i += 1;
+      continue;
+    }
+
     const classType = spec.class_type;
     const def = definitions[classType];
     const values: Record<string, unknown> = {};
     for (const [key, value] of Object.entries(spec.inputs ?? {})) {
       const isLink = Array.isArray(value) && value.length === 2 && typeof value[0] === 'string';
+      const isLinkArray =
+        Array.isArray(value) &&
+        value.length > 0 &&
+        Array.isArray(value[0]) &&
+        (value as unknown[]).every(
+          (v) => Array.isArray(v) && v.length === 2 && typeof (v as unknown[])[0] === 'string',
+        );
       if (isLink) {
         const [sourceId, slot] = value as [string, number];
-        const sourceDef = definitions[nodesDict[sourceId]?.class_type ?? ''];
+        const sourceSpec = nodesDict[sourceId];
+        const sourceAssetKind = sourceSpec ? canvasAssetKindFromCanonical(sourceSpec) : null;
+        const sourceDef = definitions[sourceSpec?.class_type ?? ''];
+        const sourceHandle =
+          sourceSpec && canonicalToCanvasAsset(sourceId, sourceSpec)
+            ? canvasAssetSourceHandle(sourceAssetKind ?? 'image')
+            : sourceDef?.outputs[slot]?.id;
         edges.push({
           id: `edge-${sourceId}-${id}-${key}`,
           source: sourceId,
           target: id,
-          sourceHandle: sourceDef?.outputs[slot]?.id,
+          sourceHandle,
           targetHandle: key,
           type: 'workflow',
         });
+      } else if (isLinkArray) {
+        for (const entry of value as [string, number][]) {
+          const [sourceId, slot] = entry;
+          const sourceSpec = nodesDict[sourceId];
+          const sourceAssetKind = sourceSpec ? canvasAssetKindFromCanonical(sourceSpec) : null;
+          const sourceDef = definitions[sourceSpec?.class_type ?? ''];
+          const sourceHandle =
+            sourceSpec && canonicalToCanvasAsset(sourceId, sourceSpec)
+              ? canvasAssetSourceHandle(sourceAssetKind ?? 'image')
+              : sourceDef?.outputs[slot]?.id;
+          edges.push({
+            id: `edge-${sourceId}-${id}-${key}-${slot}`,
+            source: sourceId,
+            target: id,
+            sourceHandle,
+            targetHandle: key,
+            type: 'workflow',
+          });
+        }
       } else {
         values[key] = value;
       }
     }
-    const pos = spec.meta?.position ?? { x: (i % 4) * 280, y: Math.floor(i / 4) * 200 };
+    const pos =
+      positions?.get(id) ??
+      spec.meta?.position ?? { x: (i % 4) * 280, y: Math.floor(i / 4) * 200 };
     const mode = spec.meta?.mode;
     nodes.push({
       id,
@@ -301,7 +616,7 @@ function rebuildFromCanonical(
       position: pos,
       data: {
         nodeType: classType,
-        label: spec.meta?.title || def?.displayName || classType,
+        label: spec.meta?.title || spec.meta?.name || def?.displayName || classType,
         category: def?.category ?? 'workflow',
         description: def?.description,
         values,

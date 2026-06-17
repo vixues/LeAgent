@@ -1,8 +1,9 @@
 import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { CircleAlert, Loader2, MessageCircleQuestion, SquareActivity } from 'lucide-react';
+import { CircleAlert, Images, Loader2, MessageCircleQuestion, SquareActivity } from 'lucide-react';
 
 import { GenUiTreeView } from '@/components/canvas/GenUiRegistry';
+import { extractMediaItems } from '@/components/canvas/genUi/genUiMedia';
 import { cn } from '@/lib/utils';
 import type { RunWorkflowActionPayload } from '@/lib/genUiActionBus';
 
@@ -76,10 +77,25 @@ export function WorkflowRunPanel({
     });
   }, [blocked, promptId, t]);
 
+  // Asset galleries (Image/Video/Model3D trees emitted by generation nodes)
+  // get their own gallery section; structured outputs render in Results.
+  const assetTrees = useMemo(
+    () => genUiTrees.filter((tree) => extractMediaItems(tree).length > 0),
+    [genUiTrees],
+  );
+  const passthroughTrees = useMemo(
+    () => genUiTrees.filter((tree) => extractMediaItems(tree).length === 0),
+    [genUiTrees],
+  );
+  const assetCount = useMemo(
+    () => assetTrees.reduce((n, tree) => n + extractMediaItems(tree).length, 0),
+    [assetTrees],
+  );
+
   const outputTree = useMemo(() => {
     if (running || blocked) return null;
-    return outputsToGenUiTree(resolvedOutputs, outputs, genUiTrees);
-  }, [running, blocked, resolvedOutputs, outputs, genUiTrees]);
+    return outputsToGenUiTree(resolvedOutputs, outputs, passthroughTrees);
+  }, [running, blocked, resolvedOutputs, outputs, passthroughTrees]);
 
   return (
     <div className={cn('flex min-h-0 flex-col overflow-y-auto', className)}>
@@ -120,6 +136,24 @@ export function WorkflowRunPanel({
             {t('runPanel.waiting', 'Waiting for your input')}
           </header>
           <GenUiTreeView tree={blockedTree} />
+        </section>
+      )}
+
+      {/* Egress: generated asset gallery (image / video / 3D) */}
+      {assetTrees.length > 0 && !blocked && (
+        <section className="border-b border-border">
+          <header className="flex items-center gap-2 px-4 pt-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            <Images className="h-3.5 w-3.5" />
+            {t('runPanel.assets', 'Assets')}
+            {assetCount > 0 && (
+              <span className="rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
+                {assetCount}
+              </span>
+            )}
+          </header>
+          {assetTrees.map((tree, i) => (
+            <GenUiTreeView key={i} tree={tree} />
+          ))}
         </section>
       )}
 

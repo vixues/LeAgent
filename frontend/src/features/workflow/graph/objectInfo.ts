@@ -28,6 +28,8 @@ export interface InputSlot {
   optional: boolean;
   color: string;
   widget: WidgetKind;
+  /** For FILE inputs: accepted mime/extensions (e.g. "image/*,.pdf"). */
+  accept?: string;
   /** For COMBO inputs: the available choices. */
   choices?: string[];
   default?: unknown;
@@ -131,6 +133,7 @@ function parseInput(
     optional,
     color,
     widget: widgetKind(options.widget) || (isCombo ? 'combo' : ''),
+    accept: typeof options.accept === 'string' ? options.accept : undefined,
     choices: isCombo ? (rawType as string[]).map(String) : undefined,
     default: options.default,
     multiline: options.multiline === true,

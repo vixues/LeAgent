@@ -339,6 +339,9 @@
     "moreActions": "更多操作",
     "deleteNode": "删除节点",
     "loadingFlow": "正在加载工作流...",
+    "dropAssetHint": "拖放图片、文本或文件到画布",
+    "uploadingAsset": "上传中…",
+    "assetDropFailed": "添加资源失败",
     "loadFailedTitle": "加载工作流失败",
     "loadFailedDesc": "发生未知错误",
     "tryAgain": "重试",
@@ -485,6 +488,7 @@
     "saveFirst": "保存工作流后即可运行。",
     "running": "运行中...",
     "waiting": "等待您的输入",
+    "assets": "资产",
     "results": "结果",
     "approve": "通过",
     "reject": "拒绝",
@@ -504,5 +508,43 @@
     "noInputs": "尚未声明输入。运行表单将为空。",
     "noOutputs": "尚未声明输出。结果将根据状态变量自动渲染。",
     "outputsHint": "输出名称对应工作流状态变量；渲染提示决定每项结果的展示方式。"
+  },
+  "storyboard": {
+    "shotList": "镜头列表",
+    "insert": "插入",
+    "duplicate": "复制",
+    "remove": "移除连线",
+    "connectShots": "将 Art.Shot 节点连到 shots 输入",
+    "timeline": "时间轴",
+    "batch": "批量设置",
+    "duration": "时长 (秒)",
+    "applyAll": "应用到全部",
+    "outputSummary": "镜头输出",
+    "newShot": "新镜头",
+    "shotDefault": "镜头",
+    "emptyPrompt": "在节点中设置 prompt…"
+  },
+  "cameraControl": {
+    "horizontal": "水平 (H)",
+    "vertical": "垂直 (V)",
+    "distance": "距离 (Z)",
+    "azimuthDeg": "方位角°",
+    "elevationDeg": "仰角°",
+    "zoom": "缩放",
+    "cameraView": "相机视角预览",
+    "promptOut": "输出 Prompt",
+    "viewportHeight": "预览高度",
+    "viewportWidth": "节点宽度",
+    "previewScale": "主体大小"
+  },
+  "canvasAsset": {
+    "outputImage": "IMAGE",
+    "outputMesh": "MESH3D"
+  },
+  "mesh3d": {
+    "zoomIn": "放大",
+    "zoomOut": "缩小",
+    "fitView": "适应视图",
+    "autoRotate": "自动旋转"
   }
 }

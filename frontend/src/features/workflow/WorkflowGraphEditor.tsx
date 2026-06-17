@@ -56,7 +56,7 @@ import {
   type EditorNode,
   type WorkflowNodeData,
 } from './graph/serialization';
-import { typesCompatible } from './graph/socketTypes';
+import { typesCompatible, DEFAULT_SOCKET_COLORS } from './graph/socketTypes';
 import type { NodeDefinition, ObjectInfo } from './graph/objectInfo';
 import { useObjectInfo } from './api/useObjectInfo';
 import { useExecutionStream } from './api/useExecutionStream';
@@ -65,6 +65,7 @@ import { useConnectionDrag } from './store/connectionDrag';
 import type { WorkflowInputSpec } from './genui/inputsToGenUiTree';
 import type { WorkflowOutputSpec } from './genui/outputsToGenUiTree';
 import { TypedNodeView } from './components/TypedNodeView';
+import { CanvasAssetNodeView } from './components/CanvasAssetNodeView';
 import { RerouteNodeView } from './components/RerouteNodeView';
 import { GroupNodeView } from './components/GroupNodeView';
 import { WorkflowEdge } from './components/WorkflowEdge';
@@ -74,6 +75,20 @@ import { NodeInspector } from './components/NodeInspector';
 import { ResumePanel } from './components/ResumePanel';
 import { WorkflowRunPanel } from './components/WorkflowRunPanel';
 import { WorkflowIOPanel } from './components/WorkflowIOPanel';
+import {
+  type CanvasAssetNodeData,
+  CANVAS_ASSET_NODE_TYPE,
+  buildCanvasAssetNode,
+  canvasAssetOutputWireType,
+  canvasAssetSourceHandle,
+  classifyDroppedFile,
+  DEFAULT_MESH_ASSET_HEIGHT,
+  DEFAULT_MESH_ASSET_WIDTH,
+  fitImageDisplaySize,
+  measureImageFile,
+  readFileAsText,
+  uploadWorkflowAsset,
+} from './components/canvasAsset';
 
 interface RunResponse {
   execution_id: string;
@@ -143,6 +158,8 @@ function EditorInner({ registry }: { registry: ObjectInfo }) {
   const [docInputs, setDocInputs] = useState<WorkflowInputSpec[]>([]);
   const [docOutputs, setDocOutputs] = useState<WorkflowOutputSpec[]>([]);
   const [rightPanel, setRightPanel] = useState<'run' | 'io' | null>(null);
+  const [canvasDragActive, setCanvasDragActive] = useState(false);
+  const [assetDropBusy, setAssetDropBusy] = useState(false);
   const [searchParams] = useSearchParams();
 
   useEffect(() => {
@@ -218,34 +235,127 @@ function EditorInner({ registry }: { registry: ObjectInfo }) {
     [rf, setNodes],
   );
 
+  const addCanvasAsset = useCallback(
+    (
+      position: { x: number; y: number },
+      data: CanvasAssetNodeData,
+      size?: { width: number; height: number },
+    ) => {
+      const node = buildCanvasAssetNode(newId(), position, data, size);
+      setNodes((cur) => [...cur, node as EditorNode]);
+      return node.id;
+    },
+    [setNodes],
+  );
+
+  const addFileAsset = useCallback(
+    async (position: { x: number; y: number }, file: File) => {
+      const kind = classifyDroppedFile(file);
+      if (kind === 'text') {
+        const text = await readFileAsText(file);
+        addCanvasAsset(position, {
+          assetKind: 'text',
+          textContent: text,
+          fileName: file.name,
+          label: file.name,
+        });
+        return;
+      }
+      const uploaded = await uploadWorkflowAsset(file);
+      const isImage = kind === 'image';
+      const isMesh = kind === 'mesh3d';
+      let imageWidth: number | undefined;
+      let imageHeight: number | undefined;
+      let size: { width: number; height: number } | undefined;
+      if (isImage) {
+        const dims = await measureImageFile(file);
+        imageWidth = dims.width;
+        imageHeight = dims.height;
+        size = fitImageDisplaySize(dims.width, dims.height);
+      } else if (isMesh) {
+        size = { width: DEFAULT_MESH_ASSET_WIDTH, height: DEFAULT_MESH_ASSET_HEIGHT };
+      }
+      addCanvasAsset(
+        position,
+        {
+          assetKind: isImage ? 'image' : isMesh ? 'mesh3d' : 'file',
+          fileId: uploaded.id,
+          fileName: uploaded.filename || file.name,
+          mimeType: uploaded.mime_type || file.type,
+          previewUrl: uploaded.preview_url,
+          imageWidth,
+          imageHeight,
+        },
+        size,
+      );
+    },
+    [addCanvasAsset],
+  );
+
+  const addTextAsset = useCallback(
+    (position: { x: number; y: number }, text: string) => {
+      const trimmed = text.trim();
+      if (!trimmed) return;
+      addCanvasAsset(position, {
+        assetKind: 'text',
+        textContent: trimmed,
+        label: trimmed.length > 24 ? `${trimmed.slice(0, 24)}…` : trimmed,
+      });
+    },
+    [addCanvasAsset],
+  );
+
+  const canvasAssetWireType = useCallback((node: Node | undefined, handleId: string | null): string => {
+    if (!node || node.type !== CANVAS_ASSET_NODE_TYPE) return '*';
+    const data = node.data as CanvasAssetNodeData;
+    return canvasAssetOutputWireType(data.assetKind, handleId);
+  }, []);
+
   const isValidConnection = useCallback<IsValidConnection>(
     (conn) => {
       if (!conn.source || !conn.target) return false;
       if (conn.source === conn.target) return false;
-      const sourceNode = rf.getNode(conn.source) as Node<WorkflowNodeData> | undefined;
+      const sourceNode = rf.getNode(conn.source);
       const targetNode = rf.getNode(conn.target) as Node<WorkflowNodeData> | undefined;
-      const sourceDef = registry.definitions[sourceNode?.data.nodeType ?? ''];
+      let outType = '*';
+      if (sourceNode?.type === CANVAS_ASSET_NODE_TYPE) {
+        outType = canvasAssetWireType(sourceNode, conn.sourceHandle);
+      } else {
+        const wfSource = sourceNode as Node<WorkflowNodeData> | undefined;
+        const sourceDef = registry.definitions[wfSource?.data.nodeType ?? ''];
+        outType =
+          sourceDef?.outputs.find((o) => o.id === conn.sourceHandle)?.type ??
+          sourceDef?.outputs[0]?.type ??
+          '*';
+      }
       const targetDef = registry.definitions[targetNode?.data.nodeType ?? ''];
-      const outType =
-        sourceDef?.outputs.find((o) => o.id === conn.sourceHandle)?.type ??
-        sourceDef?.outputs[0]?.type ??
-        '*';
       const inType =
         targetDef?.inputs.find((i) => i.id === conn.targetHandle)?.type ??
         targetDef?.inputs[0]?.type ??
         '*';
+      // ARRAY inputs act as "list of downstream type" in wiring: allow linking
+      // any upstream type (wildcard) and let the node validate at runtime.
+      if (inType === 'ARRAY') return true;
       return typesCompatible(outType, inType);
     },
-    [rf, registry],
+    [rf, registry, canvasAssetWireType],
   );
 
   const onConnect = useCallback(
     (conn: Connection) => {
-      const sourceNode = rf.getNode(conn.source) as Node<WorkflowNodeData> | undefined;
-      const sourceDef = registry.definitions[sourceNode?.data.nodeType ?? ''];
-      const color =
-        sourceDef?.outputs.find((o) => o.id === conn.sourceHandle)?.color ??
-        sourceDef?.outputs[0]?.color;
+      const sourceNode = rf.getNode(conn.source);
+      let color: string | undefined;
+      if (sourceNode?.type === CANVAS_ASSET_NODE_TYPE) {
+        const data = sourceNode.data as CanvasAssetNodeData;
+        const wire = canvasAssetOutputWireType(data.assetKind, conn.sourceHandle);
+        color = DEFAULT_SOCKET_COLORS[wire];
+      } else {
+        const wfSource = sourceNode as Node<WorkflowNodeData> | undefined;
+        const sourceDef = registry.definitions[wfSource?.data.nodeType ?? ''];
+        color =
+          sourceDef?.outputs.find((o) => o.id === conn.sourceHandle)?.color ??
+          sourceDef?.outputs[0]?.color;
+      }
       const edge: Edge = {
         ...conn,
         id: `e-${conn.source}-${conn.sourceHandle ?? '0'}-${conn.target}-${conn.targetHandle ?? '0'}`,
@@ -262,8 +372,17 @@ function EditorInner({ registry }: { registry: ObjectInfo }) {
 
   const wireTypeFor = useCallback(
     (nodeId: string, handleId: string | null, handleType: 'source' | 'target'): string => {
-      const node = rf.getNode(nodeId) as Node<WorkflowNodeData> | undefined;
-      const def = registry.definitions[node?.data.nodeType ?? ''];
+      const node = rf.getNode(nodeId);
+      if (!node) return '*';
+      if (node.type === CANVAS_ASSET_NODE_TYPE) {
+        const data = node.data as CanvasAssetNodeData;
+        if (handleType === 'source') {
+          return canvasAssetOutputWireType(data.assetKind, handleId ?? canvasAssetSourceHandle(data.assetKind));
+        }
+        return '*';
+      }
+      const wf = node as Node<WorkflowNodeData>;
+      const def = registry.definitions[wf.data.nodeType ?? ''];
       if (!def) return '*';
       const slots = handleType === 'source' ? def.outputs : def.inputs;
       return slots.find((s) => s.id === handleId)?.type ?? slots[0]?.type ?? '*';
@@ -356,16 +475,64 @@ function EditorInner({ registry }: { registry: ObjectInfo }) {
   );
 
   const onDrop = useCallback(
-    (event: React.DragEvent) => {
+    async (event: React.DragEvent) => {
       event.preventDefault();
-      const type = event.dataTransfer.getData('application/leagent-node');
-      const def = registry.definitions[type];
-      if (!def) return;
+      setCanvasDragActive(false);
       const position = rf.screenToFlowPosition({ x: event.clientX, y: event.clientY });
-      addNode(def, position);
+
+      const nodeType = event.dataTransfer.getData('application/leagent-node');
+      if (nodeType) {
+        const def = registry.definitions[nodeType];
+        if (def) addNode(def, position);
+        return;
+      }
+
+      const files = Array.from(event.dataTransfer.files ?? []);
+      const plain = event.dataTransfer.getData('text/plain');
+
+      if (files.length === 0 && plain.trim()) {
+        addTextAsset(position, plain);
+        return;
+      }
+
+      if (!files.length) return;
+
+      setAssetDropBusy(true);
+      setError(null);
+      try {
+        for (let i = 0; i < files.length; i++) {
+          const file = files[i]!;
+          const at = { x: position.x + i * 28, y: position.y + i * 28 };
+          await addFileAsset(at, file);
+        }
+      } catch (err) {
+        setError(err instanceof Error ? err.message : t('flowEditor.assetDropFailed', 'Failed to add asset'));
+      } finally {
+        setAssetDropBusy(false);
+      }
     },
-    [registry, rf, addNode],
+    [registry, rf, addNode, addFileAsset, addTextAsset, t],
   );
+
+  const onDragOverCanvas = useCallback((event: React.DragEvent) => {
+    event.preventDefault();
+    const hasFiles = Array.from(event.dataTransfer.types).includes('Files');
+    const hasText = Array.from(event.dataTransfer.types).includes('text/plain');
+    const hasNode = Array.from(event.dataTransfer.types).includes('application/leagent-node');
+    if (hasFiles || hasText) {
+      event.dataTransfer.dropEffect = 'copy';
+      setCanvasDragActive(true);
+    } else if (hasNode) {
+      event.dataTransfer.dropEffect = 'move';
+      setCanvasDragActive(false);
+    }
+  }, []);
+
+  const onDragLeaveCanvas = useCallback((event: React.DragEvent) => {
+    if (event.currentTarget === event.target) {
+      setCanvasDragActive(false);
+    }
+  }, []);
 
   const handleSave = useCallback(async (): Promise<string | null> => {
     setSaving(true);
@@ -789,7 +956,12 @@ function EditorInner({ registry }: { registry: ObjectInfo }) {
   }, []);
 
   const nodeTypes = useMemo(
-    () => ({ workflow: TypedNodeView, reroute: RerouteNodeView, group: GroupNodeView }),
+    () => ({
+      workflow: TypedNodeView,
+      [CANVAS_ASSET_NODE_TYPE]: CanvasAssetNodeView,
+      reroute: RerouteNodeView,
+      group: GroupNodeView,
+    }),
     [],
   );
   const edgeTypes = useMemo(() => ({ workflow: WorkflowEdge }), []);
@@ -882,10 +1054,8 @@ function EditorInner({ registry }: { registry: ObjectInfo }) {
           ref={wrapperRef}
           className="relative min-h-0 flex-1"
           onDrop={onDrop}
-          onDragOver={(e) => {
-            e.preventDefault();
-            e.dataTransfer.dropEffect = 'move';
-          }}
+          onDragOver={onDragOverCanvas}
+          onDragLeave={onDragLeaveCanvas}
           onDoubleClick={(e) => {
             const target = e.target as HTMLElement;
             if (target.classList.contains('react-flow__pane')) {
@@ -893,6 +1063,18 @@ function EditorInner({ registry }: { registry: ObjectInfo }) {
             }
           }}
         >
+          {canvasDragActive && (
+            <div className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center border-2 border-dashed border-primary/60 bg-primary/5">
+              <p className="rounded-lg bg-surface-elevated/90 px-4 py-2 text-sm font-medium text-foreground shadow-lg">
+                {t('flowEditor.dropAssetHint', '拖放图片、文本或文件到画布')}
+              </p>
+            </div>
+          )}
+          {assetDropBusy && (
+            <div className="pointer-events-none absolute inset-0 z-30 flex items-center justify-center bg-background/40">
+              <p className="text-sm text-muted-foreground">{t('flowEditor.uploadingAsset', '上传中…')}</p>
+            </div>
+          )}
           <ReactFlow
             nodes={nodes}
             edges={edges}
@@ -1079,13 +1261,6 @@ function EditorInner({ registry }: { registry: ObjectInfo }) {
                     : t('ioPanel.tab', 'Inputs / Outputs')}
                 </button>
               ))}
-              <button
-                className="ml-auto rounded p-1 text-muted-foreground hover:bg-accent"
-                onClick={() => setRightPanel(null)}
-                title={t('flowEditor.closePanel', 'Close panel')}
-              >
-                <PanelRight className="h-3.5 w-3.5" />
-              </button>
             </div>
             {rightPanel === 'run' ? (
               <WorkflowRunPanel

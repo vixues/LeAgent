@@ -339,6 +339,9 @@
     "moreActions": "More actions",
     "deleteNode": "Delete node",
     "loadingFlow": "Loading flow...",
+    "dropAssetHint": "Drop image, text, or file onto the canvas",
+    "uploadingAsset": "Uploading…",
+    "assetDropFailed": "Failed to add asset",
     "loadFailedTitle": "Failed to load flow",
     "loadFailedDesc": "Unknown error occurred",
     "tryAgain": "Try Again",
@@ -485,6 +488,7 @@
     "saveFirst": "Save the workflow to enable runs.",
     "running": "Running...",
     "waiting": "Waiting for your input",
+    "assets": "Assets",
     "results": "Results",
     "approve": "Approve",
     "reject": "Reject",
@@ -504,5 +508,43 @@
     "noInputs": "No declared inputs. The run form will be empty.",
     "noOutputs": "No declared outputs. Results render from state variables automatically.",
     "outputsHint": "Output names map to workflow state variables; the renderer hint controls how each result is displayed."
+  },
+  "storyboard": {
+    "shotList": "Shots",
+    "insert": "Insert",
+    "duplicate": "Duplicate",
+    "remove": "Remove link",
+    "connectShots": "Connect Art.Shot nodes to the shots input",
+    "timeline": "Timeline",
+    "batch": "Batch settings",
+    "duration": "Duration (s)",
+    "applyAll": "Apply all",
+    "outputSummary": "Shot outputs",
+    "newShot": "New shot",
+    "shotDefault": "Shot",
+    "emptyPrompt": "Set prompt in node values…"
+  },
+  "cameraControl": {
+    "horizontal": "Horizontal (H)",
+    "vertical": "Vertical (V)",
+    "distance": "Distance (Z)",
+    "azimuthDeg": "Azimuth°",
+    "elevationDeg": "Elev°",
+    "zoom": "Zoom",
+    "cameraView": "Camera view mode",
+    "promptOut": "Prompt output",
+    "viewportHeight": "Preview height",
+    "viewportWidth": "Node width",
+    "previewScale": "Subject size"
+  },
+  "canvasAsset": {
+    "outputImage": "IMAGE",
+    "outputMesh": "MESH3D"
+  },
+  "mesh3d": {
+    "zoomIn": "Zoom in",
+    "zoomOut": "Zoom out",
+    "fitView": "Fit to view",
+    "autoRotate": "Auto rotate"
   }
 }

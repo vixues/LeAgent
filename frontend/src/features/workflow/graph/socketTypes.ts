@@ -27,6 +27,7 @@ export const DEFAULT_SOCKET_COLORS: Record<string, string> = {
   IMAGE: '#64B5F6',
   AUDIO: '#F06292',
   VIDEO: '#BA68C8',
+  MESH3D: '#FF8A65',
   DATETIME: '#90A4AE',
   MULTI: '#9E9E9E',
   [WILDCARD_TYPE]: '#C0C0C0',

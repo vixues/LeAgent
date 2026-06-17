@@ -84,7 +84,11 @@ function handleWsMessage(promptId: string, raw: string): void {
   if (nodeId && msg.type === 'executed') {
     const ui = (msg.data?.ui ?? null) as Record<string, unknown> | null;
     const tree = ui ? asGenUiTree(ui.gen_ui) : null;
-    if (tree) addGenUiTree(promptId, tree);
+    if (tree) {
+      addGenUiTree(promptId, tree);
+      // Also pin it to the node so the canvas card renders an inline thumbnail.
+      setNode(promptId, nodeId, { ui: tree });
+    }
   }
 
   if (msg.type === 'execution_blocked' && nodeId) {
@@ -146,10 +150,6 @@ function connectPromptStream(promptId: string): void {
   socket.onopen = () => {
     if (closed) socket.close();
   };
-}
-
-function startOverlay(promptId: string, surface: 'editor' | 'chat' = 'editor'): void {
-  useExecutionOverlay.getState().start(promptId, surface);
 }
 
 function acquirePromptStream(promptId: string): void {

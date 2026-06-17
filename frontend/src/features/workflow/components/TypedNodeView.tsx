@@ -9,12 +9,19 @@ import {
 
 import { cn } from '@/lib/utils';
 
+import { firstMediaItem } from '@/components/canvas/genUi/genUiMedia';
+
 import { useNodeDefinition } from '../graph/registryContext';
+import type { InputSlot } from '../graph/objectInfo';
 import type { WorkflowNodeData } from '../graph/serialization';
 import { typesCompatible } from '../graph/socketTypes';
 import { useConnectionDrag } from '../store/connectionDrag';
 import { useExecutionOverlay } from '../store/executionOverlay';
+import { CameraControlNodeView } from './art/CameraControlNodeView';
+import { ShotNodeView, StoryboardNodeView } from './art/StoryboardNodeView';
+import { NodeMediaPreview } from './NodeMediaPreview';
 import { NodeWidget } from './NodeWidget';
+import { ConnectedInputPreview, useUpstreamInputPreview } from './ConnectedInputPreview';
 
 const STATUS_RING: Record<string, string> = {
   running: 'ring-2 ring-blue-400 animate-pulse',
@@ -25,7 +32,21 @@ const STATUS_RING: Record<string, string> = {
   skipped: 'ring-2 ring-slate-300 opacity-70',
 };
 
-function TypedNodeViewImpl({ id, data, selected }: NodeProps) {
+function TypedNodeViewImpl(props: NodeProps) {
+  const nodeData = props.data as WorkflowNodeData;
+  switch (nodeData.nodeType) {
+    case 'Art.CameraControl':
+      return <CameraControlNodeView {...props} />;
+    case 'Art.Storyboard':
+      return <StoryboardNodeView {...props} />;
+    case 'Art.Shot':
+      return <ShotNodeView {...props} />;
+    default:
+      return <StandardTypedNodeView {...props} />;
+  }
+}
+
+function StandardTypedNodeView({ id, data, selected }: NodeProps) {
   const nodeData = data as WorkflowNodeData;
   const def = useNodeDefinition(nodeData.nodeType);
   const { updateNodeData } = useReactFlow();
@@ -56,10 +77,18 @@ function TypedNodeViewImpl({ id, data, selected }: NodeProps) {
 
   const inputs = def?.inputs ?? [];
   const outputs = def?.outputs ?? [];
+  const mediaItem = runState?.ui ? firstMediaItem(runState.ui) : null;
   const label = nodeData.label || def?.displayName || nodeData.nodeType;
   const ringClass = runState ? STATUS_RING[runState.status] ?? '' : '';
   const missing = !def;
   const mode = nodeData.mode;
+
+  // ComfyUI-style title accent: tint the header with the node's primary
+  // socket color so nodes read as colour-coded at a glance.
+  const accent =
+    outputs.find((s) => s.color)?.color ??
+    inputs.find((s) => s.color)?.color ??
+    (missing ? '#f87171' : 'rgb(var(--color-primary))');
 
   // Dim nodes with no compatible slot during a link drag (ComfyUI affordance).
   const dragType = useConnectionDrag((s) => s.type);
@@ -73,18 +102,22 @@ function TypedNodeViewImpl({ id, data, selected }: NodeProps) {
   return (
     <div
       className={cn(
-        'min-w-[200px] max-w-[300px] rounded-md border border-border bg-card text-card-foreground shadow-sm',
+        'relative min-w-[200px] max-w-[300px] overflow-visible rounded-lg border border-border bg-surface-elevated text-foreground shadow-md',
         selected && 'ring-2 ring-primary',
         ringClass,
         // ComfyUI parity: muted nodes dim out, bypassed nodes tint purple.
         mode === 'mute' && 'opacity-40 saturate-50',
         mode === 'bypass' &&
-          'border-violet-400 bg-violet-50/60 dark:border-violet-600 dark:bg-violet-950/40',
+          'border-violet-400 bg-violet-50/80 dark:border-violet-600 dark:bg-violet-950/50',
         missing && 'border-dashed border-red-400 dark:border-red-600',
         dimmed && 'opacity-30 transition-opacity',
       )}
     >
-      <div className="flex items-center justify-between gap-2 rounded-t-md border-b border-border bg-muted/60 px-2 py-1">
+      {/* Colour-coded title bar (ComfyUI node colour). */}
+      <div
+        className="flex items-center justify-between gap-2 border-b border-border px-2 py-1.5"
+        style={{ backgroundColor: `color-mix(in srgb, ${accent} 22%, rgb(var(--color-surface-sunken)))` }}
+      >
         <span className="truncate text-xs font-semibold" title={def?.description}>
           {label}
         </span>
@@ -141,7 +174,7 @@ function TypedNodeViewImpl({ id, data, selected }: NodeProps) {
       )}
 
       {runState?.progress != null && runState.status === 'running' && (
-        <div className="h-0.5 w-full bg-muted">
+        <div className="h-0.5 w-full bg-surface-sunken">
           <div
             className="h-full bg-blue-400 transition-[width]"
             style={{ width: `${Math.round(runState.progress * 100)}%` }}
@@ -150,38 +183,17 @@ function TypedNodeViewImpl({ id, data, selected }: NodeProps) {
       )}
 
       <div className="flex flex-col gap-2 px-2 py-2">
-        {inputs.map((slot, index) => {
-          const connected = connectedSet.has(slot.id);
-          return (
-            <div key={`in-${slot.id}`} className="relative">
-              <Handle
-                id={slot.id}
-                type="target"
-                position={Position.Left}
-                title={`${slot.id}: ${slot.type}`}
-                style={{
-                  left: -14,
-                  top: 8 + index * 2,
-                  width: 11,
-                  height: 11,
-                  background: slot.color,
-                  border: '2px solid var(--color-background, #fff)',
-                }}
-              />
-              <div className="flex flex-col gap-0.5">
-                <span className="text-[10px] text-muted-foreground">{slot.id}</span>
-                {slot.widget && !slot.forceInput ? (
-                  <NodeWidget
-                    slot={slot}
-                    value={nodeData.values?.[slot.id] ?? slot.default}
-                    onChange={(v) => setValue(slot.id, v)}
-                    connected={connected}
-                  />
-                ) : null}
-              </div>
-            </div>
-          );
-        })}
+        {inputs.map((slot, index) => (
+          <InputSlotRow
+            key={`in-${slot.id}`}
+            nodeId={id}
+            slot={slot}
+            index={index}
+            connected={connectedSet.has(slot.id)}
+            value={nodeData.values?.[slot.id] ?? slot.default}
+            onChange={(v) => setValue(slot.id, v)}
+          />
+        ))}
       </div>
 
       {outputs.length > 0 && (
@@ -208,11 +220,64 @@ function TypedNodeViewImpl({ id, data, selected }: NodeProps) {
         </div>
       )}
 
+      {mediaItem && (
+        <div className="border-t border-border bg-surface-sunken/50 px-2 py-2">
+          <NodeMediaPreview item={mediaItem} />
+        </div>
+      )}
+
       {runState?.preview != null && (
-        <div className="max-h-24 overflow-auto border-t border-border bg-muted/30 px-2 py-1 text-[10px] text-muted-foreground">
+        <div className="max-h-24 overflow-auto border-t border-border bg-surface-sunken px-2 py-1 text-[10px] text-muted-foreground">
           <PreviewRow preview={runState.preview} />
         </div>
       )}
+    </div>
+  );
+}
+
+function InputSlotRow({
+  nodeId,
+  slot,
+  index,
+  connected,
+  value,
+  onChange,
+}: {
+  nodeId: string;
+  slot: InputSlot;
+  index: number;
+  connected: boolean;
+  value: unknown;
+  onChange: (v: unknown) => void;
+}) {
+  const upstreamPreview = useUpstreamInputPreview(nodeId, slot.id);
+
+  return (
+    <div className="relative">
+      <Handle
+        id={slot.id}
+        type="target"
+        position={Position.Left}
+        title={`${slot.id}: ${slot.type}`}
+        style={{
+          left: -14,
+          top: 8 + index * 2,
+          width: 11,
+          height: 11,
+          background: slot.color,
+          border: '2px solid var(--color-background, #fff)',
+        }}
+      />
+      <div className="flex flex-col gap-0.5">
+        <span className="text-[10px] text-muted-foreground">{slot.id}</span>
+        {connected && upstreamPreview ? (
+          <ConnectedInputPreview descriptor={upstreamPreview} />
+        ) : slot.widget && !slot.forceInput ? (
+          <NodeWidget slot={slot} value={value} onChange={onChange} connected={connected} />
+        ) : connected ? (
+          <div className="text-[10px] italic text-muted-foreground">{slot.id} ← linked</div>
+        ) : null}
+      </div>
     </div>
   );
 }
