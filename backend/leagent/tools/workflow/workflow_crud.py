@@ -7,12 +7,13 @@ from uuid import UUID
 
 import structlog
 
-from leagent.tools.base import BaseTool, ToolCategory, ToolContext, ToolResult
+from leagent.tools.base import ToolCategory, ToolContext, ToolResult
+from leagent.tools.workflow._schema_tool import SchemaWorkflowTool
 
 logger = structlog.get_logger(__name__)
 
 
-class WorkflowListTool(BaseTool):
+class WorkflowListTool(SchemaWorkflowTool):
     name = "workflow_list"
     description = (
         "List available workflows (flows) in the system. "
@@ -80,7 +81,7 @@ class WorkflowListTool(BaseTool):
             return workflow_error_result("list", exc)
 
 
-class WorkflowRunTool(BaseTool):
+class WorkflowRunTool(SchemaWorkflowTool):
     name = "workflow_run"
     description = (
         "Trigger a workflow execution by flow ID or name. "
@@ -137,7 +138,7 @@ class WorkflowRunTool(BaseTool):
             return workflow_error_result("run", exc)
 
 
-class WorkflowStatusTool(BaseTool):
+class WorkflowStatusTool(SchemaWorkflowTool):
     name = "workflow_status"
     description = "Get the current status and details of a workflow execution by execution ID."
     category = ToolCategory.WORKFLOW
@@ -167,7 +168,7 @@ class WorkflowStatusTool(BaseTool):
             return workflow_error_result("status", exc)
 
 
-class WorkflowCancelTool(BaseTool):
+class WorkflowCancelTool(SchemaWorkflowTool):
     name = "workflow_cancel"
     description = "Cancel a running or paused workflow execution."
     category = ToolCategory.WORKFLOW
@@ -193,7 +194,7 @@ class WorkflowCancelTool(BaseTool):
             return workflow_error_result("cancel", exc)
 
 
-class WorkflowPauseTool(BaseTool):
+class WorkflowPauseTool(SchemaWorkflowTool):
     name = "workflow_pause"
     description = "Pause a currently running workflow execution."
     category = ToolCategory.WORKFLOW
@@ -219,7 +220,7 @@ class WorkflowPauseTool(BaseTool):
             return workflow_error_result("pause", exc)
 
 
-class WorkflowResumeTool(BaseTool):
+class WorkflowResumeTool(SchemaWorkflowTool):
     name = "workflow_resume"
     description = "Resume a paused workflow execution."
     category = ToolCategory.WORKFLOW

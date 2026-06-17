@@ -20,6 +20,7 @@ from leagent.tools.workflow.workflow_crud import (
     WorkflowRunTool,
     WorkflowStatusTool,
 )
+from leagent.tools.workflow.workflow_save import WorkflowSaveTool
 
 __all__ = [
     "ChatWorkflowEmitTool",
@@ -29,6 +30,7 @@ __all__ = [
     "WorkflowPauseTool",
     "WorkflowResumeTool",
     "WorkflowRunTool",
+    "WorkflowSaveTool",
     "WorkflowStatusTool",
     "get_workflow_service",
     "workflow_error_result",

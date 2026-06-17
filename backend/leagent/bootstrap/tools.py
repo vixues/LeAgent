@@ -77,6 +77,7 @@ _CURATED_UTIL_TOOL_PATHS: tuple[tuple[str, str], ...] = (
     # --- workflow ---
     ("leagent.tools.workflow.chat_workflow", "ChatWorkflowEmitTool"),
     ("leagent.tools.workflow.workflow_embed_emit", "ChatWorkflowEmbedEmitTool"),
+    ("leagent.tools.workflow.workflow_save", "WorkflowSaveTool"),
     ("leagent.tools.workflow.workflow_crud", "WorkflowListTool"),
     ("leagent.tools.workflow.workflow_crud", "WorkflowRunTool"),
     ("leagent.tools.workflow.workflow_crud", "WorkflowStatusTool"),

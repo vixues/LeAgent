@@ -51,6 +51,8 @@ def classify_artifact_tool(tool_name: str) -> str | None:
         return "canvas"
     if tool_name in {"code_execution", "python_run", "run_code", "exec_python"}:
         return "code"
+    if tool_name in {"workflow_run", "workflow_resume"}:
+        return "workflow"
     return None
 
 
@@ -85,25 +87,45 @@ class ArtifactErrorTracker:
         *,
         canvas_id: str = "",
         error_type: str = "",
+        quality_score: float | None = None,
+        quality_threshold: float | None = None,
     ) -> None:
-        """Convenience: derive an :class:`ArtifactError` from a tool result."""
-        if success:
-            art_type = classify_artifact_tool(tool_name)
-            if art_type is not None:
-                aid = canvas_id or tool_call_id
-                self._errors.pop(aid, None)
-                if art_type == "code":
-                    self._workspace_dirty = False
-            return
+        """Convenience: derive an :class:`ArtifactError` from a tool result.
 
+        For ``workflow_run`` results the run may report ``success=True`` yet
+        still miss the quality bar (``quality_score < quality_threshold``); such
+        runs are treated as dirty so the agent re-runs the closed loop
+        (regenerate -> save -> run -> evaluate).
+        """
         art_type = classify_artifact_tool(tool_name)
         if art_type is None:
             return
         aid = canvas_id or tool_call_id
+
+        # Workflow runs are scored, not just pass/fail.
+        below_bar = (
+            art_type == "workflow"
+            and quality_score is not None
+            and quality_threshold is not None
+            and quality_score < quality_threshold
+        )
+
+        if success and not below_bar:
+            self._errors.pop(aid, None)
+            if art_type == "code":
+                self._workspace_dirty = False
+            return
+
+        message = error_text[:500]
+        if below_bar:
+            message = (
+                f"workflow run scored {quality_score:.2f} (threshold "
+                f"{quality_threshold:.2f}) — below the quality bar"
+            )
         self.record_error(ArtifactError(
             artifact_id=aid,
             artifact_type=art_type,
-            error_message=error_text[:500],
+            error_message=message,
             source_tool_call_id=tool_call_id,
             turn_index=self._turn_index,
             error_type=(error_type or "").strip().lower(),
@@ -196,6 +218,17 @@ class ArtifactErrorTracker:
                 )
             elif err.artifact_type == "code":
                 directives.append(self._code_directive(err))
+            elif err.artifact_type == "workflow":
+                directives.append(
+                    f"The last workflow run (tool_call {err.source_tool_call_id}) "
+                    f"did not meet the bar: {err.error_message}. "
+                    "Inspect the failure / low quality_score via workflow_status, "
+                    "then close the self-correction loop: revise the graph "
+                    "(stronger prompts, a QualityGateNode + IterativeRefineNode "
+                    "back-edge, or adjusted generation params), re-publish it with "
+                    "workflow_save, and re-run it with workflow_run until the "
+                    "quality bar is met."
+                )
         return directives
 
     # -- serialisation (for clone) -----------------------------------------
