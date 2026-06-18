@@ -1,6 +1,6 @@
 import path from 'node:path';
 import { app, BrowserWindow } from 'electron';
-import { log } from '../logger';
+import { log } from '../logger.js';
 
 let splashWindow: BrowserWindow | null = null;
 

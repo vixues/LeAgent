@@ -1,5 +1,3 @@
-import typography from '@tailwindcss/typography';
-
 /** @type {import('tailwindcss').Config} */
 // JIT scans `content` only for static substrings. Avoid `className={\`bg-${tone}-500\`}`; use string-literal maps or `safelist`.
 export default {
@@ -163,7 +161,4 @@ export default {
       },
     },
   },
-  plugins: [
-    typography,
-  ],
 };

@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import type { TooltipProps } from 'recharts';
+import type { TooltipContentProps } from 'recharts';
 import {
   Bar,
   BarChart,
@@ -100,7 +100,9 @@ function ModelLatencyTooltip({
   active,
   payload,
   labelKey = 'fullModel',
-}: TooltipProps<number, string> & { labelKey?: string }) {
+}: Partial<Pick<TooltipContentProps<number, string>, 'active' | 'payload'>> & {
+  labelKey?: string;
+}) {
   const { t } = useTranslation();
   const theme = useChartTheme();
   if (!active || !payload?.length) return null;
@@ -118,7 +120,10 @@ function ModelLatencyTooltip({
   );
 }
 
-function PieTooltipContent({ active, payload }: TooltipProps<number, string>) {
+function PieTooltipContent({
+  active,
+  payload,
+}: Partial<Pick<TooltipContentProps<number, string>, 'active' | 'payload'>>) {
   const { t } = useTranslation();
   const theme = useChartTheme();
   if (!active || !payload?.length) return null;
@@ -135,7 +140,11 @@ function PieTooltipContent({ active, payload }: TooltipProps<number, string>) {
   );
 }
 
-function TrendTooltipContent({ active, payload, label }: TooltipProps<number, string> & { label?: string | number }) {
+function TrendTooltipContent({
+  active,
+  payload,
+  label,
+}: Partial<Pick<TooltipContentProps<number, string>, 'active' | 'payload' | 'label'>>) {
   const { t } = useTranslation();
   const theme = useChartTheme();
   if (!active || !payload?.length) return null;
@@ -262,7 +271,7 @@ export function ModelUsageCharts({ usage, trends, isLoading }: ModelUsageChartsP
                   content={(props) => (
                     <TrendTooltipContent
                       active={props.active}
-                      payload={props.payload as TooltipProps<number, string>['payload']}
+                      payload={props.payload}
                       label={props.label}
                     />
                   )}

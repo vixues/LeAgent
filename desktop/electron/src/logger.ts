@@ -1,4 +1,4 @@
-import log from 'electron-log';
+import log from 'electron-log/main.js';
 import path from 'node:path';
 import { app } from 'electron';
 
@@ -12,6 +12,16 @@ export function initLogger(): void {
 
   log.initialize();
   log.info(`LeAgent Desktop v${app.getVersion()} — logs: ${logsDir}`);
+}
+
+/** Named file logger (e.g. `backend` → `logs/backend.log`). */
+export function createFileLogger(logId: string, logFileName: string): typeof log {
+  const logsDir = path.join(app.getPath('userData'), 'logs');
+  const child = log.create({ logId });
+  child.transports.file.resolvePathFn = () => path.join(logsDir, logFileName);
+  child.transports.file.maxSize = 10 * 1024 * 1024;
+  child.transports.file.format = '{y}-{m}-{d} {h}:{i}:{s}.{ms} [{level}] {text}';
+  return child;
 }
 
 export { log };

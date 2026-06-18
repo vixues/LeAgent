@@ -479,21 +479,13 @@ class HttpUpscaleBackend:
 class SiliconFlowImageBackend:
     """Credential-gated text-to-image backend for SiliconFlow.
 
-    Calls SiliconFlow's OpenAI-style image endpoint
-    (``/v1/images/generations``) with the Kolors / FLUX family of models.
-    The endpoint returns image *URLs* (not inline bytes), so the produced
-    URL is downloaded into managed bytes — the export step needs real
-    bytes and SiliconFlow URLs are short-lived. Available only when
-    ``SILICONFLOW_API_KEY`` is set, keeping the offline floor working
-    credential-free.
+    Delegates to :class:`~leagent.llm.image_gen.siliconflow.SiliconFlowImageProvider`,
+    which builds model-family-aware payloads (Kolors / FLUX / Qwen-Image /
+    Qwen-Edit / Z-Image-Turbo) and downloads short-lived result URLs into bytes.
     """
 
     name = "siliconflow"
     kinds = ("image",)
-
-    #: Default model; override per-call via the ``model`` param.
-    _DEFAULT_MODEL = "Kwai-Kolors/Kolors"
-    _DEFAULT_URL = "https://api.siliconflow.cn/v1/images/generations"
 
     def _credentials(self) -> dict[str, str]:
         return get_image_gen_config().backend_credentials("siliconflow")
@@ -508,88 +500,43 @@ class SiliconFlowImageBackend:
         api_key = creds.get("api_key", "").strip()
         if not api_key:
             return GenerationOutput.failure("image", "SiliconFlow API key is not configured")
-        base_url = (
-            creds.get("base_url", "").strip()
-            or os.environ.get("SILICONFLOW_API_URL", "").strip()
-            or self._DEFAULT_URL
+
+        from leagent.llm.image_gen.siliconflow import DEFAULT_MODEL, SiliconFlowImageProvider
+
+        provider = SiliconFlowImageProvider.from_env(
+            api_key=api_key,
+            base_url=creds.get("base_url", ""),
         )
-        model = str(params.get("model") or self._DEFAULT_MODEL)
-
-        w, h = _parse_size(params.get("size") or params.get("width"), default=(1024, 1024))
-        if params.get("width") and params.get("height"):
-            w, h = int(params["width"]), int(params["height"])
-        payload: dict[str, Any] = {
-            "model": model,
-            "prompt": prompt,
-            "image_size": f"{w}x{h}",
-            "batch_size": 1,
-            "num_inference_steps": int(params.get("num_inference_steps") or params.get("steps") or 20),
-            "guidance_scale": float(params.get("guidance_scale") or params.get("cfg_scale") or 7.5),
-        }
-        if (negative := params.get("negative_prompt")):
-            payload["negative_prompt"] = str(negative)
-        if (seed := params.get("seed")) is not None:
-            try:
-                payload["seed"] = int(seed)
-            except (TypeError, ValueError):
-                pass
-        if (ref := params.get("image")) and isinstance(ref, dict):
-            ref_url = ref.get("preview_url") or ref.get("src") or ref.get("url")
-            if ref_url:
-                payload["image"] = str(ref_url)
-
-        from leagent.llm.transport import HttpTransport, TransportConfig
-
-        transport = HttpTransport(TransportConfig(complete_timeout=float(params.get("timeout", 300))))
+        model = str(params.get("model") or DEFAULT_MODEL)
+        call_params = {k: v for k, v in params.items() if k != "model"}
         try:
-            headers = transport.request_headers({
-                "Authorization": f"Bearer {api_key}",
-                "Content-Type": "application/json",
-            })
-            client = transport.complete_client
-            with transport.request_span("image_generate", model=model, provider=self.name):
-                resp = await client.post(base_url, headers=headers, json=payload)
-            resp.raise_for_status()
-            body = resp.json()
-            images = body.get("images") or body.get("data") or []
-            url = ""
-            if images and isinstance(images[0], dict):
-                url = images[0].get("url") or images[0].get("b64_json") or ""
-            if not url:
-                return GenerationOutput.failure("image", f"siliconflow returned no image: {body}")
+            result = await provider.generate(
+                model=model,
+                prompt=prompt,
+                timeout=float(call_params.pop("timeout", 300)),
+                **call_params,
+            )
+        except RuntimeError as exc:
+            return GenerationOutput.failure("image", str(exc))
 
-            meta: dict[str, Any] = {
-                "url": url, "width": w, "height": h, "seed": body.get("seed"),
-            }
-            try:
-                img_resp = await self._download_image(client, url)
-                return GenerationOutput(
-                    success=True, kind="image", data=img_resp.content,
-                    mime=img_resp.headers.get("content-type", "image/png"),
-                    filename="image.png", provider=self.name, model=model, meta=meta,
-                )
-            except Exception as exc:  # noqa: BLE001 - fall back to URL-by-reference
-                logger.warning("siliconflow_image_download_failed", url=url, error=str(exc))
-                return GenerationOutput(
-                    success=True, kind="image", data=None, mime="image/png",
-                    filename="image.png", provider=self.name, model=model, meta=meta,
-                )
-        finally:
-            await transport.aclose()
-
-    async def _download_image(self, client: Any, url: str, *, attempts: int = 3) -> Any:
-        """Download a SiliconFlow temporary URL with bounded retries."""
-        last_exc: Exception | None = None
-        for attempt in range(max(1, attempts)):
-            try:
-                resp = await client.get(url, follow_redirects=True)
-                resp.raise_for_status()
-                return resp
-            except Exception as exc:  # noqa: BLE001
-                last_exc = exc
-                if attempt + 1 < attempts:
-                    await asyncio.sleep(0.5 * (attempt + 1))
-        raise last_exc or RuntimeError("siliconflow image download failed")
+        data: bytes | None = None
+        if result.b64_json:
+            data = base64.b64decode(result.b64_json)
+        meta: dict[str, Any] = dict(result.metadata or {})
+        if result.url:
+            meta.setdefault("url", result.url)
+        if data is None and not result.url:
+            return GenerationOutput.failure("image", "siliconflow returned no image bytes")
+        return GenerationOutput(
+            success=True,
+            kind="image",
+            data=data,
+            mime=result.mime or "image/png",
+            filename="image.png",
+            provider=self.name,
+            model=model,
+            meta=meta,
+        )
 
 
 class ReplicateBackend:

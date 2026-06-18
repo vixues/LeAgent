@@ -1,0 +1,121 @@
+name: Desktop Release
+
+on:
+  push:
+    tags:
+      - 'desktop-v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Override version (optional, defaults to package.json)'
+        required: false
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            platform: mac
+            arch: arm64,x64
+          - os: windows-latest
+            platform: win
+            arch: x64
+          - os: ubuntu-latest
+            platform: linux
+            arch: x64
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: |
+            desktop/electron/package-lock.json
+            frontend/package-lock.json
+
+      - name: Resolve version
+        id: ver
+        shell: bash
+        run: |
+          if [ -n "${{ github.event.inputs.version }}" ]; then
+            echo "version=${{ github.event.inputs.version }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "version=$(node -p "require('./desktop/electron/package.json').version")" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Install frontend deps and build
+        working-directory: frontend
+        env:
+          VITE_DESKTOP: 'true'
+          VITE_API_BASE_URL: http://127.0.0.1:7860/api/v1
+        run: |
+          npm ci
+          npm run build
+
+      - name: Prepare desktop assets (mac/linux)
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          node desktop/scripts/make-icons.mjs || true
+          PLAT="${{ matrix.platform }}"
+          if [ "$PLAT" = "mac" ]; then
+            node desktop/scripts/prepare-runtime.mjs --platform mac-arm64,mac-x64
+          else
+            node desktop/scripts/prepare-runtime.mjs --platform linux-x64
+          fi
+          node desktop/scripts/prepare-backend-payload.mjs
+
+      - name: Prepare desktop assets (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          node desktop/scripts/make-icons.mjs
+          node desktop/scripts/prepare-runtime.mjs --platform win-x64
+          node desktop/scripts/prepare-backend-payload.mjs
+
+      - name: Build and publish Electron app (mac/linux)
+        if: runner.os != 'Windows'
+        working-directory: desktop/electron
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          npm ci
+          npm version "${{ steps.ver.outputs.version }}" --no-git-tag-version --allow-same-version
+          npm run build
+          npm test
+          if [ "${{ matrix.platform }}" = "mac" ]; then
+            npm run pack:mac
+          else
+            npm run pack:linux
+          fi
+
+      - name: Build and publish Electron app (Windows)
+        if: runner.os == 'Windows'
+        working-directory: desktop/electron
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          npm ci
+          npm version ${{ steps.ver.outputs.version }} --no-git-tag-version --allow-same-version
+          npm run build
+          npm test
+          npm run pack:win
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: desktop-${{ matrix.platform }}
+          path: desktop/electron/dist-pack/**
+          if-no-files-found: warn

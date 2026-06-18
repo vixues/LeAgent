@@ -17,9 +17,6 @@ interface ImportMeta {
 /** Exposed by ``desktop/electron/src/preload.ts`` when running in the Electron shell. */
 interface LeAgentDesktopBridge {
   readonly platform: NodeJS.Platform;
-  readonly version: string;
-  checkForUpdates?: () => Promise<{ ok: boolean; version?: string; message?: string }>;
-  getMachineFingerprint?: () => Promise<string>;
 
   runtime: {
     onProgress: (cb: (data: { percent: number; detail: string }) => void) => () => void;
@@ -29,9 +26,28 @@ interface LeAgentDesktopBridge {
   app: {
     getVersion: () => Promise<string>;
     getPaths: () => Promise<{ userData: string; logs: string; home: string }>;
+    getMachineFingerprint: () => Promise<string>;
     openExternal: (url: string) => Promise<void>;
     openLogsDir: () => Promise<void>;
     showItemInFolder: (path: string) => void;
+    getDiagnostics: () => Promise<Record<string, unknown>>;
+    copyDiagnostics: () => Promise<{ ok: boolean }>;
+    openApp: () => Promise<void>;
+  };
+
+  install: {
+    validate: () => Promise<unknown>;
+    repair: (action: string) => Promise<{ ok: boolean; message?: string }>;
+    reinstall: () => Promise<{ ok: boolean; message?: string }>;
+    retryBoot: () => Promise<{ ok: boolean; message?: string }>;
+    onValidation: (cb: (data: unknown) => void) => () => void;
+  };
+
+  server: {
+    restart: () => Promise<{ ok: boolean }>;
+    getStatus: () => Promise<string>;
+    onLog: (cb: (line: string) => void) => () => void;
+    onStatus: (cb: (status: string) => void) => () => void;
   };
 
   updater: {
@@ -45,8 +61,5 @@ interface LeAgentDesktopBridge {
 }
 
 interface Window {
-  /** Full desktop bridge (new preload contract). */
   leagent?: LeAgentDesktopBridge;
-  /** @deprecated Use `window.leagent` instead. Kept for backward compat. */
-  leagentDesktop?: LeAgentDesktopBridge;
 }

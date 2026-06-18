@@ -659,7 +659,7 @@ class Settings(BaseSettings):
         validation_alias=AliasChoices("LEAGENT_EDITION"),
     )
     desktop_mode: bool = Field(
-        default=True,
+        default=False,
         validation_alias=AliasChoices("LEAGENT_DESKTOP_MODE"),
     )
     local_mode: bool = Field(

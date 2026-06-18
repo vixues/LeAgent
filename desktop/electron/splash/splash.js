@@ -25,9 +25,11 @@
     });
   }
 
-  // Set version from the bridge
-  if (window.leagent?.version && versionEl) {
-    versionEl.textContent = 'v' + window.leagent.version;
+  // Set version from the bridge (async — contextBridge cannot expose sync version)
+  if (window.leagent?.app?.getVersion && versionEl) {
+    window.leagent.app.getVersion().then((v) => {
+      if (v) versionEl.textContent = 'v' + v;
+    }).catch(() => { /* keep placeholder */ });
   }
 
   // Simulate initial progress if no bridge (dev/testing)

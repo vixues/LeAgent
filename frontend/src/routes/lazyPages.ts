@@ -208,9 +208,7 @@ type CicFn = (id: number) => void;
  * so re-invoking `load*Page()` is a no-op after the first run.
  */
 function isElectronDesktopShell(): boolean {
-  return typeof window !== 'undefined' && Boolean(
-    (window as Window & { leagentDesktop?: object }).leagentDesktop
-  );
+  return typeof window !== 'undefined' && Boolean(window.leagent);
 }
 
 export function usePrewarmRoutes(): void {

@@ -20,7 +20,14 @@ extraResources:
 files:
   - "dist/**"
   - "splash/**"
+  - "maintenance/**"
   - "package.json"
+
+publish:
+  provider: github
+  owner: vixues
+  repo: LeAgent
+  releaseType: release
 
 directories:
   output: "dist-pack"

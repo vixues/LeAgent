@@ -75,7 +75,7 @@ function Thumb({
       const ctx = canvas.getContext('2d');
       if (!ctx) return;
       try {
-        await pageProxy.render({ canvasContext: ctx, viewport }).promise;
+        await pageProxy.render({ canvas, canvasContext: ctx, viewport }).promise;
       } catch {
         /* cancelled */
       }

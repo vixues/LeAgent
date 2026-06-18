@@ -308,6 +308,28 @@ alembic upgrade head
 alembic downgrade -1
 ```
 
+## Desktop (`desktop/`)
+
+Electron 33 shell (main process **ESM**: `"type": "module"`, `tsc` → `NodeNext`): splash → `InstallationManager` → `BackendServer` (`python -m leagent.server` on `:7860`) → React SPA.
+
+| Package | Version |
+|---------|---------|
+| `electron-log` | ^5.4.4 (`electron-log/main.js`) |
+| `electron-updater` | ^6.8.9 |
+| `electron-store` | ^11.0.2 |
+
+| Command | Purpose |
+|---------|---------|
+| `cd desktop/electron && npm run build && npm start` | Dev shell (needs `frontend npm run dev` + `backend uv sync`) |
+| `cd desktop/scripts && ./build-mac.sh` | macOS DMG/ZIP |
+| `cd desktop/electron && npm test` | Vitest (install/path validators) |
+
+**Env vars set by Electron:** `LEAGENT_DESKTOP=1`, `LEAGENT_DESKTOP_MODE=1`, `LEAGENT_HOME`, `LEAGENT_FRONTEND_DIST` (packaged).
+
+**Frontend bridge:** `window.leagent` (see `desktop/README.md`). Build frontend with `VITE_DESKTOP=true`.
+
+**Releases:** tag `desktop-v*` → `.github/workflows/desktop-release.yml`.
+
 ## Testing
 
 ```bash

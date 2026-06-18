@@ -1,6 +1,6 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import 'tailwindcss';
+@config '../../tailwind.config.js';
+@plugin '@tailwindcss/typography';
 
 @layer base {
   /*
@@ -126,24 +126,28 @@
     }
   }
 
-  .btn {
+  .btn,
+  .btn-primary,
+  .btn-secondary,
+  .btn-ghost,
+  .btn-danger {
     @apply inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed;
   }
 
   .btn-primary {
-    @apply btn bg-primary-600 text-white hover:bg-primary-700 focus:ring-primary-500 dark:bg-primary-500 dark:hover:bg-primary-600;
+    @apply bg-primary-600 text-white hover:bg-primary-700 focus:ring-primary-500 dark:bg-primary-500 dark:hover:bg-primary-600;
   }
 
   .btn-secondary {
-    @apply btn bg-surface-sunken text-foreground hover:bg-border-subtle focus:ring-primary-500/50 dark:bg-surface-elevated dark:hover:bg-surface-sunken;
+    @apply bg-surface-sunken text-foreground hover:bg-border-subtle focus:ring-primary-500/50 dark:bg-surface-elevated dark:hover:bg-surface-sunken;
   }
 
   .btn-ghost {
-    @apply btn bg-transparent text-muted-foreground hover:bg-surface-sunken focus:ring-primary-500/50 dark:hover:bg-surface-elevated;
+    @apply bg-transparent text-muted-foreground hover:bg-surface-sunken focus:ring-primary-500/50 dark:hover:bg-surface-elevated;
   }
 
   .btn-danger {
-    @apply btn bg-red-600 text-white hover:bg-red-700 focus:ring-red-500;
+    @apply bg-red-600 text-white hover:bg-red-700 focus:ring-red-500;
   }
 
   .input {
@@ -154,24 +158,28 @@
     @apply rounded-xl border border-border bg-surface p-6 shadow-sm;
   }
 
-  .badge {
+  .badge,
+  .badge-primary,
+  .badge-success,
+  .badge-warning,
+  .badge-error {
     @apply inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium;
   }
 
   .badge-primary {
-    @apply badge bg-primary-100 text-primary-800 dark:bg-primary-900/30 dark:text-primary-300;
+    @apply bg-primary-100 text-primary-800 dark:bg-primary-900/30 dark:text-primary-300;
   }
 
   .badge-success {
-    @apply badge bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300;
+    @apply bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300;
   }
 
   .badge-warning {
-    @apply badge bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300;
+    @apply bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300;
   }
 
   .badge-error {
-    @apply badge bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300;
+    @apply bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300;
   }
 
   .prose-custom {

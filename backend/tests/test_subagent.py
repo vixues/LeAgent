@@ -82,6 +82,8 @@ class _StubConfig:
     tools: ToolRegistry
     max_turns: int = 10
     prompt_variant: str | None = None
+    user_id: UUID | None = None
+    session_id: UUID | None = None
 
 
 class _StubEngine(QueryEngine):  # type: ignore[misc]

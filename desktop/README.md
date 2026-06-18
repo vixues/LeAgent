@@ -6,118 +6,92 @@ Cross-platform Electron shell that bundles the LeAgent FastAPI backend and React
 
 ```
 desktop/
-├── electron/               Electron app source
-│   ├── src/                TypeScript main-process code
-│   │   ├── main.ts         App lifecycle, single-instance lock
-│   │   ├── preload.ts      contextBridge → window.leagent
-│   │   ├── window/         Splash + main window factories
-│   │   ├── backend/        Runtime installer, backend launcher, path resolver
-│   │   └── ipc/            IPC handlers (runtime, app, updater)
-│   ├── splash/             Splash screen (plain HTML/CSS/JS, no bundler)
-│   ├── resources/          Icons + staged runtime + backend payload (gitignored)
-│   └── build/              NSIS hooks, macOS entitlements, notarize script
-└── scripts/                Build & staging scripts
+├── electron/                    Electron app source
+│   ├── src/
+│   │   ├── main.ts              Thin entry — single-instance lock
+│   │   ├── app/                 LeAgentDesktopApp orchestrator
+│   │   ├── config/              electron-store desktop settings
+│   │   ├── install/             InstallationManager + validator
+│   │   ├── server/              BackendServer (Python subprocess)
+│   │   ├── window/              AppWindow + splash + window state
+│   │   ├── ipc/                 IPC registration modules
+│   │   └── preload.ts           contextBridge → window.leagent
+│   ├── splash/                  Boot progress UI
+│   ├── maintenance/             Validation / repair UI
+│   └── build/                   NSIS hooks, entitlements, notarize
+└── scripts/                     Runtime staging + platform builds
 ```
 
-### How it works
+### Boot flow
 
-1. User launches the app. A **splash screen** appears immediately (~50 ms).
-2. On first launch, the **runtime installer** creates a Python venv from bundled `python-build-standalone` + `uv`, then runs `uv sync --frozen` against the bundled backend source.
-3. The Electron main process spawns `leagent app start` on `127.0.0.1:7860` and polls `/health` with exponential backoff.
-4. Once healthy, the **main window** loads the bundled frontend (or the Vite dev server in development) and the splash fades out.
+1. Splash appears immediately.
+2. `InstallationManager.ensureInstalled()` — first launch runs `uv venv` + `uv sync --frozen` + `alembic upgrade head`.
+3. `InstallValidator` — blocks startup on critical errors; opens **maintenance** page when validation fails.
+4. `BackendServer` starts `python -m leagent.server` on `127.0.0.1:7860`, polls `/health`, then loads the SPA.
+5. Backend crash auto-restart is limited to **3 attempts** before maintenance mode.
 
-### Title bar
+### Desktop bridge (`window.leagent`)
 
-The Electron shell uses the system-native window frame and title bar on all supported platforms.
+| Namespace | Methods |
+|-----------|---------|
+| `app` | `getVersion`, `getPaths`, `getMachineFingerprint`, `getDiagnostics`, `copyDiagnostics`, `openLogsDir`, `openApp` |
+| `runtime` | `onProgress`, `onStatus` |
+| `install` | `validate`, `repair`, `reinstall`, `retryBoot` |
+| `server` | `restart`, `getStatus`, `onLog`, `onStatus` |
+| `updater` | `check`, `download`, `install` + event listeners |
 
 ## Prerequisites
 
-| Tool | Version | Purpose |
-|------|---------|---------|
-| Node.js | >= 20 | Electron + frontend build |
-| npm | >= 10 | Package management |
-| Python | >= 3.11 | Backend (bundled at build time) |
-| uv | >= 0.5 | Python env management (bundled at build time) |
-| sharp | (dev dep) | Icon generation (`make-icons.mjs`) |
+| Tool | Version |
+|------|---------|
+| Node.js | >= 20 |
+| npm | >= 10 |
+| Python + uv | For dev backend (`cd backend && uv sync`) |
 
-Optional (for macOS code signing):
+### Main-process module system (ESM)
 
-| Env var | Purpose |
-|---------|---------|
-| `APPLE_ID` | Apple ID email |
-| `APPLE_APP_SPECIFIC_PASSWORD` | App-specific password |
-| `APPLE_TEAM_ID` | Developer team ID |
+The Electron **main process** is native ESM (`package.json` → `"type": "module"`, TypeScript `module: NodeNext`). Relative imports in `src/` use explicit `.js` extensions (compiled output). This is required for `electron-store` v11 (ESM-only) and aligns with current Electron guidance.
+
+| Dependency | Version | Notes |
+|------------|---------|-------|
+| `electron-log` | ^5.4.4 | Import `electron-log/main.js` in main process |
+| `electron-updater` | ^6.8.9 | Latest stable v6 (v7 is alpha — not used) |
+| `electron-store` | ^11.0.2 | ESM-only persistence |
 
 ## Quick start (development)
 
 ```bash
-# 1. Install Electron deps
-cd desktop/electron
-npm install
-
-# 2. Build the main process
-npm run build        # or: npm run watch
-
-# 3. Start with the Vite dev server running
-cd ../../frontend
-npm run dev &
-
-# 4. Launch Electron (loads http://127.0.0.1:5173)
-cd ../desktop/electron
-npm start
+cd desktop/electron && npm install && npm run build
+cd ../../frontend && npm run dev &
+cd ../desktop/electron && npm start
 ```
+
+Electron loads `http://127.0.0.1:5173` (Vite); API calls proxy to `:7860`.
 
 ## Building for distribution
 
-### Windows
-
-```powershell
-cd desktop/scripts
-.\build-win.ps1
-```
-
-Produces `desktop/electron/dist-pack/LeAgent-Setup-1.1.3.exe` (default version; override with `-Version`).
-
-Flags: `-SkipRuntime`, `-SkipBackendPayload`, `-SkipFrontend`, `-SkipCompileall`.
-
-### macOS
+Version defaults to `desktop/electron/package.json`.
 
 ```bash
-cd desktop/scripts
-./build-mac.sh
+# macOS
+cd desktop/scripts && ./build-mac.sh
+
+# Linux
+cd desktop/scripts && ./build-linux.sh
+
+# Windows
+cd desktop/scripts && .\build-win.ps1
 ```
 
-Produces `desktop/electron/dist-pack/LeAgent-1.1.3.dmg` (+ `.zip`).
+Outputs land in `desktop/electron/dist-pack/`.
 
-Flags: `--arch arm64`, `--skip-runtime`, `--skip-backend`, `--skip-frontend`.
+## Releases (CI)
 
-### Linux (Ubuntu/Debian)
+Push a tag `desktop-v*` (e.g. `desktop-v1.1.4`) to trigger [`.github/workflows/desktop-release.yml`](../.github/workflows/desktop-release.yml). Builds macOS (arm64+x64), Windows (NSIS), and Linux (AppImage + deb), uploading artifacts to GitHub Releases via `electron-updater`.
 
-```bash
-# Prerequisites
-sudo apt-get install -y dpkg fakeroot libarchive-tools
+Set `GH_TOKEN` in CI; optional macOS notarization via `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD`, `APPLE_TEAM_ID`.
 
-cd desktop/scripts
-./build-linux.sh
-```
-
-Produces `desktop/electron/dist-pack/LeAgent-1.1.3.AppImage` and `leagent-desktop_1.1.3_amd64.deb`.
-
-Flags: `--target appimage`, `--target deb`, `--skip-runtime`, `--skip-backend`, `--skip-frontend`.
-
-## First-launch behaviour
-
-On the very first launch after installation, the app:
-
-1. Creates a Python venv in `<userData>/runtime/venv/` using the bundled portable Python.
-2. Runs `uv sync --frozen` to install backend dependencies from the bundled `uv.lock`.
-3. Compiles `.pyc` bytecode for faster subsequent imports.
-4. Runs `alembic upgrade head` to initialise the SQLite database.
-5. Writes a version marker at `<userData>/runtime/.installed`.
-
-Subsequent launches skip directly to step "start backend" (~2-3 s).
-
-## User data locations
+## User data
 
 | Platform | Path |
 |----------|------|
@@ -125,15 +99,19 @@ Subsequent launches skip directly to step "start backend" (~2-3 s).
 | Windows | `%APPDATA%/LeAgent/` |
 | Linux | `~/.config/LeAgent/` |
 
-Sub-directories: `leagent/` (LEAGENT_HOME), `runtime/` (venv), `logs/` (main.log).
+Subdirs: `leagent/` (LEAGENT_HOME), `runtime/venv/`, `logs/main.log` + `logs/backend.log`, `desktop-config.json`.
 
-## Environment variables (desktop mode)
+## Environment variables (set by Electron)
 
-The Electron launcher sets these before spawning the backend:
+| Variable | Purpose |
+|----------|---------|
+| `LEAGENT_DESKTOP` | `1` — skip heavyweight warmup |
+| `LEAGENT_DESKTOP_MODE` | `1` — desktop tool discovery mode |
+| `LEAGENT_HOME` | User data directory |
+| `LEAGENT_FRONTEND_DIST` | Bundled SPA path (packaged only) |
 
-| Variable | Value | Purpose |
-|----------|-------|---------|
-| `LEAGENT_DESKTOP` | `1` | Signals desktop mode to the backend |
-| `LEAGENT_HOME` | `<userData>/leagent` | Data directory |
-| `LEAGENT_FRONTEND_DIST` | `<resources>/frontend` | Enables SPA serving from backend |
-| `VIRTUAL_ENV` | `<userData>/runtime/venv` | Python venv path |
+## Testing
+
+```bash
+cd desktop/electron && npm test
+```

@@ -24,10 +24,7 @@ void initI18n().then(() => {
     <StrictMode>
       <QueryClientProvider client={queryClient}>
         <ProductMetaProvider>
-          <BrowserRouter
-            basename={routerBasename}
-            unstable_useTransitions={false}
-          >
+          <BrowserRouter basename={routerBasename}>
             <App />
           </BrowserRouter>
         </ProductMetaProvider>

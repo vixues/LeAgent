@@ -107,7 +107,7 @@ export const GEN_UI_THEMES: Record<GenUiThemeId, GenUiThemeDefinition> = {
     nestedCardClassName:
       'border border-emerald-400/30 bg-slate-950/80 text-emerald-50 shadow-[inset_0_1px_0_rgba(45,212,191,0.12)] backdrop-blur-sm',
     nestedCardContentClassName:
-      '[&_.text-foreground]:text-emerald-50 [&_.text-muted-foreground]:text-cyan-200/80 [&_.text-primary-600]:text-cyan-300 [&_.dark\\:text-primary-300]:text-cyan-300',
+      '[&_.text-foreground]:text-emerald-50 [&_.text-muted-foreground]:text-cyan-200/80 [&_.text-primary-600]:text-cyan-300 [&_[class*="dark:text-primary-300"]]:text-cyan-300',
   },
 };
 

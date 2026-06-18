@@ -26,15 +26,15 @@ export function AboutDialog({ open, onOpenChange }: AboutDialogProps) {
   }, [open, onOpenChange]);
 
   const onCheckUpdates = async () => {
-    const fn = window.leagentDesktop?.checkForUpdates;
-    if (!fn) {
+    const updater = window.leagent?.updater;
+    if (!updater) {
       setUpdateMsg(t('about.updateNone'));
       return;
     }
     setChecking(true);
     setUpdateMsg(null);
     try {
-      const r = await fn();
+      const r = await updater.check();
       setUpdateMsg(
         r?.ok ? t('about.updateAvailable') : r?.message || t('about.updateError'),
       );

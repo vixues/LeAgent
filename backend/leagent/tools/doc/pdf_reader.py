@@ -23,9 +23,34 @@ from typing import Any
 
 import structlog
 
-from leagent.tools.base import SyncTool, ToolCategory, ToolContext, ValidationResult
+from leagent.tools.base import (
+    SyncTool,
+    ToolCategory,
+    ToolContext,
+    ToolProgressCallback,
+    ToolResult,
+    ValidationResult,
+)
 
 logger = structlog.get_logger(__name__)
+
+_OPERATION_ALIASES: dict[str, str] = {
+    "extract_text": "read",
+    "get_text": "read",
+    "text": "read",
+}
+
+
+def normalize_pdf_reader_params(params: dict[str, Any]) -> dict[str, Any]:
+    """Map common LLM alias keys/values to the canonical pdf_reader contract."""
+    out = dict(params)
+    op = str(out.get("operation") or "read").strip().lower()
+    out["operation"] = _OPERATION_ALIASES.get(op, op)
+    if "start_page" not in out and "page_start" in out:
+        out["start_page"] = out["page_start"]
+    if "end_page" not in out and "page_end" in out:
+        out["end_page"] = out["page_end"]
+    return out
 
 
 def _import_fitz():
@@ -221,6 +246,19 @@ class PDFReaderTool(SyncTool):
     def get_activity_description(self, params: dict[str, Any] | None = None) -> str | None:
         op = (params or {}).get("operation") or "read"
         return f"PDF: {op}"
+
+    async def run(
+        self,
+        params: dict[str, Any],
+        context: ToolContext,
+        *,
+        on_progress: ToolProgressCallback | None = None,
+    ) -> ToolResult:
+        return await super().run(
+            normalize_pdf_reader_params(params),
+            context,
+            on_progress=on_progress,
+        )
 
     def execute_sync(self, params: dict[str, Any], context: ToolContext) -> dict[str, Any]:
         operation = (params.get("operation") or "read").strip().lower()

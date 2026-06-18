@@ -3,8 +3,9 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { app } from 'electron';
-import { log } from '../logger';
-import { sendRuntimeProgress, sendRuntimeStatus } from '../ipc/runtime';
+import { log } from '../logger.js';
+import { sendRuntimeProgress, sendRuntimeStatus } from '../ipc/runtime.js';
+import { setInstallState } from '../config/desktop-config.js';
 import {
   uvExe,
   pythonExe,
@@ -12,16 +13,17 @@ import {
   runtimeVenvDir,
   runtimeVenvPython,
   installedMarkerPath,
-  leagentHome,
+  resolveLeagentHome,
   ensureDirs,
-} from './runtime-paths';
+} from '../paths/runtime-paths.js';
 
 const APP_VERSION = app.getVersion();
 
-interface InstalledMarker {
+export interface InstalledMarker {
   version: string;
   timestamp: string;
   payloadHash?: string;
+  appVersion?: string;
 }
 
 function dependencyPayloadHash(): string {
@@ -39,10 +41,10 @@ function dependencyPayloadHash(): string {
   return hash.digest('hex');
 }
 
-function readMarker(): InstalledMarker | null {
+export function readInstalledMarker(): InstalledMarker | null {
   try {
     const raw = fs.readFileSync(installedMarkerPath(), 'utf-8');
-    return JSON.parse(raw);
+    return JSON.parse(raw) as InstalledMarker;
   } catch {
     return null;
   }
@@ -51,10 +53,12 @@ function readMarker(): InstalledMarker | null {
 function writeMarker(payloadHash: string): void {
   const marker: InstalledMarker = {
     version: APP_VERSION,
+    appVersion: APP_VERSION,
     payloadHash,
     timestamp: new Date().toISOString(),
   };
   fs.writeFileSync(installedMarkerPath(), JSON.stringify(marker, null, 2));
+  setInstallState('installed');
 }
 
 function runCommand(
@@ -95,26 +99,35 @@ function runCommand(
   });
 }
 
+export function getPayloadHash(): string {
+  return dependencyPayloadHash();
+}
+
+export function needsRuntimeUpgrade(): boolean {
+  if (!app.isPackaged) return false;
+  const marker = readInstalledMarker();
+  if (!marker) return true;
+  if (marker.appVersion !== APP_VERSION || marker.version !== APP_VERSION) return true;
+  if (marker.payloadHash !== dependencyPayloadHash()) return true;
+  return !fs.existsSync(runtimeVenvPython());
+}
+
 export async function isRuntimeReady(): Promise<boolean> {
   if (!app.isPackaged) {
     return fs.existsSync(runtimeVenvPython());
   }
-
-  const marker = readMarker();
-  if (!marker) return false;
-  if (marker.version !== APP_VERSION) return false;
-  if (marker.payloadHash !== dependencyPayloadHash()) return false;
-  return fs.existsSync(runtimeVenvPython());
+  return !needsRuntimeUpgrade();
 }
 
-export async function installRuntime(): Promise<void> {
+export async function installRuntime(fresh = true): Promise<void> {
   ensureDirs();
+  setInstallState('started');
   const uv = uvExe();
   const python = pythonExe();
   const payload = backendPayloadDir();
   const payloadHash = dependencyPayloadHash();
   const venvDir = runtimeVenvDir();
-  const home = leagentHome();
+  const home = resolveLeagentHome();
 
   const totalSteps = 4;
   let step = 0;
@@ -127,14 +140,15 @@ export async function installRuntime(): Promise<void> {
     log.info(`[install ${pct}%] ${detail}`);
   };
 
-  // Step 1: Create venv
-  progress('Creating Python virtual environment…');
-  if (fs.existsSync(venvDir)) {
+  if (fresh && fs.existsSync(venvDir)) {
     fs.rmSync(venvDir, { recursive: true, force: true });
   }
-  await runCommand(uv, ['venv', venvDir, '--python', python]);
 
-  // Step 2: Install dependencies
+  if (!fs.existsSync(runtimeVenvPython())) {
+    progress('Creating Python virtual environment…');
+    await runCommand(uv, ['venv', venvDir, '--python', python]);
+  }
+
   progress('Installing dependencies (uv sync)…');
   await runCommand(uv, ['sync', '--project', payload, '--frozen'], {
     env: {
@@ -143,30 +157,36 @@ export async function installRuntime(): Promise<void> {
     },
   });
 
-  // Step 3: Compile bytecode for faster subsequent imports
   progress('Compiling bytecode cache…');
   const venvPy = runtimeVenvPython();
-  try {
-    await runCommand(venvPy, ['-m', 'compileall', '-q', path.join(payload, 'leagent')]);
-  } catch {
-    log.warn('compileall leagent failed (non-fatal)');
-  }
+  await runCommand(venvPy, ['-m', 'compileall', '-q', path.join(payload, 'leagent')]);
 
-  // Step 4: Run database migrations
   progress('Applying database migrations…');
-  try {
-    await runCommand(venvPy, ['-m', 'alembic', 'upgrade', 'head'], {
-      cwd: payload,
-      env: {
-        VIRTUAL_ENV: venvDir,
-        LEAGENT_HOME: home,
-      },
-    });
-  } catch {
-    log.warn('Alembic migrations failed (non-fatal — first run may have no revisions)');
-  }
+  await runCommand(venvPy, ['-m', 'alembic', 'upgrade', 'head'], {
+    cwd: payload,
+    env: {
+      VIRTUAL_ENV: venvDir,
+      LEAGENT_HOME: home,
+    },
+  });
 
   writeMarker(payloadHash);
   sendRuntimeProgress(100, 'Runtime ready');
   log.info('Runtime installation complete');
+}
+
+export async function upgradeRuntimePackages(): Promise<void> {
+  await installRuntime(false);
+}
+
+export async function runAlembicUpgrade(): Promise<void> {
+  const venvPy = runtimeVenvPython();
+  const payload = backendPayloadDir();
+  await runCommand(venvPy, ['-m', 'alembic', 'upgrade', 'head'], {
+    cwd: payload,
+    env: {
+      VIRTUAL_ENV: runtimeVenvDir(),
+      LEAGENT_HOME: resolveLeagentHome(),
+    },
+  });
 }

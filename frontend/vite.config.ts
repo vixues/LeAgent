@@ -1,5 +1,6 @@
 import { defineConfig, mergeConfig, type Plugin } from 'vite';
 import { defineConfig as defineVitestConfig } from 'vitest/config';
+import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -42,10 +43,19 @@ export default defineConfig(({ mode }) => {
   return mergeConfig(
     {
       base: isDesktop ? './' : '/',
-      plugins: [react(), ...(isProd ? [obfuscateRouteChunksPlugin()] : [])],
+      plugins: [react(), tailwindcss(), ...(isProd ? [obfuscateRouteChunksPlugin()] : [])],
       resolve: {
         alias: {
           '@': path.resolve(__dirname, './src'),
+          // mermaid.core.mjs imports isEmResetFrame from @mermaid-js/parser (not exported in 1.1.1).
+          mermaid: path.resolve(__dirname, 'node_modules/mermaid/dist/mermaid.esm.mjs'),
+        },
+      },
+      optimizeDeps: {
+        rolldownOptions: {
+          output: {
+            strictExecutionOrder: true,
+          },
         },
       },
       server: {

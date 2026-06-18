@@ -1,4 +1,5 @@
-import { app, Menu, shell, type BrowserWindow } from 'electron';
+import { app, Menu, shell, clipboard, type BrowserWindow } from 'electron';
+import { collectDiagnostics } from './ipc/register-app.js';
 
 export function buildMenu(mainWindow: BrowserWindow): void {
   const isMac = process.platform === 'darwin';
@@ -73,9 +74,16 @@ export function buildMenu(mainWindow: BrowserWindow): void {
           },
         },
         {
+          label: 'Copy Diagnostics',
+          click: async () => {
+            const diag = await collectDiagnostics();
+            clipboard.writeText(JSON.stringify(diag, null, 2));
+          },
+        },
+        {
           label: 'LeAgent Documentation',
           click: () => {
-            shell.openExternal('https://github.com/nicepkg/LeAgent');
+            shell.openExternal('https://github.com/vixues/LeAgent');
           },
         },
       ],

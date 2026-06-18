@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>LeAgent — Maintenance</title>
+  <link rel="stylesheet" href="maintenance.css" />
+</head>
+<body>
+  <div class="container">
+    <h1>LeAgent Maintenance</h1>
+    <p class="subtitle" id="subtitle">Checking installation…</p>
+
+    <ul id="checks" class="checks"></ul>
+
+    <div class="actions">
+      <button type="button" id="btnReinstall">Reinstall runtime</button>
+      <button type="button" id="btnUpgrade">Sync dependencies</button>
+      <button type="button" id="btnAlembic">Run migrations</button>
+      <button type="button" id="btnRestartServer">Restart backend</button>
+      <button type="button" id="btnOpenLogs">Open logs</button>
+      <button type="button" id="btnCopyDiag">Copy diagnostics</button>
+      <button type="button" id="btnRetry" class="primary">Retry launch</button>
+      <button type="button" id="btnForceApp">Open app anyway</button>
+    </div>
+
+    <pre id="logTail" class="log-tail" aria-label="Recent backend logs"></pre>
+    <p id="status" class="status"></p>
+  </div>
+  <script src="maintenance.js"></script>
+</body>
+</html>

@@ -46,7 +46,7 @@ export function usePdfDocument(fileId: string | null): UsePdfDocumentResult {
         const loadingTask = pdfjsLib.getDocument({ data });
         const loaded = await loadingTask.promise;
         if (cancelled) {
-          void loaded.destroy();
+          void loaded.cleanup();
           return;
         }
         docRef.current = loaded;
@@ -66,7 +66,7 @@ export function usePdfDocument(fileId: string | null): UsePdfDocumentResult {
     return () => {
       cancelled = true;
       if (docRef.current) {
-        void docRef.current.destroy();
+        void docRef.current.cleanup();
         docRef.current = null;
       }
     };

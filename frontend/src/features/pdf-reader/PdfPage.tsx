@@ -71,6 +71,7 @@ export function PdfPage({
         outputScale !== 1 ? [outputScale, 0, 0, outputScale, 0, 0] : undefined;
 
       const renderTask = page.render({
+        canvas,
         canvasContext: ctx,
         viewport,
         transform,

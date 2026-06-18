@@ -30,7 +30,7 @@ def store(tmp_path, monkeypatch):
 
 def test_default_presets_present_when_unconfigured(store):
     ids = {p.id for p in store.presets()}
-    assert {"offline", "kolors"} <= ids
+    assert {"offline", "kolors", "z-image-turbo", "qwen-image"} <= ids
     assert store.default_preset_id() == ""
 
 
@@ -83,6 +83,24 @@ def test_siliconflow_backend_available_from_config(store):
     assert SiliconFlowImageBackend().available() is False
     store.set_backend_credentials("siliconflow", {"api_key": "sk-literal"})
     assert SiliconFlowImageBackend().available() is True
+
+
+def test_siliconflow_catalog_includes_z_image_and_qwen():
+    from leagent.llm.generation.config import BACKEND_MODEL_CATALOG
+
+    models = BACKEND_MODEL_CATALOG["siliconflow"]
+    assert "Tongyi-MAI/Z-Image-Turbo" in models
+    assert "Qwen/Qwen-Image" in models
+    assert "Qwen/Qwen-Image-Edit-2509" in models
+
+
+def test_z_image_turbo_preset_params(store):
+    preset = store.get_preset("z-image-turbo")
+    assert preset is not None
+    assert preset.backend == "siliconflow"
+    assert preset.model == "Tongyi-MAI/Z-Image-Turbo"
+    assert preset.params["cfg"] == 4.0
+    assert preset.params["num_inference_steps"] == 8
 
 
 def test_http_backend_url_from_config(store):

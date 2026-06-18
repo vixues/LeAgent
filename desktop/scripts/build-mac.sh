@@ -5,7 +5,7 @@ set -euo pipefail
 # LeAgent Desktop — macOS build (arm64 + x64)
 #
 # Usage:
-#   ./build-mac.sh                        # default 1.1.1, both arches
+#   ./build-mac.sh                        # version from electron/package.json
 #   ./build-mac.sh --version 1.2.0        # custom version
 #   ./build-mac.sh --arch arm64           # single arch
 #   ./build-mac.sh --skip-runtime         # skip python/uv download
@@ -14,7 +14,9 @@ set -euo pipefail
 #   APPLE_ID, APPLE_APP_SPECIFIC_PASSWORD, APPLE_TEAM_ID
 #──────────────────────────────────────────────────────────────────────
 
-VERSION="1.1.1"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+DEFAULT_VERSION="$(node -p "require('$SCRIPT_DIR/../electron/package.json').version")"
+VERSION="$DEFAULT_VERSION"
 ARCH="arm64,x64"
 SKIP_RUNTIME=false
 SKIP_BACKEND=false

@@ -9,9 +9,9 @@ export async function resolveMachineFingerprint(): Promise<string> {
   if (typeof window === 'undefined') {
     return '';
   }
-  const desk = window.leagentDesktop;
+  const desk = window.leagent;
   try {
-    const v = await desk?.getMachineFingerprint?.();
+    const v = await desk?.app?.getMachineFingerprint?.();
     if (v && v.length >= 8) {
       try {
         sessionStorage.setItem(SESSION_RESOLVED, v);

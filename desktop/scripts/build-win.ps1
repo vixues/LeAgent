@@ -9,7 +9,7 @@
   electron-builder to produce an NSIS installer.
 
 .PARAMETER Version
-  Semantic version string baked into the installer. Default: "1.1.1".
+  Semantic version string baked into the installer. Default: read from electron/package.json.
 
 .PARAMETER SkipRuntime
   Skip downloading python-build-standalone and uv.
@@ -27,7 +27,7 @@
   Release channel embedded in the package name: "stable" or "beta".
 #>
 param(
-  [string]$Version = "1.1.1",
+  [string]$Version = "",
   [switch]$SkipRuntime,
   [switch]$SkipBackendPayload,
   [switch]$SkipFrontend,
@@ -39,6 +39,9 @@ param(
 $ErrorActionPreference = "Stop"
 $Repo = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 $DesktopElectron = Join-Path $Repo "desktop\electron"
+if (-not $Version) {
+  $Version = (Get-Content (Join-Path $DesktopElectron "package.json") -Raw | ConvertFrom-Json).version
+}
 
 function Remove-PathWithRetry {
   param(
