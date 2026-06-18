@@ -16,10 +16,9 @@ No adapter, no factory — node authoring stays explicit and composable.
 
 from __future__ import annotations
 
+import os
 import time
 from typing import Any, ClassVar
-
-import structlog
 
 from leagent.llm.capabilities import (
     CapabilityContract,
@@ -27,6 +26,7 @@ from leagent.llm.capabilities import (
     kind_to_output,
     kind_to_task,
 )
+from leagent.utils.logging import get_logger
 from leagent.workflow.io import (
     IO,
     Hidden,
@@ -40,7 +40,7 @@ from leagent.workflow.io import (
 from leagent.workflow.io.media import KIND_TO_IO_TYPE
 from leagent.workflow.nodes.base import WorkflowNode
 
-logger = structlog.get_logger(__name__)
+logger = get_logger(__name__)
 
 #: Provider choices shared across art nodes; ``auto`` lets the service pick.
 _COMMON_PROVIDERS = ["auto", "offline"]
@@ -122,6 +122,18 @@ class BaseGenerationNode(WorkflowNode):
         )
 
     @classmethod
+    def _preset_input(cls) -> Any:
+        # Free-text id (not a baked COMBO) so the canvas can render a live
+        # preset dropdown without the schema cache freezing the choice list.
+        return IO.String.Input(
+            id="preset", optional=True,
+            tooltip=(
+                "Configured image-gen preset id (backend + model + params). "
+                "Leave blank to use the node provider or the workflow default."
+            ),
+        )
+
+    @classmethod
     def _base_inputs(cls) -> list[Any]:
         return [
             IO.String.Input(
@@ -172,6 +184,58 @@ class BaseGenerationNode(WorkflowNode):
         """Return an upstream :class:`MediaRef` conditioning this generation."""
         return None
 
+    def _resolve_preset(self, inputs: dict[str, Any], provider_arg: str | None) -> Any:
+        """Resolve the image-gen preset to apply (explicit id or workflow default).
+
+        Only image nodes participate. An explicit ``preset`` input wins; when the
+        node is left on ``auto`` (``provider_arg is None``) the workflow-level
+        default preset is applied so a single switch re-targets every auto node.
+        """
+        if type(self).KIND != "image":
+            return None
+        try:
+            from leagent.llm.generation import get_image_gen_config
+
+            store = get_image_gen_config()
+        except Exception:  # noqa: BLE001 - presets are optional
+            return None
+        pid = str(inputs.get("preset") or "").strip()
+        if pid and pid.lower() not in ("auto", "none"):
+            return store.get_preset(pid)
+        if provider_arg is None:
+            return store.default_preset()
+        return None
+
+    @staticmethod
+    def _force_offline(state: Any, provider_arg: str | None) -> bool:
+        """Pin to the offline floor when env or workflow demo mode requests it.
+
+        ``LEAGENT_ART_OFFLINE`` always wins (CI / harness). Workflow
+        ``metadata.art_offline`` only affects nodes left on ``auto`` — an
+        explicit provider (``siliconflow``, ``http_upscale``, …) is honoured so
+        users can opt into real generation without stripping template metadata.
+        """
+        if os.environ.get("LEAGENT_ART_OFFLINE", "").strip().lower() in ("1", "true", "yes"):
+            return True
+        if provider_arg is not None and provider_arg not in ("auto", ""):
+            return False
+        if provider_arg == "offline":
+            return False
+        if state is not None and state.metadata.get("art_offline"):
+            return True
+        return False
+
+    @staticmethod
+    def _refine_feedback(state: Any) -> str:
+        """Read the most recent ``refine_feedback`` directive from state."""
+        if state is None:
+            return ""
+        try:
+            value = state.get("refine_feedback", "")
+        except Exception:  # noqa: BLE001
+            return ""
+        return str(value or "").strip()
+
     def merge_conditioning_params(
         self, inputs: dict[str, Any], params: dict[str, Any]
     ) -> dict[str, Any]:
@@ -193,6 +257,13 @@ class BaseGenerationNode(WorkflowNode):
             prompt = state.resolve_template(prompt)
         prompt = str(prompt or "").strip()
 
+        # Self-correction: fold the latest critique from an upstream
+        # IterativeRefineNode back into the regeneration prompt so each retry
+        # is feedback-conditioned (not just a fresh roll of the dice).
+        feedback = self._refine_feedback(state)
+        if feedback:
+            prompt = f"{prompt}\n\nRevision guidance: {feedback}".strip()
+
         cond = self.input_media(inputs)
         if not prompt and cond is None:
             return NodeOutput(error=f"{type(self).NODE_ID}: missing 'prompt'")
@@ -203,6 +274,24 @@ class BaseGenerationNode(WorkflowNode):
 
         params = self.collect_params(inputs)
         params = self.merge_conditioning_params(inputs, params)
+
+        # Apply a configured preset (explicit on the node, or the workflow-level
+        # default when the node is left on ``auto``). The preset supplies the
+        # backend, model, and default params; anything set on the node wins.
+        preset = self._resolve_preset(inputs, provider_arg)
+        if preset is not None:
+            if provider_arg is None and preset.backend and preset.backend != "auto":
+                provider_arg = preset.backend
+            for key, value in (preset.params or {}).items():
+                params.setdefault(key, value)
+        if self._force_offline(state, provider_arg):
+            provider_arg = "offline"
+            logger.info(
+                "art_generation_forced_offline",
+                node=type(self).NODE_ID,
+                reason="env" if os.environ.get("LEAGENT_ART_OFFLINE", "").strip().lower() in ("1", "true", "yes")
+                else "workflow_metadata",
+            )
         camera = params.get("camera")
         if isinstance(camera, dict) and camera:
             preset = camera.get("preset")
@@ -215,8 +304,18 @@ class BaseGenerationNode(WorkflowNode):
         model = inputs.get("model")
         if isinstance(model, str) and model.strip():
             params["model"] = model.strip()
+        elif preset is not None and preset.model:
+            params.setdefault("model", preset.model)
         if cond is not None:
             params["image"] = cond.to_dict()
+        params["node_id"] = hidden.unique_id
+        if state is not None:
+            try:
+                iteration = int(state.get("refine_iteration", 0) or 0)
+            except (TypeError, ValueError):
+                iteration = 0
+            if iteration:
+                params["refine_iteration"] = iteration
 
         from leagent.llm.generation import get_generation_service
 
@@ -248,18 +347,32 @@ class BaseGenerationNode(WorkflowNode):
 
         self._emit_progress(hidden, ref)
 
+        meta: dict[str, Any] = {
+            "duration_ms": duration_ms,
+            "kind": type(self).KIND,
+            "provider": out.provider,
+            "model": out.model,
+            "file_id": ref.file_id,
+            "src": ref.src,
+            "preview_url": ref.src,
+            "filename": ref.filename,
+            "mime": ref.mime,
+            "width": ref.width,
+            "height": ref.height,
+            "placeholder": bool(out.meta.get("placeholder")),
+            "attempts": out.meta.get("attempts"),
+        }
+        if state is not None:
+            try:
+                refine_iter = int(state.get("refine_iteration", 0) or 0)
+            except (TypeError, ValueError):
+                refine_iter = 0
+            meta["refine_iteration"] = refine_iter
+
         return NodeOutput(
             values=(ref.to_dict(), ref.src or "", True),
             ui={"gen_ui": to_gen_ui_tree([ref], title=type(self).DISPLAY_TITLE)},
-            metadata={
-                "duration_ms": duration_ms,
-                "kind": type(self).KIND,
-                "provider": out.provider,
-                "model": out.model,
-                "file_id": ref.file_id,
-                "placeholder": bool(out.meta.get("placeholder")),
-                "attempts": out.meta.get("attempts"),
-            },
+            metadata=meta,
         )
 
     DISPLAY_TITLE: ClassVar[str] = "Generated asset"

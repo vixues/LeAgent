@@ -27,6 +27,8 @@ from leagent.workflow.io import (
 )
 from leagent.workflow.nodes.agent_exec import run_agent_node
 from leagent.workflow.nodes.base import WorkflowNode
+from leagent.workflow.nodes.agent_model import agent_model_input
+from leagent.workflow.nodes.prompt_resolve import resolve_node_prompt
 
 logger = structlog.get_logger(__name__)
 
@@ -75,6 +77,7 @@ class CodingAgentNode(WorkflowNode):
                         "Required."
                     ),
                 ),
+                agent_model_input(),
                 IO.Int.Input(
                     id="max_iterations",
                     optional=True,
@@ -132,9 +135,9 @@ class CodingAgentNode(WorkflowNode):
             )
 
         state = hidden.workflow_state
-        prompt = inputs.get("prompt")
+        prompt = resolve_node_prompt(inputs.get("prompt"), state)
         project_path = inputs.get("project_path")
-        if not isinstance(prompt, str) or not prompt.strip():
+        if not prompt:
             return NodeOutput(
                 error="Missing required 'prompt' input",
                 metadata={"node_id": hidden.unique_id},
@@ -145,7 +148,6 @@ class CodingAgentNode(WorkflowNode):
                 metadata={"node_id": hidden.unique_id},
             )
         if state is not None:
-            prompt = state.resolve_template(prompt)
             project_path = state.resolve_template(project_path)
 
         max_iter = int(inputs.get("max_iterations") or 40)
@@ -214,6 +216,7 @@ class CodingAgentNode(WorkflowNode):
                 prompt=prompt,
                 allowed_tools=allowed,
                 max_turns=max_iter,
+                model=inputs.get("model"),
                 tool_extra={
                     "project_roots": [str(path)],
                     "run_id": exec_run.run_id,

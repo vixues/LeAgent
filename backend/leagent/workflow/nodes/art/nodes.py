@@ -13,7 +13,8 @@ from __future__ import annotations
 
 from typing import Any, ClassVar
 
-from leagent.workflow.io import IO, MediaRef, Schema
+from leagent.llm.capabilities import CapabilityContract, Modality, TaskType
+from leagent.workflow.io import IO, HiddenHolder, MediaRef, NodeOutput, Schema
 from leagent.workflow.nodes.art.base import BaseGenerationNode
 
 
@@ -24,7 +25,7 @@ class ImageGenNode(BaseGenerationNode):
     KIND = "image"
     MEDIA_OUTPUT_ID = "image"
     DISPLAY_TITLE = "Concept image"
-    PROVIDERS: ClassVar[list[str]] = ["auto", "offline", "openai", "dashscope"]
+    PROVIDERS: ClassVar[list[str]] = ["auto", "offline", "siliconflow", "openai", "dashscope"]
 
     @classmethod
     def define_schema(cls) -> Schema:
@@ -35,6 +36,7 @@ class ImageGenNode(BaseGenerationNode):
             description="Generate a 2D image (concept art, sprite, texture) from a text prompt.",
             inputs=[
                 *cls._base_inputs(),
+                cls._preset_input(),
                 IO.Image.Input(
                     id="image",
                     optional=True,
@@ -86,7 +88,37 @@ class UpscaleNode(BaseGenerationNode):
     KIND = "image"
     MEDIA_OUTPUT_ID = "image"
     DISPLAY_TITLE = "Upscaled image"
-    PROVIDERS: ClassVar[list[str]] = ["auto", "offline", "openai", "dashscope"]
+    PROVIDERS: ClassVar[list[str]] = ["auto", "offline", "http_upscale", "siliconflow", "openai", "dashscope"]
+    REQUIRES: ClassVar[CapabilityContract] = CapabilityContract(
+        task=TaskType.UPSCALE,
+        inputs=frozenset({Modality.TEXT, Modality.IMAGE}),
+        outputs=frozenset({Modality.IMAGE}),
+    )
+
+    @classmethod
+    def _provider_input(cls) -> Any:
+        return IO.Combo.Input(
+            id="provider", choices=cls.provider_choices(), default="offline",
+            optional=True,
+            tooltip=(
+                "Upscale backend (offline = credential-free demo; "
+                "http_upscale = dedicated super-resolution API)."
+            ),
+        )
+
+    def _resolve_preset(self, inputs: dict[str, Any], provider_arg: str | None) -> Any:
+        """Only honour an *explicit* preset — never the workflow image-gen default."""
+        if type(self).KIND != "image":
+            return None
+        pid = str(inputs.get("preset") or "").strip()
+        if not pid or pid.lower() in ("auto", "none"):
+            return None
+        try:
+            from leagent.llm.generation import get_image_gen_config
+
+            return get_image_gen_config().get_preset(pid)
+        except Exception:  # noqa: BLE001
+            return None
 
     @classmethod
     def define_schema(cls) -> Schema:
@@ -101,6 +133,7 @@ class UpscaleNode(BaseGenerationNode):
                                 tooltip="Optional refinement prompt."),
                 cls._provider_input(),
                 cls._model_input(),
+                cls._preset_input(),
                 IO.Int.Input(id="scale", optional=True, default=2, min=1, max=4,
                              tooltip="Upscale factor."),
                 IO.Int.Input(id="retry_count", optional=True, default=2, min=0, max=10),
@@ -121,7 +154,22 @@ class UpscaleNode(BaseGenerationNode):
         if cond is not None and cond.width:
             base = int(cond.width)
         target = min(base * scale, 2048)
-        return {"width": target, "height": target, "size": f"{target}x{target}"}
+        # ``scale`` lets a dedicated super-resolution backend (http_upscale /
+        # Real-ESRGAN) enlarge the *source* asset; width/height drive the
+        # offline floor + generative providers that re-render at higher res.
+        return {
+            "scale": scale,
+            "width": target,
+            "height": target,
+            "size": f"{target}x{target}",
+        }
+
+    async def execute(self, *, hidden: HiddenHolder, **inputs: Any) -> NodeOutput:
+        if self.input_media(inputs) is None:
+            return NodeOutput(
+                error="Art.Upscale: missing source image — connect a generated image asset",
+            )
+        return await super().execute(hidden=hidden, **inputs)
 
 
 class VideoGenNode(BaseGenerationNode):
@@ -218,11 +266,76 @@ class Mesh3DNode(BaseGenerationNode):
         return params
 
 
+class VFXGenNode(BaseGenerationNode):
+    """Text-to-VFX flipbook / sprite-sheet generation (particles, FX sequences).
+
+    Produces a single sprite-sheet image laid out as a ``cols × rows`` grid of
+    animation frames, plus animation metadata (frame count, grid, fps) that an
+    engine importer can use to slice and play the sequence.
+    """
+
+    NODE_ID = "Art.VFXGen"
+    KIND = "vfx"
+    MEDIA_OUTPUT_ID = "vfx"
+    DISPLAY_TITLE = "VFX flipbook"
+    PROVIDERS: ClassVar[list[str]] = ["auto", "offline", "http_vfx"]
+
+    @classmethod
+    def define_schema(cls) -> Schema:
+        return Schema(
+            node_id=cls.NODE_ID,
+            display_name="VFX Generation",
+            category="art/generate",
+            description=(
+                "Generate a VFX flipbook / sprite-sheet (particles, explosion, "
+                "glow ramp) with engine-ready frame timing metadata."
+            ),
+            inputs=[
+                *cls._base_inputs(),
+                IO.Image.Input(
+                    id="image",
+                    optional=True,
+                    tooltip="Optional reference image (style / silhouette).",
+                ),
+                IO.Int.Input(id="frames", optional=True, default=8, min=1, max=64,
+                             tooltip="Number of animation frames."),
+                IO.Int.Input(id="cols", optional=True, default=4, min=1, max=16,
+                             tooltip="Columns in the sprite-sheet grid."),
+                IO.Int.Input(id="fps", optional=True, default=12, min=1, max=60,
+                             tooltip="Playback frames per second."),
+                IO.Combo.Input(
+                    id="fx_type", optional=True, default="particles",
+                    choices=["particles", "explosion", "smoke", "magic", "glow"],
+                    tooltip="VFX archetype hint blended into the prompt.",
+                ),
+            ],
+            outputs=cls._base_outputs(),
+            hidden=cls._base_hidden(),
+            not_idempotent=True,
+        )
+
+    def input_media(self, inputs: dict[str, Any]) -> MediaRef | None:
+        return MediaRef.from_dict(inputs.get("image"))
+
+    def collect_params(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        frames = int(inputs.get("frames") or 8)
+        cols = min(int(inputs.get("cols") or 4), frames)
+        params: dict[str, Any] = {
+            "frames": frames,
+            "cols": cols,
+            "fps": int(inputs.get("fps") or 12),
+        }
+        if inputs.get("fx_type"):
+            params["fx_type"] = inputs["fx_type"]
+        return params
+
+
 ART_GENERATION_NODES: list[type[BaseGenerationNode]] = [
     ImageGenNode,
     UpscaleNode,
     VideoGenNode,
     Mesh3DNode,
+    VFXGenNode,
 ]
 
 __all__ = [
@@ -230,5 +343,6 @@ __all__ = [
     "ImageGenNode",
     "Mesh3DNode",
     "UpscaleNode",
+    "VFXGenNode",
     "VideoGenNode",
 ]

@@ -19,7 +19,8 @@ from typing import Any
 
 import structlog
 
-from leagent.workflow.io import IO, Hidden, HiddenHolder, NodeOutput, Schema
+from leagent.workflow.io import IO, Hidden, HiddenHolder, MediaRef, NodeOutput, Schema
+from leagent.workflow.io.media import to_gen_ui_tree
 
 from leagent.workflow.nodes.base import WorkflowNode
 
@@ -86,10 +87,30 @@ class QualityGateNode(WorkflowNode):
             "quality_gate", node_id=node_id, score=round(score, 4),
             threshold=threshold, passed=passed, target=target,
         )
+        asset = inputs.get("asset")
+        ref = MediaRef.from_dict(asset) if isinstance(asset, dict) else (
+            asset if isinstance(asset, MediaRef) else None
+        )
+        meta: dict[str, Any] = {
+            "score": round(score, 4),
+            "threshold": threshold,
+            "passed": passed,
+        }
+        if ref is not None and ref.src:
+            meta.update({
+                "kind": ref.kind,
+                "file_id": ref.file_id,
+                "src": ref.src,
+                "preview_url": ref.src,
+                "filename": ref.filename,
+                "width": ref.width,
+                "height": ref.height,
+            })
         return NodeOutput(
             values=(round(score, 4), passed, inputs.get("asset")),
             next_node=target,
-            metadata={"score": round(score, 4), "threshold": threshold, "passed": passed},
+            ui={"gen_ui": to_gen_ui_tree([ref], title="Gated asset")} if ref and ref.src else None,
+            metadata=meta,
         )
 
     def _resolve_score(self, inputs: dict[str, Any], state: Any) -> float:

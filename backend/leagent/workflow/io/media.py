@@ -17,14 +17,17 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
-MediaKind = Literal["image", "video", "model3d", "audio"]
+MediaKind = Literal["image", "video", "model3d", "audio", "vfx"]
 
-#: ``io_type`` of the typed socket each media kind flows through.
+#: ``io_type`` of the typed socket each media kind flows through. A VFX asset
+#: is delivered as a sprite-sheet / flipbook image, so it rides the IMAGE
+#: socket and composes with image consumers (export, preview, conditioning).
 KIND_TO_IO_TYPE: dict[str, str] = {
     "image": "IMAGE",
     "video": "VIDEO",
     "model3d": "MESH3D",
     "audio": "AUDIO",
+    "vfx": "IMAGE",
 }
 
 #: GenUI component ``kind`` used to render each media kind on the canvas /
@@ -34,6 +37,7 @@ KIND_TO_GENUI: dict[str, str] = {
     "video": "Video",
     "model3d": "Model3D",
     "audio": "Image",  # audio falls back to a card; no dedicated player yet
+    "vfx": "Image",  # sprite-sheet / flipbook rendered as an image
 }
 
 
@@ -132,9 +136,15 @@ class MediaRef:
         """Render this asset as a GenUI component node (image/video/3D)."""
         comp = KIND_TO_GENUI.get(self.kind, "Image")
         props: dict[str, Any] = {"src": self.src or ""}
-        if caption:
-            props["caption"] = caption
-        if self.filename and not caption:
+        if self.file_id:
+            props["fileId"] = self.file_id
+        cap = caption
+        if self.width and self.height:
+            dim = f"{self.width}\u00d7{self.height}"
+            cap = f"{cap} · {dim}" if cap else dim
+        if cap:
+            props["caption"] = cap
+        if self.filename and not cap:
             props["alt"] = self.filename
         if comp == "Image":
             props.setdefault("rounded", True)

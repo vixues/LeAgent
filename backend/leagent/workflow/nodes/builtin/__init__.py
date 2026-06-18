@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from leagent.workflow.nodes.base import WorkflowNode
 
+from .control_agent import ControlAgentNode
 from .script_agent import ScriptAgentNode
 from .asset_export import AssetExportNode
 from .coding_agent import CodingAgentNode
@@ -21,6 +22,7 @@ from .llm_call import LLMCallNode
 from .load_image import LoadImageNode
 from .load_mesh3d import LoadMesh3DNode
 from .parallel import ParallelNode
+from .preview import PreviewNode
 from .quality_gate import QualityGateNode
 from .script import ScriptNode
 from .start import StartNode
@@ -43,10 +45,12 @@ BUILTIN_NODES: list[type[WorkflowNode]] = [
     WaitNode,
     ScriptNode,
     ScriptAgentNode,
+    ControlAgentNode,
     CodingAgentNode,
     QualityGateNode,
     IterativeRefineNode,
     AssetExportNode,
+    PreviewNode,
     LoadImageNode,
     LoadMesh3DNode,
 ]
@@ -55,6 +59,7 @@ __all__ = [
     "BUILTIN_NODES",
     "AssetExportNode",
     "ScriptAgentNode",
+    "ControlAgentNode",
     "CodingAgentNode",
     "ConditionNode",
     "EndNode",
@@ -65,6 +70,7 @@ __all__ = [
     "LoadImageNode",
     "LoadMesh3DNode",
     "ParallelNode",
+    "PreviewNode",
     "QualityGateNode",
     "ScriptNode",
     "StartNode",

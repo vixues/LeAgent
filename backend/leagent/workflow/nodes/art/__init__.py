@@ -26,11 +26,21 @@ from .nodes import (
     ImageGenNode,
     Mesh3DNode,
     UpscaleNode,
+    VFXGenNode,
     VideoGenNode,
 )
+from .quality_critic import QualityCriticNode
 
-#: All node classes contributed by the art pack (generation + control).
-ART_NODES: list[type[WorkflowNode]] = [*ART_GENERATION_NODES, *ART_CONTROL_NODES, *STORYBOARD_NODES]
+#: Art-side evaluation nodes (perceptual / LLM scoring for the gate).
+ART_EVAL_NODES: list[type[WorkflowNode]] = [QualityCriticNode]
+
+#: All node classes contributed by the art pack (generation + control + eval).
+ART_NODES: list[type[WorkflowNode]] = [
+    *ART_GENERATION_NODES,
+    *ART_CONTROL_NODES,
+    *STORYBOARD_NODES,
+    *ART_EVAL_NODES,
+]
 
 
 class ArtNodeExtension(NodeExtension):
@@ -49,6 +59,7 @@ async def leagent_entrypoint() -> NodeExtension:
 
 __all__ = [
     "ART_CONTROL_NODES",
+    "ART_EVAL_NODES",
     "ART_GENERATION_NODES",
     "ART_NODES",
     "ArtNodeExtension",
@@ -56,10 +67,12 @@ __all__ = [
     "ImageGenNode",
     "Mesh3DNode",
     "PoseControlNode",
+    "QualityCriticNode",
     "STORYBOARD_NODES",
     "ShotNode",
     "StoryboardNode",
     "UpscaleNode",
+    "VFXGenNode",
     "VideoGenNode",
     "leagent_entrypoint",
 ]

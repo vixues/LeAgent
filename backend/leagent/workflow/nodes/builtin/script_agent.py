@@ -22,6 +22,8 @@ from leagent.workflow.io import (
 )
 from leagent.workflow.nodes.agent_exec import run_agent_node
 from leagent.workflow.nodes.base import WorkflowNode
+from leagent.workflow.nodes.agent_model import agent_model_input
+from leagent.workflow.nodes.prompt_resolve import resolve_node_prompt
 
 logger = structlog.get_logger(__name__)
 
@@ -55,6 +57,7 @@ class ScriptAgentNode(WorkflowNode):
                         "the prompt."
                     ),
                 ),
+                agent_model_input(),
                 IO.Int.Input(
                     id="max_iterations",
                     optional=True,
@@ -103,14 +106,12 @@ class ScriptAgentNode(WorkflowNode):
             )
 
         state = hidden.workflow_state
-        prompt = inputs.get("prompt")
-        if not isinstance(prompt, str) or not prompt.strip():
+        prompt = resolve_node_prompt(inputs.get("prompt"), state)
+        if not prompt:
             return NodeOutput(
                 error="Missing required 'prompt' input",
                 metadata={"node_id": hidden.unique_id},
             )
-        if state is not None:
-            prompt = state.resolve_template(prompt)
 
         max_iter = int(inputs.get("max_iterations") or 15)
         allowed_raw = inputs.get("allowed_tools") or DEFAULT_SCRIPT_AGENT_TOOLS
@@ -124,6 +125,7 @@ class ScriptAgentNode(WorkflowNode):
             prompt=prompt,
             allowed_tools=allowed,
             max_turns=max_iter,
+            model=inputs.get("model"),
             output_var=output_var,
             log_event="script_agent_node",
             extra_metadata={"node_id": hidden.unique_id, "sandbox": "subprocess"},

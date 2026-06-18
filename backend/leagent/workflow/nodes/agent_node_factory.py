@@ -41,6 +41,8 @@ from leagent.workflow.io import (
 )
 from leagent.workflow.nodes.agent_exec import run_agent_node
 from leagent.workflow.nodes.base import WorkflowNode
+from leagent.workflow.nodes.agent_model import agent_model_input
+from leagent.workflow.nodes.prompt_resolve import resolve_node_prompt
 
 if TYPE_CHECKING:
     from leagent.sdk import AgentDefinition, AgentRegistry
@@ -94,6 +96,7 @@ def _build_schema(definition: AgentDefinition) -> Schema:
                     "inputs (paths, columns, constraints) directly."
                 ),
             ),
+            agent_model_input(),
             IO.Int.Input(
                 id="max_turns",
                 optional=True,
@@ -175,14 +178,12 @@ class _GeneratedAgentNodeBase(WorkflowNode):
             )
 
         state = hidden.workflow_state
-        prompt = inputs.get("prompt")
-        if not isinstance(prompt, str) or not prompt.strip():
+        prompt = resolve_node_prompt(inputs.get("prompt"), state)
+        if not prompt:
             return NodeOutput(
                 error="Missing required 'prompt' input",
                 metadata={"node_id": hidden.unique_id, "agent": self.AGENT_NAME},
             )
-        if state is not None:
-            prompt = state.resolve_template(prompt)
 
         max_turns = int(inputs.get("max_turns") or 0) or None
         allowed_raw = inputs.get("allowed_tools")
@@ -230,6 +231,7 @@ class _GeneratedAgentNodeBase(WorkflowNode):
             prompt=prompt,
             allowed_tools=allowed,
             max_turns=max_turns,
+            model=inputs.get("model"),
             tool_extra=tool_extra,
             cwd=cwd,
             output_var=output_var,

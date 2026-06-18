@@ -10,6 +10,7 @@ from __future__ import annotations
 import pytest
 
 from leagent.runtime import AgentBuilder, AgentDefinition, AgentRegistry
+from leagent.workflow.base import WorkflowState
 from leagent.workflow.io import HiddenHolder
 from leagent.workflow.nodes.agent_node_factory import (
     build_agent_node_class,
@@ -105,7 +106,7 @@ def test_generated_node_schema_shape() -> None:
     assert cls.NODE_ID == "Agent.support_agent"
     assert schema.category == "agents"
     input_ids = {i.id for i in schema.inputs}
-    assert {"prompt", "max_turns", "allowed_tools", "project_path", "read_only", "output"} <= input_ids
+    assert {"prompt", "model", "max_turns", "allowed_tools", "project_path", "read_only", "output"} <= input_ids
     assert schema.return_names() == (
         "text",
         "success",
@@ -161,7 +162,8 @@ async def test_execute_delegates_through_runtime() -> None:
     assert out.as_tuple() == ("done", True, 3, "", [], [])
     assert len(runtime.delegate_calls) == 1
     call = runtime.delegate_calls[0]
-    assert call["agent"] == "script_agent"
+    assert isinstance(call["agent"], AgentDefinition)
+    assert call["agent"].name == "script_agent"
     assert call["prompt"] == "compute fibonacci"
     assert call["max_turns"] == 7
 
@@ -275,6 +277,40 @@ async def test_execute_requires_prompt() -> None:
     out = await node.execute(hidden=_hidden(runtime, parent=_FakeController()), prompt="  ")
     assert out.error is not None
     assert "prompt" in out.error.lower()
+
+
+@pytest.mark.asyncio
+async def test_execute_accepts_start_input_bag() -> None:
+    """StartNode ``inputs`` output linked into ``prompt`` resolves to workflow text."""
+    cls = build_agent_node_class(AgentBuilder("x").build())
+    node = cls()
+    runtime = _FakeRuntime()
+    state = WorkflowState(workflow_id="wf-test", inputs={"prompt": "Summarize the quarterly report"})
+    out = await node.execute(
+        hidden=_hidden(runtime, workflow_state=state),
+        prompt=dict(state.inputs),
+    )
+    assert out.error is None
+    assert len(runtime.stream_calls) == 1
+    assert runtime.stream_calls[0]["prompt"] == "Summarize the quarterly report"
+
+
+@pytest.mark.asyncio
+async def test_execute_passes_model_override() -> None:
+    cls = build_agent_node_class(AgentBuilder("x").build())
+    node = cls()
+    runtime = _FakeRuntime()
+    out = await node.execute(
+        hidden=_hidden(runtime, parent=_FakeController()),
+        prompt="hello",
+        model="openai/gpt-4o-mini",
+    )
+    assert out.error is None
+    assert len(runtime.delegate_calls) == 1
+    agent_def = runtime.delegate_calls[0]["agent"]
+    assert isinstance(agent_def, AgentDefinition)
+    assert agent_def.model.provider == "openai"
+    assert agent_def.model.model == "gpt-4o-mini"
 
 
 @pytest.mark.asyncio

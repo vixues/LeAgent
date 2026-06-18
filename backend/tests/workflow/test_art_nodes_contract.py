@@ -23,6 +23,7 @@ from leagent.workflow.nodes.art.nodes import (
     ImageGenNode,
     Mesh3DNode,
     UpscaleNode,
+    VFXGenNode,
     VideoGenNode,
 )
 
@@ -31,6 +32,7 @@ ART_NODE_IDS = (
     "Art.VideoGen",
     "Art.Mesh3D",
     "Art.Upscale",
+    "Art.VFXGen",
     "Art.CameraControl",
     "Art.PoseControl",
 )
@@ -152,3 +154,37 @@ def test_node_capability_contract_matches_kind():
     assert Modality.IMAGE in contract.outputs
     assert VideoGenNode.capability_contract().task == TaskType.VIDEO_GEN
     assert Mesh3DNode.capability_contract().task == TaskType.MESH_GEN
+
+
+# -- VFX modality (Phase 3) -------------------------------------------------
+
+
+def test_vfx_node_outputs_image_socket():
+    # A VFX flipbook rides the IMAGE socket so it composes with image consumers.
+    info = VFXGenNode.get_schema().get_info_dict()
+    assert "IMAGE" in info["output"]
+    assert SOCKET_COLORS["IMAGE"] in info["output_colors"]
+
+
+def test_vfx_node_exposes_animation_params():
+    info = VFXGenNode.get_schema().get_info_dict()
+    optional = info["input"]["optional"]
+    for key in ("frames", "cols", "fps", "fx_type"):
+        assert key in optional, key
+
+
+def test_vfx_node_capability_contract():
+    from leagent.llm.capabilities import Modality, TaskType
+
+    contract = VFXGenNode.capability_contract()
+    assert contract.task == TaskType.VFX_GEN
+    assert Modality.VFX in contract.outputs
+
+
+def test_vfx_collect_params_clamps_cols_to_frames():
+    node = VFXGenNode()
+    params = node.collect_params({"frames": 3, "cols": 8, "fps": 10, "fx_type": "smoke"})
+    assert params["frames"] == 3
+    assert params["cols"] == 3  # clamped to frame count
+    assert params["fps"] == 10
+    assert params["fx_type"] == "smoke"

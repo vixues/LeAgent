@@ -37,7 +37,9 @@ from uuid import UUID
 import structlog
 
 from leagent.prompts.playbooks import playbook_ids_from_context
+from leagent.sdk.events import AgentEventType
 from leagent.workflow.io import HiddenHolder, NodeOutput
+from leagent.workflow.nodes.agent_model import apply_model_override, parse_agent_model_override
 
 logger = structlog.get_logger(__name__)
 
@@ -205,6 +207,7 @@ def _finalize(
     if state is not None and output_var:
         state.set(output_var, agg.text)
     _stash_checkpoint(state, hidden.unique_id, agg.checkpoint_id)
+    meta = {**meta, "text": (agg.text or "")[:4000], "success": bool(agg.success)}
     return NodeOutput(
         values=(
             agg.text,
@@ -225,6 +228,7 @@ async def run_agent_node(
     prompt: str,
     allowed_tools: list[str] | None,
     max_turns: int | None,
+    model: str | None = None,
     tool_extra: dict[str, Any] | None = None,
     cwd: str | None = None,
     output_var: str | None = None,
@@ -250,6 +254,11 @@ async def run_agent_node(
     emit = _progress_emitter(hidden)
     meta: dict[str, Any] = {"agent": agent_name, **(extra_metadata or {})}
     state = hidden.workflow_state
+
+    definition = apply_model_override(runtime.resolve(agent_name), model)
+    model_override = parse_agent_model_override(model)
+    if model_override is not None:
+        meta["model_provider"], meta["model"] = model_override
 
     merged_tool_extra = dict(tool_extra or {})
     playbook_ids = playbook_ids_from_context(
@@ -305,7 +314,7 @@ async def run_agent_node(
         if parent is not None:
             envelope = await runtime.delegate(
                 parent,
-                agent_name,
+                definition,
                 prompt,
                 allowed_tools=allowed_tools,
                 max_turns=max_turns,
@@ -334,13 +343,13 @@ async def run_agent_node(
             agg = await _run_standalone_stream(
                 runtime=runtime,
                 hidden=hidden,
-                agent_name=agent_name,
-                prompt=prompt,
+                definition=definition,
                 allowed_tools=allowed_tools,
                 max_turns=max_turns,
                 tool_extra=merged_tool_extra,
                 cwd=cwd,
                 emit=emit,
+                prompt=prompt,
             )
             meta.update(agg.meta)
             meta["mode"] = "standalone"
@@ -384,7 +393,7 @@ async def _run_standalone_stream(
     *,
     runtime: Any,
     hidden: HiddenHolder,
-    agent_name: str,
+    definition: Any,
     prompt: str,
     allowed_tools: list[str] | None,
     max_turns: int | None,
@@ -393,7 +402,6 @@ async def _run_standalone_stream(
     emit: Any,
 ) -> _AggregatedRun:
     """Drive ``runtime.stream`` standalone and aggregate node outputs."""
-    definition = runtime.resolve(agent_name)
     if max_turns:
         definition = definition.with_overrides(max_turns=max_turns)
     if allowed_tools is not None:
