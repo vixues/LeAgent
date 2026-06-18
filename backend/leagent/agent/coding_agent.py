@@ -445,6 +445,8 @@ class CodingAgentTool(BaseTool):
             nested_preview_emit=nested_emit,
             parent_tool_call_id=parent_tc_str,
             runtime_profile=runtime_profile,
+            session_id_hint=getattr(context, "session_id", None),
+            user_id_hint=getattr(context, "user_id", None),
         )
 
 
@@ -460,6 +462,8 @@ async def _run_coding_agent(
     nested_preview_emit: Callable[[dict[str, Any]], Awaitable[None]] | None = None,
     parent_tool_call_id: str | None = None,
     runtime_profile: str = CODING_AGENT_DEFAULT_PROFILE,
+    session_id_hint: Any = None,
+    user_id_hint: Any = None,
 ) -> dict[str, Any]:
     """Build a child :class:`QueryEngine` and drive it to completion.
 
@@ -502,6 +506,8 @@ async def _run_coding_agent(
         },
         nested_preview_emit=nested_preview_emit,
         parent_tool_call_id=parent_tool_call_id,
+        session_id_hint=session_id_hint,
+        user_id_hint=user_id_hint,
     )
 
 

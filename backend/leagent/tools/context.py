@@ -30,6 +30,80 @@ def _stringify(value: Any) -> str | None:
     return str(value)
 
 
+def _parse_uuid(value: Any) -> UUID | None:
+    if value is None:
+        return None
+    if isinstance(value, UUID):
+        return value
+    try:
+        return UUID(str(value))
+    except (TypeError, ValueError):
+        return None
+
+
+def _local_user_id_fallback() -> UUID | None:
+    try:
+        from leagent.services.auth.deps import _auth_enforced
+        from leagent.services.auth.service import LOCAL_USER_ID
+
+        if not _auth_enforced():
+            return LOCAL_USER_ID
+    except Exception:  # noqa: BLE001
+        pass
+    return None
+
+
+def _user_id_from_session_task(session_id: UUID) -> UUID | None:
+    from leagent.agent.controller import AgentController
+
+    recs = AgentController._session_task_records.get(session_id)
+    if not recs:
+        return None
+    return max(recs.values(), key=lambda r: r.updated_at).user_id
+
+
+def resolve_effective_user_id(
+    raw: Any,
+    *,
+    session_id: Any = None,
+) -> UUID | None:
+    """Resolve ``user_id`` for tool execution when the context omits it.
+
+    Prefers an explicit value, then the in-process agent task record for
+    ``session_id``, then the local single-user id when auth is not enforced.
+    """
+    user_id = _parse_uuid(raw)
+    if user_id is not None:
+        return user_id
+
+    sid = _parse_uuid(session_id)
+    if sid is not None:
+        user_id = _user_id_from_session_task(sid)
+        if user_id is not None:
+            return user_id
+
+    return _local_user_id_fallback()
+
+
+def resolve_subagent_run_identity(
+    *,
+    parent_engine: Any = None,
+    session_id_hint: Any = None,
+    user_id_hint: Any = None,
+) -> tuple[UUID | None, UUID | None]:
+    """Best-effort ``(session_id, user_id)`` for a forked sub-agent."""
+    session_id = _parse_uuid(session_id_hint)
+    user_id = _parse_uuid(user_id_hint)
+
+    if parent_engine is not None:
+        cfg = getattr(parent_engine, "config", parent_engine)
+        session_id = session_id or _parse_uuid(getattr(cfg, "session_id", None))
+        user_id = user_id or _parse_uuid(getattr(cfg, "user_id", None))
+
+    user_id = resolve_effective_user_id(user_id, session_id=session_id)
+    return session_id, user_id
+
+
 def build_tool_context(
     *,
     service_manager: "ServiceManager | None" = None,
@@ -96,4 +170,9 @@ def merge_tool_context(base: ToolContext, **overrides: Any) -> ToolContext:
     return ToolContext(**data)
 
 
-__all__ = ["build_tool_context", "merge_tool_context"]
+__all__ = [
+    "build_tool_context",
+    "merge_tool_context",
+    "resolve_effective_user_id",
+    "resolve_subagent_run_identity",
+]

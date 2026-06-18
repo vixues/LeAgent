@@ -496,6 +496,8 @@ class AgentRuntime:
         parent_tool_call_id: str | None = None,
         log_event: str = "subagent_delegate",
         log_fields: dict[str, Any] | None = None,
+        session_id_hint: Any = None,
+        user_id_hint: Any = None,
     ) -> dict[str, Any]:
         """Run a definition-driven sub-agent forked off ``parent``.
 
@@ -616,6 +618,8 @@ class AgentRuntime:
                 log_fields=log_fields,
                 nested_preview_emit=nested_preview_emit,
                 parent_tool_call_id=parent_tool_call_id,
+                session_id_hint=session_id_hint,
+                user_id_hint=user_id_hint,
             )
 
 

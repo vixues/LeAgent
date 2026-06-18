@@ -28,10 +28,14 @@ import contextlib
 import json
 from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING, Any, Iterable, TypedDict
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 from leagent.tools.base import BaseTool, ToolCategory, ToolContext
 from leagent.utils.logging import get_logger
+
+from leagent.tools.context import resolve_subagent_run_identity
+
+
 
 if TYPE_CHECKING:
     from leagent.agent.controller import AgentController
@@ -422,6 +426,8 @@ async def _run_subagent_core(
     log_fields: dict[str, Any] | None = None,
     nested_preview_emit: Callable[[dict[str, Any]], Awaitable[None]] | None = None,
     parent_tool_call_id: str | None = None,
+    session_id_hint: Any = None,
+    user_id_hint: Any = None,
 ) -> SubagentResult:
     """Shared child-QueryEngine runner used by script/coding sub-agents."""
     from leagent.agent.controller import AgentController
@@ -429,10 +435,19 @@ async def _run_subagent_core(
 
     parent_eng: QueryEngine
     parent_abort: asyncio.Event | None = None
+    session_id, user_id = resolve_subagent_run_identity(
+        parent_engine=parent_engine,
+        session_id_hint=session_id_hint,
+        user_id_hint=user_id_hint,
+    )
 
     if parent_engine is not None:
         parent_eng = parent_engine
         parent_abort = parent_engine.abort_event
+        if parent_eng.config.user_id is None and user_id is not None:
+            parent_eng.config.user_id = user_id
+        if parent_eng.config.session_id is None and session_id is not None:
+            parent_eng.config.session_id = session_id
     elif parent_controller is not None:
         if not isinstance(parent_controller, AgentController):
             raise TypeError(
@@ -453,6 +468,9 @@ async def _run_subagent_core(
                 model_provider=parent_controller.config.model_provider,
                 model_name=parent_controller.config.model_name,
                 abort_event=parent_abort,
+                session_id=session_id,
+                user_id=user_id,
+                agent_id=getattr(parent_controller.config, "agent_name", None) or "default",
             )
         )
     else:
@@ -820,6 +838,8 @@ class AgentTool(BaseTool):
             max_turns=max_turns,
             inherit_abort=True,
             log_event="subagent_fork",
+            session_id_hint=getattr(context, "session_id", None),
+            user_id_hint=getattr(context, "user_id", None),
         )
 
 

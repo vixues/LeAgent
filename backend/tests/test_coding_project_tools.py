@@ -171,7 +171,13 @@ async def test_status_and_logs(
 
 
 @pytest.mark.asyncio
-async def test_tool_requires_authenticated_user_id() -> None:
+async def test_tool_requires_authenticated_user_id(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "leagent.tools.context._local_user_id_fallback",
+        lambda: None,
+    )
     tool = CodingProjectStatusTool()
     bare = ToolContext(user_id=None, session_id=None)
     with pytest.raises(PermissionError):

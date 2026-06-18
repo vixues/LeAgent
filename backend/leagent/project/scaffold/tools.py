@@ -23,13 +23,23 @@ logger = structlog.get_logger(__name__)
 
 def _require_user_id(context: ToolContext) -> UUID:
     raw = context.user_id
-    if not raw:
-        raise PermissionError(
-            "Coding-project tools require an authenticated user_id in the context."
-        )
-    if isinstance(raw, UUID):
-        return raw
-    return UUID(str(raw))
+    if raw:
+        if isinstance(raw, UUID):
+            return raw
+        return UUID(str(raw))
+
+    from leagent.tools.context import resolve_effective_user_id
+
+    resolved = resolve_effective_user_id(
+        None,
+        session_id=context.session_id,
+    )
+    if resolved is not None:
+        return resolved
+
+    raise PermissionError(
+        "Coding-project tools require an authenticated user_id in the context."
+    )
 
 
 def _get_manager() -> Any:
