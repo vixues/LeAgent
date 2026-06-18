@@ -23,6 +23,7 @@ CANVAS_PREVIEW_CSP_LOCAL: str = (
     "default-src 'none'; "
     "base-uri 'none'; "
     "img-src https: http: data: blob:; "
+    "media-src mediastream: blob: 'self'; "
     "font-src https: http: data:; "
     "style-src https: http: 'unsafe-inline'; "
     "script-src https: http: 'unsafe-inline' 'unsafe-eval'; "

@@ -23,6 +23,8 @@ _KIND_TO_TASK: dict[str, tuple[TaskType, Modality]] = {
     "image": (TaskType.IMAGE_GEN, Modality.IMAGE),
     "video": (TaskType.VIDEO_GEN, Modality.VIDEO),
     "model3d": (TaskType.MESH_GEN, Modality.MODEL3D),
+    "vfx": (TaskType.VFX_GEN, Modality.VFX),
+    "audio": (TaskType.AUDIO_GEN, Modality.AUDIO),
 }
 
 # Map a domain task string to the unified TaskType.
@@ -190,7 +192,7 @@ def from_generation_backend(backend: Any) -> CapabilityProfile:
 
     # Image conditioning support → accepts image input.
     inputs = {Modality.TEXT}
-    if Modality.IMAGE in outputs or Modality.VIDEO in outputs or Modality.MODEL3D in outputs:
+    if outputs & {Modality.IMAGE, Modality.VIDEO, Modality.MODEL3D, Modality.VFX}:
         inputs.add(Modality.IMAGE)
 
     available = getattr(backend, "available", None)

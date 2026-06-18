@@ -29,13 +29,20 @@ from leagent.llm.capabilities import (
 from leagent.utils.logging import get_logger
 
 from .backends import (
+    ConfiguredGenerationBackend,
+    ElevenLabsBackend,
     HttpMesh3DBackend,
+    HttpUpscaleBackend,
+    HttpVfxBackend,
     HttpVideoBackend,
     ImageProviderBackend,
     LocalDiffusionBackend,
     OfflineGenerationBackend,
+    ReplicateBackend,
+    SiliconFlowImageBackend,
 )
-from .base import GenerationBackend, GenerationOutput
+from .base import GENERATION_KINDS, GenerationBackend, GenerationOutput
+from .config import get_image_gen_config
 
 logger = get_logger(__name__)
 
@@ -146,20 +153,28 @@ class GenerationService:
         **params: Any,
     ) -> GenerationOutput:
         """Generate one asset, trying candidate backends with retries."""
-        if kind not in ("image", "video", "model3d"):
+        if kind not in GENERATION_KINDS:
             return GenerationOutput.failure(kind, f"unsupported kind '{kind}'")
 
         candidates = self._candidates(kind, provider)
         if not candidates:
             return GenerationOutput.failure(kind, f"no backend available for '{kind}'")
 
+        task = kind_to_task(kind)
+        task_name = task.value if task is not None else kind
+
         last_error = "no backend produced output"
         for backend in candidates:
+            backend_ok = False
             for attempt in range(max(0, max_retries) + 1):
+                start = asyncio.get_event_loop().time()
                 try:
                     out = await backend.generate(kind=kind, prompt=prompt, **params)
                     if out.success and (out.data or out.meta.get("url")):
                         out.meta.setdefault("attempts", attempt + 1)
+                        latency_ms = (asyncio.get_event_loop().time() - start) * 1000
+                        self._record_stat(task_name, backend.name, True, latency_ms)
+                        backend_ok = True
                         return out
                     last_error = out.error or last_error
                 except Exception as exc:  # noqa: BLE001
@@ -170,9 +185,24 @@ class GenerationService:
                     )
                 if attempt < max_retries:
                     await asyncio.sleep(retry_delay_sec * (2 ** attempt))
+            if not backend_ok:
+                # The backend exhausted its retry budget without producing.
+                self._record_stat(task_name, backend.name, False, None)
             logger.info("generation_backend_failover", failed=backend.name, kind=kind)
 
         return GenerationOutput.failure(kind, last_error, provider=provider or "")
+
+    @staticmethod
+    def _record_stat(task: str, provider: str, success: bool, latency_ms: float | None) -> None:
+        """Feed a generation outcome into the provider performance store."""
+        try:
+            from leagent.llm.capabilities import get_provider_stats
+
+            get_provider_stats().record_attempt(
+                task, provider, success=success, latency_ms=latency_ms,
+            )
+        except Exception:  # noqa: BLE001 - telemetry must never break generation
+            pass
 
 
 def build_default_generation_service() -> GenerationService:
@@ -186,8 +216,19 @@ def build_default_generation_service() -> GenerationService:
     svc.register(LocalDiffusionBackend())
     svc.register(ImageProviderBackend("openai"))
     svc.register(ImageProviderBackend("dashscope"))
+    svc.register(SiliconFlowImageBackend())
+    svc.register(ReplicateBackend())
+    svc.register(ElevenLabsBackend())
+    svc.register(HttpUpscaleBackend())
     svc.register(HttpVideoBackend())
     svc.register(HttpMesh3DBackend())
+    svc.register(HttpVfxBackend())
+    # Generic admin-registered providers (persisted in providers.yaml).
+    try:
+        for provider in get_image_gen_config().custom_providers():
+            svc.register(ConfiguredGenerationBackend(provider))
+    except Exception:  # noqa: BLE001 - custom providers must never break startup
+        logger.warning("custom_provider_registration_failed", exc_info=True)
     return svc
 
 

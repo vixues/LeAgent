@@ -25,6 +25,12 @@ from .profile import (
     Modality,
     TaskType,
 )
+from .provider_stats import (
+    ProviderStat,
+    ProviderStatsStore,
+    get_provider_stats,
+    reset_provider_stats,
+)
 from .registry import (
     CapabilityRegistry,
     RegisteredCapability,
@@ -40,13 +46,17 @@ __all__ = [
     "CapabilityRegistry",
     "CapabilityRouter",
     "Modality",
+    "ProviderStat",
+    "ProviderStatsStore",
     "RegisteredCapability",
     "TaskType",
     "from_domain_spec",
     "from_generation_backend",
     "from_model_spec",
     "get_capability_registry",
+    "get_provider_stats",
     "kind_to_output",
     "kind_to_task",
     "reset_capability_registry",
+    "reset_provider_stats",
 ]

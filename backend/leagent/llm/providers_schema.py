@@ -220,13 +220,19 @@ def validate_v2_config(config: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(tasks, dict) or not tasks.get("chat"):
         raise ProviderConfigValidationError("routing.tasks.chat is required")
 
-    return {
+    normalized = {
         "version": PROVIDERS_CONFIG_VERSION,
         "default_task": str(config.get("default_task") or "chat"),
         "providers": normalized_providers,
         "routing": routing,
         "pricing": config.get("pricing") if isinstance(config.get("pricing"), dict) else {},
     }
+    # Preserve the image-generation section (presets + backend credentials +
+    # local-diffusion settings) so the art ``GenerationService`` config managed
+    # by ``ImageGenConfigStore`` survives chat-provider round-trips.
+    if isinstance(config.get("image_gen"), dict):
+        normalized["image_gen"] = config["image_gen"]
+    return normalized
 
 
 def validate_models_list_v2(models: list[Any]) -> list[dict[str, Any]]:

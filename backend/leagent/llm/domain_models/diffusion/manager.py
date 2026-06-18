@@ -55,7 +55,20 @@ SCHEDULERS: dict[str, tuple[str, dict[str, Any]]] = {
 DEFAULT_SCHEDULER = "euler_a"
 
 
+def _local_cfg() -> dict[str, Any]:
+    """Admin-managed local-diffusion config (``image_gen.local`` in YAML)."""
+    try:
+        from leagent.llm.generation.config import get_image_gen_config
+
+        return get_image_gen_config().local_config()
+    except Exception:  # noqa: BLE001 - config is best-effort here
+        return {}
+
+
 def models_dir() -> Path:
+    configured = str(_local_cfg().get("models_dir") or "").strip()
+    if configured:
+        return Path(configured).expanduser()
     raw = os.environ.get("LEAGENT_DIFFUSION_MODELS_DIR", "").strip()
     if raw:
         return Path(raw).expanduser()
@@ -63,6 +76,9 @@ def models_dir() -> Path:
 
 
 def lora_dir() -> Path:
+    configured = str(_local_cfg().get("lora_dir") or "").strip()
+    if configured:
+        return Path(configured).expanduser()
     raw = os.environ.get("LEAGENT_DIFFUSION_LORA_DIR", "").strip()
     if raw:
         return Path(raw).expanduser()
@@ -70,6 +86,9 @@ def lora_dir() -> Path:
 
 
 def default_model() -> str:
+    configured = str(_local_cfg().get("default_model") or "").strip()
+    if configured:
+        return configured
     return os.environ.get(
         "LEAGENT_DIFFUSION_DEFAULT_MODEL", "stabilityai/stable-diffusion-xl-base-1.0"
     ).strip()

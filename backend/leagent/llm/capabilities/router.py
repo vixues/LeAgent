@@ -21,8 +21,18 @@ from .registry import CapabilityRegistry
 class CapabilityRouter:
     """Rank registry profiles against a contract."""
 
-    def __init__(self, registry: CapabilityRegistry) -> None:
+    def __init__(self, registry: CapabilityRegistry, *, stats: object | None = None) -> None:
         self.registry = registry
+        # Optional provider-performance store used to bias ranking by live
+        # reliability/quality within a cost tier. Defaults to the global store.
+        if stats is None:
+            try:
+                from .provider_stats import get_provider_stats
+
+                stats = get_provider_stats()
+            except Exception:  # noqa: BLE001 - stats are best-effort
+                stats = None
+        self.stats = stats
 
     def candidates(
         self,
@@ -44,11 +54,11 @@ class CapabilityRouter:
 
         if preferred_provider:
             picked = [p for p in real if p.provider == preferred_provider]
-            ranked = self._rank(picked)
+            ranked = self._rank(picked, contract)
         else:
             if available_only:
                 real = [p for p in real if p.available()]
-            ranked = self._rank(real)
+            ranked = self._rank(real, contract)
 
         if offline_floor and offline:
             for p in offline:
@@ -93,11 +103,33 @@ class CapabilityRouter:
             names = [n for n in names if n != "offline"] + ["offline"]
         return names
 
-    @staticmethod
-    def _rank(profiles: list[CapabilityProfile]) -> list[CapabilityProfile]:
-        # Stable sort by cost tier; registration order preserved within a tier.
+    def _rank(
+        self,
+        profiles: list[CapabilityProfile],
+        contract: CapabilityContract | None = None,
+    ) -> list[CapabilityProfile]:
+        # Stable sort by cost tier first (cheap/local before paid), then by
+        # observed reliability (production self-optimization), then by
+        # registration order. Unobserved providers get a neutral score so the
+        # ordering is unchanged until real feedback accrues.
+        task = contract.task.value if contract is not None else ""
         indexed = list(enumerate(profiles))
-        indexed.sort(key=lambda pair: (pair[1].cost_tier, pair[0]))
+
+        def _reliability(profile: CapabilityProfile) -> float:
+            if self.stats is None or not task:
+                return 0.5
+            try:
+                return float(self.stats.reliability(task, profile.provider))
+            except Exception:  # noqa: BLE001
+                return 0.5
+
+        # Negate reliability so higher reliability sorts earlier; round to keep
+        # tiny floating noise from reordering otherwise-equal providers.
+        indexed.sort(key=lambda pair: (
+            pair[1].cost_tier,
+            -round(_reliability(pair[1]), 3),
+            pair[0],
+        ))
         return [p for _, p in indexed]
 
 

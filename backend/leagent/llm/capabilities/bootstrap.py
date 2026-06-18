@@ -27,7 +27,7 @@ def register_generation_capabilities(registry: CapabilityRegistry | None = None)
 
         svc = get_generation_service()
         seen: set[int] = set()
-        for kind in ("image", "video", "model3d"):
+        for kind in ("image", "video", "model3d", "vfx", "audio"):
             for backend in svc.backends_for(kind):
                 if id(backend) in seen:
                     continue

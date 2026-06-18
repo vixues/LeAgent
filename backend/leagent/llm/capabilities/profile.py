@@ -31,6 +31,7 @@ class Modality(StrEnum):
     AUDIO = "audio"
     VIDEO = "video"
     MODEL3D = "model3d"
+    VFX = "vfx"
     PDF = "pdf"
 
 
@@ -42,6 +43,8 @@ class TaskType(StrEnum):
     IMAGE_GEN = "image_gen"
     VIDEO_GEN = "video_gen"
     MESH_GEN = "mesh_gen"
+    VFX_GEN = "vfx_gen"
+    AUDIO_GEN = "audio_gen"
     UPSCALE = "upscale"
     TTS = "tts"
     ASR = "asr"
