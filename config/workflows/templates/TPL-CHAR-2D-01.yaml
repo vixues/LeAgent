@@ -1,0 +1,233 @@
+# TPL-CHAR-2D-01 — Professional 2D game character design (flat art first).
+#
+# Run-panel inputs drive a production character brief. The pipeline produces:
+#   1. Front concept sheet (quality-gated + bounded self-correction)
+#   2. Super-resolution upscale wired directly to the gated asset
+#   3. Artifact preview + downloadable character bundle
+#
+#   Art.ImageGen -> QualityCritic -> QualityGate
+#          ^                              |  \
+#          |  (fail) IterativeRefine <---/   \-> (pass) upscale -> Preview -> Export
+#          +----------------------------------/   (exhausted) ----^
+#
+# Runs end-to-end with zero credentials (``provider: offline``).
+id: TPL-CHAR-2D-01
+name: "Game Character Design (2D)"
+description: >-
+  Professional flat / 2D game character design: set a character brief in the
+  Run panel, generate a front concept sheet with quality self-correction,
+  upscale for production, preview, and export an engine-ready bundle. Ideal
+  for sprites, UI portraits, and character-sheet workflows before 3D or
+  animation passes.
+inputs:
+  - name: character_name
+    type: string
+    label: Character Name
+    description: Display name used in prompts and export bundle
+    required: false
+    default: Astra
+  - name: role
+    type: string
+    label: Role / Archetype
+    description: Gameplay role that shapes silhouette and costume reads
+    required: false
+    default: warrior
+    choices:
+      - warrior
+      - mage
+      - rogue
+      - ranger
+      - healer
+      - tank
+      - support
+  - name: art_style
+    type: string
+    label: Art Style
+    description: Flat / 2D rendering style for the character sheet
+    required: false
+    default: cel_shaded
+    choices:
+      - cel_shaded
+      - chibi
+      - anime
+      - western_cartoon
+      - painterly
+      - pixel_art
+  - name: palette
+    type: string
+    label: Color Palette
+    description: Key colors and accents for costume / VFX reads
+    required: false
+    default: indigo armor, gold trim, pale skin, cyan accent glow
+  - name: prompt
+    type: string
+    multiline: true
+    label: Character Brief
+    description: Physical traits, costume, weapons, personality, faction cues
+    required: false
+    rows: 6
+    default: >-
+      Young knight captain with short silver hair, flowing cape bearing a sun
+      emblem, tower shield and longsword, confident heroic stance, light
+      battle wear on plate armor, readable gloves and boots for animation
+outputs:
+  - name: concept_front
+    value: "${var.final_concept}"
+  - name: manifest
+    value: "${var.asset_manifest}"
+  - name: quality_score
+    value: "${var.quality_score}"
+  - name: quality_passed
+    value: "${var.quality_passed}"
+  - name: quality_threshold
+    value: "0.7"
+metadata:
+  category: game
+  art_offline: true
+  tags:
+    - game
+    - character
+    - 2d
+    - art
+    - concept
+    - flat
+    - sprite
+    - character-sheet
+nodes:
+  start:
+    class_type: StartNode
+    inputs: {}
+    meta:
+      name: Start
+    control:
+      next: concept
+
+  concept:
+    class_type: Art.ImageGen
+    inputs:
+      prompt: >-
+        Game character design sheet — ${input.character_name}, ${input.role}
+        archetype. ${input.prompt}. Art style: ${input.art_style}, flat 2D game
+        art, cel-friendly color blocking, clean readable silhouette, full body
+        front view, neutral A-pose, arms slightly away from body, feet
+        shoulder-width, orthographic character sheet framing, plain white
+        background, production-ready for sprite and UI portrait pipelines.
+        Color palette: ${input.palette}. Strong shape language, costume layers
+        clearly separated, no text, no watermark, no UI chrome.
+      width: 1024
+      height: 1024
+      style: concept_art
+      provider: auto
+      output: concept_front
+    meta:
+      name: Front Concept Sheet
+    control:
+      next: critic
+
+  critic:
+    class_type: Art.QualityCritic
+    inputs:
+      asset: ["concept", 0]
+      base_score: 0.4
+      score_step: 0.35
+      iteration_var: refine_iteration
+      criteria: >-
+        Readable game silhouette, correct front-view proportions, clean flat
+        color separation, costume details legible at small scale, no anatomy
+        artifacts, on-style for the requested 2D game art direction, plain
+        background, production-ready character sheet framing.
+    meta:
+      name: Quality Critic
+    control:
+      next: gate
+
+  gate:
+    class_type: QualityGateNode
+    inputs:
+      asset: ["critic", 2]
+      score: ["critic", 0]
+      threshold: 0.7
+      base_score: 0.4
+      score_step: 0.35
+      iteration_var: refine_iteration
+      criteria: >-
+        Readable game silhouette, correct front-view proportions, clean flat
+        color separation, costume details legible at small scale, no anatomy
+        artifacts, on-style for the requested 2D game art direction, plain
+        background, production-ready character sheet framing.
+    meta:
+      name: Quality Gate
+    control:
+      conditions:
+        - then_node: upscale
+      else_node: refine
+
+  refine:
+    class_type: IterativeRefineNode
+    inputs:
+      max_iterations: 2
+      iteration_var: refine_iteration
+      feedback: >-
+        Strengthen silhouette readability, sharpen flat color blocks, improve
+        costume layer separation, fix anatomy or proportion issues, and keep
+        the character faithful to the brief and palette.
+    meta:
+      name: Iterative Refine
+    control:
+      retry_node: concept
+      exhausted_node: upscale
+
+  upscale:
+    class_type: Art.Upscale
+    inputs:
+      image: ["gate", 2]
+      prompt: >-
+        ${input.character_name} front character sheet, ${input.art_style}, sharp
+        flat 2D game art detail
+      scale: 2
+      provider: offline
+      output: final_concept
+    meta:
+      name: Production Upscale
+    control:
+      next: preview
+
+  preview:
+    class_type: Art.Preview
+    inputs:
+      asset: ["upscale", 0]
+      title: "${input.character_name} — front concept (production)"
+    meta:
+      name: Character Preview
+    control:
+      next: export
+
+  export:
+    class_type: AssetExportNode
+    inputs:
+      image: ["upscale", 0]
+      asset_name: "${input.character_name}-2d-character"
+      engine: generic
+      output: asset_manifest
+    meta:
+      name: Character Sheet Export
+    control:
+      next: end
+
+  end:
+    class_type: EndNode
+    inputs: {}
+    meta:
+      name: End
+    control: {}
+control:
+  start: start
+  end: end
+  edges: []
+  timeout_sec: 2400
+  max_retries: 0
+  tags:
+    - game
+    - character
+    - 2d
+    - art

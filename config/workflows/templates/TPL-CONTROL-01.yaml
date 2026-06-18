@@ -1,0 +1,42 @@
+id: TPL-CONTROL-01
+name: Control Agent — prompt to image
+description: >
+  Start → Control Agent (prompt_generate) → ImageGen. Demonstrates single-shot
+  prompt synthesis feeding an art node without a ReAct tool loop.
+version: "1.0"
+metadata:
+  category: template
+  tags: [control-agent, image, prompt]
+inputs:
+  - id: prompt
+    type: string
+    label: Brief
+    default: "female warrior, cel-shaded game character"
+nodes:
+  start:
+    class_type: StartNode
+    inputs: {}
+    control:
+      next: control
+  control:
+    class_type: Agent.control_agent
+    inputs:
+      mode: prompt_generate
+      instruction: "Brief: ${input.prompt}"
+      response_format: json
+      apply_to_state: true
+    control:
+      next: image
+  image:
+    class_type: Art.ImageGen
+    inputs:
+      prompt: ${variables.prompt}
+      provider: auto
+    control:
+      next: end
+  end:
+    class_type: EndNode
+    inputs: {}
+control:
+  start: start
+  end: end

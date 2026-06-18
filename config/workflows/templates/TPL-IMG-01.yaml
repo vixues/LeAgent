@@ -1,0 +1,194 @@
+# TPL-IMG-01 — Professional image-generation pipeline.
+#
+# Workflow-level ``prompt`` / ``style`` inputs drive generation from the Run
+# panel (multiline prompt field). Art.ImageGen resolves ``${input.*}`` at
+# runtime; the same template is visible on the node for advanced edits.
+#
+#   Art.ImageGen -> QualityCritic -> QualityGate
+#          ^                              |  \
+#          |  (fail) IterativeRefine <---/   \-> (pass) approved
+#          +----------------------------------/        |
+#                                    Art.Upscale -> Art.Preview -> Export
+#
+# Runs end-to-end with zero credentials (``provider: offline``).
+id: TPL-IMG-01
+name: "Professional Image Generation"
+description: >-
+  Set a prompt in the Run panel, then generate: image generation → quality
+  critic → bounded self-correction → super-resolution upscale → artifact
+  preview → downloadable bundle. Runs offline end-to-end.
+inputs:
+  - name: prompt
+    type: string
+    multiline: true
+    label: Prompt
+    description: Describe the image you want to generate
+    required: false
+    default: >-
+      A serene mountain lake at golden hour with mist over the water, reflected
+      peaks, soft warm light
+  - name: style
+    type: string
+    label: Style
+    description: Art style hint blended into the generation prompt
+    required: false
+    default: realistic
+    choices:
+      - realistic
+      - concept_art
+      - hand_painted
+      - pixel_art
+      - isometric
+outputs:
+  - name: image
+    value: "${var.final_image}"
+  - name: manifest
+    value: "${var.asset_manifest}"
+  - name: quality_score
+    value: "${var.quality_score}"
+  - name: quality_passed
+    value: "${var.quality_passed}"
+  - name: quality_threshold
+    value: "0.7"
+metadata:
+  category: game
+  tags:
+    - art
+    - image
+    - generation
+    - upscale
+    - preview
+    - self-correction
+nodes:
+  start:
+    class_type: StartNode
+    inputs: {}
+    meta:
+      name: Start
+    control:
+      next: image
+
+  image:
+    class_type: Art.ImageGen
+    inputs:
+      prompt: >-
+        ${input.prompt}. Style: ${input.style}. Professional composition, rule
+        of thirds, balanced lighting, rich color grading, high dynamic range,
+        sharp focus, fine detail, no watermark, no text.
+      width: 1024
+      height: 1024
+      style: realistic
+      provider: offline
+      output: concept_image
+    meta:
+      name: Image Generation
+    control:
+      next: critic
+
+  critic:
+    class_type: Art.QualityCritic
+    inputs:
+      asset: ["image", 0]
+      base_score: 0.4
+      score_step: 0.35
+      iteration_var: refine_iteration
+      criteria: >-
+        Clear primary subject, balanced composition, correct exposure, no
+        artifacts or distortions, faithful to the requested style.
+    meta:
+      name: Quality Critic
+    control:
+      next: gate
+
+  gate:
+    class_type: QualityGateNode
+    inputs:
+      asset: ["critic", 2]
+      score: ["critic", 0]
+      threshold: 0.7
+      base_score: 0.4
+      score_step: 0.35
+      iteration_var: refine_iteration
+      criteria: >-
+        Clear primary subject, balanced composition, correct exposure, no
+        artifacts or distortions, faithful to the requested style.
+    meta:
+      name: Quality Gate
+    control:
+      conditions:
+        - then_node: approved
+      else_node: refine
+
+  refine:
+    class_type: IterativeRefineNode
+    inputs:
+      max_iterations: 2
+      iteration_var: refine_iteration
+      feedback: >-
+        Improve composition and lighting, increase sharpness and detail, and
+        remove any artifacts while staying faithful to the requested style.
+    meta:
+      name: Iterative Refine
+    control:
+      retry_node: image
+      exhausted_node: approved
+
+  approved:
+    class_type: TransformNode
+    inputs:
+      transform: ["gate", 2]
+      output: approved_image
+    meta:
+      name: Approved Image
+    control:
+      next: upscale
+
+  upscale:
+    class_type: Art.Upscale
+    inputs:
+      image: ["approved", 0]
+      prompt: "${input.prompt}"
+      scale: 2
+      provider: offline
+      output: final_image
+    meta:
+      name: Super-Resolution Upscale
+    control:
+      next: preview
+
+  preview:
+    class_type: Art.Preview
+    inputs:
+      asset: ["upscale", 0]
+      title: "Final image"
+    meta:
+      name: Artifact Preview
+    control:
+      next: export
+
+  export:
+    class_type: AssetExportNode
+    inputs:
+      image: ["upscale", 0]
+      asset_name: generated-image
+      output: asset_manifest
+    meta:
+      name: Asset Export
+    control:
+      next: end
+
+  end:
+    class_type: EndNode
+    inputs: {}
+    meta:
+      name: End
+    control: {}
+control:
+  start: start
+  end: end
+  edges: []
+  timeout_sec: 1800
+  max_retries: 0
+  tags:
+    - art
+    - image

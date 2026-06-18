@@ -36,6 +36,10 @@ outputs:
     value: "${var.hero_clip}"
   - name: quality_score
     value: "${var.quality_score}"
+  - name: quality_passed
+    value: "${var.quality_passed}"
+  - name: quality_threshold
+    value: "0.7"
 metadata:
   category: game
   tags:
@@ -81,12 +85,32 @@ nodes:
     meta:
       name: Concept Image
     control:
+      next: critic
+
+  critic:
+    class_type: Art.QualityCritic
+    inputs:
+      # Perceptual scorer: uses a vision LLM when one is configured, else a
+      # deterministic offline heuristic (base + step * refine_iteration) so the
+      # self-correction loop is exercised credential-free. Its critique is fed
+      # back into the next regeneration pass via state['refine_feedback'].
+      asset: ["image", 0]
+      base_score: 0.4
+      score_step: 0.35
+      iteration_var: refine_iteration
+      criteria: >-
+        Clear single subject, correct silhouette, no artifacts, on-style,
+        engine-ready framing.
+    meta:
+      name: Quality Critic
+    control:
       next: gate
 
   gate:
     class_type: QualityGateNode
     inputs:
-      asset: ["image", 0]
+      asset: ["critic", 2]
+      score: ["critic", 0]
       threshold: 0.7
       base_score: 0.4
       score_step: 0.35

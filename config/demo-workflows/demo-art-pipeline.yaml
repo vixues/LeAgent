@@ -23,6 +23,10 @@ outputs:
     value: "${var.asset_manifest}"
   - name: quality_score
     value: "${var.quality_score}"
+  - name: quality_passed
+    value: "${var.quality_passed}"
+  - name: quality_threshold
+    value: "0.7"
 metadata:
   category: game
   tags:
