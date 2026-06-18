@@ -41,6 +41,7 @@ def get_all_sources() -> dict[str, type[ContextSource]]:
 def _lazy_load() -> None:
     from leagent.context.sources import (  # noqa: F401
         active_project,
+        art_playbook,
         capabilities,
         environment,
         identity,

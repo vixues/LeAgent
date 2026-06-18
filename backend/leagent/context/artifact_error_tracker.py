@@ -89,26 +89,29 @@ class ArtifactErrorTracker:
         error_type: str = "",
         quality_score: float | None = None,
         quality_threshold: float | None = None,
+        quality_passed: bool | None = None,
     ) -> None:
         """Convenience: derive an :class:`ArtifactError` from a tool result.
 
         For ``workflow_run`` results the run may report ``success=True`` yet
-        still miss the quality bar (``quality_score < quality_threshold``); such
-        runs are treated as dirty so the agent re-runs the closed loop
-        (regenerate -> save -> run -> evaluate).
+        still miss the quality bar (``quality_passed is False`` per the gate, or
+        ``quality_score < quality_threshold``); such runs are treated as dirty
+        so the agent re-runs the closed loop (regenerate -> save -> run ->
+        evaluate).
         """
         art_type = classify_artifact_tool(tool_name)
         if art_type is None:
             return
         aid = canvas_id or tool_call_id
 
-        # Workflow runs are scored, not just pass/fail.
-        below_bar = (
-            art_type == "workflow"
-            and quality_score is not None
-            and quality_threshold is not None
-            and quality_score < quality_threshold
-        )
+        # Workflow runs are scored, not just pass/fail. Prefer the gate's own
+        # pass decision (which used its configured threshold) when present.
+        below_bar = False
+        if art_type == "workflow":
+            if quality_passed is not None:
+                below_bar = not quality_passed
+            elif quality_score is not None and quality_threshold is not None:
+                below_bar = quality_score < quality_threshold
 
         if success and not below_bar:
             self._errors.pop(aid, None)
@@ -118,10 +121,15 @@ class ArtifactErrorTracker:
 
         message = error_text[:500]
         if below_bar:
-            message = (
-                f"workflow run scored {quality_score:.2f} (threshold "
-                f"{quality_threshold:.2f}) — below the quality bar"
-            )
+            if quality_score is not None and quality_threshold is not None:
+                message = (
+                    f"workflow run scored {quality_score:.2f} (threshold "
+                    f"{quality_threshold:.2f}) — below the quality bar"
+                )
+            elif quality_score is not None:
+                message = f"workflow run scored {quality_score:.2f} — below the quality bar"
+            else:
+                message = "workflow run did not pass the quality gate"
         self.record_error(ArtifactError(
             artifact_id=aid,
             artifact_type=art_type,

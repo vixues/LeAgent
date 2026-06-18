@@ -45,15 +45,16 @@ _TRUNCATION_RECOVERY_HINT = (
     "[System: your previous output was truncated because "
     "the tool call arguments exceeded the output token "
     "limit. Do NOT retry the same oversized inline call. "
-    "Instead: use `tool_argument_blob` with "
-    "`action=create_and_finalize` then pass `*_blob_id` "
-    "to the consumer tool — e.g. "
-    "`project_write(content_blob_id=…)`, "
-    "`project_edit(new_string_blob_id=…)`, "
-    "`code_execution(source_blob_id=…)`, or "
-    "`canvas_publish(html_blob_id=…)`. "
-    "For multi-step staging when content was cut "
-    "mid-stream: `create` → `append` → `finalize`.]"
+    "For HTML pages: retry `canvas_publish(mode=html, html=...)` with a "
+    "**compact** document — use short image URLs like "
+    "`/api/v1/files/{file_id}/preview` (no JWT tokens in src). "
+    "The runtime auto-recovers malformed inline HTML and auto-stages it "
+    "as `html_blob_id` when needed — you do **not** need `tool_argument_blob` "
+    "for normal webpages. Only use `tool_argument_blob` when a second direct "
+    "`canvas_publish` attempt also fails. Prefer plain `chunk` over "
+    "`chunk_base64` if blob staging is unavoidable. "
+    "For code/project edits: pass `*_blob_id` from `tool_argument_blob` "
+    "(`create_and_finalize` with `chunk`).]"
 )
 
 
@@ -85,7 +86,10 @@ def _build_length_recovery_state(
         auto_compact_tracking=state.auto_compact_tracking,
         max_output_tokens_recovery_count=recovery_attempt,
         has_attempted_reactive_compact=state.has_attempted_reactive_compact,
-        max_output_tokens_override=(params.max_output_tokens or 4096) * 2,
+        max_output_tokens_override=min(
+            65_536,
+            max(16_384, (params.max_output_tokens or 4096) * 4),
+        ),
         turn_count=state.turn_count,
         transition=Continue(reason=ContinueReason.MAX_OUTPUT_TOKENS_RECOVERY),
     )

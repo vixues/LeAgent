@@ -124,18 +124,72 @@ class WorkflowRunTool(SchemaWorkflowTool):
                 trigger_type="agent",
             )
 
-            return ToolResult(
-                success=result.status.value in ("completed",),
-                data={
-                    "execution_id": str(result.state_id),
-                    "status": result.status.value,
-                    "outputs": result.outputs,
-                    "errors": result.errors,
-                    "duration_ms": result.duration_ms,
-                },
-            )
+            outputs = result.outputs or {}
+            completed = result.status.value in ("completed",)
+            # A run can technically "complete" yet miss the quality bar. Use the
+            # QualityGateNode's own pass decision (quality_passed) when present,
+            # else compare quality_score against quality_threshold. Surface this
+            # as success=False so the agent closes the self-correction loop in
+            # the SAME turn instead of accepting a sub-par asset.
+            quality_passed = _coerce_bool(outputs.get("quality_passed"))
+            quality_score = _coerce_float(outputs.get("quality_score"))
+            quality_threshold = _coerce_float(outputs.get("quality_threshold"))
+            below_bar = False
+            if completed:
+                if quality_passed is not None:
+                    below_bar = not quality_passed
+                elif quality_score is not None and quality_threshold is not None:
+                    below_bar = quality_score < quality_threshold
+
+            data = {
+                "execution_id": str(result.state_id),
+                "status": result.status.value,
+                "outputs": outputs,
+                "errors": result.errors,
+                "duration_ms": result.duration_ms,
+            }
+            if below_bar:
+                bar = quality_threshold if quality_threshold is not None else 0.7
+                shown = quality_score if quality_score is not None else 0.0
+                return ToolResult(
+                    success=False,
+                    data=data,
+                    error=(
+                        f"Workflow completed but the asset scored {shown:.2f} "
+                        f"below the quality bar {bar:.2f}. Close the self-correction "
+                        "loop: inspect details with workflow_status, then strengthen "
+                        "the prompt / generation params (or add a QualityGateNode + "
+                        "IterativeRefineNode back-edge), re-save with workflow_save, "
+                        "and re-run with workflow_run until it passes."
+                    ),
+                )
+
+            return ToolResult(success=completed, data=data)
         except Exception as exc:
             return workflow_error_result("run", exc)
+
+
+def _coerce_bool(value: Any) -> bool | None:
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return bool(value)
+    if isinstance(value, str):
+        low = value.strip().lower()
+        if low in ("true", "1", "yes", "passed"):
+            return True
+        if low in ("false", "0", "no", "failed"):
+            return False
+    return None
+
+
+def _coerce_float(value: Any) -> float | None:
+    try:
+        return float(value) if value is not None else None
+    except (TypeError, ValueError):
+        return None
 
 
 class WorkflowStatusTool(SchemaWorkflowTool):

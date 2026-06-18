@@ -169,6 +169,14 @@ def _model_aware_compact_params(config: "QueryEngineConfig") -> dict[str, int]:
     return {}
 
 
+def _safe_float(value: Any) -> float | None:
+    """Coerce a value to ``float`` or return ``None`` when not numeric."""
+    try:
+        return float(value) if value is not None else None
+    except (TypeError, ValueError):
+        return None
+
+
 # ---------------------------------------------------------------------------
 # QueryEngine
 # ---------------------------------------------------------------------------
@@ -663,21 +671,26 @@ class QueryEngine:
         canvas_id = ""
         quality_score: float | None = None
         quality_threshold: float | None = None
+        quality_passed: bool | None = None
         env = item.envelope
         if isinstance(env, dict):
             data = env.get("data")
             if isinstance(data, dict):
                 canvas_id = str(data.get("canvas_id") or "")
-                # Workflow runs are scored: surface quality_score so a run that
-                # "succeeds" but misses the bar still triggers regeneration.
+                # Workflow runs are scored: surface quality_score / quality_passed
+                # so a run that "succeeds" but misses the bar still triggers
+                # regeneration. The threshold is read from the run outputs (the
+                # gate node's own bar) rather than hard-coded.
                 if item.name in ("workflow_run", "workflow_resume"):
                     outputs = data.get("outputs")
-                    if isinstance(outputs, dict) and outputs.get("quality_score") is not None:
-                        try:
-                            quality_score = float(outputs["quality_score"])
-                            quality_threshold = 0.7
-                        except (TypeError, ValueError):
-                            quality_score = None
+                    if isinstance(outputs, dict):
+                        quality_score = _safe_float(outputs.get("quality_score"))
+                        quality_threshold = _safe_float(outputs.get("quality_threshold"))
+                        if quality_threshold is None and quality_score is not None:
+                            quality_threshold = 0.7  # sensible default bar
+                        passed = outputs.get("quality_passed")
+                        if isinstance(passed, bool):
+                            quality_passed = passed
         tracker.record_from_tool_result(
             tool_name=item.name,
             tool_call_id=item.tool_call_id,
@@ -687,6 +700,7 @@ class QueryEngine:
             error_type=error_type,
             quality_score=quality_score,
             quality_threshold=quality_threshold,
+            quality_passed=quality_passed,
         )
 
     async def _register_workspace_attachments(
