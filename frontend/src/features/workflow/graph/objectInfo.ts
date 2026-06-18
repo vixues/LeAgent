@@ -57,6 +57,8 @@ export interface NodeDefinition {
   category: string;
   description: string;
   isOutputNode: boolean;
+  /** Participates in control-flow sequencing (Start/End/Gate…). */
+  controlFlow: boolean;
   deprecated: boolean;
   experimental: boolean;
   inputs: InputSlot[];
@@ -91,6 +93,7 @@ interface RawNode {
   output_is_list?: boolean[];
   output_colors?: string[];
   output_tooltips?: string[];
+  control_flow?: boolean;
   metadata?: Record<string, unknown>;
 }
 
@@ -193,6 +196,7 @@ function parseNode(
     category: raw.category || 'workflow',
     description: raw.description || '',
     isOutputNode: Boolean(raw.output_node),
+    controlFlow: Boolean(raw.control_flow),
     deprecated: Boolean(raw.deprecated),
     experimental: Boolean(raw.experimental),
     inputs,

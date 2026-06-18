@@ -2,10 +2,12 @@ import { describe, expect, it } from 'vitest';
 
 import {
   parseObjectInfo,
+  type NodeDefinition,
   type ObjectInfoResponse,
 } from '../objectInfo';
 import {
   fromStoredDocument,
+  finalizeExecutableGraph,
   toCanonicalDocument,
   type EditorEdge,
   type EditorNode,
@@ -67,6 +69,39 @@ describe('socketColor', () => {
 const RAW: ObjectInfoResponse = {
   socket_colors: { STRING: '#7BD88F', INT: '#6E9BF5' },
   nodes: {
+    StartNode: {
+      name: 'StartNode',
+      display_name: 'Start',
+      category: 'workflow/control',
+      control_flow: true,
+      input: { required: {}, optional: {} },
+      output: ['OBJECT'],
+      output_name: ['inputs'],
+    },
+    EndNode: {
+      name: 'EndNode',
+      display_name: 'End',
+      category: 'workflow/control',
+      output_node: true,
+      control_flow: true,
+      input: { required: {}, optional: {} },
+      output: ['OBJECT'],
+      output_name: ['outputs'],
+    },
+    'Art.ImageGen': {
+      name: 'Art.ImageGen',
+      display_name: 'Image Generation',
+      category: 'art/generate',
+      control_flow: false,
+      input: {
+        required: {
+          prompt: ['STRING', { multiline: true, widget: 'string' }],
+        },
+        optional: {},
+      },
+      output: ['IMAGE'],
+      output_name: ['image'],
+    },
     'Tool.echo': {
       name: 'Tool.echo',
       display_name: 'Echo',
@@ -91,6 +126,13 @@ const RAW: ObjectInfoResponse = {
 };
 
 describe('parseObjectInfo', () => {
+  it('parses control_flow on boundary nodes', () => {
+    const info = parseObjectInfo(RAW);
+    expect(info.definitions.StartNode?.controlFlow).toBe(true);
+    expect(info.definitions.EndNode?.controlFlow).toBe(true);
+    expect(info.definitions['Art.ImageGen']?.controlFlow).toBe(false);
+  });
+
   it('parses definitions with ordered inputs and widget hints', () => {
     const info = parseObjectInfo(RAW);
     const def = info.definitions['Tool.echo']!;
@@ -267,7 +309,7 @@ describe('toCanonicalDocument', () => {
       definitions: info.definitions,
     });
 
-    expect(Object.keys(doc.nodes)).toEqual(['a', 'b']);
+    expect(new Set(Object.keys(doc.nodes))).toEqual(new Set(['a', 'b', 'end']));
     expect(doc.nodes.a!.class_type).toBe('Tool.echo');
     expect(doc.nodes.a!.inputs).toEqual({ text: 'hello', count: 2 });
     // b.text is link-driven: [upstream_node_id, output_slot_index]
@@ -286,6 +328,7 @@ describe('toCanonicalDocument', () => {
       definitions: info.definitions,
     });
     expect(doc.control.start).toBe('a');
+    expect(doc.nodes.b?.control?.next).toBe('end');
   });
 
   it('stores the editor layout in the ui block', () => {
@@ -301,6 +344,178 @@ describe('toCanonicalDocument', () => {
     });
     expect(doc.ui.nodes).toHaveLength(2);
     expect(doc.ui.viewport).toEqual({ x: 1, y: 2, zoom: 1.5 });
+  });
+
+  it('preserves per-node control blocks from control-flow edges on save', () => {
+    const info = parseObjectInfo(RAW);
+    const stored = {
+      nodes: {
+        start: {
+          class_type: 'StartNode',
+          inputs: {},
+          control: { next: 'work' },
+        },
+        work: {
+          class_type: 'Tool.echo',
+          inputs: { text: 'hello' },
+          control: { next: 'end' },
+        },
+        end: { class_type: 'EndNode', inputs: {} },
+      },
+      control: { start: 'start', edges: [] },
+    };
+    const restored = fromStoredDocument(stored, info.definitions);
+    const doc = toCanonicalDocument({
+      id: 'flow-ctl',
+      name: 'Control round-trip',
+      nodes: restored.nodes,
+      edges: restored.edges,
+      definitions: info.definitions,
+    });
+    expect(doc.nodes.start?.control).toEqual({ next: 'work' });
+    expect(doc.nodes.work?.control).toEqual({ next: 'end' });
+  });
+
+  it('does not serialise control-flow edges as data input links (CHAR-2D self-correction)', () => {
+    const definitions: Record<string, NodeDefinition> = {
+      'Art.ImageGen': {
+        type: 'Art.ImageGen',
+        displayName: 'Image Generation',
+        category: 'art',
+        description: '',
+        isOutputNode: false,
+        deprecated: false,
+        experimental: false,
+        inputs: [
+          { id: 'prompt', type: 'STRING', optional: false, color: '#7BD88F', widget: 'string', forceInput: false },
+          { id: 'width', type: 'INT', optional: true, color: '#6E9BF5', widget: 'int', forceInput: false },
+        ],
+        outputs: [{ id: 'image', type: 'IMAGE', color: '#F5A623', isList: false }],
+        metadata: {},
+      },
+      'Art.QualityCritic': {
+        type: 'Art.QualityCritic',
+        displayName: 'Quality Critic',
+        category: 'art',
+        description: '',
+        isOutputNode: false,
+        deprecated: false,
+        experimental: false,
+        inputs: [
+          { id: 'asset', type: 'IMAGE', optional: true, color: '#F5A623', widget: 'string', forceInput: false },
+        ],
+        outputs: [
+          { id: 'score', type: 'FLOAT', color: '#6E9BF5', isList: false },
+          { id: 'passed', type: 'BOOLEAN', color: '#6E9BF5', isList: false },
+          { id: 'asset', type: 'IMAGE', color: '#F5A623', isList: false },
+        ],
+        metadata: {},
+      },
+      QualityGateNode: {
+        type: 'QualityGateNode',
+        displayName: 'Quality Gate',
+        category: 'art',
+        description: '',
+        isOutputNode: false,
+        deprecated: false,
+        experimental: false,
+        inputs: [
+          { id: 'asset', type: 'IMAGE', optional: true, color: '#F5A623', widget: 'string', forceInput: false },
+          { id: 'score', type: 'FLOAT', optional: true, color: '#6E9BF5', widget: 'float', forceInput: false },
+        ],
+        outputs: [
+          { id: 'score', type: 'FLOAT', color: '#6E9BF5', isList: false },
+          { id: 'passed', type: 'BOOLEAN', color: '#6E9BF5', isList: false },
+          { id: 'asset', type: 'IMAGE', color: '#F5A623', isList: false },
+        ],
+        metadata: {},
+      },
+      IterativeRefineNode: {
+        type: 'IterativeRefineNode',
+        displayName: 'Iterative Refine',
+        category: 'art',
+        description: '',
+        isOutputNode: false,
+        deprecated: false,
+        experimental: false,
+        inputs: [
+          { id: 'max_iterations', type: 'INT', optional: true, color: '#6E9BF5', widget: 'int', forceInput: false },
+          { id: 'feedback', type: 'STRING', optional: true, color: '#7BD88F', widget: 'string', forceInput: false },
+        ],
+        outputs: [{ id: 'feedback', type: 'STRING', color: '#7BD88F', isList: false }],
+        metadata: {},
+      },
+      'Art.Upscale': {
+        type: 'Art.Upscale',
+        displayName: 'Upscale',
+        category: 'art',
+        description: '',
+        isOutputNode: false,
+        deprecated: false,
+        experimental: false,
+        inputs: [
+          { id: 'image', type: 'IMAGE', optional: false, color: '#F5A623', widget: 'string', forceInput: false },
+          { id: 'prompt', type: 'STRING', optional: true, color: '#7BD88F', widget: 'string', forceInput: false },
+        ],
+        outputs: [{ id: 'image', type: 'IMAGE', color: '#F5A623', isList: false }],
+        metadata: {},
+      },
+    };
+
+    const stored = {
+      nodes: {
+        concept: {
+          class_type: 'Art.ImageGen',
+          inputs: {
+            prompt: '${input.prompt}',
+            width: 1024,
+            provider: 'offline',
+          },
+          control: { next: 'critic' },
+        },
+        critic: {
+          class_type: 'Art.QualityCritic',
+          inputs: { asset: ['concept', 0] },
+          control: { next: 'gate' },
+        },
+        gate: {
+          class_type: 'QualityGateNode',
+          inputs: { asset: ['critic', 2], score: ['critic', 0], threshold: 0.7 },
+          control: { conditions: [{ then_node: 'upscale' }], else_node: 'refine' },
+        },
+        refine: {
+          class_type: 'IterativeRefineNode',
+          inputs: { max_iterations: 2, feedback: 'improve silhouette' },
+          control: { retry_node: 'concept', exhausted_node: 'upscale' },
+        },
+        upscale: {
+          class_type: 'Art.Upscale',
+          inputs: { image: ['gate', 2], prompt: 'sharp detail', provider: 'offline' },
+        },
+      },
+      control: { start: 'concept', edges: [] },
+    };
+
+    const restored = fromStoredDocument(stored, definitions);
+    const doc = toCanonicalDocument({
+      id: 'char-2d',
+      name: 'CHAR 2D',
+      nodes: restored.nodes,
+      edges: restored.edges,
+      definitions,
+    });
+
+    expect(doc.nodes.concept?.inputs.prompt).toBe('${input.prompt}');
+    expect(doc.nodes.refine?.inputs.max_iterations).toBe(2);
+    expect(doc.nodes.upscale?.inputs.image).toEqual(['gate', 2]);
+    expect(doc.nodes.gate?.control).toEqual({
+      conditions: [{ then_node: 'upscale' }],
+      else_node: 'refine',
+    });
+    expect(doc.nodes.refine?.control).toEqual({
+      retry_node: 'concept',
+      exhausted_node: 'upscale',
+    });
   });
 });
 
@@ -346,7 +561,7 @@ describe('toCanonicalDocument: UI-layer reroutes and groups', () => {
       definitions: info.definitions,
     });
     // The reroute never reaches the executable graph...
-    expect(Object.keys(doc.nodes)).toEqual(['a', 'b']);
+    expect(new Set(Object.keys(doc.nodes))).toEqual(new Set(['a', 'b', 'end']));
     // ...but the link it carried is preserved end-to-end.
     expect(doc.nodes.b!.inputs.text).toEqual(['a', 0]);
     expect(doc.control.edges).toEqual([
@@ -431,7 +646,7 @@ describe('toCanonicalDocument: UI-layer reroutes and groups', () => {
       edges,
       definitions: info.definitions,
     });
-    expect(Object.keys(doc.nodes)).toEqual(['a', 'b']);
+    expect(new Set(Object.keys(doc.nodes))).toEqual(new Set(['a', 'b', 'end']));
     expect(doc.ui.nodes.map((n) => n.id)).toContain('g1');
   });
 
@@ -494,7 +709,7 @@ describe('fromStoredDocument', () => {
     });
     const restored = fromStoredDocument(JSON.parse(JSON.stringify(doc)), info.definitions);
     expect(restored.nodes.map((n) => n.id)).toEqual(['a', 'b']);
-    expect(restored.edges).toHaveLength(1);
+    expect(restored.edges.some((e) => e.source === 'a' && e.target === 'b')).toBe(true);
     expect(restored.nodes[0]!.data.values).toEqual({ text: 'hello', count: 2 });
   });
 
@@ -685,5 +900,82 @@ describe('fromStoredDocument', () => {
     const empty = { nodes: [], edges: [], inputs: [], outputs: [] };
     expect(fromStoredDocument('not json', {})).toEqual(empty);
     expect(fromStoredDocument(null, {})).toEqual(empty);
+  });
+});
+
+describe('finalizeExecutableGraph', () => {
+  it('injects start/end and chains a lone ImageGen node', () => {
+    const finalized = finalizeExecutableGraph(
+      {
+        image_1: {
+          class_type: 'Art.ImageGen',
+          inputs: { prompt: 'a cat', provider: 'offline' },
+          meta: { title: 'Gen' },
+        },
+      },
+      { edges: [] },
+      ['image_1'],
+    );
+    expect(finalized.nodes.start?.class_type).toBe('StartNode');
+    expect(finalized.nodes.end?.class_type).toBe('EndNode');
+    expect(finalized.nodes.start?.control?.next).toBe('image_1');
+    expect(finalized.nodes.image_1?.control?.next).toBe('end');
+    expect(finalized.control.start).toBe('start');
+    expect(finalized.control.end).toBe('end');
+  });
+
+  it('preserves explicit control.next from editor edges on save', () => {
+    const info = parseObjectInfo(RAW);
+    const nodes: EditorNode[] = [
+      {
+        id: 'start',
+        type: 'workflow',
+        position: { x: 0, y: 0 },
+        data: { nodeType: 'StartNode', label: 'Start', category: 'workflow' },
+      },
+      {
+        id: 'img',
+        type: 'workflow',
+        position: { x: 200, y: 0 },
+        data: {
+          nodeType: 'Art.ImageGen',
+          label: 'Gen',
+          category: 'art',
+          values: { prompt: 'hello' },
+        },
+      },
+      {
+        id: 'end',
+        type: 'workflow',
+        position: { x: 400, y: 0 },
+        data: { nodeType: 'EndNode', label: 'End', category: 'workflow' },
+      },
+    ];
+    const edges: EditorEdge[] = [
+      {
+        id: 'e-start-img-next',
+        source: 'start',
+        target: 'img',
+        type: 'workflow',
+        data: { kind: 'control', controlKind: 'next', color: '#94a3b8' },
+      },
+      {
+        id: 'e-img-end-next',
+        source: 'img',
+        target: 'end',
+        type: 'workflow',
+        data: { kind: 'control', controlKind: 'next', color: '#94a3b8' },
+      },
+    ];
+    const doc = toCanonicalDocument({
+      id: 'wf',
+      name: 'chain',
+      nodes,
+      edges,
+      definitions: info.definitions,
+    });
+    expect(doc.nodes.start?.control?.next).toBe('img');
+    expect(doc.nodes.img?.control?.next).toBe('end');
+    expect(doc.control.end).toBe('end');
   });
 });

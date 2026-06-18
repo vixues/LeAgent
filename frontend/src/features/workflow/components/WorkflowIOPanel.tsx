@@ -2,6 +2,7 @@ import { useTranslation } from 'react-i18next';
 import { Plus, Trash2 } from 'lucide-react';
 
 import { Button } from '@/components/ui';
+import { cn } from '@/lib/utils';
 
 import type { WorkflowInputSpec } from '../genui/inputsToGenUiTree';
 import type { WorkflowOutputSpec } from '../genui/outputsToGenUiTree';
@@ -96,6 +97,14 @@ export function WorkflowIOPanel({
             </div>
             <input
               className={FIELD_CLASS}
+              value={spec.label ?? ''}
+              placeholder={t('ioPanel.label', 'Label (shown on run form)')}
+              onChange={(e) =>
+                patchInput(i, { label: e.target.value === '' ? undefined : e.target.value })
+              }
+            />
+            <input
+              className={FIELD_CLASS}
               value={spec.description ?? ''}
               placeholder={t('ioPanel.description', 'Description')}
               onChange={(e) => patchInput(i, { description: e.target.value })}
@@ -119,18 +128,43 @@ export function WorkflowIOPanel({
               </label>
             </div>
             {String(spec.type) === 'string' && (
-              <input
-                className={FIELD_CLASS}
-                value={Array.isArray(spec.choices) ? spec.choices.join(', ') : ''}
-                placeholder={t('ioPanel.choices', 'Choices (comma-separated, optional)')}
-                onChange={(e) => {
-                  const parts = e.target.value
-                    .split(',')
-                    .map((s) => s.trim())
-                    .filter(Boolean);
-                  patchInput(i, { choices: parts.length > 0 ? parts : undefined });
-                }}
-              />
+              <div className="flex flex-wrap items-center gap-3">
+                <label className="flex items-center gap-1 text-xs text-muted-foreground">
+                  <input
+                    type="checkbox"
+                    checked={Boolean(spec.multiline)}
+                    onChange={(e) => patchInput(i, { multiline: e.target.checked || undefined })}
+                  />
+                  {t('ioPanel.multiline', 'Multiline (prompt)')}
+                </label>
+                <input
+                  className={cn(FIELD_CLASS, 'max-w-[5rem]')}
+                  type="number"
+                  min={2}
+                  max={20}
+                  value={typeof spec.rows === 'number' ? spec.rows : ''}
+                  placeholder={t('ioPanel.rows', 'rows')}
+                  disabled={!spec.multiline}
+                  onChange={(e) => {
+                    const n = parseInt(e.target.value, 10);
+                    patchInput(i, {
+                      rows: Number.isFinite(n) && n > 0 ? n : undefined,
+                    });
+                  }}
+                />
+                <input
+                  className={cn(FIELD_CLASS, 'min-w-0 flex-1')}
+                  value={Array.isArray(spec.choices) ? spec.choices.join(', ') : ''}
+                  placeholder={t('ioPanel.choices', 'Choices (comma-separated, optional)')}
+                  onChange={(e) => {
+                    const parts = e.target.value
+                      .split(',')
+                      .map((s) => s.trim())
+                      .filter(Boolean);
+                    patchInput(i, { choices: parts.length > 0 ? parts : undefined });
+                  }}
+                />
+              </div>
             )}
           </div>
         ))}

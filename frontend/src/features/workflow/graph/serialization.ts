@@ -15,6 +15,7 @@
 import type { Edge, Node, Viewport } from '@xyflow/react';
 
 import type { NodeDefinition } from './objectInfo';
+import { CONTROL_EDGE_COLOR } from './connectionUtils';
 import { CANVAS_ASSET_NODE_TYPE, canvasAssetSourceHandle } from '../components/canvasAsset';
 import {
   canvasAssetToCanonical,
@@ -60,6 +61,8 @@ interface CanonicalNodeControl {
   else_node?: string;
   else?: string;
   on_reject?: string;
+  retry_node?: string;
+  exhausted_node?: string;
   branches?: Array<{ id?: string; nodes?: string[] }>;
 }
 
@@ -70,7 +73,111 @@ interface CanonicalNode {
   control?: CanonicalNodeControl;
 }
 
-const CONTROL_EDGE_COLOR = '#94a3b8';
+const BOUNDARY_START_ID = 'start';
+const BOUNDARY_END_ID = 'end';
+
+function findNodeIdByClass(
+  specs: Record<string, CanonicalNode>,
+  classType: string,
+): string | undefined {
+  for (const [id, spec] of Object.entries(specs)) {
+    if (spec.class_type === classType) return id;
+  }
+  return undefined;
+}
+
+/**
+ * Inject Start/End boundary nodes and auto-chain ``control.next`` so hand-drawn
+ * graphs validate and execute without manual control wiring.
+ */
+export function finalizeExecutableGraph(
+  nodeSpecs: Record<string, CanonicalNode>,
+  control: { start?: string; end?: string; edges: CanonicalEdge[] },
+  workOrder: string[],
+): { nodes: Record<string, CanonicalNode>; control: { start: string; end: string; edges: CanonicalEdge[] } } {
+  const nodes: Record<string, CanonicalNode> = {};
+  for (const [id, spec] of Object.entries(nodeSpecs)) {
+    nodes[id] = {
+      ...spec,
+      inputs: { ...spec.inputs },
+      meta: { ...spec.meta },
+      ...(spec.control ? { control: { ...spec.control } } : {}),
+    };
+  }
+
+  const hasControlRouting = (control: CanonicalNodeControl | undefined): boolean => {
+    if (!control) return false;
+    return Boolean(
+      control.next ||
+        control.error_handler ||
+        control.else_node ||
+        control.on_reject ||
+        control.retry_node ||
+        control.exhausted_node ||
+        (control.conditions && control.conditions.length > 0) ||
+        (control.branches && control.branches.length > 0),
+    );
+  };
+
+  let startId = findNodeIdByClass(nodes, 'StartNode') ?? control.start;
+  if (!startId || !nodes[startId]) {
+    startId = BOUNDARY_START_ID;
+    if (!nodes[startId]) {
+      nodes[startId] = {
+        class_type: 'StartNode',
+        inputs: {},
+        meta: { name: 'Start' },
+      };
+    }
+  }
+
+  let endId = findNodeIdByClass(nodes, 'EndNode') ?? control.end;
+  if (!endId || !nodes[endId]) {
+    endId = BOUNDARY_END_ID;
+    if (!nodes[endId]) {
+      nodes[endId] = {
+        class_type: 'EndNode',
+        inputs: {},
+        meta: { name: 'End' },
+      };
+    }
+  }
+
+  const boundaryIds = new Set([startId, endId]);
+  const workIds = workOrder.filter((id) => nodes[id] && !boundaryIds.has(id));
+  if (workIds.length === 0) {
+    for (const id of Object.keys(nodes)) {
+      if (!boundaryIds.has(id)) workIds.push(id);
+    }
+  }
+
+  const startSpec = nodes[startId]!;
+  if (!startSpec.control) startSpec.control = {};
+  if (!startSpec.control.next && workIds.length > 0) {
+    startSpec.control.next = workIds[0];
+  } else if (!startSpec.control.next && workIds.length === 0) {
+    startSpec.control.next = endId;
+  }
+
+  for (let i = 0; i < workIds.length; i++) {
+    const id = workIds[i]!;
+    const spec = nodes[id]!;
+    if (hasControlRouting(spec.control)) continue;
+    if (!spec.control) spec.control = {};
+    if (!spec.control.next) {
+      spec.control.next = i < workIds.length - 1 ? workIds[i + 1]! : endId;
+    }
+  }
+
+  return {
+    nodes,
+    control: {
+      start: startId,
+      end: endId,
+      edges: control.edges,
+    },
+  };
+}
 
 function edgePairKey(source: string, target: string): string {
   return `${source}|${target}`;
@@ -99,7 +206,7 @@ function extractControlFlowEdges(
       sourceHandle: sourceDef?.outputs[0]?.id,
       targetHandle: targetDef?.inputs[0]?.id,
       type: 'workflow',
-      data: { kind: 'control', color: CONTROL_EDGE_COLOR },
+      data: { kind: 'control', controlKind: kind, color: CONTROL_EDGE_COLOR },
     });
   };
 
@@ -116,6 +223,8 @@ function extractControlFlowEdges(
     const elseTarget = control.else_node ?? control.else;
     if (typeof elseTarget === 'string') add(nodeId, elseTarget, 'else');
     if (typeof control.on_reject === 'string') add(nodeId, control.on_reject, 'reject');
+    if (typeof control.retry_node === 'string') add(nodeId, control.retry_node, 'retry');
+    if (typeof control.exhausted_node === 'string') add(nodeId, control.exhausted_node, 'exhausted');
 
     for (const branch of control.branches ?? []) {
       const branchNodes = branch.nodes ?? [];
@@ -131,6 +240,96 @@ function extractControlFlowEdges(
   }
 
   return edges;
+}
+
+const CONTROL_EDGE_SUFFIXES = new Set([
+  'next',
+  'error',
+  'condition',
+  'else',
+  'reject',
+  'branch',
+  'sequence',
+  'retry',
+  'exhausted',
+]);
+
+function controlKindFromEdge(edge: EditorEdge): string | null {
+  const data = edge.data;
+  if (data && typeof data === 'object' && 'controlKind' in data) {
+    const ck = (data as { controlKind?: unknown }).controlKind;
+    if (typeof ck === 'string' && CONTROL_EDGE_SUFFIXES.has(ck)) return ck;
+  }
+  const id = edge.id ?? '';
+  const suffix = id.includes('-') ? id.slice(id.lastIndexOf('-') + 1) : '';
+  return CONTROL_EDGE_SUFFIXES.has(suffix) ? suffix : null;
+}
+
+/** Control-flow edges (pass/fail/retry) must not become ``[upstream, slot]`` input links. */
+function isControlFlowEdge(edge: EditorEdge): boolean {
+  const data = edge.data;
+  if (data && typeof data === 'object' && (data as { kind?: string }).kind === 'control') {
+    return true;
+  }
+  return controlKindFromEdge(edge) !== null;
+}
+
+/** Dedupe key — control + data edges may share the same node pair (e.g. gate asset → upscale). */
+function edgeDedupeKey(edge: EditorEdge): string {
+  if (isControlFlowEdge(edge)) {
+    return `${edge.source}|${edge.target}|ctl:${controlKindFromEdge(edge) ?? 'control'}`;
+  }
+  return `${edge.source}|${edge.target}|data:${edge.sourceHandle ?? ''}:${edge.targetHandle ?? ''}`;
+}
+
+/** Reconstruct per-node ``control`` from editor control-flow edges on save. */
+function buildNodeControlFromEditorEdges(
+  nodeId: string,
+  edges: EditorEdge[],
+): CanonicalNodeControl | undefined {
+  const control: CanonicalNodeControl = {};
+  let has = false;
+
+  for (const edge of edges) {
+    if (edge.source !== nodeId || !edge.target) continue;
+    const kind = controlKindFromEdge(edge);
+    if (!kind) continue;
+    switch (kind) {
+      case 'next':
+      case 'sequence':
+        control.next = edge.target;
+        has = true;
+        break;
+      case 'error':
+        control.error_handler = edge.target;
+        has = true;
+        break;
+      case 'condition':
+        control.conditions = [...(control.conditions ?? []), { then_node: edge.target }];
+        has = true;
+        break;
+      case 'else':
+        control.else_node = edge.target;
+        has = true;
+        break;
+      case 'reject':
+        control.on_reject = edge.target;
+        has = true;
+        break;
+      case 'retry':
+        control.retry_node = edge.target;
+        has = true;
+        break;
+      case 'exhausted':
+        control.exhausted_node = edge.target;
+        has = true;
+        break;
+      default:
+        break;
+    }
+  }
+
+  return has ? control : undefined;
 }
 
 /** Convert backend layout ``ui.edges`` (preview-shaped) into typed editor edges. */
@@ -171,12 +370,12 @@ function layoutUiEdgesToEditorEdges(
 
 /** Prefer explicit data-link edges; fill gaps with control/layout edges. */
 function mergeEditorEdges(primary: EditorEdge[], secondary: EditorEdge[]): EditorEdge[] {
-  const pairs = new Set(primary.map((e) => edgePairKey(e.source, e.target)));
+  const keys = new Set(primary.map((e) => edgeDedupeKey(e)));
   const merged = [...primary];
   for (const edge of secondary) {
-    const key = edgePairKey(edge.source, edge.target);
-    if (!pairs.has(key)) {
-      pairs.add(key);
+    const key = edgeDedupeKey(edge);
+    if (!keys.has(key)) {
+      keys.add(key);
       merged.push(edge);
     }
   }
@@ -313,9 +512,11 @@ export function toCanonicalDocument(params: ToCanonicalParams): CanonicalDocumen
       }
     }
 
-    // 2. Link refs from incoming (flattened) edges override literal widget values.
+    // 2. Link refs from incoming data edges override literal widget values.
+    // Control-flow edges (pass/fail/retry) share node pairs with data links and
+    // must not be serialised as input refs — that creates dependency cycles.
     for (const edge of flatEdges) {
-      if (edge.target !== node.id) continue;
+      if (edge.target !== node.id || isControlFlowEdge(edge)) continue;
       const targetHandle = edge.targetHandle ?? def?.inputs[0]?.id ?? 'input';
       const sourceNode = nodeFor(nodes, edge.source);
       const slot =
@@ -357,6 +558,10 @@ export function toCanonicalDocument(params: ToCanonicalParams): CanonicalDocumen
         ...(data.mode ? { mode: data.mode } : {}),
       },
     };
+    const control = buildNodeControlFromEditorEdges(node.id, edges);
+    if (control) {
+      nodeSpecs[node.id]!.control = control;
+    }
   }
 
   // Storyboard: honour explicit shot ordering from editor UI.
@@ -381,7 +586,8 @@ export function toCanonicalDocument(params: ToCanonicalParams): CanonicalDocumen
     spec.inputs.shots = sorted;
   }
 
-  const canonicalEdges: CanonicalEdge[] = flatEdges.map((edge) => {
+  const dataEdges = flatEdges.filter((edge) => !isControlFlowEdge(edge));
+  const canonicalEdges: CanonicalEdge[] = dataEdges.map((edge) => {
     const sourceNode = nodeFor(nodes, edge.source);
     const targetNode = nodeFor(nodes, edge.target);
     const sourceDef = definitions[sourceNode?.data.nodeType ?? ''];
@@ -405,6 +611,17 @@ export function toCanonicalDocument(params: ToCanonicalParams): CanonicalDocumen
     nodes.find((n) => n.type === CANVAS_ASSET_NODE_TYPE) ??
     workflowNodes.find((n) => !targets.has(n.id));
 
+  const workOrder = workflowNodes
+    .filter((n) => n.type === 'workflow' && n.data.nodeType !== 'StartNode' && n.data.nodeType !== 'EndNode')
+    .sort((a, b) => a.position.x - b.position.x || a.position.y - b.position.y)
+    .map((n) => n.id);
+
+  const finalized = finalizeExecutableGraph(
+    nodeSpecs,
+    { start: startNode?.id, edges: canonicalEdges },
+    workOrder,
+  );
+
   return {
     id: params.id,
     name: params.name,
@@ -412,8 +629,8 @@ export function toCanonicalDocument(params: ToCanonicalParams): CanonicalDocumen
     inputs: params.inputs ?? [],
     outputs: params.outputs ?? [],
     metadata: { ...(params.metadata ?? {}), editor: 'react-flow-graph' },
-    nodes: nodeSpecs,
-    control: { start: startNode?.id, edges: canonicalEdges },
+    nodes: finalized.nodes,
+    control: finalized.control,
     ui: { nodes, edges, viewport: params.viewport },
   };
 }

@@ -134,6 +134,7 @@ export function MultiAngleCameraViewport({
   horizontalAngle,
   verticalAngle,
   zoom,
+  cameraView = false,
   className,
   height = 200,
   subjectScale = 1,
@@ -150,8 +151,18 @@ export function MultiAngleCameraViewport({
     meshUrl,
     subjectScale,
     height,
+    cameraView,
   });
-  propsRef.current = { horizontalAngle, verticalAngle, zoom, imageUrl, meshUrl, subjectScale, height };
+  propsRef.current = {
+    horizontalAngle,
+    verticalAngle,
+    zoom,
+    imageUrl,
+    meshUrl,
+    subjectScale,
+    height,
+    cameraView,
+  };
 
   useEffect(() => {
     const host = hostRef.current;
@@ -436,6 +447,15 @@ export function MultiAngleCameraViewport({
         }
       }
 
+      // ``cameraView`` toggles between the rig/debug view (grid + ring +
+      // camera marker visible) and the clean framed "shot" the configured
+      // camera sees (rig helpers hidden so only the subject is composed).
+      const rigVisible = !p.cameraView;
+      grid.visible = rigVisible;
+      ring.visible = rigVisible;
+      camMarker.visible = rigVisible;
+      scene.fog = rigVisible ? new THREE.Fog('#000000', 8, 28) : null;
+
       camMarker.position.copy(camera.position);
       camMarker.lookAt(controls.target);
       controls.update();
@@ -457,7 +477,7 @@ export function MultiAngleCameraViewport({
       texture?.dispose();
       if (renderer.domElement.parentNode === host) host.removeChild(renderer.domElement);
     };
-  }, [height, imageUrl, meshUrl, subjectScale]);
+  }, [height, imageUrl, meshUrl, subjectScale, cameraView]);
 
   return (
     <div

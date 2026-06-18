@@ -15,10 +15,13 @@ export interface WorkflowInputSpec {
   type?: string;
   required?: boolean;
   default?: unknown;
+  /** Human-readable label shown on the run form (defaults to ``name``). */
+  label?: string;
   description?: string;
   /** Enum-like restriction (editor-authored). */
   choices?: unknown[];
   multiline?: boolean;
+  rows?: number;
   min?: number;
   max?: number;
   step?: number;
@@ -32,8 +35,9 @@ function nid(prefix: string): string {
 }
 
 function fieldFor(spec: WorkflowInputSpec): GenUiNode {
+  const displayLabel = spec.label?.trim() || spec.name;
   const base = {
-    label: spec.name,
+    label: displayLabel,
     name: spec.name,
     required: Boolean(spec.required),
     description: spec.description,
@@ -108,7 +112,11 @@ function fieldFor(spec: WorkflowInputSpec): GenUiNode {
         return {
           nodeId: nid('field'),
           kind: 'Textarea',
-          props: { ...base, value: spec.default, rows: 3 },
+          props: {
+            ...base,
+            value: spec.default,
+            rows: typeof spec.rows === 'number' ? spec.rows : 5,
+          },
         };
       }
       return {
@@ -131,11 +139,12 @@ export interface InputsFormOptions {
 export function inputsToGenUiTree(
   inputs: WorkflowInputSpec[] | undefined | null,
   opts: InputsFormOptions,
-): GenUiTreeV1 {
+): GenUiTreeV1 | null {
   counter = 0;
   const specs = (inputs ?? []).filter(
     (s): s is WorkflowInputSpec => Boolean(s) && typeof s === 'object' && Boolean(s.name),
   );
+  if (specs.length === 0) return null;
 
   const children: GenUiNode[] = specs.map(fieldFor);
   children.push({

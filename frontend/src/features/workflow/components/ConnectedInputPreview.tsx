@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import { useStore } from '@xyflow/react';
 
-import { firstMediaItem } from '@/components/canvas/genUi/genUiMedia';
+import { mediaFromNodeRunState } from '@/components/canvas/genUi/genUiMedia';
 import type { GenUiMediaItem } from '@/components/canvas/genUi/genUiMedia';
 
 import {
@@ -57,8 +57,8 @@ export function useUpstreamInputPreview(
     if (fromLookup) return fromLookup as typeof s.nodes[number];
     return s.nodes.find((n) => n.id === edge.source);
   });
-  const runUi = useExecutionOverlay((s) =>
-    edge?.source ? s.nodes[edge.source]?.ui ?? null : null,
+  const runState = useExecutionOverlay((s) =>
+    edge?.source ? s.nodes[edge.source] : undefined,
   );
 
   return useMemo(() => {
@@ -78,7 +78,7 @@ export function useUpstreamInputPreview(
       };
     }
 
-    const processed = firstMediaItem(runUi);
+    const processed = mediaFromNodeRunState(runState);
     if (processed) return { kind: 'media', media: processed };
 
     if (sourceNode.type === 'workflow') {
@@ -92,7 +92,7 @@ export function useUpstreamInputPreview(
     }
 
     return null;
-  }, [sourceNode, edge, runUi]);
+  }, [sourceNode, edge, runState]);
 }
 
 export function ConnectedInputPreview({ descriptor }: { descriptor: InputPreviewDescriptor }) {

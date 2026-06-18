@@ -56,6 +56,11 @@ import {
   type EditorNode,
   type WorkflowNodeData,
 } from './graph/serialization';
+import {
+  controlFlowEdgeData,
+  isControlFlowConnection,
+  isWorkflowConnectionValid,
+} from './graph/connectionUtils';
 import { typesCompatible, DEFAULT_SOCKET_COLORS } from './graph/socketTypes';
 import type { NodeDefinition, ObjectInfo } from './graph/objectInfo';
 import { useObjectInfo } from './api/useObjectInfo';
@@ -63,6 +68,10 @@ import { useExecutionStream } from './api/useExecutionStream';
 import { useExecutionOverlay } from './store/executionOverlay';
 import { useConnectionDrag } from './store/connectionDrag';
 import type { WorkflowInputSpec } from './genui/inputsToGenUiTree';
+import {
+  collectWorkflowRunInputValues,
+  inferWorkflowInputsFromValues,
+} from './genui/workflowRunForm';
 import type { WorkflowOutputSpec } from './genui/outputsToGenUiTree';
 import { TypedNodeView } from './components/TypedNodeView';
 import { CanvasAssetNodeView } from './components/CanvasAssetNodeView';
@@ -75,6 +84,7 @@ import { NodeInspector } from './components/NodeInspector';
 import { ResumePanel } from './components/ResumePanel';
 import { WorkflowRunPanel } from './components/WorkflowRunPanel';
 import { WorkflowIOPanel } from './components/WorkflowIOPanel';
+import { WorkflowImageModelSwitch } from './components/WorkflowImageModelSwitch';
 import {
   type CanvasAssetNodeData,
   CANVAS_ASSET_NODE_TYPE,
@@ -157,6 +167,7 @@ function EditorInner({ registry }: { registry: ObjectInfo }) {
   const [error, setError] = useState<string | null>(null);
   const [docInputs, setDocInputs] = useState<WorkflowInputSpec[]>([]);
   const [docOutputs, setDocOutputs] = useState<WorkflowOutputSpec[]>([]);
+  const [docMetadata, setDocMetadata] = useState<Record<string, unknown>>({});
   const [rightPanel, setRightPanel] = useState<'run' | 'io' | null>(null);
   const [canvasDragActive, setCanvasDragActive] = useState(false);
   const [assetDropBusy, setAssetDropBusy] = useState(false);
@@ -193,8 +204,17 @@ function EditorInner({ registry }: { registry: ObjectInfo }) {
         const stored = fromStoredDocument(raw.data ?? null, registry.definitions);
         setNodes(stored.nodes);
         setEdges(stored.edges);
-        setDocInputs(stored.inputs.filter(isInputSpec));
+        setDocMetadata(stored.metadata ?? {});
+        const declared = stored.inputs.filter(isInputSpec);
+        const inferred =
+          declared.length > 0
+            ? declared
+            : inferWorkflowInputsFromValues(stored.nodes.map((n) => n.data.values ?? {}));
+        setDocInputs(inferred);
         setDocOutputs(stored.outputs.filter(isOutputSpec));
+        if (inferred.length > 0) {
+          setRightPanel('run');
+        }
         setLoadingFlow(false);
         window.requestAnimationFrame(() => rf.fitView({ padding: 0.2 }));
       })
@@ -312,59 +332,41 @@ function EditorInner({ registry }: { registry: ObjectInfo }) {
   }, []);
 
   const isValidConnection = useCallback<IsValidConnection>(
-    (conn) => {
-      if (!conn.source || !conn.target) return false;
-      if (conn.source === conn.target) return false;
-      const sourceNode = rf.getNode(conn.source);
-      const targetNode = rf.getNode(conn.target) as Node<WorkflowNodeData> | undefined;
-      let outType = '*';
-      if (sourceNode?.type === CANVAS_ASSET_NODE_TYPE) {
-        outType = canvasAssetWireType(sourceNode, conn.sourceHandle);
-      } else {
-        const wfSource = sourceNode as Node<WorkflowNodeData> | undefined;
-        const sourceDef = registry.definitions[wfSource?.data.nodeType ?? ''];
-        outType =
-          sourceDef?.outputs.find((o) => o.id === conn.sourceHandle)?.type ??
-          sourceDef?.outputs[0]?.type ??
-          '*';
-      }
-      const targetDef = registry.definitions[targetNode?.data.nodeType ?? ''];
-      const inType =
-        targetDef?.inputs.find((i) => i.id === conn.targetHandle)?.type ??
-        targetDef?.inputs[0]?.type ??
-        '*';
-      // ARRAY inputs act as "list of downstream type" in wiring: allow linking
-      // any upstream type (wildcard) and let the node validate at runtime.
-      if (inType === 'ARRAY') return true;
-      return typesCompatible(outType, inType);
-    },
-    [rf, registry, canvasAssetWireType],
+    (conn) => isWorkflowConnectionValid(conn, registry.definitions, (id) => rf.getNode(id)),
+    [rf, registry],
   );
 
   const onConnect = useCallback(
     (conn: Connection) => {
-      const sourceNode = rf.getNode(conn.source);
+      const isControl = isControlFlowConnection(conn, registry.definitions, (id) => rf.getNode(id));
       let color: string | undefined;
-      if (sourceNode?.type === CANVAS_ASSET_NODE_TYPE) {
-        const data = sourceNode.data as CanvasAssetNodeData;
-        const wire = canvasAssetOutputWireType(data.assetKind, conn.sourceHandle);
-        color = DEFAULT_SOCKET_COLORS[wire];
+      if (isControl) {
+        color = controlFlowEdgeData().color as string;
       } else {
-        const wfSource = sourceNode as Node<WorkflowNodeData> | undefined;
-        const sourceDef = registry.definitions[wfSource?.data.nodeType ?? ''];
-        color =
-          sourceDef?.outputs.find((o) => o.id === conn.sourceHandle)?.color ??
-          sourceDef?.outputs[0]?.color;
+        const sourceNode = rf.getNode(conn.source!);
+        if (sourceNode?.type === CANVAS_ASSET_NODE_TYPE) {
+          const data = sourceNode.data as CanvasAssetNodeData;
+          const wire = canvasAssetOutputWireType(data.assetKind, conn.sourceHandle);
+          color = DEFAULT_SOCKET_COLORS[wire];
+        } else {
+          const wfSource = sourceNode as Node<WorkflowNodeData> | undefined;
+          const sourceDef = registry.definitions[wfSource?.data.nodeType ?? ''];
+          color =
+            sourceDef?.outputs.find((o) => o.id === conn.sourceHandle)?.color ??
+            sourceDef?.outputs[0]?.color;
+        }
       }
       const edge: Edge = {
         ...conn,
-        id: `e-${conn.source}-${conn.sourceHandle ?? '0'}-${conn.target}-${conn.targetHandle ?? '0'}`,
+        id: isControl
+          ? `e-${conn.source}-${conn.target}-next`
+          : `e-${conn.source}-${conn.sourceHandle ?? '0'}-${conn.target}-${conn.targetHandle ?? '0'}`,
         type: 'workflow',
-        data: { color },
+        data: isControl ? controlFlowEdgeData() : { color },
       };
       setEdges((eds) => addEdge(edge, eds));
     },
-    [rf, registry, setEdges],
+    [rf, registry, setEdges, canvasAssetWireType],
   );
 
   // ── Link-drag lifecycle: compat dimming, drop-on-node, link-release search ──
@@ -547,6 +549,7 @@ function EditorInner({ registry }: { registry: ObjectInfo }) {
         definitions: registry.definitions,
         inputs: docInputs,
         outputs: docOutputs,
+        metadata: docMetadata,
       });
       if (flowId) {
         await apiClient.put(`/workflow/flows/${flowId}`, { name, data: doc });
@@ -566,7 +569,7 @@ function EditorInner({ registry }: { registry: ObjectInfo }) {
     } finally {
       setSaving(false);
     }
-  }, [flowId, name, nodes, edges, rf, registry, navigate, docInputs, docOutputs]);
+  }, [flowId, name, nodes, edges, rf, registry, navigate, docInputs, docOutputs, docMetadata]);
 
   const handleRun = useCallback(async () => {
     if (nodes.length === 0) {
@@ -575,10 +578,21 @@ function EditorInner({ registry }: { registry: ObjectInfo }) {
     }
     const id = await handleSave();
     if (!id) return;
-    // Workflows with declared inputs run through the GenUI form in the
-    // Run panel; parameterless workflows run immediately.
+    // Workflows with declared inputs: run with form values + schema defaults.
     if (docInputs.length > 0) {
       setRightPanel('run');
+      resetOverlay();
+      try {
+        const input_data = collectWorkflowRunInputValues(id, docInputs);
+        const res = await apiClient.post<RunResponse>(`/workflow/flows/${id}/run`, {
+          input_data,
+          priority: 5,
+          trigger_type: 'manual',
+        });
+        useExecutionOverlay.getState().start(res.prompt_id);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Run failed');
+      }
       return;
     }
     resetOverlay();
@@ -591,7 +605,7 @@ function EditorInner({ registry }: { registry: ObjectInfo }) {
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Run failed');
     }
-  }, [nodes.length, handleSave, resetOverlay, docInputs.length, t]);
+  }, [nodes.length, handleSave, resetOverlay, docInputs, t]);
 
   const handleStop = useCallback(async () => {
     if (!promptId) return;
@@ -997,6 +1011,7 @@ function EditorInner({ registry }: { registry: ObjectInfo }) {
           value={name}
           onChange={(e) => setName(e.target.value)}
         />
+        <WorkflowImageModelSwitch />
         <div className="ml-auto flex items-center gap-2">
           <Button
             size="sm"
@@ -1195,9 +1210,9 @@ function EditorInner({ registry }: { registry: ObjectInfo }) {
               onSelect={(def) => {
                 const newNodeId = addNode(def, rf.screenToFlowPosition(paletteAt));
                 if (paletteLink) {
-                  // Auto-connect the dangling link to the first compatible slot.
                   const link = paletteLink;
-                  if (link.handleType === 'source') {
+                  const getNode = (id: string) => rf.getNode(id);
+                    if (link.handleType === 'source') {
                     const slot = def.inputs.find((s) => typesCompatible(link.type, s.type));
                     if (slot) {
                       onConnect({
@@ -1206,6 +1221,25 @@ function EditorInner({ registry }: { registry: ObjectInfo }) {
                         target: newNodeId,
                         targetHandle: slot.id,
                       });
+                    } else {
+                      const sourceNode = rf.getNode(link.nodeId) as Node<WorkflowNodeData> | undefined;
+                      const sourceDef = registry.definitions[sourceNode?.data.nodeType ?? ''];
+                      const promptSlot = def.inputs.find((s) => s.id === 'prompt');
+                      if (sourceDef?.type === 'StartNode' && promptSlot) {
+                        onConnect({
+                          source: link.nodeId,
+                          sourceHandle: link.handleId ?? 'inputs',
+                          target: newNodeId,
+                          targetHandle: 'prompt',
+                        });
+                      } else if (sourceDef?.controlFlow) {
+                        onConnect({
+                          source: link.nodeId,
+                          sourceHandle: link.handleId,
+                          target: newNodeId,
+                          targetHandle: def.inputs[0]?.id ?? 'input',
+                        });
+                      }
                     }
                   } else {
                     const slot = def.outputs.find((s) => typesCompatible(s.type, link.type));

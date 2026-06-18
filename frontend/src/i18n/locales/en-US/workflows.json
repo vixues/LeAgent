@@ -1,5 +1,31 @@
 {
+  "artifactPreview": {
+    "download": "Download",
+    "offline": "offline",
+    "empty": "Connect an asset to preview it"
+  },
   "workflow": {
+    "imageGen": {
+      "activeModel": "Image model",
+      "switchHelp": "Active image model for art nodes left on \"auto\".",
+      "switched": "Image model switched",
+      "switchError": "Failed to switch image model",
+      "presetNone": "None",
+      "modelDefault": "Backend default",
+      "modelAutoPlaceholder": "Resolved at run time"
+    },
+    "agentModel": {
+      "default": "Agent default"
+    },
+    "controlAgent": {
+      "modes": {
+        "promptGenerate": "Prompt generation",
+        "paramGenerate": "Parameter generation",
+        "statePatch": "State patch",
+        "routeDecision": "Route decision",
+        "custom": "Custom"
+      }
+    },
     "title": "Workflows",
     "editor": "Workflow Editor",
     "create": "Create Workflow",
@@ -448,6 +474,16 @@
     "output": "Output",
     "inputs": "Inputs",
     "outputs": "Outputs",
+    "artBadge": {
+      "quality": "Quality",
+      "passed": "Passed",
+      "failed": "Below bar",
+      "refine": "Refine",
+      "offline": "offline",
+      "versions": "{{count}} versions",
+      "versionsShort": "{{count}}v"
+    },
+    "agentResult": "Result",
     "confirmCancel": "Cancel this execution?",
     "toastCancelled": "Execution cancelled",
     "toastCancelError": "Error cancelling execution",
@@ -485,10 +521,15 @@
     "tab": "Run",
     "run": "Run",
     "inputs": "Inputs",
+    "inputsHint": "Set workflow inputs below, then click Run. Values are injected into nodes that reference ${input.name}.",
+    "noInputs": "No workflow inputs declared. Add inputs under Inputs / Outputs, or edit prompt fields directly on nodes.",
     "saveFirst": "Save the workflow to enable runs.",
     "running": "Running...",
     "waiting": "Waiting for your input",
     "assets": "Assets",
+    "assetInitial": "{{node}} · initial",
+    "assetRefine": "{{node}} · refine {{n}}",
+    "assetVersion": "{{node}} · v{{n}}",
     "results": "Results",
     "approve": "Approve",
     "reject": "Reject",
@@ -501,9 +542,12 @@
     "add": "Add",
     "remove": "Remove",
     "name": "name",
+    "label": "Label (shown on run form)",
     "description": "Description",
     "default": "Default value",
     "required": "Required",
+    "multiline": "Multiline (prompt)",
+    "rows": "rows",
     "choices": "Choices (comma-separated, optional)",
     "noInputs": "No declared inputs. The run form will be empty.",
     "noOutputs": "No declared outputs. Results render from state variables automatically.",

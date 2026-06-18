@@ -3,7 +3,10 @@ import { useTranslation } from 'react-i18next';
 import { CircleAlert, Images, Loader2, MessageCircleQuestion, SquareActivity } from 'lucide-react';
 
 import { GenUiTreeView } from '@/components/canvas/GenUiRegistry';
-import { extractMediaItems } from '@/components/canvas/genUi/genUiMedia';
+import {
+  listAssetHistoryTrees,
+  listOrderedNodeAssets,
+} from '@/components/canvas/genUi/genUiMedia';
 import { cn } from '@/lib/utils';
 import type { RunWorkflowActionPayload } from '@/lib/genUiActionBus';
 
@@ -45,7 +48,9 @@ export function WorkflowRunPanel({
   const running = useExecutionOverlay((s) => s.running);
   const blocked = useExecutionOverlay((s) => s.blocked);
   const resolvedOutputs = useExecutionOverlay((s) => s.outputs);
-  const genUiTrees = useExecutionOverlay((s) => s.genUiTrees);
+  const nodes = useExecutionOverlay((s) => s.nodes);
+  const assetHistory = useExecutionOverlay((s) => s.assetHistory);
+  const assetOrder = useExecutionOverlay((s) => s.assetOrder);
   const runErrors = useExecutionOverlay((s) => s.errors);
 
   useWorkflowGenUiBridge({
@@ -77,25 +82,23 @@ export function WorkflowRunPanel({
     });
   }, [blocked, promptId, t]);
 
-  // Asset galleries (Image/Video/Model3D trees emitted by generation nodes)
-  // get their own gallery section; structured outputs render in Results.
-  const assetTrees = useMemo(
-    () => genUiTrees.filter((tree) => extractMediaItems(tree).length > 0),
-    [genUiTrees],
-  );
-  const passthroughTrees = useMemo(
-    () => genUiTrees.filter((tree) => extractMediaItems(tree).length === 0),
-    [genUiTrees],
-  );
-  const assetCount = useMemo(
-    () => assetTrees.reduce((n, tree) => n + extractMediaItems(tree).length, 0),
-    [assetTrees],
-  );
+  // Full iteration history when available; otherwise latest-only per node.
+  const assetEntries = useMemo(() => {
+    if (assetHistory.length > 0) {
+      return listAssetHistoryTrees(assetHistory, undefined, t);
+    }
+    return listOrderedNodeAssets(nodes, assetOrder).map(({ nodeId, tree }) => ({
+      id: nodeId,
+      nodeId,
+      tree,
+    }));
+  }, [assetHistory, nodes, assetOrder, t]);
+  const assetCount = assetEntries.length;
 
   const outputTree = useMemo(() => {
     if (running || blocked) return null;
-    return outputsToGenUiTree(resolvedOutputs, outputs, passthroughTrees);
-  }, [running, blocked, resolvedOutputs, outputs, passthroughTrees]);
+    return outputsToGenUiTree(resolvedOutputs, outputs, []);
+  }, [running, blocked, resolvedOutputs, outputs]);
 
   return (
     <div className={cn('flex min-h-0 flex-col overflow-y-auto', className)}>
@@ -104,11 +107,26 @@ export function WorkflowRunPanel({
         <header className="flex items-center gap-2 px-4 pt-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
           {t('runPanel.inputs', 'Inputs')}
         </header>
-        {inputTree ? (
-          <GenUiTreeView tree={inputTree} />
-        ) : (
+        {!flowId ? (
           <p className="px-4 py-3 text-xs text-muted-foreground">
             {t('runPanel.saveFirst', 'Save the workflow to enable runs.')}
+          </p>
+        ) : inputTree ? (
+          <>
+            <p className="px-4 pb-1 text-[11px] leading-relaxed text-muted-foreground">
+              {t(
+                'runPanel.inputsHint',
+                'Set workflow inputs below, then click Run. Values are injected into nodes that reference ${input.name}.',
+              )}
+            </p>
+            <GenUiTreeView tree={inputTree} />
+          </>
+        ) : (
+          <p className="px-4 py-3 text-xs text-muted-foreground">
+            {t(
+              'runPanel.noInputs',
+              'No workflow inputs declared. Add inputs under Inputs / Outputs, or edit prompt fields directly on nodes.',
+            )}
           </p>
         )}
       </section>
@@ -140,7 +158,7 @@ export function WorkflowRunPanel({
       )}
 
       {/* Egress: generated asset gallery (image / video / 3D) */}
-      {assetTrees.length > 0 && !blocked && (
+      {assetEntries.length > 0 && !blocked && (
         <section className="border-b border-border">
           <header className="flex items-center gap-2 px-4 pt-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
             <Images className="h-3.5 w-3.5" />
@@ -151,8 +169,8 @@ export function WorkflowRunPanel({
               </span>
             )}
           </header>
-          {assetTrees.map((tree, i) => (
-            <GenUiTreeView key={i} tree={tree} />
+          {assetEntries.map(({ id, tree }) => (
+            <GenUiTreeView key={id} tree={tree} />
           ))}
         </section>
       )}

@@ -50,7 +50,7 @@ export function NodeShell({
       style={width != null ? { width } : undefined}
     >
       <div
-        className="flex items-center justify-between gap-2 border-b border-border px-2 py-1.5"
+        className="flex items-center justify-between gap-2 rounded-t-lg border-b border-border px-2 py-1.5"
         style={{
           backgroundColor: `color-mix(in srgb, ${accent} 22%, rgb(var(--color-surface-sunken)))`,
         }}

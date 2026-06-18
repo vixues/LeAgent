@@ -17,7 +17,8 @@ import {
 import { resumeWorkflowExecution } from '@/hooks/useExecutionResume';
 
 import { useExecutionOverlay } from '../store/executionOverlay';
-import { coerceFormValues, type WorkflowInputSpec } from './inputsToGenUiTree';
+import { coerceFormValues, missingRequiredInputs, type WorkflowInputSpec } from './inputsToGenUiTree';
+import { collectWorkflowRunInputValues } from './workflowRunForm';
 
 interface RunResponse {
   execution_id: string;
@@ -47,9 +48,17 @@ export function useWorkflowGenUiBridge(opts: WorkflowGenUiBridgeOptions = {}): v
         const o = optsRef.current;
         try {
           await o.onBeforeRun?.(p);
-          const values = coerceFormValues(p.values ?? {}, o.inputs);
+          const merged =
+            p.values && Object.keys(p.values).length > 0
+              ? coerceFormValues(p.values, o.inputs)
+              : collectWorkflowRunInputValues(p.flowId, o.inputs);
+          const missing = missingRequiredInputs(merged, o.inputs);
+          if (missing.length > 0) {
+            o.onError?.(`Missing required inputs: ${missing.join(', ')}`);
+            return;
+          }
           const res = await apiClient.post<RunResponse>(`/workflow/flows/${p.flowId}/run`, {
-            input_data: values,
+            input_data: merged,
             priority: 5,
             trigger_type: 'manual',
           });

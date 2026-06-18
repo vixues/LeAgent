@@ -10,12 +10,15 @@ import type { GenUiMediaItem } from '@/components/canvas/genUi/genUiMedia';
 import { CanvasMesh3DPreview } from '@/features/workflow/components/CanvasMesh3DPreview';
 
 /** Resolve a (possibly managed) media src to a directly-renderable URL. */
-function useResolvedSrc(rawSrc: string): { src: string | undefined; loading: boolean } {
+export function useResolvedSrc(
+  rawSrc: string,
+  managedIdOverride?: string | null,
+): { src: string | undefined; loading: boolean } {
   const invalid = useMemo(() => isInvalidApiFilePreviewRef(rawSrc), [rawSrc]);
-  const managedId = useMemo(
-    () => (invalid ? null : extractApiFilePreviewId(rawSrc)),
-    [rawSrc, invalid],
-  );
+  const managedId = useMemo(() => {
+    if (managedIdOverride?.trim()) return managedIdOverride.trim();
+    return invalid ? null : extractApiFilePreviewId(rawSrc);
+  }, [rawSrc, invalid, managedIdOverride]);
   const signed = useMemo(() => managedFilePreviewHasSignedToken(rawSrc), [rawSrc]);
   const { blobUrl, isLoading } = useChatFileBlobUrl(managedId);
   const trimmed = rawSrc.trim();

@@ -2,6 +2,12 @@ import { create } from 'zustand';
 
 import type { GenUiTreeV1 } from '@/types/genUi';
 
+import {
+  appendAssetHistoryEntry,
+  type AssetHistoryEntry,
+  type AssetHistorySnapshot,
+} from './assetHistory';
+
 /** Node execution status mirrored from the backend `ProgressRegistry`. */
 export type NodeRunStatus =
   | 'pending'
@@ -25,6 +31,11 @@ export interface NodeRunState {
    * Drives the ComfyUI-style inline media thumbnail on the node card.
    */
   ui?: GenUiTreeV1 | null;
+  /**
+   * Node ``executed`` metadata (provider, quality_score, refine iteration,
+   * engine, attempts…). Drives the art-node quality/refine badges.
+   */
+  metadata?: Record<string, unknown>;
   error?: string;
 }
 
@@ -42,6 +53,10 @@ export interface BlockedInfo {
 export interface PromptOverlayState {
   running: boolean;
   nodes: Record<string, NodeRunState>;
+  /** Chronological unique-file snapshots (refine re-runs append, passthrough deduped). */
+  assetHistory: AssetHistoryEntry[];
+  /** @deprecated Latest-only node order; prefer ``assetHistory``. */
+  assetOrder: string[];
   blocked: BlockedInfo | null;
   outputs: Record<string, unknown> | null;
   genUiTrees: GenUiTreeV1[];
@@ -52,6 +67,8 @@ function emptyOverlay(): PromptOverlayState {
   return {
     running: false,
     nodes: {},
+    assetHistory: [],
+    assetOrder: [],
     blocked: null,
     outputs: null,
     genUiTrees: [],
@@ -67,6 +84,17 @@ function primaryOverlay(
   return overlays[editorActivePromptId] ?? emptyOverlay();
 }
 
+function cloneNodePatch(patch: Partial<NodeRunState>): Partial<NodeRunState> {
+  const next: Partial<NodeRunState> = { ...patch };
+  if (patch.metadata) {
+    next.metadata = structuredClone(patch.metadata);
+  }
+  if (patch.ui) {
+    next.ui = structuredClone(patch.ui);
+  }
+  return next;
+}
+
 function withEditorSync(
   overlays: Record<string, PromptOverlayState>,
   editorActivePromptId: string | null,
@@ -77,6 +105,8 @@ function withEditorSync(
   promptId: string | null;
   running: boolean;
   nodes: Record<string, NodeRunState>;
+  assetHistory: AssetHistoryEntry[];
+  assetOrder: string[];
   blocked: BlockedInfo | null;
   outputs: Record<string, unknown> | null;
   genUiTrees: GenUiTreeV1[];
@@ -90,6 +120,8 @@ function withEditorSync(
     promptId: editorActivePromptId,
     running: primary.running,
     nodes: primary.nodes,
+    assetHistory: primary.assetHistory,
+    assetOrder: primary.assetOrder,
     blocked: primary.blocked,
     outputs: primary.outputs,
     genUiTrees: primary.genUiTrees,
@@ -105,12 +137,16 @@ interface ExecutionOverlayState {
   promptId: string | null;
   running: boolean;
   nodes: Record<string, NodeRunState>;
+  assetHistory: AssetHistoryEntry[];
+  assetOrder: string[];
   blocked: BlockedInfo | null;
   outputs: Record<string, unknown> | null;
   genUiTrees: GenUiTreeV1[];
   errors: string[];
   start: (promptId: string, surface?: OverlaySurface) => void;
   setNode: (promptId: string, nodeId: string, patch: Partial<NodeRunState>) => void;
+  touchNodeAsset: (promptId: string, nodeId: string) => void;
+  appendAssetHistory: (promptId: string, nodeId: string, snapshot: AssetHistorySnapshot) => void;
   setBlocked: (promptId: string, info: BlockedInfo | null) => void;
   addGenUiTree: (promptId: string, tree: GenUiTreeV1) => void;
   finish: (
@@ -132,6 +168,8 @@ export const useExecutionOverlay = create<ExecutionOverlayState>((set, get) => (
   promptId: null,
   running: false,
   nodes: {},
+  assetHistory: [],
+  assetOrder: [],
   blocked: null,
   outputs: null,
   genUiTrees: [],
@@ -158,7 +196,8 @@ export const useExecutionOverlay = create<ExecutionOverlayState>((set, get) => (
     set((state) => {
       const prev = state.overlays[promptId] ?? emptyOverlay();
       const existing: NodeRunState = prev.nodes[nodeId] ?? { status: 'pending' };
-      const nextNode: NodeRunState = { ...existing, ...patch };
+      const safePatch = cloneNodePatch(patch);
+      const nextNode: NodeRunState = { ...existing, ...safePatch };
       const overlays: Record<string, PromptOverlayState> = {
         ...state.overlays,
         [promptId]: {
@@ -168,6 +207,32 @@ export const useExecutionOverlay = create<ExecutionOverlayState>((set, get) => (
             [nodeId]: nextNode,
           },
         },
+      };
+      return withEditorSync(overlays, state.editorActivePromptId);
+    }),
+
+  touchNodeAsset: (promptId, nodeId) =>
+    set((state) => {
+      const prev = state.overlays[promptId] ?? emptyOverlay();
+      const assetOrder = [...prev.assetOrder.filter((id) => id !== nodeId), nodeId];
+      const overlays = {
+        ...state.overlays,
+        [promptId]: { ...prev, assetOrder },
+      };
+      return withEditorSync(overlays, state.editorActivePromptId);
+    }),
+
+  appendAssetHistory: (promptId, nodeId, snapshot) =>
+    set((state) => {
+      const prev = state.overlays[promptId] ?? emptyOverlay();
+      const assetHistory = appendAssetHistoryEntry(prev.assetHistory, nodeId, snapshot);
+      if (assetHistory.length === prev.assetHistory.length) {
+        return state;
+      }
+      const assetOrder = [...prev.assetOrder.filter((id) => id !== nodeId), nodeId];
+      const overlays = {
+        ...state.overlays,
+        [promptId]: { ...prev, assetHistory, assetOrder },
       };
       return withEditorSync(overlays, state.editorActivePromptId);
     }),
@@ -185,9 +250,10 @@ export const useExecutionOverlay = create<ExecutionOverlayState>((set, get) => (
   addGenUiTree: (promptId, tree) =>
     set((state) => {
       const prev = state.overlays[promptId] ?? emptyOverlay();
+      const cloned = structuredClone(tree);
       const overlays = {
         ...state.overlays,
-        [promptId]: { ...prev, genUiTrees: [...prev.genUiTrees, tree] },
+        [promptId]: { ...prev, genUiTrees: [...prev.genUiTrees, cloned] },
       };
       return withEditorSync(overlays, state.editorActivePromptId);
     }),
@@ -224,3 +290,5 @@ export const useExecutionOverlay = create<ExecutionOverlayState>((set, get) => (
       return withEditorSync(overlays, editorActivePromptId);
     }),
 }));
+export type { AssetHistoryEntry, AssetHistorySnapshot } from './assetHistory';
+export { assetVersionCount } from './assetHistory';

@@ -1,10 +1,15 @@
 import { useEffect } from 'react';
 
 import {
+  nodeHasAsset,
+  patchAssetTreeFileRef,
+} from '@/components/canvas/genUi/genUiMedia';
+import type { GenUiTreeV1 } from '@/types/genUi';
+
+import {
   useExecutionOverlay,
   type NodeRunStatus,
 } from '../store/executionOverlay';
-import type { GenUiTreeV1 } from '@/types/genUi';
 
 interface WsState {
   node_id?: string;
@@ -65,7 +70,8 @@ function handleWsMessage(promptId: string, raw: string): void {
     return;
   }
 
-  const { start, setNode, setBlocked, addGenUiTree, finish } = useExecutionOverlay.getState();
+  const { start, setNode, setBlocked, touchNodeAsset, appendAssetHistory, finish } =
+    useExecutionOverlay.getState();
   const nodeId = msg.node_id ?? msg.state?.node_id;
 
   if (nodeId && msg.state) {
@@ -77,17 +83,43 @@ function handleWsMessage(promptId: string, raw: string): void {
       preview: msg.state.preview ?? undefined,
       error: msg.state.error ?? undefined,
     });
-  } else if (nodeId && msg.type === 'executed') {
-    setNode(promptId, nodeId, { status: 'success' });
   }
 
   if (nodeId && msg.type === 'executed') {
     const ui = (msg.data?.ui ?? null) as Record<string, unknown> | null;
-    const tree = ui ? asGenUiTree(ui.gen_ui) : null;
-    if (tree) {
-      addGenUiTree(promptId, tree);
-      // Also pin it to the node so the canvas card renders an inline thumbnail.
-      setNode(promptId, nodeId, { ui: tree });
+    const rawTree = ui ? asGenUiTree(ui.gen_ui) : null;
+    const metadata =
+      msg.data?.metadata && typeof msg.data.metadata === 'object'
+        ? structuredClone(msg.data.metadata as Record<string, unknown>)
+        : undefined;
+    const fileId = typeof metadata?.file_id === 'string' ? metadata.file_id.trim() : '';
+    let tree = rawTree ? structuredClone(rawTree) : null;
+    if (tree && fileId) {
+      tree = patchAssetTreeFileRef(tree, fileId, {
+        width: metadata?.width,
+        height: metadata?.height,
+      });
+    }
+    const patch: Parameters<typeof setNode>[2] = {
+      status: 'success',
+      ...(tree ? { ui: tree } : {}),
+      ...(metadata ? { metadata } : {}),
+    };
+    const resultText =
+      typeof metadata?.text === 'string' && metadata.text.trim() ? metadata.text : undefined;
+    if (resultText) {
+      patch.preview = resultText;
+    }
+    setNode(promptId, nodeId, patch);
+    if (nodeHasAsset(patch)) {
+      touchNodeAsset(promptId, nodeId);
+      if (fileId) {
+        appendAssetHistory(promptId, nodeId, {
+          fileId,
+          ui: tree ?? undefined,
+          metadata,
+        });
+      }
     }
   }
 

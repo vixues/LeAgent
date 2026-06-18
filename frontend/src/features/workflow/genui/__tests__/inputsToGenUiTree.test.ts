@@ -74,6 +74,24 @@ describe('inputsToGenUiTree', () => {
     expect(field.props?.value).toBe('fast');
   });
 
+  it('returns null when there are no valid input specs', () => {
+    expect(inputsToGenUiTree([], { flowId: 'f1' })).toBeNull();
+    expect(inputsToGenUiTree(null, { flowId: 'f1' })).toBeNull();
+    expect(
+      inputsToGenUiTree([null, {}] as unknown as WorkflowInputSpec[], { flowId: 'f1' }),
+    ).toBeNull();
+  });
+
+  it('uses label on the run form when provided', () => {
+    const tree = inputsToGenUiTree(
+      [{ name: 'prompt', type: 'string', label: 'Prompt', multiline: true, rows: 6 }],
+      { flowId: 'f1' },
+    );
+    const field = fields(tree!.root.children)[0]!;
+    expect(field.props?.label).toBe('Prompt');
+    expect(field.props?.rows).toBe(6);
+  });
+
   it('skips malformed specs and still emits the submit button', () => {
     const tree = inputsToGenUiTree(
       [null, {}, { name: 'ok' }] as unknown as WorkflowInputSpec[],

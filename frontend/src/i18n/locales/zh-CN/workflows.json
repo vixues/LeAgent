@@ -1,5 +1,31 @@
 {
+  "artifactPreview": {
+    "download": "下载",
+    "offline": "离线",
+    "empty": "连接一个产物以预览"
+  },
   "workflow": {
+    "imageGen": {
+      "activeModel": "图像模型",
+      "switchHelp": "处于“自动”状态的美术节点所使用的当前图像模型。",
+      "switched": "图像模型已切换",
+      "switchError": "切换图像模型失败",
+      "presetNone": "无",
+      "modelDefault": "后端默认",
+      "modelAutoPlaceholder": "运行时自动解析"
+    },
+    "agentModel": {
+      "default": "Agent 默认"
+    },
+    "controlAgent": {
+      "modes": {
+        "promptGenerate": "提示词生成",
+        "paramGenerate": "参数生成",
+        "statePatch": "状态补丁",
+        "routeDecision": "路由决策",
+        "custom": "自定义"
+      }
+    },
     "title": "工作流",
     "editor": "工作流编辑器",
     "create": "创建工作流",
@@ -448,6 +474,16 @@
     "output": "输出",
     "inputs": "输入",
     "outputs": "输出",
+    "artBadge": {
+      "quality": "质量",
+      "passed": "通过",
+      "failed": "未达标",
+      "refine": "迭代",
+      "offline": "离线",
+      "versions": "{{count}} 个版本",
+      "versionsShort": "{{count}}版"
+    },
+    "agentResult": "输出",
     "confirmCancel": "确定要取消此次执行吗？",
     "toastCancelled": "执行已取消",
     "toastCancelError": "取消执行失败",
@@ -485,10 +521,15 @@
     "tab": "运行",
     "run": "运行",
     "inputs": "输入",
+    "inputsHint": "在下方设置工作流输入，然后点击运行。值会注入到引用 ${input.name} 的节点中。",
+    "noInputs": "尚未声明工作流输入。请在「输入 / 输出」中添加，或直接在节点上编辑提示词字段。",
     "saveFirst": "保存工作流后即可运行。",
     "running": "运行中...",
     "waiting": "等待您的输入",
     "assets": "资产",
+    "assetInitial": "{{node}} · 初版",
+    "assetRefine": "{{node}} · 迭代 {{n}}",
+    "assetVersion": "{{node}} · 第 {{n}} 版",
     "results": "结果",
     "approve": "通过",
     "reject": "拒绝",
@@ -501,9 +542,12 @@
     "add": "添加",
     "remove": "删除",
     "name": "名称",
+    "label": "标签（显示在运行表单上）",
     "description": "描述",
     "default": "默认值",
     "required": "必填",
+    "multiline": "多行（提示词）",
+    "rows": "行数",
     "choices": "可选项（逗号分隔，可选）",
     "noInputs": "尚未声明输入。运行表单将为空。",
     "noOutputs": "尚未声明输出。结果将根据状态变量自动渲染。",
