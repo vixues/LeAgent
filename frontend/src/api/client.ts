@@ -1,5 +1,7 @@
 import { getMachineFingerprint } from '@/lib/machineFingerprint';
 
+import { formatHttpErrorDetail } from './formatApiError';
+
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '/api/v1';
 
 export interface ApiError {
@@ -149,13 +151,11 @@ class ApiClient {
 
     if (!response.ok) {
       const body = await response.json().catch(() => ({}));
-      const detail = body.detail;
-      const message =
-        typeof detail === 'string'
-          ? detail
-          : Array.isArray(detail)
-            ? detail.map((e: { msg?: string }) => e.msg).join('; ')
-            : body.message || `HTTP ${response.status}`;
+      const message = formatHttpErrorDetail(
+        body.detail,
+        response.status,
+        typeof body.message === 'string' ? body.message : undefined,
+      );
       throw new HttpError(message, response.status);
     }
 
@@ -229,13 +229,11 @@ class ApiClient {
 
     if (!response.ok) {
       const body = await response.json().catch(() => ({}));
-      const detail = body.detail;
-      const message =
-        typeof detail === 'string'
-          ? detail
-          : Array.isArray(detail)
-            ? detail.map((e: { msg?: string }) => e.msg).join('; ')
-            : body.message || `HTTP ${response.status}`;
+      const message = formatHttpErrorDetail(
+        body.detail,
+        response.status,
+        typeof body.message === 'string' ? body.message : undefined,
+      );
       throw new HttpError(message, response.status);
     }
 
@@ -256,13 +254,11 @@ class ApiClient {
 
     if (!response.ok) {
       const body = await response.json().catch(() => ({}));
-      const detail = body.detail;
-      const message =
-        typeof detail === 'string'
-          ? detail
-          : Array.isArray(detail)
-            ? detail.map((e: { msg?: string }) => e.msg).join('; ')
-            : body.message || `HTTP ${response.status}`;
+      const message = formatHttpErrorDetail(
+        body.detail,
+        response.status,
+        typeof body.message === 'string' ? body.message : undefined,
+      );
       throw new HttpError(message, response.status);
     }
 
