@@ -18,11 +18,12 @@ idea (chat) ──▶ Agent ReAct loop
                  ├─ chat_workflow_embed_emit ──▶ live workflow on the canvas
                  └─ workflow_save + workflow_run ──▶ WorkflowExecutor (DAG)
 
-concept (Transform) ─▶ Art.ImageGen ─▶ QualityGateNode
-                                          │ pass ─▶ approved ─▶ Art.Mesh3D ─┐
-                                          │                  └▶ Art.VideoGen ┤
-                                          └ fail ─▶ IterativeRefineNode ─(back-edge)─▶ Art.ImageGen
-                                                                                       AssetExportNode ◀┘
+concept (Transform) ─▶ Art.ImageGen ─▶ Art.QualityCritic ─▶ QualityGateNode
+                                          │ pass ─▶ approved ─▶ Art.Mesh3D ──┐
+                                          │                  ├▶ Art.VideoGen ┤
+                                          │                  └▶ Art.VFXGen ──┤
+                                          └ fail ─▶ IterativeRefineNode ─(feedback back-edge)─▶ Art.ImageGen
+                                                            AssetExportNode (engine-ready .zip) ◀┘
 ```
 
 ## 1. Typed media sockets + `MediaRef`
@@ -50,11 +51,21 @@ service the art nodes call. There is **no** adapter→node factory:
   GenerationOutput`). Backends register into the `GenerationService` facade
   (Strategy + Registry), which adds retry with exponential backoff and provider
   failover.
-- Backends: `ImageProviderBackend` (reuses the existing OpenAI / DashScope
-  image-gen providers), `LocalDiffusionBackend`, `HttpVideoBackend`,
-  `HttpMesh3DBackend` (real providers, env-gated), and an always-registered
-  **`OfflineGenerationBackend`** that emits minimal-valid `png` / `mp4` / `glb`
-  bytes deterministically.
+- **Standardized request contract.** `GenerationRequest`
+  ([`generation/base.py`](../../leagent/llm/generation/base.py)) is the typed
+  envelope (`kind`, `prompt`, `provider`, `model`, conditioning `image` /
+  `controlnet` / `camera`, plus `params`) with `validate()` / `from_params()` /
+  `as_params()`, so local pipelines, HTTP services, and SDK providers share one
+  shape. Generation kinds: `image` / `video` / `model3d` / **`vfx`**.
+- Backends: `ImageProviderBackend` (OpenAI / DashScope image-gen),
+  `LocalDiffusionBackend` (in-process diffusers; passes img2img / ControlNet /
+  camera conditioning through to the pipeline), `HttpUpscaleBackend` (dedicated
+  super-resolution, e.g. Real-ESRGAN), `HttpVideoBackend`, `HttpMesh3DBackend`,
+  `HttpVfxBackend` (real providers, env-gated by `LEAGENT_*_URL`), and an
+  always-registered **`OfflineGenerationBackend`** that emits minimal-valid
+  `png` / `mp4` / `glb` / sprite-sheet bytes deterministically (offline img2img
+  blends the reference colour and records `controlnet` / `camera` in meta so
+  conditioning is observable credential-free).
 - The offline floor is forced globally with `LEAGENT_ART_OFFLINE=1`, or per node
   via `provider: offline`. With it set, every art workflow completes without any
   API key.
@@ -76,28 +87,54 @@ node-specific params:
 
 | Node id | Output | Purpose |
 |---|---|---|
-| `Art.ImageGen` | `IMAGE` | Text-to-image concept / sprite / texture |
-| `Art.Upscale` | `IMAGE` | Image-to-image upscale / refine (composable post-process) |
+| `Art.ImageGen` | `IMAGE` | Text-to-image concept / sprite / texture (img2img + camera/ControlNet conditioning) |
+| `Art.Upscale` | `IMAGE` | Dedicated super-resolution of a source image (`scale` → `http_upscale`/Real-ESRGAN; offline re-renders at target res) |
 | `Art.VideoGen` | `VIDEO` | Text/image-to-video (turntable, idle loop) |
-| `Art.Mesh3D` | `MESH3D` | Image/text-to-3D mesh (engine-ready GLB) |
+| `Art.Mesh3D` | `MESH3D` | Image/text-to-3D mesh (engine-ready GLB/GLTF/OBJ) |
+| `Art.VFXGen` | `IMAGE` | Text-to-VFX flipbook / sprite-sheet (particles, explosion, glow) with animation metadata (frames, grid, fps) |
 
-`provider` / `model` are exposed as `IO.Combo` widgets.
+`provider` / `model` are exposed as `IO.Combo` widgets. The `vfx` kind rides the
+`IMAGE` socket (a sprite-sheet *is* an image) so it composes with image
+consumers (export, preview, conditioning).
 
 > The legacy `Model.image_gen.*` factory nodes are **deprecated** for the art
 > path (audio TTS/ASR still flows through the factory to avoid regressions).
 
 ## 4. Control / evaluation nodes (engine-side self-correction)
 
-In [`workflow/nodes/builtin/`](../../leagent/workflow/nodes/builtin/):
+In [`workflow/nodes/art/`](../../leagent/workflow/nodes/art/) and
+[`workflow/nodes/builtin/`](../../leagent/workflow/nodes/builtin/):
 
-- **`QualityGateNode`** (`control_flow=True`) scores an upstream `MediaRef`,
+- **`Art.QualityCritic`** scores a `MediaRef` perceptually via the multimodal
+  LLM (criteria-driven), with a deterministic iteration-heuristic offline
+  fallback; it feeds `QualityGateNode.score` and records the score into the
+  provider-performance store.
+- **`QualityGateNode`** (`control_flow=True`) gates an upstream `MediaRef`,
   writes `state.quality_score`, and routes `pass`/`fail` against a `threshold`.
 - **`IterativeRefineNode`** (`control_flow=True`, registered in
   `_LOOP_SAFE_TYPES`) provides a bounded `generate → evaluate → regenerate`
-  back-edge: it counts iterations (`max_iterations`) and routes to
-  `exhausted_node` once spent, so the validator's cycle DFS does not false-fire.
-- **`AssetExportNode`** collates IMAGE/VIDEO/MESH3D into named assets + an
-  engine-import manifest and returns `produced_files`, plus a GenUI gallery.
+  back-edge: it writes `state.refine_feedback` (folded into the regeneration
+  prompt by `BaseGenerationNode`), counts iterations (`max_iterations`), and
+  routes to `exhausted_node` once spent, so the validator's cycle DFS does not
+  false-fire.
+- **`Art.Preview`** is a professional, ComfyUI `PreviewImage`-style artifact
+  preview node ([`preview.py`](../../leagent/workflow/nodes/builtin/preview.py)).
+  It accepts **any** media artifact (`IMAGE` / `VIDEO` / `MESH3D` / `AUDIO`) by
+  reference, emits a `NodeOutput.ui.gen_ui` preview plus structured metadata
+  (filename, dimensions, MIME, file size, download URL), and **passes the asset
+  straight through** on a wildcard output so it can sit *between* a
+  generator/processor and a downstream consumer (e.g. `AssetExportNode`) without
+  breaking the chain. The frontend renders it as a rich artifact card
+  (`NodeArtifactPreview`, large variant) with an authenticated download button;
+  the same card (compact variant) now enriches the inline preview on the
+  generation / image-processing nodes themselves.
+- **`AssetExportNode`** packages IMAGE/VIDEO/MESH3D/VFX into a **real
+  downloadable `.zip` bundle** via the file layer (returned by reference), laid
+  out for the chosen engine profile (`generic` / `unity` / `unreal` / `godot`)
+  with per-asset import-metadata sidecars (Unity `.meta`, Unreal import JSON,
+  Godot `.import`) and 3D format-conversion hints — see
+  [`export_profiles.py`](../../leagent/workflow/nodes/builtin/export_profiles.py).
+  It also writes a manifest to state and emits a GenUI gallery.
 
 ## 5. GenUI rendering
 
@@ -105,8 +142,11 @@ The art nodes are real producers of `NodeOutput.ui.gen_ui`. The GenUI schema
 ([`services/gen_ui/schema.py`](../../leagent/services/gen_ui/schema.py)) adds
 `Video` and `Model3D` (GLB viewer) component kinds, rendered by the frontend
 registry (`GenUiVideo`, `GenUiModel3D`). On the canvas, finished generation
-nodes render an inline ComfyUI-style media thumbnail (`NodeMediaPreview`), and
-the run panel groups all emitted assets into a dedicated **Assets** gallery.
+nodes render an inline ComfyUI-style media thumbnail (`NodeMediaPreview`) plus
+**quality / refine badges** (score, pass/fail, refine iteration, provider,
+engine) surfaced from the node's `executed` metadata, and the run panel groups
+all emitted assets into a dedicated **Assets** gallery. In chat, generated 3D
+meshes render inline via `ChatInlineModel3D` (no download-card fallback).
 
 ## 6. Agent self-correction loop
 
@@ -116,12 +156,40 @@ the run panel groups all emitted assets into a dedicated **Assets** gallery.
   digest. Combined with `chat_workflow_embed_emit` (canvas preview) and
   `workflow_run` / `workflow_status`, this closes the
   **idea → design → run → evaluate → re-run** loop.
+- `workflow_run` now returns `success=False` when a run finishes below the
+  quality bar (reading `quality_passed` / `quality_score` / `quality_threshold`
+  from the gate), so the agent can revise + re-run **within the same turn**
+  (bounded), not just on the next turn.
 - The `ArtifactErrorTracker`
   ([`context/artifact_error_tracker.py`](../../leagent/context/artifact_error_tracker.py))
   is workflow-run aware: a run that fails *or* finishes below the quality bar
-  (`quality_score < threshold`) is marked dirty, injecting a high-priority
-  regeneration directive into the next turn's system prompt so the agent
-  revises the graph and re-runs until the bar is met.
+  (`quality_passed` false, or `quality_score < threshold`) is marked dirty,
+  injecting a high-priority regeneration directive into the next turn's system
+  prompt so the agent revises the graph and re-runs until the bar is met.
+
+## 6b. Engine scheduling, self-optimization & planning
+
+- **Scheduling** ([`workflow/engine/`](../../leagent/workflow/engine/)): the
+  executor stages *batches* of ready nodes and runs independent branches
+  concurrently under a `max_parallelism` semaphore (branch routing applied
+  serially to keep `ExecutionList` mutations safe); `ParallelNode` fans out via
+  `WorkflowExecutor.execute_single_node_async` on forked state and merges back.
+  `NodeRunner` enforces a centralized transient-error retry/backoff policy
+  (`control.max_retries` / `retry_delay_sec`), runtime `Input.validate()`, and
+  the executor enforces `control.timeout_sec`.
+- **Metrics → memory → provider bias** (Phase 5): the executor emits the
+  workflow Prometheus counters plus `workflow_quality_score` /
+  `workflow_refine_iterations` histograms; completed art runs persist
+  `quality_score` / graph digest / refine count into **procedure memory**; the
+  `ProviderStatsStore` ([`llm/capabilities/provider_stats.py`](../../leagent/llm/capabilities/provider_stats.py))
+  records success-rate / latency / quality per provider and biases
+  `CapabilityRouter` ranking *within each cost tier* (a simple bandit).
+- **Art planning playbook** (Phase 7): the
+  [`prompts/art_playbook.py`](../../leagent/prompts/art_playbook.py) layer
+  surfaces the art ontology, a *graph-aware* node catalog (introspected from the
+  live registry), the `TPL-ART-01` pattern, and the required tool sequence via
+  the `art_playbook` context source (auto-gated by request heuristics).
+  `plan_art_tasks()` decomposes a brief into an ordered `todo_write` step list.
 
 ## 7. Flagship workflow + demos
 
@@ -147,5 +215,15 @@ without credentials.
   digest.
 - Contract tests:
   [`tests/workflow/test_art_nodes_contract.py`](../../../backend/tests/workflow/test_art_nodes_contract.py)
-  and the media-socket cases in
+  (incl. the `Art.VFXGen` cases) and the media-socket cases in
   [`tests/workflow/test_object_info_contract.py`](../../../backend/tests/workflow/test_object_info_contract.py).
+- Engine hardening: [`tests/workflow/test_engine_parallel.py`](../../../backend/tests/workflow/test_engine_parallel.py)
+  (parallel branches, retry/backoff, timeout, `ParallelNode` fan-out/merge).
+- Self-correction: [`tests/workflow/test_self_correction.py`](../../../backend/tests/workflow/test_self_correction.py)
+  (quality critic, feedback-conditioned refine, below-bar `success=False`).
+- Multimodal depth: [`tests/llm/test_generation_multimodal.py`](../../../backend/tests/llm/test_generation_multimodal.py)
+  (VFX modality, `GenerationRequest` contract, img2img/ControlNet, upscale hooks).
+- Export bundles: [`tests/workflow/test_asset_export.py`](../../../backend/tests/workflow/test_asset_export.py)
+  (engine-profile `.zip` bundles + import metadata + conversion hints).
+- Provider self-optimization: [`tests/llm/test_provider_stats.py`](../../../backend/tests/llm/test_provider_stats.py).
+- Art planning: [`tests/eval/test_art_playbook.py`](../../../backend/tests/eval/test_art_playbook.py).

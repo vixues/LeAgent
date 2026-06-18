@@ -99,22 +99,40 @@ it). Full reference: [`docs/workflow-engine/art-asset-nodes.md`](backend/docs/wo
   (`workflow/io/types.py`) carry assets *by reference* as a `MediaRef`
   (`workflow/io/media.py`) — never base64 — using `/api/v1/files/{id}/preview`.
 - **Generation backends (Strategy + Registry).** `leagent/llm/generation/`:
-  `GenerationBackend` Protocol + `GenerationService` facade (retry + failover).
-  An always-registered deterministic `offline` backend makes the whole pipeline
-  run credential-free; force it with `LEAGENT_ART_OFFLINE=1` or `provider: offline`.
+  `GenerationBackend` Protocol + typed `GenerationRequest` contract +
+  `GenerationService` facade (retry + failover). Kinds: `image` / `video` /
+  `model3d` / `vfx`. Real backends are env-gated (`ImageProviderBackend`,
+  `LocalDiffusionBackend` with img2img/ControlNet passthrough, `HttpUpscaleBackend`,
+  `HttpVideoBackend`, `HttpMesh3DBackend`, `HttpVfxBackend`). An always-registered
+  deterministic `offline` backend makes the whole pipeline run credential-free;
+  force it with `LEAGENT_ART_OFFLINE=1` or `provider: offline`.
 - **Art node pack.** `workflow/nodes/art/` exports `ArtNodeExtension`;
   `BaseGenerationNode` (Template Method) owns the execute skeleton. Nodes:
-  `Art.ImageGen`, `Art.Upscale`, `Art.VideoGen`, `Art.Mesh3D`. They emit
-  `NodeOutput.ui.gen_ui` asset previews.
-- **Self-correction (engine-side).** `QualityGateNode` scores a `MediaRef` and
-  routes pass/fail; `IterativeRefineNode` (in `_LOOP_SAFE_TYPES`) provides a
-  bounded regenerate back-edge; `AssetExportNode` emits an engine-ready manifest.
+  `Art.ImageGen`, `Art.Upscale` (dedicated super-resolution), `Art.VideoGen`,
+  `Art.Mesh3D`, `Art.VFXGen` (flipbook/sprite-sheet), `Art.QualityCritic`
+  (perceptual/LLM scoring). They emit `NodeOutput.ui.gen_ui` asset previews.
+- **Self-correction (engine-side).** `Art.QualityCritic` → `QualityGateNode`
+  gates a `MediaRef`; `IterativeRefineNode` (in `_LOOP_SAFE_TYPES`) writes
+  `refine_feedback` (folded into the regeneration prompt) on a bounded back-edge;
+  `AssetExportNode` produces a real downloadable engine-ready `.zip` bundle
+  (Unity/Unreal/Godot profiles + import metadata) via the file layer.
+- **Engine.** The executor stages ready *batches* and runs independent branches
+  concurrently (`max_parallelism`); `ParallelNode` forks/merges state;
+  `NodeRunner` applies centralized retry/backoff + runtime `Input.validate()`;
+  `control.timeout_sec` is enforced. Workflow Prometheus metrics +
+  quality/refine histograms feed procedure memory and a `ProviderStatsStore`
+  that biases `CapabilityRouter` ranking within each cost tier.
 - **Self-correction (agent-side).** `workflow_save` validates + persists an
   agent-authored graph (returns `flow_id` + digest); paired with
   `chat_workflow_embed_emit` and `workflow_run`/`workflow_status` it closes the
-  idea → design → run → evaluate → re-run loop. The `ArtifactErrorTracker` is
-  run-aware: a failed or below-threshold `quality_score` run injects a
-  regeneration directive into the next system prompt.
+  idea → design → run → evaluate → re-run loop. `workflow_run` returns
+  `success=False` below the quality bar so the agent re-runs **in the same turn**;
+  the run-aware `ArtifactErrorTracker` also injects a regeneration directive into
+  the next system prompt.
+- **Planning.** `prompts/art_playbook.py` (surfaced via the `art_playbook`
+  context source) supplies the art ontology, a graph-aware node catalog, the
+  `TPL-ART-01` pattern, and the required tool sequence; `plan_art_tasks()`
+  decomposes a brief into ordered `todo_write` steps.
 - Flagship: `config/workflows/templates/TPL-ART-01.yaml`; demo:
   `config/demo-workflows/demo-art-pipeline.yaml`.
 
