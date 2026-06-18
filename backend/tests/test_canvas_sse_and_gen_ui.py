@@ -898,6 +898,9 @@ def test_build_preview_html_allow_js_toggle():
     assert "var a = 1" not in html_off
     assert "onclick" in html_on.lower()
     assert "var a = 1" in html_on
+    assert "__leagentReleaseMedia" in html_on
+    assert "__leagentAttachCamera" in html_on
+    assert "__leagentReleaseMedia" not in html_off
 
 
 def test_build_preview_html_uses_sanitized_body_classes():

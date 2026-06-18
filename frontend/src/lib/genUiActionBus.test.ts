@@ -35,4 +35,17 @@ describe('genUiActionBus', () => {
     expect(fn).toHaveBeenCalledTimes(1);
     expect(fn).toHaveBeenCalledWith({ content: 'x' }, expect.any(Object));
   });
+
+  it('run_workflow merges inline payload values with form context', () => {
+    const fn = vi.fn();
+    registerGenUiActionAdapters({ runWorkflow: fn });
+    dispatchGenUiAction(
+      { type: 'run_workflow', payload: { flowId: 'f1' } },
+      { formValues: { prompt: 'from form' } },
+    );
+    expect(fn).toHaveBeenCalledWith(
+      { flowId: 'f1', values: { prompt: 'from form' } },
+      expect.objectContaining({ formValues: { prompt: 'from form' } }),
+    );
+  });
 });

@@ -26,6 +26,11 @@ interface GenUiFormScope {
 
 const GenUiFormContext = createContext<GenUiFormScope | null>(null);
 
+/** Read the enclosing Form scope (if any). */
+export function useGenUiFormScope(): GenUiFormScope | null {
+  return useContext(GenUiFormContext);
+}
+
 /** Extras a form-aware button merges into its action context. */
 export function useGenUiFormExtras(): {
   formValues?: Record<string, unknown>;
@@ -39,6 +44,18 @@ export function useGenUiFormExtras(): {
 
 function formKeyFor(ctx: GenUiRenderContextValue, formId: string): string {
   return `${ctx.sessionId ?? 'scope'}::${ctx.messageId ?? 'root'}::${formId}`;
+}
+
+/** Snapshot form values at click time (avoids stale closures on submit buttons). */
+export function formExtrasAtClick(scope: GenUiFormScope | null): {
+  formValues?: Record<string, unknown>;
+  formId?: string;
+} {
+  if (!scope) return {};
+  return {
+    formValues: useGenUiFormsStore.getState().getValues(scope.formKey),
+    formId: scope.formId,
+  };
 }
 
 export function GenUiForm({

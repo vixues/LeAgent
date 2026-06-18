@@ -335,7 +335,13 @@
       "jsOn": "JavaScript enabled in preview",
       "jsOff": "JavaScript disabled in preview",
       "jsOnShort": "JS On",
-      "jsOffShort": "JS Off"
+      "jsOffShort": "JS Off",
+      "cameraAllowOn": "Camera allowed in preview",
+      "cameraAllowOff": "Allow camera in preview",
+      "cameraPermissionHint": "Allow camera access in the browser prompt, or check system privacy settings.",
+      "cameraIframeHint": "Camera is enabled for the preview. If no prompt appeared, click Start or Open camera inside the page.",
+      "cameraInsecureContext": "Camera is not available on this address",
+      "cameraOpenedLocalhost": "Preview opened on localhost in a new tab — allow camera access there."
     },
     "camera": {
       "title": "Take a photo",

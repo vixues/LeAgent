@@ -399,6 +399,77 @@ def _wrap_html_fragment(body: str) -> str:
     ).replace(_CANVAS_BODY_MARKER, body)
 
 
+_CAMERA_LIFECYCLE_SCRIPT = """<script>
+(function () {
+  var active = new Set();
+  function stopAll() {
+    active.forEach(function (s) {
+      s.getTracks().forEach(function (t) { t.stop(); });
+    });
+    active.clear();
+    document.querySelectorAll("video,audio").forEach(function (el) {
+      var so = el.srcObject;
+      if (so && typeof so.getTracks === "function") {
+        so.getTracks().forEach(function (t) { t.stop(); });
+      }
+      el.srcObject = null;
+    });
+  }
+  window.__leagentReleaseMedia = stopAll;
+  window.__leagentAttachCamera = function (video, constraints) {
+    if (!video) return Promise.reject(new Error("video element required"));
+    constraints = constraints || { video: { facingMode: "user" }, audio: false };
+    return navigator.mediaDevices.getUserMedia(constraints).then(function (stream) {
+      video.setAttribute("playsinline", "");
+      video.setAttribute("autoplay", "");
+      video.muted = true;
+      video.srcObject = stream;
+      var playPromise = video.play();
+      if (playPromise && typeof playPromise.then === "function") {
+        return playPromise.then(function () { return stream; });
+      }
+      return stream;
+    });
+  };
+  window.addEventListener("pagehide", stopAll);
+  window.addEventListener("beforeunload", stopAll);
+  var md = navigator.mediaDevices;
+  if (md && md.getUserMedia) {
+    var orig = md.getUserMedia.bind(md);
+    md.getUserMedia = function (constraints) {
+      stopAll();
+      return orig(constraints).then(function (stream) {
+        active.add(stream);
+        stream.getTracks().forEach(function (track) {
+          track.addEventListener("ended", function () {
+            if (stream.getTracks().every(function (t) { return t.readyState === "ended"; })) {
+              active.delete(stream);
+            }
+          });
+        });
+        return stream;
+      });
+    };
+  }
+})();
+</script>"""
+
+
+def _inject_camera_lifecycle_script(html: str) -> str:
+    """Release camera hardware on iframe unload; auto-stop stale streams before reuse."""
+    if "__leagentReleaseMedia" in html:
+        return html
+    m = re.search(r"(?i)</head\s*>", html)
+    if m:
+        pos = m.start()
+        return html[:pos] + _CAMERA_LIFECYCLE_SCRIPT + html[pos:]
+    m2 = re.search(r"(?i)</body\s*>", html)
+    if m2:
+        pos = m2.start()
+        return html[:pos] + _CAMERA_LIFECYCLE_SCRIPT + html[pos:]
+    return html + _CAMERA_LIFECYCLE_SCRIPT
+
+
 def _inject_preview_assets_into_full_document(html: str) -> str:
     """When the agent returns a full <!DOCTYPE html>… doc, it often omits Tailwind; inject ours."""
     low = html.lower()
@@ -541,9 +612,12 @@ def build_preview_html(
         public_base=public_base,
     )
     if "<html" in body.lower():
-        return _inject_preview_assets_into_full_document(body), "text/html; charset=utf-8"
-    wrapped = _wrap_html_fragment(body)
-    return wrapped, "text/html; charset=utf-8"
+        html = _inject_preview_assets_into_full_document(body)
+    else:
+        html = _wrap_html_fragment(body)
+    if allow_js:
+        html = _inject_camera_lifecycle_script(html)
+    return html, "text/html; charset=utf-8"
 
 
 class CanvasService:

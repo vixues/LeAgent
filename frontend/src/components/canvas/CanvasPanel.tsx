@@ -19,7 +19,8 @@ import {
   pickCanvasPreviewPathFromMetadata,
   resolveCanvasPreviewUrl,
 } from '@/lib/previewUrl';
-import { canvasIframeSandbox, withCanvasPreviewJs } from '@/lib/canvasPreviewJs';
+import { canvasIframeAllow, canvasIframeSandbox, withCanvasPreviewFlags } from '@/lib/canvasPreviewJs';
+import { getCameraAccessIssue, localhostPreviewUrl, stopIframeMediaTracks } from '@/lib/cameraAccess';
 import {
   downloadImageBlob,
   extractCanvasPreviewToken,
@@ -37,7 +38,6 @@ import {
 } from '@/components/canvas/genUi/genUiCaptureDom';
 import { useToast } from '@/components/ui/Toaster';
 import { GenUiTreeView } from './GenUiRegistry';
-import { CameraCaptureModal } from '@/components/chat/CameraCaptureModal';
 
 const SandboxedPreview = lazy(() => import('../workspace/SandboxedPreview'));
 
@@ -73,9 +73,10 @@ function CanvasPanel({ artifact, className }: CanvasPanelProps) {
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [iframeKey, setIframeKey] = useState(0);
   const [jsEnabled, setJsEnabled] = useState(false);
+  const [cameraAllowed, setCameraAllowed] = useState(false);
   const [screenshotting, setScreenshotting] = useState(false);
   const [previewFrameError, setPreviewFrameError] = useState(false);
-  const [cameraOpen, setCameraOpen] = useState(false);
+  const previewIframeRef = useRef<HTMLIFrameElement>(null);
   const genuiBodyRef = useRef<HTMLDivElement>(null);
   const currentSessionId = useChatStore((s) => s.currentSessionId);
   const sessionId = artifact.sessionId || currentSessionId || '';
@@ -90,7 +91,9 @@ function CanvasPanel({ artifact, className }: CanvasPanelProps) {
   const hostedSrcBase = resolvedPreviewPath
     ? resolveCanvasPreviewUrl(resolvedPreviewPath)
     : '';
-  const hostedSrc = hostedSrcBase ? withCanvasPreviewJs(hostedSrcBase, jsEnabled) : '';
+  const hostedSrc = hostedSrcBase
+    ? withCanvasPreviewFlags(hostedSrcBase, { jsEnabled, cameraAllowed })
+    : '';
   const showGenTab = Boolean(tree);
   const effectiveTab: CanvasTab = showGenTab ? tab : 'preview';
 
@@ -100,22 +103,82 @@ function CanvasPanel({ artifact, className }: CanvasPanelProps) {
   const iframeSandbox = canvasIframeSandbox(
     jsEnabled,
     isApiCanvasPreview || ((meta?.trust as string) === 'hosted' && Boolean(hostedSrc)),
+    cameraAllowed,
   );
+
+  const iframeAllow = canvasIframeAllow(cameraAllowed);
 
   useEffect(() => {
     setPreviewFrameError(false);
-  }, [hostedSrc, iframeKey, jsEnabled]);
+  }, [hostedSrc, iframeKey, jsEnabled, cameraAllowed]);
+
+  const reloadPreviewIframe = useCallback(() => {
+    stopIframeMediaTracks(previewIframeRef.current);
+    setPreviewFrameError(false);
+    window.setTimeout(() => setIframeKey((k) => k + 1), 80);
+  }, []);
+
+  const handleToggleJs = useCallback(() => {
+    stopIframeMediaTracks(previewIframeRef.current);
+    setJsEnabled((prev) => {
+      const next = !prev;
+      if (!next) {
+        setCameraAllowed(false);
+      }
+      return next;
+    });
+    reloadPreviewIframe();
+  }, [reloadPreviewIframe]);
+
+  const handleToggleCamera = useCallback(() => {
+    if (cameraAllowed) {
+      stopIframeMediaTracks(previewIframeRef.current);
+      setCameraAllowed(false);
+      reloadPreviewIframe();
+      return;
+    }
+
+    const issue = getCameraAccessIssue();
+    if (issue === 'insecure') {
+      if (hostedSrcBase) {
+        window.open(localhostPreviewUrl(hostedSrcBase, true), '_blank', 'noopener');
+      }
+      toast({
+        variant: 'info',
+        title: t('chat.canvas.cameraInsecureContext'),
+        description: t('chat.canvas.cameraOpenedLocalhost'),
+      });
+      return;
+    }
+    if (issue === 'unsupported') {
+      toast({
+        variant: 'error',
+        title: t('chat.camera.notSupported'),
+      });
+      return;
+    }
+
+    stopIframeMediaTracks(previewIframeRef.current);
+    setJsEnabled(true);
+    setCameraAllowed(true);
+    reloadPreviewIframe();
+  }, [cameraAllowed, hostedSrcBase, reloadPreviewIframe, t, toast]);
 
   const handleRefresh = useCallback(() => {
-    setPreviewFrameError(false);
-    setIframeKey((k) => k + 1);
-  }, []);
+    reloadPreviewIframe();
+  }, [reloadPreviewIframe]);
 
   const handleOpenExternal = useCallback(() => {
     if (hostedSrc) {
-      window.open(hostedSrc, '_blank');
+      window.open(hostedSrc, '_blank', 'noopener');
+    } else if (hostedSrcBase) {
+      window.open(
+        withCanvasPreviewFlags(hostedSrcBase, { jsEnabled, cameraAllowed }),
+        '_blank',
+        'noopener',
+      );
     }
-  }, [hostedSrc]);
+  }, [cameraAllowed, hostedSrc, hostedSrcBase, jsEnabled]);
 
   const captureGenUiScreenshot = useCallback(async () => {
     const el = genuiBodyRef.current;
@@ -282,10 +345,7 @@ function CanvasPanel({ artifact, className }: CanvasPanelProps) {
           {/* Action buttons */}
           <button
             type="button"
-            onClick={() => {
-              setJsEnabled((v) => !v);
-              setIframeKey((k) => k + 1);
-            }}
+            onClick={handleToggleJs}
             className={cn(
               'p-1 rounded-md transition-colors',
               jsEnabled
@@ -321,10 +381,24 @@ function CanvasPanel({ artifact, className }: CanvasPanelProps) {
           </button>
           <button
             type="button"
-            onClick={() => setCameraOpen(true)}
-            className="p-1 rounded-md text-muted-foreground hover:text-foreground hover:bg-surface-sunken transition-colors"
-            aria-label="Take photo with camera"
-            title="Camera"
+            onClick={handleToggleCamera}
+            className={cn(
+              'p-1 rounded-md transition-colors',
+              cameraAllowed
+                ? 'text-foreground bg-surface-sunken'
+                : 'text-muted-foreground hover:text-foreground hover:bg-surface-sunken',
+            )}
+            aria-label={
+              cameraAllowed
+                ? t('chat.canvas.cameraAllowOn')
+                : t('chat.canvas.cameraAllowOff')
+            }
+            title={
+              cameraAllowed
+                ? t('chat.canvas.cameraAllowOn')
+                : t('chat.canvas.cameraAllowOff')
+            }
+            aria-pressed={cameraAllowed}
           >
             <Video className="w-3.5 h-3.5" />
           </button>
@@ -358,11 +432,13 @@ function CanvasPanel({ artifact, className }: CanvasPanelProps) {
               )}
               <div className="relative flex min-h-0 min-w-0 flex-1 basis-0 flex-col bg-white dark:bg-zinc-950">
                 <iframe
-                  key={`${hostedSrc}-${iframeKey}-${jsEnabled ? 'js' : 'nojs'}`}
+                  ref={previewIframeRef}
+                  key={`${hostedSrc}-${iframeKey}-${jsEnabled ? 'js' : 'nojs'}-${cameraAllowed ? 'cam' : 'nocam'}`}
                   title={artifact.title}
                   src={hostedSrc}
                   className="min-h-0 w-full min-w-0 flex-1 border-0"
                   sandbox={iframeSandbox || undefined}
+                  allow={iframeAllow}
                   referrerPolicy="no-referrer"
                   onLoad={() => setPreviewFrameError(false)}
                   onError={() => setPreviewFrameError(true)}
@@ -382,7 +458,6 @@ function CanvasPanel({ artifact, className }: CanvasPanelProps) {
             </div>
           )}
         </div>
-        <CameraCaptureModal open={cameraOpen} onOpenChange={setCameraOpen} />
       </div>
     );
   }

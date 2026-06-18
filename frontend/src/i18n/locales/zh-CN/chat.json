@@ -335,7 +335,13 @@
       "jsOn": "预览已启用 JavaScript",
       "jsOff": "预览已禁用 JavaScript",
       "jsOnShort": "JS 开",
-      "jsOffShort": "JS 关"
+      "jsOffShort": "JS 关",
+      "cameraAllowOn": "已授权预览使用摄像头",
+      "cameraAllowOff": "授权预览使用摄像头",
+      "cameraPermissionHint": "请在浏览器弹窗中允许摄像头访问，或检查系统隐私设置。",
+      "cameraIframeHint": "预览已授权摄像头。若未弹出权限请求，请在页面内再次点击「开始」或「打开摄像头」。",
+      "cameraInsecureContext": "当前地址无法使用摄像头",
+      "cameraOpenedLocalhost": "已在 localhost 新标签页打开预览，请在该页面允许摄像头访问。"
     },
     "camera": {
       "title": "拍摄照片",

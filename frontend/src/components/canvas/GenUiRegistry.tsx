@@ -36,7 +36,8 @@ import { dispatchGenUiAction } from '@/lib/genUiActionBus';
 import {
   GenUiForm,
   GenUiFormField,
-  useGenUiFormExtras,
+  formExtrasAtClick,
+  useGenUiFormScope,
 } from '@/components/canvas/genUi/formComponents';
 import {
   BADGE_VARIANTS,
@@ -69,7 +70,7 @@ function fireGenUiControl(
 
 /** Button that collects enclosing GenUi Form values into its action context. */
 function GenUiButtonNode({ node, ctx }: { node: GenUiNode; ctx: GenUiRenderContextValue }) {
-  const extras = useGenUiFormExtras();
+  const scope = useGenUiFormScope();
   const p = node.props ?? {};
   const variant = BUTTON_VARIANTS[(p.variant as string)] || BUTTON_VARIANTS.secondary;
   return (
@@ -77,7 +78,7 @@ function GenUiButtonNode({ node, ctx }: { node: GenUiNode; ctx: GenUiRenderConte
       type="button"
       className={cn('px-3 py-1.5 text-xs font-medium rounded-lg border transition-colors', variant)}
       onClick={() => {
-        fireGenUiControl(p, ctx, extras);
+        fireGenUiControl(p, ctx, formExtrasAtClick(scope));
       }}
     >
       {s(p.label) || 'Action'}
@@ -86,7 +87,7 @@ function GenUiButtonNode({ node, ctx }: { node: GenUiNode; ctx: GenUiRenderConte
 }
 
 function GenUiInteractiveButtonNode({ node, ctx }: { node: GenUiNode; ctx: GenUiRenderContextValue }) {
-  const extras = useGenUiFormExtras();
+  const scope = useGenUiFormScope();
   const p = node.props ?? {};
   const variant = BUTTON_VARIANTS[(p.variant as string)] || BUTTON_VARIANTS.primary;
   const sizeClass = p.size === 'lg' ? 'px-5 py-2.5 text-sm' : p.size === 'sm' ? 'px-2.5 py-1 text-xs' : 'px-4 py-2 text-sm';
@@ -101,7 +102,7 @@ function GenUiInteractiveButtonNode({ node, ctx }: { node: GenUiNode; ctx: GenUi
         b(p.disabled) && 'opacity-50 cursor-not-allowed',
       )}
       onClick={() => {
-        if (!p.disabled) fireGenUiControl(p, ctx, extras);
+        if (!p.disabled) fireGenUiControl(p, ctx, formExtrasAtClick(scope));
       }}
     >
       {!!p.icon && (

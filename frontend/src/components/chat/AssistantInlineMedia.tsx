@@ -2,6 +2,7 @@ import { useTranslation } from 'react-i18next';
 import type { Attachment } from '@/types/chat';
 import { ChatImage } from './media/ChatImage';
 import { ChatInlineVideo } from './media/ChatInlineVideo';
+import { ChatInlineModel3D } from './media/ChatInlineModel3D';
 import { AttachmentCard } from './AttachmentCard';
 
 interface AssistantInlineMediaProps {
@@ -24,6 +25,14 @@ function isVideo(att: Attachment): boolean {
 
 function isAudio(att: Attachment): boolean {
   return att.kind === 'audio' || att.type?.startsWith('audio/');
+}
+
+function isModel3D(att: Attachment): boolean {
+  return (
+    att.kind === 'model3d' ||
+    att.type === 'model/gltf-binary' ||
+    /\.(glb|gltf)$/i.test(att.name || '')
+  );
 }
 
 /**
@@ -50,6 +59,9 @@ export function AssistantInlineMedia({ media, native }: AssistantInlineMediaProp
         }
         if (isVideo(att)) {
           return <ChatInlineVideo key={att.id} src={src} title={att.name} />;
+        }
+        if (isModel3D(att)) {
+          return <ChatInlineModel3D key={att.id} src={src} title={att.name} />;
         }
         if (isAudio(att)) {
           return (

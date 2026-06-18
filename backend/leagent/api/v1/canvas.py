@@ -178,6 +178,10 @@ async def preview_canvas(
         False,
         description="When true, allow inline scripts and event handlers in HTML preview.",
     ),
+    camera: bool = Query(
+        False,
+        description="When true, allow camera/microphone in preview (requires js=1).",
+    ),
 ) -> HTMLResponse:
     settings = get_settings()
     doc = await canvas.load_verified_from_token(token)
@@ -194,6 +198,8 @@ async def preview_canvas(
     }
     if csp:
         headers["Content-Security-Policy"] = csp
+    if js or camera:
+        headers["Permissions-Policy"] = "camera=*, microphone=*"
     return HTMLResponse(content=html, status_code=200, headers=headers)
 
 
