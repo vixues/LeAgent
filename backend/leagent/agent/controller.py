@@ -1356,6 +1356,7 @@ class AgentController:
             tool_names: list[str] = []
             tool_successes = 0
             tool_failures = 0
+            art_run: dict[str, Any] = {}
             for step in context.steps:
                 if step.type == StepType.TOOL_CALL and step.tool_call:
                     tool_names.append(step.tool_call.name)
@@ -1364,6 +1365,12 @@ class AgentController:
                         tool_successes += 1
                     else:
                         tool_failures += 1
+                    # Capture the latest scored art-workflow run so procedural
+                    # memory records its quality_score / refine count / graph
+                    # digest — production feedback the planner can recall.
+                    extracted = self._extract_art_run(step.tool_result)
+                    if extracted:
+                        art_run = extracted
 
             paths = self._episode_paths_from_steps(context.steps)
             tags = [f"path:{p}" for p in paths[:48]]
@@ -1379,10 +1386,38 @@ class AgentController:
                 tool_failure_count=tool_failures,
                 total_steps=len(context.steps),
                 tags=tags,
+                extra={"art_run": art_run} if art_run else {},
             )
             await self.agent_memory.observe_turn(obs)
         except Exception as exc:  # noqa: BLE001
             logger.warning("episode_record_failed", error=str(exc))
+
+    def _extract_art_run(self, tool_result: Any) -> dict[str, Any]:
+        """Pull scored art-run telemetry from a workflow_run tool result."""
+        try:
+            data = self._coerce_tool_result_data(getattr(tool_result, "data", None))
+        except Exception:  # noqa: BLE001
+            return {}
+        if not isinstance(data, dict):
+            return {}
+        outputs = data.get("outputs")
+        if not isinstance(outputs, dict) or outputs.get("quality_score") is None:
+            return {}
+        run: dict[str, Any] = {}
+        try:
+            run["quality_score"] = float(outputs.get("quality_score"))
+        except (TypeError, ValueError):
+            return {}
+        passed = outputs.get("quality_passed")
+        if isinstance(passed, bool):
+            run["quality_passed"] = passed
+        for key in ("refine_iteration", "graph_digest", "graph_hash"):
+            val = outputs.get(key)
+            if val is not None:
+                run[key] = val
+        if data.get("execution_id"):
+            run["execution_id"] = str(data["execution_id"])
+        return run
 
     def _format_user_message(
         self,

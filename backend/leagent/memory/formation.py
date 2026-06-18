@@ -326,12 +326,39 @@ def build_procedure_signature(obs: TurnObservation) -> str:
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
+def build_art_run_note(art_run: Any) -> str:
+    """One-line procedure annotation for a scored art-workflow run.
+
+    Encodes the production-feedback signals the planner can recall: the final
+    ``quality_score``, whether it passed the gate, the number of refine
+    iterations, and the graph digest. Returns ``""`` when no art run is present.
+    """
+    if not isinstance(art_run, dict) or art_run.get("quality_score") is None:
+        return ""
+    parts: list[str] = []
+    try:
+        parts.append(f"quality={float(art_run['quality_score']):.2f}")
+    except (TypeError, ValueError):
+        return ""
+    passed = art_run.get("quality_passed")
+    if isinstance(passed, bool):
+        parts.append("passed" if passed else "below-bar")
+    refine = art_run.get("refine_iteration")
+    if refine is not None:
+        parts.append(f"refine={refine}")
+    digest = art_run.get("graph_digest") or art_run.get("graph_hash")
+    if digest:
+        parts.append(f"graph={str(digest)[:12]}")
+    return "Art run: " + " ".join(parts)
+
+
 __all__ = [
     "FormationDecision",
     "FormationPolicy",
     "FormationTarget",
     "TriggerKind",
     "TurnObservation",
+    "build_art_run_note",
     "build_episode_summary",
     "build_procedure_signature",
     "detect_triggers",

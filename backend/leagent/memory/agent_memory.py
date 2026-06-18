@@ -35,6 +35,7 @@ from leagent.memory.formation import (
     FormationPolicy,
     FormationTarget,
     TurnObservation,
+    build_art_run_note,
     build_episode_summary,
     build_procedure_signature,
 )
@@ -292,18 +293,31 @@ class AgentMemory:
                 tool_line = ", ".join(obs.tool_names[:32])
                 intent = (obs.user_text or "")[:200].strip() or "(no user text)"
                 output = (obs.assistant_text or "")[:200].strip() or "No output"
-                description = f"{intent}\n→ {output}\nTools: {tool_line}"[:4000]
+                description = f"{intent}\n→ {output}\nTools: {tool_line}"
+                # Production feedback: fold a scored art-workflow run's
+                # quality_score / refine count / graph digest into the procedure
+                # so the planner can recall what worked (and how well).
+                art_run = obs.extra.get("art_run") if isinstance(obs.extra, dict) else None
+                quality_note = build_art_run_note(art_run)
+                if quality_note:
+                    description = f"{description}\n{quality_note}"
+                description = description[:4000]
                 procedure = Procedure(
-                    name="auto run",
+                    name="art pipeline" if quality_note else "auto run",
                     signature=sig,
                     description=description,
                     user_id=obs.user_id,
                     workspace_id=obs.workspace_id,
                 )
                 success = obs.tool_failure_count == 0 and obs.tool_success_count > 0
+                if isinstance(art_run, dict) and art_run.get("quality_passed") is False:
+                    success = False
+                outcome = output
+                if quality_note:
+                    outcome = f"{output} [{quality_note}]"[:500]
                 await self.record_procedure(
                     procedure,
-                    outcome=output,
+                    outcome=outcome,
                     success=success,
                     error=obs.error,
                     duration_ms=obs.duration_ms,
