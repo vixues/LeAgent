@@ -29,8 +29,8 @@ describe('appendAssetHistoryEntry', () => {
       metadata: { refine_iteration: 1 },
     });
     expect(history).toHaveLength(2);
-    expect(history[0].nodeRunIndex).toBe(1);
-    expect(history[1].nodeRunIndex).toBe(2);
+    expect(history[0]!.nodeRunIndex).toBe(1);
+    expect(history[1]!.nodeRunIndex).toBe(2);
     expect(assetVersionCount(history, 'concept')).toBe(2);
   });
 

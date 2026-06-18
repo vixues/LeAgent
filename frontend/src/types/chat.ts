@@ -109,7 +109,7 @@ export function parseWorkflowFromExtensions(
       const st = (v as Record<string, unknown>).status;
       if (st === 'idle' || st === 'running' || st === 'success' || st === 'error') {
         const raw = v as Record<string, unknown>;
-        let status = st;
+        let status: ChatWorkflowStepRunState = st;
         if (st === 'running') {
           const err = raw.error;
           const completedAt = raw.completed_at;

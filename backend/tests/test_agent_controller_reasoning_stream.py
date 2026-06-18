@@ -277,6 +277,8 @@ async def test_run_stream_waits_for_agent_cleanup_after_complete(
         skip_append_user=False,  # noqa: ARG001
         persisted_user_message_id=None,  # noqa: ARG001
         agent_task_id=None,  # noqa: ARG001
+        execution_run_id=None,  # noqa: ARG001
+        runtime_profile=None,  # noqa: ARG001
     ):
         assert stream_handler is not None
         await stream_handler.on_complete(

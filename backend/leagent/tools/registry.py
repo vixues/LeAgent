@@ -637,7 +637,7 @@ class ToolRegistry:
             if self._is_concrete_tool_class(obj):
                 try:
                     tool_instance = obj()
-                    self.register(tool_instance)
+                    self.register(tool_instance, replace=True)
                     count += 1
                 except Exception as e:
                     logger.warning(

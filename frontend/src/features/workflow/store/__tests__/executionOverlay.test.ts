@@ -14,6 +14,7 @@ describe('executionOverlay per-node isolation', () => {
       ui: {
         schemaVersion: '1',
         root: {
+          nodeId: 'img-root',
           kind: 'Image',
           props: { src: '/api/v1/files/aaa/preview', fileId: 'aaa' },
         },
@@ -25,6 +26,7 @@ describe('executionOverlay per-node isolation', () => {
       ui: {
         schemaVersion: '1',
         root: {
+          nodeId: 'img-root',
           kind: 'Image',
           props: { src: '/api/v1/files/bbb/preview', fileId: 'bbb' },
         },
@@ -61,8 +63,8 @@ describe('executionOverlay per-node isolation', () => {
 
     const overlay = useExecutionOverlay.getState().getOverlay(pid);
     expect(overlay?.assetHistory).toHaveLength(2);
-    expect(overlay?.assetHistory[0].fileId).toBe('first');
-    expect(overlay?.assetHistory[1].fileId).toBe('second');
+    expect(overlay?.assetHistory[0]!.fileId).toBe('first');
+    expect(overlay?.assetHistory[1]!.fileId).toBe('second');
     expect(overlay?.assetOrder).toEqual(['concept']);
   });
 });

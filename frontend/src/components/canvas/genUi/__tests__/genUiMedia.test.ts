@@ -16,6 +16,7 @@ describe('mediaFromNodeRunState', () => {
       ui: {
         schemaVersion: '1',
         root: {
+          nodeId: 'img-root',
           kind: 'Image',
           props: { src: '/api/v1/files/wrong/preview', fileId: 'wrong' },
         },
@@ -31,6 +32,7 @@ describe('mediaFromNodeRunState', () => {
       ui: {
         schemaVersion: '1',
         root: {
+          nodeId: 'img-root',
           kind: 'Image',
           props: { src: '/api/v1/files/only-ui/preview', fileId: 'only-ui' },
         },
@@ -46,6 +48,7 @@ describe('patchAssetTreeFileRef', () => {
       {
         schemaVersion: '1',
         root: {
+          nodeId: 'img-root',
           kind: 'Image',
           props: { src: '/api/v1/files/stale/preview' },
         },
@@ -102,13 +105,13 @@ describe('listAssetHistoryTrees', () => {
         metadata: { file_id: 'second', refine_iteration: 1, width: 1024, height: 1024 },
       },
     ];
-    expect(formatAssetHistoryLabel(history[0], 'concept')).toContain('initial');
-    expect(formatAssetHistoryLabel(history[1], 'concept')).toContain('refine 1');
+    expect(formatAssetHistoryLabel(history[0]!, 'concept')).toContain('initial');
+    expect(formatAssetHistoryLabel(history[1]!, 'concept')).toContain('refine 1');
     const trees = listAssetHistoryTrees(history, { concept: 'Concept' });
     expect(trees).toHaveLength(2);
-    expect(trees[0].id).toBe('concept:first');
-    expect(trees[1].id).toBe('concept:second');
-    const leaf = trees[1].tree.root?.children?.[1] as { props?: { fileId?: string } };
+    expect(trees[0]!.id).toBe('concept:first');
+    expect(trees[1]!.id).toBe('concept:second');
+    const leaf = trees[1]!.tree.root?.children?.[1] as { props?: { fileId?: string } };
     expect(leaf?.props?.fileId).toBe('second');
   });
 });

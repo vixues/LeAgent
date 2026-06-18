@@ -1,7 +1,7 @@
 import { useCallback } from 'react';
 import { useStore } from '@xyflow/react';
 
-import type { EditorEdge, EditorNode } from '../../graph/serialization';
+import type { EditorEdge, EditorNode } from '../graph/serialization';
 
 export function useInboundEdges(nodeId: string, targetHandle?: string): EditorEdge[] {
   return useStore(

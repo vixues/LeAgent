@@ -12,6 +12,7 @@ import {
   type EditorEdge,
   type EditorNode,
 } from '../serialization';
+import { buildCanvasAssetNode } from '../../components/canvasAsset';
 import {
   DEFAULT_SOCKET_COLOR,
   DEFAULT_SOCKET_COLORS,
@@ -386,6 +387,7 @@ describe('toCanonicalDocument', () => {
         isOutputNode: false,
         deprecated: false,
         experimental: false,
+        controlFlow: false,
         inputs: [
           { id: 'prompt', type: 'STRING', optional: false, color: '#7BD88F', widget: 'string', forceInput: false },
           { id: 'width', type: 'INT', optional: true, color: '#6E9BF5', widget: 'int', forceInput: false },
@@ -401,6 +403,7 @@ describe('toCanonicalDocument', () => {
         isOutputNode: false,
         deprecated: false,
         experimental: false,
+        controlFlow: false,
         inputs: [
           { id: 'asset', type: 'IMAGE', optional: true, color: '#F5A623', widget: 'string', forceInput: false },
         ],
@@ -419,6 +422,7 @@ describe('toCanonicalDocument', () => {
         isOutputNode: false,
         deprecated: false,
         experimental: false,
+        controlFlow: false,
         inputs: [
           { id: 'asset', type: 'IMAGE', optional: true, color: '#F5A623', widget: 'string', forceInput: false },
           { id: 'score', type: 'FLOAT', optional: true, color: '#6E9BF5', widget: 'float', forceInput: false },
@@ -438,6 +442,7 @@ describe('toCanonicalDocument', () => {
         isOutputNode: false,
         deprecated: false,
         experimental: false,
+        controlFlow: false,
         inputs: [
           { id: 'max_iterations', type: 'INT', optional: true, color: '#6E9BF5', widget: 'int', forceInput: false },
           { id: 'feedback', type: 'STRING', optional: true, color: '#7BD88F', widget: 'string', forceInput: false },
@@ -453,6 +458,7 @@ describe('toCanonicalDocument', () => {
         isOutputNode: false,
         deprecated: false,
         experimental: false,
+        controlFlow: false,
         inputs: [
           { id: 'image', type: 'IMAGE', optional: false, color: '#F5A623', widget: 'string', forceInput: false },
           { id: 'prompt', type: 'STRING', optional: true, color: '#7BD88F', widget: 'string', forceInput: false },
@@ -847,19 +853,18 @@ describe('fromStoredDocument', () => {
     const info = parseObjectInfo(RAW);
     const assetId = 'asset-1';
     const nodes: EditorNode[] = [
-      {
-        id: assetId,
-        type: 'canvas-asset',
-        position: { x: 10, y: 20 },
-        style: { width: 180, height: 120 },
-        data: {
+      buildCanvasAssetNode(
+        assetId,
+        { x: 10, y: 20 },
+        {
           assetKind: 'image',
           fileId: 'file-uuid',
           fileName: 'demo.png',
           previewUrl: '/api/v1/files/file-uuid/preview',
           label: 'demo.png',
         },
-      } as EditorNode,
+        { width: 180, height: 120 },
+      ),
       {
         id: 'b',
         type: 'workflow',

@@ -148,6 +148,8 @@ class TestRunAgentStream:
 
         collected = []
         async for etype, edata, acc in _run_agent_stream(agent, "msg", uuid4(), uuid4()):
+            if etype == "execution_started":
+                continue
             collected.append((etype, acc))
 
         assert collected[0] == ("token", "Hello")
@@ -167,9 +169,13 @@ class TestRunAgentStream:
 
         collected = []
         async for etype, edata, acc in _run_agent_stream(agent, "msg", uuid4(), uuid4()):
+            if etype == "execution_started":
+                continue
             collected.append((etype, edata))
 
-        assert collected[0] == ("error", {"error": "boom"})
+        assert collected[0][0] == "error"
+        assert collected[0][1]["error"] == "boom"
+        assert "run_id" in collected[0][1]
 
     @pytest.mark.asyncio
     async def test_thinking_and_tool_events(self) -> None:
@@ -188,6 +194,8 @@ class TestRunAgentStream:
 
         types = []
         async for etype, edata, acc in _run_agent_stream(agent, "msg", uuid4(), uuid4()):
+            if etype == "execution_started":
+                continue
             types.append(etype)
 
         assert types == ["thinking", "tool_call", "tool_result"]

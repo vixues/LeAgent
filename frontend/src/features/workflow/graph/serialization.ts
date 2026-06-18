@@ -16,7 +16,7 @@ import type { Edge, Node, Viewport } from '@xyflow/react';
 
 import type { NodeDefinition } from './objectInfo';
 import { CONTROL_EDGE_COLOR } from './connectionUtils';
-import { CANVAS_ASSET_NODE_TYPE, canvasAssetSourceHandle } from '../components/canvasAsset';
+import { CANVAS_ASSET_NODE_TYPE, canvasAssetSourceHandle, type CanvasAssetNodeData, isCanvasAssetNode } from '../components/canvasAsset';
 import {
   canvasAssetToCanonical,
   canonicalToCanvasAsset,
@@ -35,8 +35,20 @@ export interface WorkflowNodeData extends Record<string, unknown> {
   mode?: 'mute' | 'bypass';
 }
 
-export type EditorNode = Node<WorkflowNodeData>;
+export type WorkflowEditorNode = Node<WorkflowNodeData>;
+/** Workflow nodes plus canvas-dropped asset sources (LoadImage / ScriptNode / LoadMesh3D). */
+export type EditorNode = WorkflowEditorNode | Node<CanvasAssetNodeData>;
 export type EditorEdge = Edge;
+
+/** Backend ``class_type`` for a workflow editor node; empty for canvas assets. */
+export function workflowClassType(node: EditorNode | undefined | null): string {
+  if (!node || isCanvasAssetNode(node)) return '';
+  return node.data.nodeType ?? '';
+}
+
+export function isWorkflowEditorNode(node: EditorNode): node is WorkflowEditorNode {
+  return !isCanvasAssetNode(node);
+}
 
 export interface CanonicalDocument {
   id: string;
@@ -46,7 +58,7 @@ export interface CanonicalDocument {
   outputs: unknown[];
   metadata: Record<string, unknown>;
   nodes: Record<string, CanonicalNode>;
-  control: { start?: string; edges: CanonicalEdge[] };
+  control: { start?: string; end?: string; edges: CanonicalEdge[] };
   ui: {
     nodes: EditorNode[];
     edges: EditorEdge[];
@@ -471,20 +483,20 @@ export function toCanonicalDocument(params: ToCanonicalParams): CanonicalDocumen
 
   const nodeSpecs: Record<string, CanonicalNode> = {};
   for (const node of nodes) {
-    if (node.type === CANVAS_ASSET_NODE_TYPE) {
+    if (isCanvasAssetNode(node)) {
       const converted = canvasAssetToCanonical(node);
       if (!converted) continue;
       const inputs = { ...converted.inputs };
       for (const edge of flatEdges) {
         if (edge.target !== node.id) continue;
-        const targetDef = definitions[nodeFor(nodes, edge.target)?.data.nodeType ?? ''];
+        const targetDef = definitions[workflowClassType(nodeFor(nodes, edge.target))];
         const targetHandle = edge.targetHandle ?? targetDef?.inputs[0]?.id ?? 'input';
         const sourceNode = nodeFor(nodes, edge.source);
         let slot = 0;
         if (sourceNode?.type === CANVAS_ASSET_NODE_TYPE) {
           slot = 0;
         } else {
-          const sourceDef = definitions[sourceNode?.data.nodeType ?? ''];
+          const sourceDef = definitions[workflowClassType(sourceNode)];
           slot = outputSlotIndex(sourceDef, edge.sourceHandle);
         }
         inputs[targetHandle] = [edge.source, slot];
@@ -498,6 +510,7 @@ export function toCanonicalDocument(params: ToCanonicalParams): CanonicalDocumen
     }
 
     if (isUiOnly(node)) continue;
+    if (!isWorkflowEditorNode(node)) continue;
 
     const data = node.data;
     const classType = data.nodeType || (node.type ?? '');
@@ -520,10 +533,10 @@ export function toCanonicalDocument(params: ToCanonicalParams): CanonicalDocumen
       const targetHandle = edge.targetHandle ?? def?.inputs[0]?.id ?? 'input';
       const sourceNode = nodeFor(nodes, edge.source);
       const slot =
-        sourceNode?.type === CANVAS_ASSET_NODE_TYPE
+        isCanvasAssetNode(sourceNode)
           ? 0
           : outputSlotIndex(
-              definitions[sourceNode?.data.nodeType ?? ''],
+              definitions[workflowClassType(sourceNode)],
               edge.sourceHandle,
             );
       const slotDef = def?.inputs.find((i) => i.id === targetHandle) ?? def?.inputs[0];
@@ -566,7 +579,7 @@ export function toCanonicalDocument(params: ToCanonicalParams): CanonicalDocumen
 
   // Storyboard: honour explicit shot ordering from editor UI.
   for (const node of nodes) {
-    if (node.type !== 'workflow' || node.data.nodeType !== 'Art.Storyboard') continue;
+    if (!isWorkflowEditorNode(node) || node.type !== 'workflow' || node.data.nodeType !== 'Art.Storyboard') continue;
     const spec = nodeSpecs[node.id];
     if (!spec) continue;
     const order = node.data.values?.shot_order;
@@ -590,10 +603,10 @@ export function toCanonicalDocument(params: ToCanonicalParams): CanonicalDocumen
   const canonicalEdges: CanonicalEdge[] = dataEdges.map((edge) => {
     const sourceNode = nodeFor(nodes, edge.source);
     const targetNode = nodeFor(nodes, edge.target);
-    const sourceDef = definitions[sourceNode?.data.nodeType ?? ''];
-    const targetDef = definitions[targetNode?.data.nodeType ?? ''];
+    const sourceDef = definitions[workflowClassType(sourceNode)];
+    const targetDef = definitions[workflowClassType(targetNode)];
     const source_slot =
-      sourceNode?.type === CANVAS_ASSET_NODE_TYPE
+      isCanvasAssetNode(sourceNode)
         ? 0
         : outputSlotIndex(sourceDef, edge.sourceHandle);
     return {
@@ -607,12 +620,18 @@ export function toCanonicalDocument(params: ToCanonicalParams): CanonicalDocumen
   // Prefer an explicit Start node; else the first node with no incoming edges.
   const targets = new Set(flatEdges.map((e) => e.target));
   const startNode =
-    workflowNodes.find((n) => n.data.nodeType === 'StartNode') ??
-    nodes.find((n) => n.type === CANVAS_ASSET_NODE_TYPE) ??
+    workflowNodes.find((n) => isWorkflowEditorNode(n) && n.data.nodeType === 'StartNode') ??
+    nodes.find((n) => isCanvasAssetNode(n)) ??
     workflowNodes.find((n) => !targets.has(n.id));
 
   const workOrder = workflowNodes
-    .filter((n) => n.type === 'workflow' && n.data.nodeType !== 'StartNode' && n.data.nodeType !== 'EndNode')
+    .filter(
+      (n) =>
+        isWorkflowEditorNode(n) &&
+        n.type === 'workflow' &&
+        n.data.nodeType !== 'StartNode' &&
+        n.data.nodeType !== 'EndNode',
+    )
     .sort((a, b) => a.position.x - b.position.x || a.position.y - b.position.y)
     .map((n) => n.id);
 

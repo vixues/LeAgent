@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from unittest.mock import AsyncMock, MagicMock
+
 import pytest
 
 from leagent.bootstrap.tools import bootstrap_tools
@@ -26,14 +28,22 @@ def _all_template_ids() -> list[str]:
 
 
 @pytest.fixture
-async def workflow_executor_with_tools():
+async def workflow_executor_with_tools(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setenv("LEAGENT_ART_OFFLINE", "1")
     await bootstrap_tools()
     await bootstrap_nodes()
     reg = get_registry()
+    llm = MagicMock()
+    llm.complete = AsyncMock(
+        return_value=MagicMock(
+            content='{"prompt": "female warrior, cel-shaded game character"}',
+        ),
+    )
     return WorkflowExecutor(
         tool_registry=reg,
         tool_executor=ToolExecutor(registry=reg, service_manager=None),
         cache_set=build_cache_set("none"),
+        llm_service=llm,
     )
 
 

@@ -57,43 +57,50 @@ async def test_game_state_init_read_update_score_roundtrip(
     game_id = "quiz-1"
 
     init = await tool.execute(
+        {
+            "operation": "init",
+            "game_id": game_id,
+            "phase": "playing",
+            "payload": {"round": 1, "answer": None},
+        },
         context,
-        operation="init",
-        game_id=game_id,
-        phase="playing",
-        payload={"round": 1, "answer": None},
     )
-    assert init.success is True
-    assert init.data["game"]["phase"] == "playing"
-    assert init.data["game"]["payload"]["round"] == 1
+    assert init["game"]["phase"] == "playing"
+    assert init["game"]["payload"]["round"] == 1
 
-    read = await tool.execute(context, operation="read", game_id=game_id)
-    assert read.success is True
-    assert read.data["game"]["turn"] == 0
+    read = await tool.execute(
+        {"operation": "read", "game_id": game_id},
+        context,
+    )
+    assert read["game"]["turn"] == 0
 
     updated = await tool.execute(
+        {
+            "operation": "update",
+            "game_id": game_id,
+            "payload": {"answer": "B"},
+            "advance_turn": True,
+        },
         context,
-        operation="update",
-        game_id=game_id,
-        payload={"answer": "B"},
-        advance_turn=True,
     )
-    assert updated.success is True
-    assert updated.data["game"]["turn"] == 1
-    assert updated.data["game"]["payload"]["answer"] == "B"
+    assert updated["game"]["turn"] == 1
+    assert updated["game"]["payload"]["answer"] == "B"
 
     scored = await tool.execute(
+        {
+            "operation": "score",
+            "game_id": game_id,
+            "score_delta": 10,
+            "rule_tag": "correct",
+        },
         context,
-        operation="score",
-        game_id=game_id,
-        score_delta=10,
-        rule_tag="correct",
     )
-    assert scored.success is True
-    assert scored.data["game"]["score"] == 10
-    assert scored.data["game"]["score_history"][-1]["tag"] == "correct"
+    assert scored["game"]["score"] == 10
+    assert scored["game"]["score_history"][-1]["tag"] == "correct"
 
-    final = await tool.execute(context, operation="read", game_id=game_id)
-    assert final.success is True
-    assert final.data["game"]["turn"] == 1
-    assert final.data["game"]["score"] == 10
+    final = await tool.execute(
+        {"operation": "read", "game_id": game_id},
+        context,
+    )
+    assert final["game"]["turn"] == 1
+    assert final["game"]["score"] == 10

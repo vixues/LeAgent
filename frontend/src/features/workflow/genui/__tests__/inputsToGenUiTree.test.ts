@@ -19,7 +19,7 @@ describe('inputsToGenUiTree', () => {
     const tree = inputsToGenUiTree(
       [{ name: 'query', type: 'string', required: true }],
       { flowId: 'f1', submitLabel: 'Go' },
-    );
+    )!;
     expect(tree.root.kind).toBe('Form');
     expect(tree.root.props?.formId).toBe('workflow-inputs-f1');
 
@@ -43,7 +43,7 @@ describe('inputsToGenUiTree', () => {
       { name: 'j', type: 'object', default: { a: 1 } },
       { name: 'arr', type: 'array' },
     ];
-    const tree = inputsToGenUiTree(specs, { flowId: 'f1' });
+    const tree = inputsToGenUiTree(specs, { flowId: 'f1' })!;
     const kinds = fields(tree.root.children).map((c) => c.kind);
     expect(kinds).toEqual([
       'Input',
@@ -67,7 +67,7 @@ describe('inputsToGenUiTree', () => {
     const tree = inputsToGenUiTree(
       [{ name: 'mode', type: 'string', choices: ['fast', 'slow'], default: 'fast' }],
       { flowId: 'f1' },
-    );
+    )!;
     const field = fields(tree.root.children)[0]!;
     expect(field.kind).toBe('Select');
     expect(field.props?.options).toEqual(['fast', 'slow']);
@@ -96,7 +96,7 @@ describe('inputsToGenUiTree', () => {
     const tree = inputsToGenUiTree(
       [null, {}, { name: 'ok' }] as unknown as WorkflowInputSpec[],
       { flowId: 'f1' },
-    );
+    )!;
     expect(tree.root.children).toHaveLength(2); // ok field + submit
   });
 });

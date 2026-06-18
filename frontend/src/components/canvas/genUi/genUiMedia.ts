@@ -139,10 +139,12 @@ export function buildAssetTreeFromRunState(
   return {
     schemaVersion: '1',
     root: {
+      nodeId: `asset-run-${nodeId}`,
       kind: 'Stack',
       children: [
-        { kind: 'SectionHeader', props: { title } },
+        { nodeId: `asset-run-${nodeId}-header`, kind: 'SectionHeader', props: { title } },
         {
+          nodeId: `asset-run-${nodeId}-media`,
           kind: media.kind,
           props: {
             src: media.src,

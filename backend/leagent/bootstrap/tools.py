@@ -136,7 +136,7 @@ def _try_register(registry: ToolRegistry, module_path: str, class_name: str) -> 
         if cls is None:
             return False
         instance = cls()
-        registry.register(instance, replace=False)
+        registry.register(instance, replace=True)
         return True
     except Exception as exc:  # noqa: BLE001 — skip-and-log, never fatal
         logger.debug(

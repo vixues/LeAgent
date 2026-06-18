@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import type { TFunction } from 'i18next';
 import type { ChatSession, Message } from '@/types/chat';
 import { apiClient } from '@/api/client';
 import { dedupeMessagesByIdPreserveOrder, useChatStore } from './chat';
@@ -23,6 +24,8 @@ vi.mock('@/api/client', () => ({
 }));
 
 const SESSION_ID = '00000000-0000-4000-8000-000000000001';
+
+const t = ((k: string) => k) as unknown as TFunction;
 
 const session: ChatSession = {
   id: SESSION_ID,
@@ -375,7 +378,7 @@ describe('execution stream integration', () => {
         type: 'execution_started',
         data: { run_id: 'run-xyz', session_id: SESSION_ID, scope: 'chat_turn' },
       },
-      { sessionId: SESSION_ID, assistantMsgId: 'a1' },
+      { sessionId: SESSION_ID, assistantMsgId: 'a1', userMessageId: 'u1', t },
     );
 
     const entry = useExecutionSessionStore.getState().bySession[SESSION_ID];

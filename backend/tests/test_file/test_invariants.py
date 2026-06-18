@@ -74,6 +74,7 @@ class TestINV1_NoDirectWriteInBlobPaths:
         "config/config.py": "writes the user app-config file",
         "config/migrate_v2.py": "rewrites config during v1->v2 migration",
         "llm/provider_config.py": "persists the LLM provider config file",
+        "llm/generation/config.py": "persists image-gen preset YAML in app config",
         # Durable operational registries with their own file formats.
         "cron/repository.py": "atomic write of the cron jobs registry file",
         "extensions/manager.py": "persists the installed-extensions registry",

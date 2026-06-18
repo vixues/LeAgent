@@ -37,6 +37,7 @@ import {
   GenUiForm,
   GenUiFormField,
   formExtrasAtClick,
+  useGenUiFormExtras,
   useGenUiFormScope,
 } from '@/components/canvas/genUi/formComponents';
 import {

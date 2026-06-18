@@ -52,8 +52,10 @@ import { useGraphHistory } from './graph/useGraphHistory';
 import {
   toCanonicalDocument,
   fromStoredDocument,
+  isWorkflowEditorNode,
   type EditorEdge,
   type EditorNode,
+  type WorkflowEditorNode,
   type WorkflowNodeData,
 } from './graph/serialization';
 import {
@@ -209,7 +211,9 @@ function EditorInner({ registry }: { registry: ObjectInfo }) {
         const inferred =
           declared.length > 0
             ? declared
-            : inferWorkflowInputsFromValues(stored.nodes.map((n) => n.data.values ?? {}));
+            : inferWorkflowInputsFromValues(
+                stored.nodes.map((n) => (isWorkflowEditorNode(n) ? n.data.values ?? {} : {})),
+              );
         setDocInputs(inferred);
         setDocOutputs(stored.outputs.filter(isOutputSpec));
         if (inferred.length > 0) {
@@ -262,7 +266,7 @@ function EditorInner({ registry }: { registry: ObjectInfo }) {
       size?: { width: number; height: number },
     ) => {
       const node = buildCanvasAssetNode(newId(), position, data, size);
-      setNodes((cur) => [...cur, node as EditorNode]);
+      setNodes((cur) => [...cur, node]);
       return node.id;
     },
     [setNodes],
@@ -332,7 +336,15 @@ function EditorInner({ registry }: { registry: ObjectInfo }) {
   }, []);
 
   const isValidConnection = useCallback<IsValidConnection>(
-    (conn) => isWorkflowConnectionValid(conn, registry.definitions, (id) => rf.getNode(id)),
+    (conn) => {
+      const connection: Connection = {
+        source: conn.source ?? '',
+        target: conn.target ?? '',
+        sourceHandle: conn.sourceHandle ?? null,
+        targetHandle: conn.targetHandle ?? null,
+      };
+      return isWorkflowConnectionValid(connection, registry.definitions, (id) => rf.getNode(id));
+    },
     [rf, registry],
   );
 
@@ -623,14 +635,13 @@ function EditorInner({ registry }: { registry: ObjectInfo }) {
   const toggleMode = useCallback(
     (mode: 'mute' | 'bypass') => {
       setNodes((cur) =>
-        cur.map((n) =>
-          n.selected
-            ? {
-                ...n,
-                data: { ...n.data, mode: n.data.mode === mode ? undefined : mode },
-              }
-            : n,
-        ),
+        cur.map((n) => {
+          if (!n.selected || !isWorkflowEditorNode(n)) return n;
+          return {
+            ...n,
+            data: { ...n.data, mode: n.data.mode === mode ? undefined : mode },
+          };
+        }),
       );
     },
     [setNodes],
@@ -981,9 +992,10 @@ function EditorInner({ registry }: { registry: ObjectInfo }) {
   const edgeTypes = useMemo(() => ({ workflow: WorkflowEdge }), []);
 
   const selectedNodes = nodes.filter((n) => n.selected);
-  const selectedNode =
-    selectedNodes.length === 1 && selectedNodes[0]!.type === 'workflow'
-      ? selectedNodes[0]
+  const loneSelection = selectedNodes.length === 1 ? selectedNodes[0] : undefined;
+  const selectedNode: WorkflowEditorNode | undefined =
+    loneSelection && isWorkflowEditorNode(loneSelection) && loneSelection.type === 'workflow'
+      ? loneSelection
       : undefined;
   const selectedWorkflowCount = selectedNodes.filter((n) => n.type === 'workflow').length;
   const hasSelectedGroup = selectedNodes.some((n) => n.type === 'group');
@@ -1211,7 +1223,6 @@ function EditorInner({ registry }: { registry: ObjectInfo }) {
                 const newNodeId = addNode(def, rf.screenToFlowPosition(paletteAt));
                 if (paletteLink) {
                   const link = paletteLink;
-                  const getNode = (id: string) => rf.getNode(id);
                     if (link.handleType === 'source') {
                     const slot = def.inputs.find((s) => typesCompatible(link.type, s.type));
                     if (slot) {

@@ -336,7 +336,7 @@ class _EntryKind(Enum):
 
 @dataclass
 class _FakeEntry:
-    summary: str
+    text: str
     kind: _EntryKind = _EntryKind.FACT
 
 

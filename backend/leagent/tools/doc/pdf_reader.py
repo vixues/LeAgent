@@ -85,7 +85,6 @@ class PDFReaderTool(SyncTool):
                     "type": "string",
                     "enum": [
                         "read",
-                        "extract_text",
                         "extract_tables",
                         "extract_images",
                         "extract_links",
@@ -102,7 +101,7 @@ class PDFReaderTool(SyncTool):
                     "description": (
                         "Operation (default: read): read|extract_tables|extract_images|"
                         "extract_links|search|page_info|outline|convert_to_images|split|"
-                        "merge|extract_pages|metadata. Alias: extract_text (= read)."
+                        "merge|extract_pages|metadata."
                     ),
                 },
                 "file_path": {
@@ -225,8 +224,6 @@ class PDFReaderTool(SyncTool):
 
     def execute_sync(self, params: dict[str, Any], context: ToolContext) -> dict[str, Any]:
         operation = (params.get("operation") or "read").strip().lower()
-        if operation == "extract_text":
-            operation = "read"
         logger.info("pdf_processor", operation=operation, file_path=params.get("file_path"))
 
         dispatch = {

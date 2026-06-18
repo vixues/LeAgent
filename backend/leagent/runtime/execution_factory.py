@@ -5,12 +5,11 @@ from __future__ import annotations
 from typing import Any
 from uuid import UUID
 
-import structlog
-
 from leagent.runtime.execution_registry import get_execution_run_registry
 from leagent.runtime.execution_run import ExecutionRun, ExecutionScope
+from leagent.utils.logging import get_logger
 
-logger = structlog.get_logger(__name__)
+logger = get_logger(__name__)
 
 
 def begin_execution(

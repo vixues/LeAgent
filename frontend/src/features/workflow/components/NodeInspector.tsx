@@ -5,11 +5,11 @@ import { useReactFlow } from '@xyflow/react';
 import { cn } from '@/lib/utils';
 
 import { useNodeDefinition } from '../graph/registryContext';
-import type { EditorNode } from '../graph/serialization';
+import type { WorkflowEditorNode } from '../graph/serialization';
 import { NodeWidget } from './NodeWidget';
 
 interface NodeInspectorProps {
-  node: EditorNode;
+  node: WorkflowEditorNode;
   onClose: () => void;
 }
 
