@@ -492,3 +492,88 @@ export interface ApiKeyInfo {
   lastUsedAt?: string;
   expiresAt?: string;
 }
+
+// ---------------------------------------------------------------------------
+// Image generation configuration (art GenerationService)
+// ---------------------------------------------------------------------------
+
+export interface ImageGenPreset {
+  id: string;
+  label: string;
+  backend: string;
+  model: string;
+  kind: string;
+  params: Record<string, unknown>;
+  enabled: boolean;
+}
+
+export interface ImageGenDefault {
+  preset_id: string;
+}
+
+export interface ImageGenBackend {
+  name: string;
+  kinds: string[];
+  available: boolean;
+  credential_type: 'api_key' | 'http' | 'custom' | 'none';
+  configured: boolean;
+}
+
+export type ImageGenKind = 'image' | 'video' | 'audio' | 'model3d' | 'vfx';
+
+export interface ImageGenCustomProvider {
+  name: string;
+  kinds: string[];
+  protocol: 'openai' | 'http';
+  base_url: string;
+  models: string[];
+  enabled: boolean;
+  configured?: boolean;
+}
+
+export interface ImageGenCustomProviderUpdate {
+  name: string;
+  kinds: string[];
+  protocol: 'openai' | 'http';
+  base_url: string;
+  api_key?: string;
+  models: string[];
+  enabled: boolean;
+}
+
+export interface ImageGenCredentialStatus {
+  name: string;
+  credential_type: 'api_key' | 'http';
+  configured: boolean;
+  base_url?: string;
+  url?: string;
+}
+
+export interface ImageGenCredentialUpdate {
+  api_key?: string;
+  base_url?: string;
+  url?: string;
+  key?: string;
+}
+
+export interface ImageGenLocalConfig {
+  enabled: boolean;
+  models_dir: string;
+  lora_dir: string;
+  default_model: string;
+  discovered_models?: string[];
+}
+
+export interface ImageGenTestRequest {
+  backend?: string;
+  preset_id?: string;
+  prompt?: string;
+}
+
+export interface ImageGenTestResult {
+  success: boolean;
+  provider: string;
+  model: string;
+  placeholder: boolean;
+  error: string;
+}

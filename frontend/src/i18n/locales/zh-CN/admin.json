@@ -25,10 +25,107 @@
     "tabs": {
       "providers": "模型提供商",
       "modelSettings": "模型设置",
+      "imageGen": "媒体生成",
       "tools": "工具管理",
       "rules": "规则配置",
       "users": "用户管理",
       "tasks": "任务监控"
+    },
+    "imageGen": {
+      "title": "媒体生成",
+      "subtitle": "配置图像、视频与音频生成的提供商、预设以及当前激活的模型。",
+      "kind": {
+        "image": "图像",
+        "video": "视频",
+        "audio": "音频"
+      },
+      "default": {
+        "title": "当前模型",
+        "help": "默认预设会被所有处于“自动”状态的节点使用——切换它即可一键重定向整条流水线。",
+        "none": "无默认（按能力自动选择）",
+        "badge": "默认",
+        "set": "设为默认",
+        "updated": "默认模型已更新",
+        "error": "更新默认模型失败"
+      },
+      "presets": {
+        "title": "模型预设",
+        "help": "将后端 + 模型 + 参数打包命名，便于一键切换。",
+        "add": "新增预设",
+        "empty": "当前媒体类型暂无预设。"
+      },
+      "provider": {
+        "title": "自定义提供商",
+        "help": "注册通用的 OpenAI 兼容或 HTTP 媒体生成提供商。",
+        "add": "新增提供商",
+        "empty": "当前媒体类型暂无自定义提供商。",
+        "name": "提供商名称",
+        "nameRequired": "提供商名称不能为空",
+        "protocol": "协议",
+        "protocolOpenai": "OpenAI 兼容",
+        "protocolHttp": "通用 HTTP",
+        "kinds": "媒体类型",
+        "baseUrl": "基础地址",
+        "apiKey": "API 密钥",
+        "models": "模型（逗号分隔）",
+        "saved": "提供商已保存",
+        "saveError": "保存提供商失败",
+        "deleted": "提供商已删除",
+        "deleteError": "删除提供商失败",
+        "editTitle": "编辑提供商",
+        "newTitle": "新建提供商"
+      },
+      "preset": {
+        "id": "预设 ID",
+        "label": "名称",
+        "kind": "媒体类型",
+        "backend": "后端",
+        "model": "模型",
+        "modelDefault": "后端默认",
+        "width": "宽度",
+        "height": "高度",
+        "steps": "步数",
+        "guidance": "引导系数",
+        "advanced": "高级参数（JSON）",
+        "enabled": "启用",
+        "disabled": "已禁用",
+        "idRequired": "预设 ID 不能为空",
+        "saved": "预设已保存",
+        "saveError": "保存预设失败",
+        "deleted": "预设已删除",
+        "deleteError": "删除预设失败",
+        "editTitle": "编辑预设",
+        "newTitle": "新建预设"
+      },
+      "backend": {
+        "title": "后端凭据",
+        "help": "图像生成后端的 API 密钥与服务地址。密钥仅可写入，不会被返回。",
+        "ready": "已就绪",
+        "unconfigured": "未配置",
+        "saved": "凭据已保存",
+        "saveError": "保存凭据失败",
+        "urlPlaceholder": "服务地址",
+        "baseUrlPlaceholder": "基础地址（可选）",
+        "secretKeep": "留空则保留现有密钥",
+        "secretEnter": "输入 API 密钥"
+      },
+      "local": {
+        "title": "本地扩散模型",
+        "help": "本机 diffusers / SDXL 模型（需要安装 diffusion 扩展）。",
+        "enabled": "启用本地扩散",
+        "modelsDir": "模型目录",
+        "loraDir": "LoRA 目录",
+        "defaultModel": "默认模型",
+        "discovered": "已发现的模型",
+        "saved": "本地配置已保存",
+        "saveError": "保存本地配置失败"
+      },
+      "test": {
+        "button": "测试",
+        "ok": "后端可用",
+        "failed": "测试失败",
+        "placeholder": "返回了占位图（后端未配置）"
+      }
     },
     "provider": {
       "title": "模型提供商",

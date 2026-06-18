@@ -25,10 +25,107 @@
     "tabs": {
       "providers": "Model Providers",
       "modelSettings": "Model Settings",
+      "imageGen": "Media Generation",
       "tools": "Tool Management",
       "rules": "Rule Configuration",
       "users": "User Management",
       "tasks": "Task Monitoring"
+    },
+    "imageGen": {
+      "title": "Media generation",
+      "subtitle": "Configure image, video, and audio generation providers, presets, and the active model.",
+      "kind": {
+        "image": "Image",
+        "video": "Video",
+        "audio": "Audio"
+      },
+      "default": {
+        "title": "Active model",
+        "help": "The default preset is used by every node left on \"auto\" — switch it to re-target the whole pipeline.",
+        "none": "No default (capability auto-select)",
+        "badge": "Default",
+        "set": "Set default",
+        "updated": "Default model updated",
+        "error": "Failed to update default model"
+      },
+      "presets": {
+        "title": "Model presets",
+        "help": "Named bundles of backend + model + parameters for one-click switching.",
+        "add": "Add preset",
+        "empty": "No presets for this media kind yet."
+      },
+      "provider": {
+        "title": "Custom providers",
+        "help": "Register generic OpenAI-compatible or HTTP media-generation providers.",
+        "add": "Add provider",
+        "empty": "No custom providers for this media kind yet.",
+        "name": "Provider name",
+        "nameRequired": "A provider name is required",
+        "protocol": "Protocol",
+        "protocolOpenai": "OpenAI-compatible",
+        "protocolHttp": "Generic HTTP",
+        "kinds": "Media kinds",
+        "baseUrl": "Base URL",
+        "apiKey": "API key",
+        "models": "Models (comma-separated)",
+        "saved": "Provider saved",
+        "saveError": "Failed to save provider",
+        "deleted": "Provider deleted",
+        "deleteError": "Failed to delete provider",
+        "editTitle": "Edit provider",
+        "newTitle": "New provider"
+      },
+      "preset": {
+        "id": "Preset id",
+        "label": "Label",
+        "kind": "Media kind",
+        "backend": "Backend",
+        "model": "Model",
+        "modelDefault": "Backend default",
+        "width": "Width",
+        "height": "Height",
+        "steps": "Steps",
+        "guidance": "Guidance scale",
+        "advanced": "Advanced parameters (JSON)",
+        "enabled": "Enabled",
+        "disabled": "Disabled",
+        "idRequired": "A preset id is required",
+        "saved": "Preset saved",
+        "saveError": "Failed to save preset",
+        "deleted": "Preset deleted",
+        "deleteError": "Failed to delete preset",
+        "editTitle": "Edit preset",
+        "newTitle": "New preset"
+      },
+      "backend": {
+        "title": "Backend credentials",
+        "help": "API keys and endpoints for image-generation backends. Secrets are write-only and never returned.",
+        "ready": "Ready",
+        "unconfigured": "Not configured",
+        "saved": "Credentials saved",
+        "saveError": "Failed to save credentials",
+        "urlPlaceholder": "Service URL",
+        "baseUrlPlaceholder": "Base URL (optional)",
+        "secretKeep": "Leave blank to keep existing key",
+        "secretEnter": "Enter API key"
+      },
+      "local": {
+        "title": "Local diffusion",
+        "help": "On-device diffusers / SDXL checkpoints (requires the diffusion extra).",
+        "enabled": "Enable local diffusion",
+        "modelsDir": "Models directory",
+        "loraDir": "LoRA directory",
+        "defaultModel": "Default model",
+        "discovered": "Discovered models",
+        "saved": "Local configuration saved",
+        "saveError": "Failed to save local configuration"
+      },
+      "test": {
+        "button": "Test",
+        "ok": "Backend reachable",
+        "failed": "Test failed",
+        "placeholder": "Returned a placeholder (backend not configured)"
+      }
     },
     "provider": {
       "title": "Model Providers",

@@ -28,6 +28,16 @@ import type {
   SpeedTestResult,
   SpendLimitStatus,
   AvailableModel,
+  ImageGenPreset,
+  ImageGenDefault,
+  ImageGenBackend,
+  ImageGenCredentialStatus,
+  ImageGenCredentialUpdate,
+  ImageGenLocalConfig,
+  ImageGenTestRequest,
+  ImageGenTestResult,
+  ImageGenCustomProvider,
+  ImageGenCustomProviderUpdate,
 } from '@/types/admin';
 
 export const adminApi = {
@@ -183,5 +193,52 @@ export const adminApi = {
     list: () => apiClient.get<ApiKeyInfo[]>('/admin/api-keys'),
     create: (name: string) => apiClient.post<ApiKeyInfo>('/admin/api-keys', { name }),
     delete: (id: string) => apiClient.delete(`/admin/api-keys/${id}`),
+  },
+
+  imageGen: {
+    presets: {
+      list: () => apiClient.get<ImageGenPreset[]>('/models/image-gen/presets'),
+      create: (data: ImageGenPreset) =>
+        apiClient.post<ImageGenPreset>('/models/image-gen/presets', data),
+      update: (id: string, data: ImageGenPreset) =>
+        apiClient.put<ImageGenPreset>(`/models/image-gen/presets/${encodeURIComponent(id)}`, data),
+      delete: (id: string) =>
+        apiClient.delete(`/models/image-gen/presets/${encodeURIComponent(id)}`),
+    },
+    default: {
+      get: () => apiClient.get<ImageGenDefault>('/models/image-gen/default'),
+      set: (presetId: string) =>
+        apiClient.put<ImageGenDefault>('/models/image-gen/default', { preset_id: presetId }),
+    },
+    backends: () => apiClient.get<ImageGenBackend[]>('/models/image-gen/backends'),
+    models: (backend: string) =>
+      apiClient.get<string[]>('/models/image-gen/models', { backend }),
+    credentials: {
+      list: () => apiClient.get<ImageGenCredentialStatus[]>('/models/image-gen/credentials'),
+      set: (backend: string, data: ImageGenCredentialUpdate) =>
+        apiClient.put<ImageGenCredentialStatus>(
+          `/models/image-gen/credentials/${encodeURIComponent(backend)}`,
+          data,
+        ),
+    },
+    local: {
+      get: () => apiClient.get<ImageGenLocalConfig>('/models/image-gen/local'),
+      set: (data: ImageGenLocalConfig) =>
+        apiClient.put<ImageGenLocalConfig>('/models/image-gen/local', data),
+    },
+    providers: {
+      list: () => apiClient.get<ImageGenCustomProvider[]>('/models/image-gen/providers'),
+      create: (data: ImageGenCustomProviderUpdate) =>
+        apiClient.post<ImageGenCustomProvider>('/models/image-gen/providers', data),
+      update: (name: string, data: ImageGenCustomProviderUpdate) =>
+        apiClient.put<ImageGenCustomProvider>(
+          `/models/image-gen/providers/${encodeURIComponent(name)}`,
+          data,
+        ),
+      delete: (name: string) =>
+        apiClient.delete(`/models/image-gen/providers/${encodeURIComponent(name)}`),
+    },
+    test: (data: ImageGenTestRequest) =>
+      apiClient.post<ImageGenTestResult>('/models/image-gen/test', data),
   },
 };
