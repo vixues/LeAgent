@@ -41,9 +41,8 @@ class TestRecoverToolArgumentBlobArgs:
         assert result is not None
         assert result["action"] == "append"
         assert result["blob_id"] == "abc123"
-        assert "chunk_base64" in result
-        decoded = base64.b64decode(result["chunk_base64"]).decode("utf-8")
-        assert "<div" in decoded
+        assert "chunk" in result
+        assert "<div" in result["chunk"]
 
     def test_preserves_valid_chunk_base64(self) -> None:
         payload = base64.b64encode(b"<h1>Test</h1>").decode()
@@ -73,7 +72,7 @@ class TestRecoverToolArgumentBlobArgs:
         result = _recover_tool_argument_blob_args(raw)
         assert result is not None
         assert result["action"] == "create_and_finalize"
-        assert "chunk_base64" in result
+        assert "chunk" in result
 
     def test_empty_chunk_returns_none(self) -> None:
         raw = '{"action":"append","blob_id":"b1","chunk":""}'
@@ -87,7 +86,7 @@ class TestRecoverToolArgumentBlobArgs:
         result = parse_tool_arguments_str(raw)
         assert result is not None
         assert result["action"] == "append"
-        assert "chunk_base64" in result
+        assert "chunk" in result
 
     def test_recovers_multiline_jsx_chunk(self) -> None:
         """Malformed multiline JSX — recovery extracts as much as it can."""
@@ -97,7 +96,7 @@ class TestRecoverToolArgumentBlobArgs:
         )
         result = _recover_tool_argument_blob_args(raw)
         assert result is not None
-        decoded = base64.b64decode(result["chunk_base64"]).decode("utf-8")
+        decoded = result["chunk"]
         assert "wrapper" in decoded
 
 

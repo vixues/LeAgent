@@ -87,36 +87,64 @@ async def _register_without_session(
     content_type: str | None,
     user_uuid: UUID | None,
 ) -> dict[str, Any] | None:
+    """Persist a workflow/tool artifact when no chat session is bound.
+
+    Workflow runs from the editor typically have ``user_id`` but no
+    ``session_id``. Artifacts must still land in the managed ``files`` table
+    so ``/api/v1/files/{id}/preview`` resolves; the previous
+    ``persist_db_row=False`` path wrote bytes only and every canvas preview
+    404'd.
+    """
     from leagent.config.settings import get_settings
-    from leagent.file.primitives import FileScope, sanitize_filename
-    from leagent.file.service import FileService
-    from leagent.file.storage.local import LocalStorageBackend
+    from leagent.file.primitives import FileScope, classify_file_kind, sanitize_filename
+    from leagent.services.auth.signed_url import build_download_url, build_preview_url
 
     label = sanitize_filename(filename, default="artifact")
+    file_service = None
     try:
-        fs = FileService(
-            default_backend=LocalStorageBackend(get_settings().files.upload_dir),
+        from leagent.services.service_manager import get_service_manager
+
+        sm = get_service_manager()
+        file_service = getattr(sm, "file_service", None) if sm else None
+    except (RuntimeError, AssertionError, ImportError):
+        file_service = None
+
+    if file_service is None:
+        from leagent.file.service import FileService
+        from leagent.file.storage.local import LocalStorageBackend
+
+        settings = get_settings()
+        file_service = FileService(
+            default_backend=LocalStorageBackend(settings.files.upload_dir),
             default_backend_name="local",
         )
-        ref = await fs.register(
+
+    try:
+        ref = await file_service.register(
             data,
             filename=label,
             content_type=content_type,
             scope=FileScope.OUTPUT,
             user_id=user_uuid,
             category="tool_output",
-            persist_db_row=False,
+            persist_db_row=True,
         )
     except Exception as exc:  # noqa: BLE001
         logger.warning("register_tool_artifact_failed: %s", exc)
         return None
 
+    settings = get_settings()
+    preview_url = build_preview_url(settings, attachment_id=ref.id, user_id=user_uuid)
+    download_url = build_download_url(settings, attachment_id=ref.id, user_id=user_uuid)
     return {
         "id": str(ref.id),
         "filename": label,
         "name": label,
+        "kind": classify_file_kind(label, ref.content_type).value,
         "content_type": ref.content_type,
         "size": ref.size,
         "sha256": ref.checksum,
         "storage_path": ref.metadata.get("storage_path", ref.storage_key),
+        "preview_url": preview_url,
+        "download_url": download_url,
     }

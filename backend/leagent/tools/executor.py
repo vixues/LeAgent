@@ -776,10 +776,7 @@ def _recover_tool_argument_blob_args(raw: str) -> dict[str, Any] | None:
     if not chunk_text:
         return None
 
-    import base64 as _b64
-
-    encoded = _b64.b64encode(chunk_text.encode("utf-8")).decode("ascii")
-    recovered = {"action": action, "chunk_base64": encoded}
+    recovered: dict[str, Any] = {"action": action, "chunk": chunk_text}
     if blob_id:
         recovered["blob_id"] = blob_id
     return recovered
@@ -1030,7 +1027,8 @@ def _tool_json_parse_recovery_hint(tool_name: str | None, raw: str) -> str:
         return " Prefer a smaller `tree` or incremental `emit_ui_patch`."
     if tool_name == "canvas_publish":
         return (
-            " The runtime usually auto-recovers inline `html`. "
+            " The runtime usually auto-recovers inline `html` and auto-stages it "
+            "when large. Use short `/api/v1/files/{id}/preview` image URLs (no tokens). "
             "If this fails again, try `html_files` (map of path → source) "
             "or `tool_argument_blob` + `html_blob_id` as a last resort."
         )
@@ -1042,7 +1040,7 @@ def _tool_json_parse_recovery_hint(tool_name: str | None, raw: str) -> str:
     if tool_name == "tool_argument_blob":
         return (
             " For webpage HTML, prefer direct `canvas_publish(html=...)`; "
-            "for intentional blob append with HTML/JSX use `chunk_base64`."
+            "for intentional blob append use plain `chunk` (not base64) when possible."
         )
     return ""
 

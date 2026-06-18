@@ -9,9 +9,9 @@ passes short ids instead.
 Flow:
 
 1. ``tool_argument_blob`` with ``action=create`` → receive ``blob_id``.
-2. ``action=append`` with ``chunk`` (plain UTF-8, max 64k chars per call) **or**
-   ``chunk_base64`` (standard base64 of UTF-8 bytes — **prefer for HTML/JSX** so
-   JSON never has to escape quotes inside markup).
+2. ``action=append`` with ``chunk`` (plain UTF-8, up to ~1 MB per call) **or**
+   ``chunk_base64`` (standard base64 of UTF-8 bytes — only when plain ``chunk``
+   would break JSON quoting).
 3. ``action=finalize`` → mark blob read-only; required before consumption.
 4. Pass ``source_blob_id`` / ``content_blob_id`` / ``diff_blob_id`` /
    ``old_string_blob_id`` / ``new_string_blob_id`` / ``html_blob_id`` /
@@ -44,10 +44,10 @@ from leagent.tools.base import BaseTool, ToolCategory, ToolContext
 
 logger = structlog.get_logger(__name__)
 
-_MAX_BLOB_BYTES = 2 * 1024 * 1024
-_MAX_APPEND_CHARS = 64_000
-# ~64k UTF-8 bytes as base64 (4 chars per 3 bytes) + margin
-_MAX_APPEND_BASE64_CHARS = 90_000
+_MAX_BLOB_BYTES = 4 * 1024 * 1024
+_MAX_APPEND_CHARS = 1_048_576
+# ~1 MB UTF-8 as base64 (4 chars per 3 bytes) + margin
+_MAX_APPEND_BASE64_CHARS = 1_400_000
 _MAX_BLOBS = 2_000
 _PRUNE_TARGET = 1_500
 _BLOB_ID_RE = re.compile(r"^[a-f0-9]{8,64}$")
@@ -306,15 +306,14 @@ class ToolArgumentBlobTool(BaseTool):
 
     name = "tool_argument_blob"
     description = (
-        "Fallback staging for large UTF-8 when direct tool-call JSON fails or "
-        "payloads exceed ~64k characters. **Do not use for routine HTML pages** — "
-        "prefer `canvas_publish(mode=html, html=\"…\")` inline first (one tool call). "
-        "When blob staging is required and the full body fits in one chunk (under "
-        "64k UTF-8 chars): `action=create_and_finalize` with `chunk` or "
-        "`chunk_base64`, then pass `html_blob_id` / `content_blob_id` / etc. "
-        "Multi-step `create` → `append` → `finalize` is only for payloads that "
-        "must be split across turns (truncation) or exceed one append limit. "
-        "Use `chunk_base64` for HTML only when plain `chunk` would break JSON. "
+        "Fallback staging for large UTF-8 when direct tool-call JSON fails. "
+        "**Do not use for routine HTML pages** — prefer "
+        "`canvas_publish(mode=html, html=\"…\")` inline first (one tool call; "
+        "the runtime auto-stages recovered HTML as a blob when needed). "
+        "When blob staging is required: `action=create_and_finalize` with plain "
+        "`chunk` (preferred) or `chunk_base64` only when quotes break JSON. "
+        "Multi-step `create` → `append` → `finalize` is only when output was "
+        "truncated mid-stream or the body exceeds one append (~1 MB). "
         "Pass `source_blob_id` / `content_blob_id` / `diff_blob_id` / "
         "`html_blob_id` / `html_files_blob_id` / `old_string_blob_id` / "
         "`new_string_blob_id` into consuming tools instead of inlining megabytes."
@@ -344,17 +343,16 @@ class ToolArgumentBlobTool(BaseTool):
                 "chunk": {
                     "type": "string",
                     "description": (
-                        "UTF-8 fragment for append (max 64k chars). Omit when using "
-                        "`chunk_base64`. Fragile for HTML with many `\"` — prefer base64."
+                        "UTF-8 fragment for append (up to ~1 MB). Preferred over "
+                        "`chunk_base64` for HTML when JSON escaping is manageable."
                     ),
                 },
                 "chunk_base64": {
                     "type": "string",
                     "description": (
                         "Standard base64 (RFC 4648) of UTF-8 bytes; no `data:` prefix. "
-                        "Max ~90k characters of base64 per call. Prefer this over `chunk` "
-                        "for HTML, SVG, or JSX so JSON does not need to escape quotes inside "
-                        "the markup."
+                        "Max ~1.4M characters of base64 per call. Use only when plain "
+                        "`chunk` would break JSON (unescaped quotes in markup)."
                     ),
                 },
             },

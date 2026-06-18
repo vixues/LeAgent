@@ -94,13 +94,16 @@ async def _try_blob_streaming_ingest(
     if recovered is None:
         return None
 
-    b64_str = recovered.get("chunk_base64", "")
-    if not b64_str:
-        return None
-
-    chunk_text = _decode_b64_tolerant(b64_str)
-    if chunk_text is None:
-        return None
+    chunk_text = recovered.get("chunk")
+    if isinstance(chunk_text, str) and chunk_text:
+        pass
+    else:
+        b64_str = recovered.get("chunk_base64", "")
+        if not b64_str:
+            return None
+        chunk_text = _decode_b64_tolerant(b64_str)
+        if chunk_text is None:
+            return None
 
     action = recovered.get("action", "append")
     blob_id = recovered.get("blob_id", "")
@@ -114,10 +117,12 @@ async def _try_blob_streaming_ingest(
         # Check whether this was salvaged from a truncated base64 string
         # (original b64 didn't decode cleanly and we had to trim).
         was_truncated = False
-        try:
-            _b64.b64decode(b64_str.strip(), validate=True).decode("utf-8")
-        except Exception:  # noqa: BLE001
-            was_truncated = True
+        b64_str = recovered.get("chunk_base64", "")
+        if isinstance(b64_str, str) and b64_str.strip():
+            try:
+                _b64.b64decode(b64_str.strip(), validate=True).decode("utf-8")
+            except Exception:  # noqa: BLE001
+                was_truncated = True
 
         new_id = await ToolArgumentBlobStore.create(ingest_sid)
         result = await ToolArgumentBlobStore.append(ingest_sid, new_id, chunk_text)
@@ -288,6 +293,47 @@ def _try_salvage_truncated_ui_tree(
     return recovered
 
 
+_TOOL_CALL_DELTA_REDACT_BYTES = 8_192
+_BLOB_PAYLOAD_KEYS = frozenset({
+    "html", "chunk", "chunk_base64", "content", "source", "diff",
+    "old_string", "new_string",
+})
+
+
+def _redact_streamed_tool_args(raw: str) -> str:
+    """Omit bulky payload fields from streamed tool-call JSON (UI / logs)."""
+    if len(raw) <= _TOOL_CALL_DELTA_REDACT_BYTES:
+        return raw
+    for key in _BLOB_PAYLOAD_KEYS:
+        needle = f'"{key}":'
+        pos = raw.find(needle)
+        if pos < 0:
+            continue
+        value_start = pos + len(needle)
+        while value_start < len(raw) and raw[value_start].isspace():
+            value_start += 1
+        if value_start >= len(raw) or raw[value_start] != '"':
+            continue
+        # Find closing quote (best-effort; truncated streams may lack one).
+        i = value_start + 1
+        escaped = False
+        while i < len(raw):
+            ch = raw[i]
+            if escaped:
+                escaped = False
+            elif ch == "\\":
+                escaped = True
+            elif ch == '"':
+                break
+            i += 1
+        placeholder = f'"{key}":"[redacted {len(raw) - value_start - 1} chars]"'
+        raw = raw[:pos] + placeholder + raw[i + 1 :]
+        break
+    if len(raw) > _TOOL_CALL_DELTA_REDACT_BYTES:
+        return raw[:_TOOL_CALL_DELTA_REDACT_BYTES] + f"... [+{len(raw) - _TOOL_CALL_DELTA_REDACT_BYTES} bytes redacted]"
+    return raw
+
+
 def _tool_call_delta_payload(idx: int, slot: dict[str, Any]) -> dict[str, Any]:
     args_str = slot.get("arguments") or ""
     if not isinstance(args_str, str):
@@ -296,7 +342,7 @@ def _tool_call_delta_payload(idx: int, slot: dict[str, Any]) -> dict[str, Any]:
     name = str(slot.get("name") or "").strip()
     payload: dict[str, Any] = {
         "index": idx,
-        "arguments_raw": args_str,
+        "arguments_raw": _redact_streamed_tool_args(args_str),
     }
     if tid:
         payload["id"] = tid

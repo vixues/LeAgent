@@ -27,23 +27,23 @@ Do not generate HTML through Python or stage it with `tool_argument_blob` as the
 Use `tool_argument_blob` only when:
 
 - A **prior direct call failed** and the runtime could not recover it.
-- The content exceeds **~64K characters** (output token limit risk).
+- The content exceeds **~1 MB** per append (output token limit risk — keep HTML compact).
 - You need to stage **binary data** (base64-encoded files).
 
 ### Staging flow (fallback only)
 
 **Prefer one blob tool call** when the full body fits in a single append (under
-~64K UTF-8 characters):
+~1 MB UTF-8 characters):
 
-1. `tool_argument_blob(action=create_and_finalize, chunk=…)` — or
-   `chunk_base64` only when plain `chunk` would break JSON (many unescaped `"`).
+1. `tool_argument_blob(action=create_and_finalize, chunk=…)` — plain `chunk`
+   is preferred; use `chunk_base64` only when quotes would break JSON.
 2. Pass the returned `blob_id` via the matching `*_blob_id` parameter, then call
    the consumer tool (e.g. `canvas_publish(html_blob_id=…)`).
 
 **Multi-step staging** (`create` → `append` → `finalize`) is only when a prior
 output was **truncated mid-payload** or the body exceeds one append limit. Use
-the largest practical append per turn (up to ~64K decoded chars), not many tiny
-chunks. Use `chunk_base64` for HTML / SVG / JSX only when needed for JSON safety.
+the largest practical append per turn (up to ~1 MB decoded chars), not many tiny
+chunks. Avoid `chunk_base64` unless plain `chunk` breaks JSON.
 
 `*_blob_id` targets: `content_blob_id` (project_write), `source_blob_id`
 (code_execution), `html_blob_id` (canvas_publish), `diff_blob_id`
