@@ -117,6 +117,9 @@ _CURATED_UTIL_TOOL_PATHS: tuple[tuple[str, str], ...] = (
     ("leagent.project.scaffold.tools", "CodingProjectLogsTool"),
     # --- image ---
     ("leagent.tools.image.image_generate", "ImageGenerateTool"),
+    # --- media (video / audio) ---
+    ("leagent.tools.media.video_generate", "VideoGenerateTool"),
+    ("leagent.tools.media.audio_generate", "AudioGenerateTool"),
     # --- chart ---
     ("leagent.tools.chart.chart_generator", "ChartGeneratorTool"),
     # --- integration ---

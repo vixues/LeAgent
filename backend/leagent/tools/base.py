@@ -42,6 +42,7 @@ class ToolCategory(str, Enum):
     DATA = "data"
     GEN = "gen"
     IMAGE = "image"
+    MEDIA = "media"
     CHART = "chart"
     INTEGRATION = "integration"
     UTIL = "util"
