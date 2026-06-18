@@ -23,6 +23,7 @@ from leagent.llm.capabilities import (
     CapabilityRegistry,
     CapabilityRouter,
     from_generation_backend,
+    get_capability_registry,
     kind_to_output,
     kind_to_task,
 )
@@ -30,14 +31,15 @@ from leagent.utils.logging import get_logger
 
 from .backends import (
     ConfiguredGenerationBackend,
+    DashScopeImageBackend,
     ElevenLabsBackend,
     HttpMesh3DBackend,
     HttpUpscaleBackend,
     HttpVfxBackend,
     HttpVideoBackend,
-    ImageProviderBackend,
     LocalDiffusionBackend,
     OfflineGenerationBackend,
+    OpenAIImageBackend,
     ReplicateBackend,
     SiliconFlowImageBackend,
 )
@@ -66,11 +68,16 @@ class GenerationService:
     The retry / failover / offline-floor reliability behaviour is unchanged.
     """
 
-    def __init__(self, *, allow_offline_fallback: bool = True) -> None:
+    def __init__(
+        self,
+        *,
+        registry: CapabilityRegistry | None = None,
+        allow_offline_fallback: bool = True,
+    ) -> None:
         self._by_kind: dict[str, list[GenerationBackend]] = {}
         self._offline = OfflineGenerationBackend()
         self._allow_offline_fallback = allow_offline_fallback
-        self._registry = CapabilityRegistry()
+        self._registry = registry or get_capability_registry()
         self._router = CapabilityRouter(self._registry)
         self._registry.register(
             from_generation_backend(self._offline), invoker=self._offline
@@ -214,8 +221,8 @@ def build_default_generation_service() -> GenerationService:
     """
     svc = GenerationService()
     svc.register(LocalDiffusionBackend())
-    svc.register(ImageProviderBackend("openai"))
-    svc.register(ImageProviderBackend("dashscope"))
+    svc.register(OpenAIImageBackend())
+    svc.register(DashScopeImageBackend())
     svc.register(SiliconFlowImageBackend())
     svc.register(ReplicateBackend())
     svc.register(ElevenLabsBackend())

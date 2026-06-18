@@ -1,9 +1,8 @@
 """Populate the process-wide capability registry from all three sources.
 
 This is the discovery surface consumed by the chat capabilities endpoint and
-any capability-driven UI. Generation routing keeps its own service-scoped
-registry (for test isolation); here we aggregate everything into the global
-registry so callers can introspect the full model/backend landscape.
+any capability-driven UI. Generation backends register into the same global
+registry via :class:`~leagent.llm.generation.service.GenerationService`.
 """
 
 from __future__ import annotations

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from leagent.llm.image_gen.base import ImageGenResult
+from leagent.llm.generation.providers.base import ImageGenResult
 
 
 class OpenAIImageGenProvider:

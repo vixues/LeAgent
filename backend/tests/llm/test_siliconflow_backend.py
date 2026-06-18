@@ -15,7 +15,7 @@ import pytest
 
 from leagent.llm.generation import build_default_generation_service
 from leagent.llm.generation.backends import SiliconFlowImageBackend
-from leagent.llm.image_gen.siliconflow import (
+from leagent.llm.generation.providers.siliconflow import (
     build_payload,
     match_model_family,
     snap_image_size,

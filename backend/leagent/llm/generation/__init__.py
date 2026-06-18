@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from .backends import (
     ConfiguredGenerationBackend,
+    DashScopeImageBackend,
     ElevenLabsBackend,
     HttpMesh3DBackend,
     HttpUpscaleBackend,
@@ -18,6 +19,7 @@ from .backends import (
     ImageProviderBackend,
     LocalDiffusionBackend,
     OfflineGenerationBackend,
+    OpenAIImageBackend,
     ReplicateBackend,
     SiliconFlowImageBackend,
 )
@@ -54,6 +56,7 @@ __all__ = [
     "GENERATION_KINDS",
     "ConfiguredGenerationBackend",
     "CustomProvider",
+    "DashScopeImageBackend",
     "ElevenLabsBackend",
     "GenerationBackend",
     "GenerationError",
@@ -73,6 +76,7 @@ __all__ = [
     "ImageProviderBackend",
     "LocalDiffusionBackend",
     "OfflineGenerationBackend",
+    "OpenAIImageBackend",
     "ReplicateBackend",
     "SiliconFlowImageBackend",
     "build_default_generation_service",

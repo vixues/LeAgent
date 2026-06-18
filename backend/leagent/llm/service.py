@@ -25,7 +25,7 @@ from leagent.llm.base import (
     ToolDefinition,
 )
 from leagent.llm.error_policy import classify_llm_error
-from leagent.llm.image_gen.base import ImageGenResult
+from leagent.llm.generation.providers.base import ImageGenResult
 from leagent.llm.model_registry import ModelRegistry
 from leagent.llm.model_spec import ModelTask, ResolvedModel
 from leagent.llm.provider_config import ProviderConfigService
@@ -60,6 +60,13 @@ def _coerce_task(task: ModelTask | str | None) -> ModelTask:
         except ValueError as exc:
             raise LLMServiceError(f"Unknown model task: {task}") from exc
     return ModelTask.CHAT
+
+
+def _image_gen_backend_name(provider: str) -> str:
+    """Map chat ``providers.yaml`` provider id to a generation backend name."""
+    if provider in ("dashscope", "qwen"):
+        return "dashscope"
+    return provider
 
 
 async def _with_transient_retries(
@@ -375,13 +382,22 @@ class LLMService:
         model: str | None = None,
         **kwargs: Any,
     ) -> ImageGenResult:
-        """Generate an image via the image_gen task."""
+        """Generate an image via the unified :class:`GenerationService`."""
+        from leagent.llm.generation import get_generation_service
+        from leagent.llm.generation.adapter import generation_output_to_image_gen_result
+
         resolved = self.resolver.resolve(_coerce_task(task), user_provider=provider, user_model=model)
-        pc = ProviderConfigService().get_provider(resolved.provider)
-        if pc is None:
-            raise LLMServiceError(f"Provider '{resolved.provider}' not found")
-        image_provider = ProviderConfigService()._create_image_gen_provider(pc, resolved.model)
-        result = await image_provider.generate(model=resolved.model, prompt=prompt, **kwargs)
+        gen_provider = _image_gen_backend_name(resolved.provider)
+        out = await get_generation_service().generate(
+            kind="image",
+            prompt=prompt,
+            provider=gen_provider,
+            model=model or resolved.model,
+            **kwargs,
+        )
+        if not out.success:
+            raise LLMServiceError(out.error or "image generation failed")
+        result = generation_output_to_image_gen_result(out)
         result.provider = resolved.provider
         result.model = resolved.model
         return result

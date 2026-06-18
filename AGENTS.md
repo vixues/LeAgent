@@ -98,14 +98,7 @@ it). Full reference: [`docs/workflow-engine/art-asset-nodes.md`](backend/docs/wo
 - **Typed media sockets + `MediaRef`.** `IO.Image` / `IO.Video` / `IO.Mesh3D`
   (`workflow/io/types.py`) carry assets *by reference* as a `MediaRef`
   (`workflow/io/media.py`) — never base64 — using `/api/v1/files/{id}/preview`.
-- **Generation backends (Strategy + Registry).** `leagent/llm/generation/`:
-  `GenerationBackend` Protocol + typed `GenerationRequest` contract +
-  `GenerationService` facade (retry + failover). Kinds: `image` / `video` /
-  `model3d` / `vfx`. Real backends are env-gated (`ImageProviderBackend`,
-  `LocalDiffusionBackend` with img2img/ControlNet passthrough, `HttpUpscaleBackend`,
-  `HttpVideoBackend`, `HttpMesh3DBackend`, `HttpVfxBackend`). An always-registered
-  deterministic `offline` backend makes the whole pipeline run credential-free;
-  force it with `LEAGENT_ART_OFFLINE=1` or `provider: offline`.
+- **Generation backends (Strategy + Registry).** `leagent/llm/generation/` is the **media plane** (image / video / 3D / vfx / audio). Vendor HTTP clients live in `generation/providers/`; strategy backends in `generation/backends/`. All media generation goes through `GenerationService.generate()` (retry + failover). Chat image generation (`LLMService.generate_image`) delegates here too. Kinds: `image` / `video` / `model3d` / `vfx` / `audio`. Backends include `OpenAIImageBackend`, `DashScopeImageBackend`, `SiliconFlowImageBackend`, `LocalDiffusionBackend`, `HttpUpscaleBackend`, `HttpVideoBackend`, `HttpMesh3DBackend`, `HttpVfxBackend`, `ReplicateBackend`, `ElevenLabsBackend`, plus a deterministic `offline` floor (`LEAGENT_ART_OFFLINE=1` or `provider: offline`). Config: `providers.yaml` → `image_gen` section (`ImageGenConfigStore`). Capability discovery: single `CapabilityRegistry` shared by `GenerationService` and `bootstrap_capabilities()`.
 - **Art node pack.** `workflow/nodes/art/` exports `ArtNodeExtension`;
   `BaseGenerationNode` (Template Method) owns the execute skeleton. Nodes:
   `Art.ImageGen`, `Art.Upscale` (dedicated super-resolution), `Art.VideoGen`,

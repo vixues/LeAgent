@@ -14,7 +14,7 @@ import os
 from enum import Enum
 from typing import Any
 
-from leagent.llm.image_gen.base import ImageGenResult
+from leagent.llm.generation.providers.base import ImageGenResult
 from leagent.utils.logging import get_logger
 
 logger = get_logger(__name__)

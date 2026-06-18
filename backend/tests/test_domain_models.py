@@ -650,25 +650,30 @@ async def test_dashscope_asr_invoke_success():
 
 
 @pytest.mark.asyncio
-async def test_dashscope_image_gen_invoke_success():
-    from unittest.mock import AsyncMock
-
+async def test_dashscope_image_gen_invoke_success(monkeypatch):
+    from leagent.llm.generation.base import GenerationOutput
     from leagent.llm.domain_models.image import DashScopeImageGenAdapter
 
-    adapter = DashScopeImageGenAdapter(api_key="ds-test")
-    gen_result = MagicMock(
-        b64_json="aW1n",
-        url=None,
-        mime="image/png",
-        model="wanx2.1-t2i-turbo",
-        provider="dashscope",
-        metadata={},
-        revised_prompt="revised",
-    )
-    adapter._provider.generate = AsyncMock(return_value=gen_result)
+    class _FakeGenService:
+        async def generate(self, **kwargs):
+            return GenerationOutput(
+                success=True,
+                kind="image",
+                data=b"img",
+                mime="image/png",
+                provider="dashscope",
+                model="wanx2.1-t2i-turbo",
+                meta={"revised_prompt": "revised"},
+            )
 
-    result = await adapter.invoke(prompt="a cat")
-    assert result.success and result.b64_data == "aW1n"
+    import leagent.llm.generation as gen_pkg
+
+    monkeypatch.setattr(gen_pkg, "get_generation_service", lambda: _FakeGenService())
+    adapter = DashScopeImageGenAdapter(api_key="ds-test")
+
+    with pytest.warns(DeprecationWarning):
+        result = await adapter.invoke(prompt="a cat")
+    assert result.success and result.b64_data
 
 
 @pytest.mark.asyncio

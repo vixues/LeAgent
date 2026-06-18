@@ -338,8 +338,8 @@ class ProviderConfigService:
 
     def _create_image_gen_provider(self, pc: ProviderConfig, model_name: str):
         """Instantiate an image generation provider for *pc*."""
-        from leagent.llm.image_gen.dashscope import DashScopeWanxProvider
-        from leagent.llm.image_gen.openai import OpenAIImageGenProvider
+        from leagent.llm.generation.providers.dashscope import DashScopeWanxProvider
+        from leagent.llm.generation.providers.openai import OpenAIImageGenProvider
 
         api_key = self._resolve_api_key(pc.api_key)
         if pc.type in ("openai", "azure", "custom"):

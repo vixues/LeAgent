@@ -5,7 +5,7 @@ from __future__ import annotations
 import base64
 from typing import Any
 
-from leagent.llm.image_gen.base import ImageGenResult
+from leagent.llm.generation.providers.base import ImageGenResult
 from leagent.llm.transport import HttpTransport, TransportConfig
 
 _WANX_MODELS = frozenset({"wanx-v1", "wanx2.1-t2i-turbo", "wanx2.1-t2i-plus"})
