@@ -261,6 +261,23 @@ class LeAgentMetrics:
             registry=self._registry,
         )
 
+        # Art-pipeline quality feedback (self-evaluation closed loop).
+        self.workflow_quality_score = Histogram(
+            "leagent_workflow_quality_score",
+            "Final quality_score of art workflow runs (0..1)",
+            labelnames=["workflow_name"],
+            buckets=(0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0),
+            registry=self._registry,
+        )
+
+        self.workflow_refine_iterations = Histogram(
+            "leagent_workflow_refine_iterations",
+            "Self-correction refine iterations per art workflow run",
+            labelnames=["workflow_name"],
+            buckets=(0, 1, 2, 3, 4, 5, 8, 10),
+            registry=self._registry,
+        )
+
         # Session metrics
         self.active_sessions_gauge = Gauge(
             "leagent_active_sessions",

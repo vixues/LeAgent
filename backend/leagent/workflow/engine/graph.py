@@ -345,22 +345,38 @@ class ExecutionList:
         If no ready nodes exist but we have blocked ones, awaits ``_unblocked``
         until a release call wakes us; if there are neither, returns ``None``.
         """
+        batch = await self.stage_ready_batch(limit=1)
+        return batch[0] if batch else None
+
+    async def stage_ready_batch(self, limit: int | None = None) -> list[str]:
+        """Return a batch of currently-ready node ids, moving them to in_progress.
+
+        This is the parallel-scheduling primitive: every node whose strong-link
+        dependencies are satisfied is returned together so the executor can run
+        them concurrently. Returned ids are sorted for deterministic ordering.
+
+        When no ready nodes exist but blocked ones remain, awaits ``_unblocked``
+        until a release call wakes us; if there are neither, returns ``[]``.
+        """
         while True:
             if self._cancelled:
-                return None
+                return []
             if self.state.ready:
-                # Prefer nodes closer to output by popping from the set.
-                nid = self.state.ready.pop()
-                self.state.in_progress.add(nid)
-                return nid
+                ready = sorted(self.state.ready)
+                if limit is not None and limit > 0:
+                    ready = ready[:limit]
+                for nid in ready:
+                    self.state.ready.discard(nid)
+                    self.state.in_progress.add(nid)
+                return ready
             if self.state.blocked:
                 self._unblocked.clear()
                 try:
                     await asyncio.wait_for(self._unblocked.wait(), timeout=None)
                 except asyncio.CancelledError:
-                    return None
+                    return []
                 continue
-            return None
+            return []
 
     def complete_node_execution(self, node_id: str) -> None:
         """Mark ``node_id`` completed and promote its newly-ready downstream nodes."""

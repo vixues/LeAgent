@@ -93,6 +93,7 @@ class WorkflowExecutor:
         progress_handlers: list[ProgressHandler] | None = None,
         cache_mode: str = "classic",
         state_store: Any = None,
+        max_parallelism: int = 8,
     ) -> None:
         self.tool_registry = tool_registry
         self.tool_executor = tool_executor
@@ -109,6 +110,7 @@ class WorkflowExecutor:
         self._states: dict[str, WorkflowState] = {}
         self._abort_events: dict[str, asyncio.Event] = {}
         self.state_store = state_store
+        self.max_parallelism = max(1, int(max_parallelism or 1))
 
     # ------------------------------------------------------------------
     # Convenience facade
@@ -247,11 +249,15 @@ class WorkflowExecutor:
         duration_ms = int((time.monotonic() - start_ts) * 1000)
         state.completed_at = datetime.utcnow()
 
-        if errors_list:
+        if state.status == WorkflowStatus.TIMEOUT:
+            pass  # a timed-out run keeps its TIMEOUT status (errors surfaced too)
+        elif errors_list:
             state.status = WorkflowStatus.FAILED
         elif state.status not in (WorkflowStatus.WAITING_HUMAN, WorkflowStatus.PAUSED,
                                   WorkflowStatus.CANCELLED):
             state.status = WorkflowStatus.COMPLETED
+
+        self._emit_run_metrics(doc, state, duration_ms)
 
         # Resolve declared outputs from document.outputs
         resolved_outputs = self._resolve_outputs(doc, state)
@@ -294,145 +300,354 @@ class WorkflowExecutor:
         if start_id in doc.nodes:
             exec_list.add_node(start_id)
 
+        deadline = self._compute_deadline(doc)
+        max_par = self.max_parallelism
+
         while not exec_list.is_done():
-            node_id = await exec_list.stage_node_execution()
-            if node_id is None:
-                break
-            node_def = exec_list.prompt.get(node_id)
-            if node_def is None:
-                exec_list.complete_node_execution(node_id)
-                continue
-            state.current_node = node_id
-
-            # ComfyUI-style node modes: ``mute`` skips the node entirely,
-            # ``bypass`` passes type-matching inputs straight through to the
-            # outputs. Both are stored on ``meta.mode`` by the editor.
-            mode = _node_mode(node_def)
-            if mode in ("mute", "bypass"):
-                progress.set_status(node_id, NodeStatus.SKIPPED,
-                                    metadata={"mode": mode})
-                result = NodeRunResult(
-                    _mode_passthrough_output(
-                        self.node_registry, node_def, upstream_values, mode,
-                    ),
-                    duration_ms=0,
-                )
-            else:
-                try:
-                    result = await runner.run(node_id, node_def, upstream_values, hidden)
-                except NodeExecutionError as exc:
-                    errors_list.append(f"{node_id}: {exc}")
-                    state.error_stack.append(f"{node_id}: {exc}")
-                    exec_list.fail_node_execution(node_id)
-                    state.record_execution(NodeExecutionResult(
-                        node_id=node_id, status=WorkflowStatus.FAILED, error=str(exc),
-                    ))
-                    control = node_def.get("control", {}) or {}
-                    if control.get("error_handler"):
-                        exec_list.select_branch(node_id, control["error_handler"])
-                        exec_list.add_node(control["error_handler"])
-                    continue
-
-            output = result.output or NodeOutput()
-
-            # Populate upstream_values (slot-indexed tuple)
-            for slot, val in enumerate(output.as_tuple()):
-                upstream_values[(node_id, slot)] = val
-
-            # Control-flow routing
-            control = node_def.get("control", {}) or {}
-            class_type = node_def.get("class_type", "")
-
-            if output.error and not result.cached:
-                errors_list.append(f"{node_id}: {output.error}")
-                state.error_stack.append(f"{node_id}: {output.error}")
-                exec_list.fail_node_execution(node_id)
-                state.record_execution(NodeExecutionResult(
-                    node_id=node_id, status=WorkflowStatus.FAILED, error=output.error,
-                    duration_ms=result.duration_ms,
-                ))
-                if control.get("error_handler"):
-                    exec_list.select_branch(node_id, control["error_handler"])
-                    exec_list.add_node(control["error_handler"])
-                continue
-
-            if output.block_execution:
-                exec_list.add_external_block(node_id, output.block_execution)
-                state.status = WorkflowStatus.WAITING_HUMAN if output.block_execution == "awaiting_review" else WorkflowStatus.PAUSED
-                state.record_execution(NodeExecutionResult(
-                    node_id=node_id, status=state.status, output=output.values,
-                    duration_ms=result.duration_ms, metadata=output.metadata,
-                ))
-                # Tell clients which node blocked and why (e.g. the agent's
-                # question + checkpoint id) so the UI can offer a resume box.
-                progress.set_status(node_id, NodeStatus.BLOCKED)
+            if deadline is not None and time.monotonic() > deadline:
+                errors_list.append("workflow timed out")
+                state.error_stack.append("workflow timed out")
+                state.status = WorkflowStatus.TIMEOUT
+                exec_list.cancel()
                 progress.emit(ProgressEvent(
-                    type="execution_blocked",
-                    prompt_id=prompt_id,
-                    node_id=node_id,
-                    data={"tag": output.block_execution,
-                          "ui": _sanitize_ui(output.ui),
-                          "metadata": output.metadata},
+                    type="execution_timeout", prompt_id=prompt_id,
+                    data={"timeout_sec": self._timeout_sec(doc)},
                 ))
-                await self._persist_run_snapshot(
-                    state, prompt_id=prompt_id, exec_list=exec_list,
-                )
-                try:
-                    from leagent.runtime.execution_registry import get_execution_run_registry
+                return
 
-                    exec_run = get_execution_run_registry().get_by_prompt_id(prompt_id)
-                    if exec_run is not None:
-                        exec_run.pause(
-                            reason=str(output.block_execution or "blocked"),
-                            workflow_state_id=state.id,
-                        )
-                except Exception:
-                    logger.debug(
-                        "workflow_execution_pause_registration_failed",
-                        prompt_id=prompt_id,
-                        exc_info=True,
+            # Stage every currently-ready node and run them concurrently. The
+            # batch is bounded by ``max_parallelism``; node-level bookkeeping
+            # (branch routing, cache, history) is applied serially afterwards
+            # to keep the shared ``ExecutionList`` consistent.
+            batch = await exec_list.stage_ready_batch(limit=max_par)
+            if not batch:
+                break
+
+            sem = asyncio.Semaphore(max_par)
+
+            async def _guarded(nid: str) -> tuple[str, dict[str, Any] | None, NodeRunResult | None, Exception | None]:
+                async with sem:
+                    return await self._execute_node(
+                        nid, exec_list, runner, hidden, upstream_values, progress,
                     )
-                return  # pause the run; caller drives resume
 
-            if output.expand:
-                frame = ExpandFrame(parent_id=node_id, call_idx=_next_call_idx(exec_list, node_id),
-                                     nodes=output.expand.get("nodes", {}))
-                added = exec_list.prompt.add_expanded(frame)
-                for nid in added:
-                    cache_keys.invalidate(nid)
-                    exec_list.add_node(nid)
-
-            # Choose next branch. Only loop-safe nodes (e.g. IterativeRefine)
-            # may re-open an already-completed target to form a bounded loop.
-            allow_reopen = class_type in _LOOP_SAFE_TYPES
-            if output.next_node is not None or class_type == "ConditionNode":
-                exec_list.select_branch(node_id, output.next_node)
-                if output.next_node:
-                    exec_list.reopen_or_add(output.next_node, allow_reopen=allow_reopen)
+            gather_coro = asyncio.gather(*[_guarded(nid) for nid in batch])
+            if deadline is not None:
+                remaining = deadline - time.monotonic()
+                try:
+                    results = await asyncio.wait_for(gather_coro, timeout=max(0.0, remaining))
+                except asyncio.TimeoutError:
+                    errors_list.append("workflow timed out")
+                    state.error_stack.append("workflow timed out")
+                    state.status = WorkflowStatus.TIMEOUT
+                    exec_list.cancel()
+                    progress.emit(ProgressEvent(
+                        type="execution_timeout", prompt_id=prompt_id,
+                        data={"timeout_sec": self._timeout_sec(doc)},
+                    ))
+                    return
             else:
-                next_id = control.get("next")
-                if next_id:
-                    exec_list.select_branch(node_id, next_id)
-                    exec_list.reopen_or_add(next_id, allow_reopen=allow_reopen)
+                results = await gather_coro
 
+            paused = False
+            for node_id, node_def, result, exc in results:
+                state.current_node = node_id
+                outcome = await self._apply_node_result(
+                    node_id, node_def, result, exc,
+                    exec_list=exec_list, state=state, upstream_values=upstream_values,
+                    progress=progress, prompt_id=prompt_id, errors_list=errors_list,
+                    cache_keys=cache_keys,
+                )
+                if outcome == "paused":
+                    paused = True
+            if paused:
+                return
+
+    async def _execute_node(
+        self,
+        node_id: str,
+        exec_list: ExecutionList,
+        runner: NodeRunner,
+        hidden: HiddenHolder,
+        upstream_values: dict[tuple[str, int], Any],
+        progress: ProgressRegistry,
+    ) -> tuple[str, dict[str, Any] | None, NodeRunResult | None, Exception | None]:
+        """Execute a single staged node (or its mute/bypass passthrough).
+
+        Returns ``(node_id, node_def, result, exc)``. Bookkeeping is deferred to
+        :meth:`_apply_node_result` so concurrent execution stays side-effect free
+        with respect to the shared scheduler state.
+        """
+        node_def = exec_list.prompt.get(node_id)
+        if node_def is None:
+            return (node_id, None, None, None)
+
+        mode = _node_mode(node_def)
+        if mode in ("mute", "bypass"):
+            progress.set_status(node_id, NodeStatus.SKIPPED, metadata={"mode": mode})
+            result = NodeRunResult(
+                _mode_passthrough_output(
+                    self.node_registry, node_def, upstream_values, mode,
+                ),
+                duration_ms=0,
+            )
+            return (node_id, node_def, result, None)
+
+        try:
+            result = await runner.run(node_id, node_def, upstream_values, hidden)
+            return (node_id, node_def, result, None)
+        except NodeExecutionError as exc:
+            return (node_id, node_def, None, exc)
+
+    async def _apply_node_result(
+        self,
+        node_id: str,
+        node_def: dict[str, Any] | None,
+        result: NodeRunResult | None,
+        exc: Exception | None,
+        *,
+        exec_list: ExecutionList,
+        state: WorkflowState,
+        upstream_values: dict[tuple[str, int], Any],
+        progress: ProgressRegistry,
+        prompt_id: str,
+        errors_list: list[str],
+        cache_keys: CacheKeySetInputSignature,
+    ) -> str:
+        """Apply a node's execution outcome to the scheduler/state serially."""
+        if node_def is None:
             exec_list.complete_node_execution(node_id)
-            state.record_execution(NodeExecutionResult(
-                node_id=node_id,
-                status=WorkflowStatus.COMPLETED,
-                output=_first_value(output),
-                duration_ms=result.duration_ms,
-                next_node=output.next_node or control.get("next"),
-                metadata=output.metadata,
-            ))
+            return "ok"
 
+        control = node_def.get("control", {}) or {}
+        class_type = node_def.get("class_type", "")
+
+        if exc is not None:
+            errors_list.append(f"{node_id}: {exc}")
+            state.error_stack.append(f"{node_id}: {exc}")
+            exec_list.fail_node_execution(node_id)
+            state.record_execution(NodeExecutionResult(
+                node_id=node_id, status=WorkflowStatus.FAILED, error=str(exc),
+            ))
+            if control.get("error_handler"):
+                exec_list.select_branch(node_id, control["error_handler"])
+                exec_list.add_node(control["error_handler"])
+            return "error"
+
+        output = (result.output if result else None) or NodeOutput()
+
+        # Populate upstream_values (slot-indexed tuple)
+        for slot, val in enumerate(output.as_tuple()):
+            upstream_values[(node_id, slot)] = val
+
+        if output.error and not (result and result.cached):
+            errors_list.append(f"{node_id}: {output.error}")
+            state.error_stack.append(f"{node_id}: {output.error}")
+            exec_list.fail_node_execution(node_id)
+            state.record_execution(NodeExecutionResult(
+                node_id=node_id, status=WorkflowStatus.FAILED, error=output.error,
+                duration_ms=result.duration_ms if result else 0,
+            ))
+            if control.get("error_handler"):
+                exec_list.select_branch(node_id, control["error_handler"])
+                exec_list.add_node(control["error_handler"])
+            return "error"
+
+        if output.block_execution:
+            exec_list.add_external_block(node_id, output.block_execution)
+            state.status = WorkflowStatus.WAITING_HUMAN if output.block_execution == "awaiting_review" else WorkflowStatus.PAUSED
+            state.record_execution(NodeExecutionResult(
+                node_id=node_id, status=state.status, output=output.values,
+                duration_ms=result.duration_ms if result else 0, metadata=output.metadata,
+            ))
+            # Tell clients which node blocked and why (e.g. the agent's
+            # question + checkpoint id) so the UI can offer a resume box.
+            progress.set_status(node_id, NodeStatus.BLOCKED)
             progress.emit(ProgressEvent(
-                type="executed",
+                type="execution_blocked",
                 prompt_id=prompt_id,
                 node_id=node_id,
-                data={"values": list(output.as_tuple()),
+                data={"tag": output.block_execution,
                       "ui": _sanitize_ui(output.ui),
-                      "metadata": output.metadata, "cached": result.cached},
+                      "metadata": output.metadata},
             ))
+            await self._persist_run_snapshot(
+                state, prompt_id=prompt_id, exec_list=exec_list,
+            )
+            try:
+                from leagent.runtime.execution_registry import get_execution_run_registry
+
+                exec_run = get_execution_run_registry().get_by_prompt_id(prompt_id)
+                if exec_run is not None:
+                    exec_run.pause(
+                        reason=str(output.block_execution or "blocked"),
+                        workflow_state_id=state.id,
+                    )
+            except Exception:
+                logger.debug(
+                    "workflow_execution_pause_registration_failed",
+                    prompt_id=prompt_id,
+                    exc_info=True,
+                )
+            return "paused"
+
+        if output.expand:
+            frame = ExpandFrame(parent_id=node_id, call_idx=_next_call_idx(exec_list, node_id),
+                                 nodes=output.expand.get("nodes", {}))
+            added = exec_list.prompt.add_expanded(frame)
+            for nid in added:
+                cache_keys.invalidate(nid)
+                exec_list.add_node(nid)
+
+        # Choose next branch. Only loop-safe nodes (e.g. IterativeRefine)
+        # may re-open an already-completed target to form a bounded loop.
+        allow_reopen = class_type in _LOOP_SAFE_TYPES
+        if output.next_node is not None or class_type == "ConditionNode":
+            exec_list.select_branch(node_id, output.next_node)
+            if output.next_node:
+                exec_list.reopen_or_add(output.next_node, allow_reopen=allow_reopen)
+        else:
+            next_id = control.get("next")
+            if next_id:
+                exec_list.select_branch(node_id, next_id)
+                exec_list.reopen_or_add(next_id, allow_reopen=allow_reopen)
+
+        exec_list.complete_node_execution(node_id)
+        state.record_execution(NodeExecutionResult(
+            node_id=node_id,
+            status=WorkflowStatus.COMPLETED,
+            output=_first_value(output),
+            duration_ms=result.duration_ms if result else 0,
+            next_node=output.next_node or control.get("next"),
+            metadata=output.metadata,
+        ))
+
+        progress.emit(ProgressEvent(
+            type="executed",
+            prompt_id=prompt_id,
+            node_id=node_id,
+            data={"values": list(output.as_tuple()),
+                  "ui": _sanitize_ui(output.ui),
+                  "metadata": output.metadata, "cached": bool(result and result.cached)},
+        ))
+        return "ok"
+
+    # ------------------------------------------------------------------
+    # Single-node execution (used by ParallelNode branch fan-out)
+    # ------------------------------------------------------------------
+
+    async def execute_single_node_async(
+        self,
+        node_id: str,
+        state: WorkflowState,
+        hidden: HiddenHolder,
+    ) -> NodeOutput:
+        """Execute one node in isolation against ``state``.
+
+        Used by :class:`ParallelNode` to run the nodes of a forked branch on a
+        forked :class:`WorkflowState`. Resolves the node's literal inputs and
+        any ``${var}`` templates from the forked state's variables, runs the
+        node via a fresh :class:`NodeRunner`, and writes produced values back
+        onto the forked state (so ``merge_child_states`` can collect them).
+        """
+        node_def = (hidden.dynprompt.get(node_id) if hidden.dynprompt else None)
+        if node_def is None:
+            node_def = (hidden.prompt or {}).get(node_id)
+        if node_def is None:
+            return NodeOutput(error=f"unknown node '{node_id}'")
+
+        runner = NodeRunner(
+            registry=self.node_registry,
+            output_cache=self.cache_set.outputs,
+            object_cache=self.cache_set.objects,
+            cache_keys=CacheKeySetInputSignature(
+                hidden.dynprompt or DynamicPrompt({node_id: node_def}),
+                registry=self.node_registry,
+            ),
+            progress=hidden.progress,
+            cache_provider=self.cache_provider,
+        )
+
+        # Resolve literal inputs (templates against the forked state); link
+        # inputs are not followed here — a branch node is expected to read its
+        # dependencies from forked-state variables.
+        branch_values: dict[tuple[str, int], Any] = {}
+        branch_hidden = hidden.with_unique_id(node_id)
+        branch_hidden.workflow_state = state
+        try:
+            result = await runner.run(node_id, node_def, branch_values, branch_hidden)
+        except NodeExecutionError as exc:
+            return NodeOutput(error=str(exc))
+        output = result.output or NodeOutput()
+        if not output.error:
+            state.outputs[node_id] = _first_value(output)
+        return output
+
+    def _emit_run_metrics(
+        self, doc: WorkflowDocument, state: WorkflowState, duration_ms: int
+    ) -> None:
+        """Emit Prometheus run/node/quality metrics (best-effort, never fatal)."""
+        try:
+            from leagent.utils.metrics import get_metrics
+
+            metrics = get_metrics()
+            workflow_name = doc.name or doc.id or "workflow"
+            status = state.status.value
+
+            metrics.workflow_execution_total.labels(
+                workflow_name=workflow_name, status=status,
+            ).inc()
+            metrics.workflow_execution_duration_seconds.labels(
+                workflow_name=workflow_name,
+            ).observe(duration_ms / 1000.0)
+
+            for record in state.execution_history:
+                node_type = (doc.nodes.get(record.node_id, {}) or {}).get("class_type", "unknown")
+                metrics.workflow_node_execution_total.labels(
+                    workflow_name=workflow_name,
+                    node_type=node_type,
+                    status=record.status.value,
+                ).inc()
+
+            quality = state.variables.get("quality_score")
+            if quality is not None:
+                try:
+                    metrics.workflow_quality_score.labels(
+                        workflow_name=workflow_name,
+                    ).observe(float(quality))
+                except (TypeError, ValueError):
+                    pass
+
+            refine = state.variables.get("refine_iteration")
+            if refine is not None:
+                try:
+                    metrics.workflow_refine_iterations.labels(
+                        workflow_name=workflow_name,
+                    ).observe(int(refine))
+                except (TypeError, ValueError):
+                    pass
+        except Exception:  # noqa: BLE001 - telemetry must never break a run
+            logger.debug("workflow_metrics_emit_failed", exc_info=True)
+
+    def _timeout_sec(self, doc: WorkflowDocument) -> float | None:
+        """Read a workflow-level timeout (seconds) from control or metadata."""
+        for source in (doc.control or {}, doc.metadata or {}):
+            if not isinstance(source, dict):
+                continue
+            raw = source.get("timeout_sec")
+            if raw is None:
+                continue
+            try:
+                val = float(raw)
+            except (TypeError, ValueError):
+                continue
+            if val > 0:
+                return val
+        return None
+
+    def _compute_deadline(self, doc: WorkflowDocument) -> float | None:
+        timeout = self._timeout_sec(doc)
+        return (time.monotonic() + timeout) if timeout else None
 
     # ------------------------------------------------------------------
     # Lifecycle controls
