@@ -142,6 +142,17 @@ class ServiceManager:
             from leagent.llm.provider_config import reset_provider_config_service
 
             reset_provider_config_service()
+            # Art image-generation stack reads the same providers.yaml; reset
+            # its config + backend service so credential/preset edits apply
+            # without a restart.
+            try:
+                from leagent.llm.generation import reset_image_gen_config
+                from leagent.llm.generation.service import reset_generation_service
+
+                reset_image_gen_config()
+                reset_generation_service()
+            except Exception:  # noqa: BLE001 - art stack reload is best-effort
+                logger.debug("generation service reload skipped", exc_info=True)
             self._llm_service.reload()
             logger.info(
                 "LLMService reloaded with %d provider(s): %s",

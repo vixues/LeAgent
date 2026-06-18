@@ -58,6 +58,12 @@ _include(v1_router, "leagent.api.v1.chat", prefix="/chat", tags=["v1-chat"])
 _include(v1_router, "leagent.api.v1.tools", prefix="/tools", tags=["v1-tools"])
 _include(v1_router, "leagent.api.v1.rules", prefix="/rules", tags=["v1-rules"])
 _include(v1_router, "leagent.api.v1.models", prefix="/models", tags=["v1-models"])
+_include(
+    v1_router,
+    "leagent.api.v1.image_gen",
+    prefix="/models/image-gen",
+    tags=["v1-image-gen"],
+)
 _include(v1_router, "leagent.api.v1.canvas", prefix="/canvas", tags=["v1-canvas"])
 _include(v1_router, "leagent.api.v1.tasks", prefix="/tasks", tags=["v1-tasks"])
 _include(v1_router, "leagent.workflow.server", tags=["v1-workflow"])
