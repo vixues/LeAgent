@@ -22,6 +22,8 @@ export interface RunChatStreamParams {
   assistantMsgId: string;
   content: string;
   attachments?: File[];
+  projectId?: string | null;
+  projectUnlockToken?: string | null;
   folderId?: string | null;
   /** Knowledge (or other) file UUIDs merged into attachment_paths server-side. */
   fileIds?: string[];
@@ -54,6 +56,8 @@ export async function runChatStream({
   assistantMsgId,
   content,
   attachments,
+  projectId,
+  projectUnlockToken,
   folderId,
   fileIds,
   projectFolderId,
@@ -70,6 +74,12 @@ export async function runChatStream({
   const formData = new FormData();
   formData.append('message', content ?? '');
   formData.append('session_id', sessionId);
+  if (projectId) {
+    formData.append('project_id', projectId);
+  }
+  if (projectUnlockToken) {
+    formData.append('project_unlock_token', projectUnlockToken);
+  }
 
   if (toolReplies?.length) {
     formData.append('tool_replies', JSON.stringify(toolReplies));

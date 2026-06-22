@@ -9,6 +9,7 @@ import { useLayoutStore } from './layout';
 import { hydrateSessionCanvasArtifacts } from './artifact';
 import { hydrateGenUiFromMessages, useGenUiStore } from './genUi';
 import { useExecutionSessionStore } from './executionSession';
+import { getChatProjectHeaders, useChatProjectStore } from './chatProjects';
 import {
   ensureChronologicalMessages,
   normalizeMessageList,
@@ -75,8 +76,8 @@ interface ChatStore {
   nestedAgentPreviewBySession: Record<string, NestedAgentPreviewState | null>;
   setNestedAgentPreview: (sessionId: string, preview: NestedAgentPreviewState | null) => void;
 
-  fetchSessions: () => Promise<void>;
-  createSession: (title?: string) => Promise<string>;
+  fetchSessions: (projectId?: string | null) => Promise<void>;
+  createSession: (title?: string, projectId?: string | null) => Promise<string>;
   deleteSession: (id: string) => Promise<void>;
   /** Server returned 404 — remove thread from local state without calling DELETE. */
   dropStaleSession: (id: string) => void;
@@ -182,6 +183,7 @@ interface ChatStore {
 interface SessionResponse {
   id: string;
   name: string;
+  project_id?: string | null;
   message_count: number;
   created_at: string;
   updated_at: string;
@@ -311,6 +313,7 @@ function mapSession(s: SessionResponse): ChatSession {
     createdAt: s.created_at,
     updatedAt: s.updated_at,
     messageCount: s.message_count,
+    projectId: s.project_id ?? null,
     pinnedMessageIds: Array.isArray(pins) ? pins.map(String) : [],
   };
   const todos = mapApiTodosToSteps(s.todos);
@@ -318,6 +321,23 @@ function mapSession(s: SessionResponse): ChatSession {
     base.todos = todos;
   }
   return base;
+}
+
+function projectIdForSession(sessionId: string): string | null {
+  const session = useChatStore.getState().sessions.find((s) => s.id === sessionId);
+  return session?.projectId ?? null;
+}
+
+/** Project unlock header for session-scoped chat API calls. */
+export function getSessionProjectHeaders(sessionId: string): Record<string, string> | undefined {
+  return getChatProjectHeaders(projectIdForSession(sessionId));
+}
+
+/** False when the session belongs to a password-protected project without a stored unlock token. */
+export function isSessionProjectUnlocked(sessionId: string): boolean {
+  const projectId = projectIdForSession(sessionId);
+  if (!projectId) return true;
+  return useChatProjectStore.getState().isProjectUnlocked(projectId);
 }
 
 export const useChatStore = create<ChatStore>()(
@@ -384,11 +404,14 @@ export const useChatStore = create<ChatStore>()(
         }));
       },
 
-      fetchSessions: async () => {
+      fetchSessions: async (projectId) => {
         try {
+          const params: Record<string, string | number> = { page: 1, page_size: 100 };
+          if (projectId) params.project_id = projectId;
           const res = await apiClient.get<PaginatedResponse<SessionResponse>>(
             '/chat/sessions',
-            { page: 1, page_size: 100 }
+            params,
+            { headers: getChatProjectHeaders(projectId) },
           );
           const sessions = res.items.map(mapSession);
           set((state) => ({
@@ -405,7 +428,11 @@ export const useChatStore = create<ChatStore>()(
         }
       },
 
-      createSession: async (title) => {
+      createSession: async (title, projectIdArg) => {
+        const activeProjectId =
+          projectIdArg !== undefined
+            ? projectIdArg
+            : useChatProjectStore.getState().currentProjectId;
         const tempId = generateId();
         const now = new Date().toISOString();
         const tempSession: ChatSession = {
@@ -414,6 +441,7 @@ export const useChatStore = create<ChatStore>()(
           createdAt: now,
           updatedAt: now,
           messageCount: 0,
+          projectId: activeProjectId ?? null,
           pinnedMessageIds: [],
           isPending: true,
         };
@@ -433,7 +461,8 @@ export const useChatStore = create<ChatStore>()(
         try {
           const res = await apiClient.post<SessionResponse>('/chat/sessions', {
             name: title || i18n.t('chat.defaultSessionName'),
-          });
+            project_id: activeProjectId || undefined,
+          }, { headers: getChatProjectHeaders(activeProjectId) });
           const session = mapSession(res);
           delete session.todos;
 
@@ -502,7 +531,9 @@ export const useChatStore = create<ChatStore>()(
         useExecutionSessionStore.getState().clearSession(id);
 
         try {
-          await apiClient.delete(`/chat/sessions/${id}`);
+          await apiClient.delete(`/chat/sessions/${id}`, {
+            headers: getChatProjectHeaders(projectIdForSession(id)),
+          });
         } catch {
           // Session already removed from local state
         }
@@ -563,13 +594,21 @@ export const useChatStore = create<ChatStore>()(
             s.id === id ? { ...s, title, updatedAt: new Date().toISOString() } : s
           ),
         }));
-        apiClient.patch(`/chat/sessions/${id}`, { name: title }).catch(() => {});
+        apiClient.patch(
+          `/chat/sessions/${id}`,
+          { name: title },
+          { headers: getChatProjectHeaders(projectIdForSession(id)) },
+        ).catch(() => {});
       },
 
       fetchSessionDetail: async (sessionId) => {
         if (!isUuid(sessionId)) return;
         try {
-          const res = await apiClient.get<SessionResponse>(`/chat/sessions/${sessionId}`);
+          const res = await apiClient.get<SessionResponse>(
+            `/chat/sessions/${sessionId}`,
+            undefined,
+            { headers: getChatProjectHeaders(projectIdForSession(sessionId)) },
+          );
           const mapped = mapSession(res);
           set((state) => ({
             sessions: state.sessions.map((s) => {
@@ -680,6 +719,7 @@ export const useChatStore = create<ChatStore>()(
           const res = await apiClient.patch<SessionResponse>(
             `/chat/sessions/${sessionId}/todos/${encodeURIComponent(taskId)}`,
             { status },
+            { headers: getChatProjectHeaders(projectIdForSession(sessionId)) },
           );
           const mapped = mapApiTodosToSteps(res.todos);
           if (mapped?.length) {
@@ -701,9 +741,13 @@ export const useChatStore = create<ChatStore>()(
           ),
         }));
         try {
-          const res = await apiClient.patch<SessionResponse>(`/chat/sessions/${sessionId}`, {
-            metadata_patch: { pinned_message_ids: messageIds },
-          });
+          const res = await apiClient.patch<SessionResponse>(
+            `/chat/sessions/${sessionId}`,
+            {
+              metadata_patch: { pinned_message_ids: messageIds },
+            },
+            { headers: getChatProjectHeaders(projectIdForSession(sessionId)) },
+          );
           const mapped = mapSession(res);
           set((state) => ({
             sessions: state.sessions.map((s) => (s.id === sessionId ? { ...s, ...mapped } : s)),
@@ -737,7 +781,8 @@ export const useChatStore = create<ChatStore>()(
         try {
           const res = await apiClient.get<PaginatedResponse<MessageResponse>>(
             `/chat/sessions/${sessionId}/messages`,
-            { page: 1, page_size: CHAT_MESSAGES_PAGE_SIZE, order: 'desc' }
+            { page: 1, page_size: CHAT_MESSAGES_PAGE_SIZE, order: 'desc' },
+            { headers: getChatProjectHeaders(projectIdForSession(sessionId)) },
           );
           if (seq !== messagesFetchSeq) return;
 
@@ -774,6 +819,8 @@ export const useChatStore = create<ChatStore>()(
                 void apiClient
                   .patch(`/chat/sessions/${sessionId}`, {
                     metadata_patch: { pinned_message_ids: nextPins },
+                  }, {
+                    headers: getChatProjectHeaders(projectIdForSession(sessionId)),
                   })
                   .catch(() => {});
               }
@@ -835,6 +882,7 @@ export const useChatStore = create<ChatStore>()(
               page_size: CHAT_MESSAGES_PAGE_SIZE,
               order: 'desc',
             },
+            { headers: getChatProjectHeaders(projectIdForSession(sessionId)) },
           );
           const olderMessages = normalizeMessageList([...res.items].reverse());
           const existingSnapshot = get().messages[sessionId] ?? [];
@@ -1199,7 +1247,11 @@ export const useChatStore = create<ChatStore>()(
 
       cancelBackendSession: async (sessionId: string) => {
         try {
-          await apiClient.post(`/chat/sessions/${sessionId}/cancel`);
+          await apiClient.post(
+            `/chat/sessions/${sessionId}/cancel`,
+            undefined,
+            { headers: getChatProjectHeaders(projectIdForSession(sessionId)) },
+          );
         } catch {
           // Best-effort; the SSE abort already closed the client connection
         }

@@ -1,7 +1,11 @@
 import { useQuery } from '@tanstack/react-query';
 import { apiClient, HttpError } from '@/api/client';
 import { isUuid } from '@/lib/utils';
-import { useChatStore } from '@/stores/chat';
+import {
+  getSessionProjectHeaders,
+  isSessionProjectUnlocked,
+  useChatStore,
+} from '@/stores/chat';
 
 export interface AgentMemoryEpisode {
   id: string;
@@ -55,16 +59,25 @@ export function useAgentMemorySnapshot(options: {
     sessionId ? s.sessions.find((x) => x.id === sessionId)?.isPending === true : false,
   );
   const chatSessionsReconciled = useChatStore((s) => s.chatSessionsReconciled);
+  const projectUnlocked =
+    sessionId && isUuid(sessionId) ? isSessionProjectUnlocked(sessionId) : true;
   return useQuery({
     queryKey: ['agent-memory', sessionId],
     queryFn: () =>
       apiClient.get<AgentMemorySnapshot>(
-        `/chat/sessions/${sessionId}/agent-memory`
+        `/chat/sessions/${sessionId}/agent-memory`,
+        undefined,
+        { headers: getSessionProjectHeaders(sessionId!) },
       ),
-    enabled: isUuid(sessionId) && enabled && !isPending && chatSessionsReconciled,
+    enabled:
+      isUuid(sessionId) &&
+      enabled &&
+      !isPending &&
+      chatSessionsReconciled &&
+      projectUnlocked,
     staleTime: 30_000,
     retry: (failureCount, err) => {
-      if (err instanceof HttpError && err.status === 404) return false;
+      if (err instanceof HttpError && (err.status === 404 || err.status === 423)) return false;
       return failureCount < 2;
     },
   });

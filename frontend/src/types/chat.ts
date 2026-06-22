@@ -252,6 +252,7 @@ export interface ChatSession {
   createdAt: string;
   updatedAt: string;
   messageCount: number;
+  projectId?: string | null;
   preview?: string;
   /** Server-backed pin order; message UUID strings from ``SessionRead.pinned_message_ids``. */
   pinnedMessageIds?: string[];
@@ -262,6 +263,21 @@ export interface ChatSession {
    * Background queries (agent-memory, prompt-preview) skip these to avoid spurious 404s.
    */
   isPending?: boolean;
+}
+
+export interface ChatProject {
+  id: string;
+  userId: string;
+  workspaceId?: string | null;
+  name: string;
+  description?: string | null;
+  designContext?: string | null;
+  settings?: string | null;
+  hasPassword: boolean;
+  isLocked: boolean;
+  sessionCount: number;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface ChatState {
@@ -276,6 +292,8 @@ export interface ChatState {
 export interface SendMessageParams {
   content: string;
   attachments?: File[];
+  projectId?: string | null;
+  projectUnlockToken?: string | null;
   folderId?: string | null;
   /** Knowledge document UUIDs for ``/chat/stream`` ``file_ids`` (comma-separated on wire). */
   fileIds?: string[];

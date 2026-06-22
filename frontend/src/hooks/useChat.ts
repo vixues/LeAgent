@@ -1,7 +1,7 @@
 import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query';
 import i18n from '@/i18n';
 import { apiClient } from '@/api/client';
-import { useChatStore } from '@/stores/chat';
+import { getSessionProjectHeaders, isSessionProjectUnlocked, useChatStore } from '@/stores/chat';
 import type {
   AuthorizedPathCreateBody,
   AuthorizedPathsResponse,
@@ -92,6 +92,7 @@ export function useChatMessages(sessionId: string | null, page = 1, pageSize = 1
 
 export function useSessionAuthorizedPaths(sessionId: string | null) {
   const chatSessionsReconciled = useChatStore((s) => s.chatSessionsReconciled);
+  const projectUnlocked = sessionId ? isSessionProjectUnlocked(sessionId) : true;
   return useQuery({
     queryKey: sessionId
       ? CHAT_KEYS.authorizedPaths(sessionId)
@@ -99,10 +100,12 @@ export function useSessionAuthorizedPaths(sessionId: string | null) {
     queryFn: async () => {
       if (!sessionId) return { session_id: '', paths: [] } satisfies AuthorizedPathsResponse;
       return apiClient.get<AuthorizedPathsResponse>(
-        `/chat/sessions/${sessionId}/authorized-paths`
+        `/chat/sessions/${sessionId}/authorized-paths`,
+        undefined,
+        { headers: getSessionProjectHeaders(sessionId) },
       );
     },
-    enabled: !!sessionId && chatSessionsReconciled,
+    enabled: !!sessionId && chatSessionsReconciled && projectUnlocked,
     staleTime: 10_000,
   });
 }
@@ -119,7 +122,8 @@ export function useAddAuthorizedPath() {
     }) =>
       apiClient.post<AuthorizedPathsResponse>(
         `/chat/sessions/${sessionId}/authorized-paths`,
-        body
+        body,
+        { headers: getSessionProjectHeaders(sessionId) },
       ),
     onSuccess: (_data, variables) => {
       queryClient.invalidateQueries({
@@ -134,7 +138,8 @@ export function useRemoveAuthorizedPath() {
   return useMutation({
     mutationFn: async ({ sessionId, path }: { sessionId: string; path: string }) =>
       apiClient.delete<AuthorizedPathsResponse>(
-        `/chat/sessions/${sessionId}/authorized-paths?path=${encodeURIComponent(path)}`
+        `/chat/sessions/${sessionId}/authorized-paths?path=${encodeURIComponent(path)}`,
+        { headers: getSessionProjectHeaders(sessionId) },
       ),
     onSuccess: (_data, variables) => {
       queryClient.invalidateQueries({

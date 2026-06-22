@@ -18,7 +18,12 @@ import { useExecutionStream } from '@/features/workflow/api/useExecutionStream';
 import { useExecutionOverlay } from '@/features/workflow/store/executionOverlay';
 import { useExecutionResume } from '@/hooks/useExecutionResume';
 import { cn } from '@/lib/utils';
-import { isChatStreamBusyForSession, useChatStore } from '@/stores/chat';
+import {
+  getSessionProjectHeaders,
+  isChatStreamBusyForSession,
+  isSessionProjectUnlocked,
+  useChatStore,
+} from '@/stores/chat';
 import { useExecutionSessionStore } from '@/stores/executionSession';
 import type { TaskProgressStep } from '@/types/chat';
 import { TodoListBlock } from './TodoListBlock';
@@ -111,7 +116,7 @@ export function ChatExecutionPanel({ sessionId, className }: ChatExecutionPanelP
   );
 
   useEffect(() => {
-    if (!sessionId) return;
+    if (!sessionId || !isSessionProjectUnlocked(sessionId)) return;
     let cancelled = false;
     void apiClient
       .get<
@@ -123,7 +128,9 @@ export function ChatExecutionPanel({ sessionId, className }: ChatExecutionPanelP
           status?: string;
           pause_token?: Record<string, unknown> | null;
         }>
-      >(`/chat/sessions/${sessionId}/executions`)
+      >(`/chat/sessions/${sessionId}/executions`, undefined, {
+        headers: getSessionProjectHeaders(sessionId),
+      })
       .then((rows) => {
         if (!cancelled && rows.length > 0) {
           useExecutionSessionStore.getState().hydrateExecutions(sessionId, rows);

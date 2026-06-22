@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { isChatStreamBusyForSession, useChatStore } from '@/stores/chat';
+import { getChatProjectUnlockToken, useChatProjectStore } from '@/stores/chatProjects';
 import { useArtifactStore } from '@/stores/artifact';
 import { useGenUiStore } from '@/stores/genUi';
 import { getComposerModelMode } from '@/stores/chatDraft';
@@ -43,6 +44,9 @@ export function GenUiActionBridge() {
         const store = useChatStore.getState();
         const sessionId = ctx.sessionId ?? store.currentSessionId ?? (await store.createSession());
         if (isChatStreamBusyForSession(sessionId, store)) return;
+        const sessionProjectId =
+          store.sessions.find((s) => s.id === sessionId)?.projectId ??
+          useChatProjectStore.getState().currentProjectId;
 
         const userMessageId = generateId();
         const userMessage: Message = {
@@ -76,6 +80,8 @@ export function GenUiActionBridge() {
             userMessageId,
             assistantMsgId,
             content,
+            projectId: sessionProjectId,
+            projectUnlockToken: getChatProjectUnlockToken(sessionProjectId),
             modelMode: getComposerModelMode(),
             signal: controller.signal,
             t: tRef.current,

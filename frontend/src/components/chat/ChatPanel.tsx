@@ -2,6 +2,7 @@ import { useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { cn } from '@/lib/utils';
 import { isChatStreamBusyForSession, useChatStore } from '@/stores/chat';
+import { getChatProjectUnlockToken, useChatProjectStore } from '@/stores/chatProjects';
 import { buildComposerSendParams, getComposerModelMode, resetComposerAfterSend } from '@/stores/chatDraft';
 import { generateId } from '@/lib/utils';
 import { GenUiActionBridge } from '@/components/canvas/genUi/GenUiActionBridge';
@@ -42,6 +43,9 @@ export function ChatPanel({ className }: ChatPanelProps) {
     async ({ content, attachments, folderId, fileIds, projectFolderId, modelMode }: SendMessageParams) => {
       const store = useChatStore.getState();
       let sessionId: string = store.currentSessionId ?? await store.createSession();
+      const sessionProjectId =
+        store.sessions.find((s) => s.id === sessionId)?.projectId ??
+        useChatProjectStore.getState().currentProjectId;
 
       const userMessageId = generateId();
       const userMessage: Message = {
@@ -86,6 +90,8 @@ export function ChatPanel({ className }: ChatPanelProps) {
           assistantMsgId,
           content,
           attachments,
+          projectId: sessionProjectId,
+          projectUnlockToken: getChatProjectUnlockToken(sessionProjectId),
           folderId,
           fileIds,
           projectFolderId,
@@ -111,6 +117,9 @@ export function ChatPanel({ className }: ChatPanelProps) {
       const store = useChatStore.getState();
       const sessionId = store.currentSessionId;
       if (!sessionId || isChatStreamBusyForSession(sessionId, store)) return;
+      const sessionProjectId =
+        store.sessions.find((s) => s.id === sessionId)?.projectId ??
+        useChatProjectStore.getState().currentProjectId;
 
       if (!store.truncateAfterMessageId(sessionId, userMessageId)) return;
 
@@ -150,6 +159,8 @@ export function ChatPanel({ className }: ChatPanelProps) {
           userMessageId,
           assistantMsgId,
           content: trimmed,
+          projectId: sessionProjectId,
+          projectUnlockToken: getChatProjectUnlockToken(sessionProjectId),
           modelMode: getComposerModelMode(),
           signal: controller.signal,
           t,

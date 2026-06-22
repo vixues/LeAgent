@@ -1,7 +1,11 @@
 import { useQuery } from '@tanstack/react-query';
 import { apiClient, HttpError } from '@/api/client';
 import { isUuid } from '@/lib/utils';
-import { useChatStore } from '@/stores/chat';
+import {
+  getSessionProjectHeaders,
+  isSessionProjectUnlocked,
+  useChatStore,
+} from '@/stores/chat';
 
 export interface PromptLayer {
   name: string;
@@ -33,15 +37,26 @@ export function usePromptPreview(options: {
     sessionId ? s.sessions.find((x) => x.id === sessionId)?.isPending === true : false,
   );
   const chatSessionsReconciled = useChatStore((s) => s.chatSessionsReconciled);
+  const projectUnlocked =
+    sessionId && isUuid(sessionId) ? isSessionProjectUnlocked(sessionId) : true;
   return useQuery({
     queryKey: ['prompt-preview', sessionId],
     queryFn: () =>
-      apiClient.get<PromptPreview>(`/chat/sessions/${sessionId}/prompt-preview`),
-    enabled: isUuid(sessionId) && enabled && !isPending && chatSessionsReconciled,
+      apiClient.get<PromptPreview>(
+        `/chat/sessions/${sessionId}/prompt-preview`,
+        undefined,
+        { headers: getSessionProjectHeaders(sessionId!) },
+      ),
+    enabled:
+      isUuid(sessionId) &&
+      enabled &&
+      !isPending &&
+      chatSessionsReconciled &&
+      projectUnlocked,
     staleTime: 15_000,
     refetchOnMount: 'always',
     retry: (failureCount, err) => {
-      if (err instanceof HttpError && err.status === 404) return false;
+      if (err instanceof HttpError && (err.status === 404 || err.status === 423)) return false;
       return failureCount < 2;
     },
   });

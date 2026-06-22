@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Panel, Group, Separator } from 'react-resizable-panels';
 import { isChatStreamBusyForSession, useChatStore } from '@/stores/chat';
+import { getChatProjectUnlockToken, useChatProjectStore } from '@/stores/chatProjects';
 import { buildComposerSendParams, getComposerModelMode, resetComposerAfterSend } from '@/stores/chatDraft';
 import { useArtifactStore } from '@/stores/artifact';
 import { useLayoutStore } from '@/stores/layout';
@@ -197,6 +198,10 @@ export default function ChatView() {
       const store = useChatStore.getState();
       const sessionId: string =
         store.currentSessionId ?? (await store.createSession());
+      const sessionProjectId =
+        store.sessions.find((s) => s.id === sessionId)?.projectId ??
+        useChatProjectStore.getState().currentProjectId;
+      const projectUnlockToken = getChatProjectUnlockToken(sessionProjectId);
 
       const userMessageId = generateId();
       const userMessage: Message = {
@@ -243,6 +248,8 @@ export default function ChatView() {
           assistantMsgId,
           content,
           attachments,
+          projectId: sessionProjectId,
+          projectUnlockToken,
           folderId,
           fileIds,
           projectFolderId,
@@ -270,6 +277,10 @@ export default function ChatView() {
       const store = useChatStore.getState();
       const sessionId = store.currentSessionId;
       if (!sessionId || isChatStreamBusyForSession(sessionId, store)) return;
+      const sessionProjectId =
+        store.sessions.find((s) => s.id === sessionId)?.projectId ??
+        useChatProjectStore.getState().currentProjectId;
+      const projectUnlockToken = getChatProjectUnlockToken(sessionProjectId);
 
       // Preserve the original message's attachments across the edit-resend by
       // re-sending their file ids (resolved to paths server-side).
@@ -319,6 +330,8 @@ export default function ChatView() {
           userMessageId,
           assistantMsgId,
           content: trimmed,
+          projectId: sessionProjectId,
+          projectUnlockToken,
           fileIds: keptFileIds.length > 0 ? keptFileIds : undefined,
           modelMode: getComposerModelMode(),
           researchMode: research.active,
