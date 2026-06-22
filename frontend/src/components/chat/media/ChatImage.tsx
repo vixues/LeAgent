@@ -14,12 +14,14 @@ interface ChatImageProps {
   src?: string;
   alt?: string;
   className?: string;
+  /** Render as a fixed, cropped thumbnail (object-cover) instead of a full preview. */
+  thumbnail?: boolean;
 }
 
 /**
  * Markdown / chat image with optional API preview blob URL and lightbox zoom.
  */
-export function ChatImage({ src, alt = '', className }: ChatImageProps) {
+export function ChatImage({ src, alt = '', className, thumbnail = false }: ChatImageProps) {
   const { t } = useTranslation();
   const invalidManagedRef = useMemo(() => isInvalidApiFilePreviewRef(src), [src]);
   const managedId = useMemo(
@@ -111,8 +113,9 @@ export function ChatImage({ src, alt = '', className }: ChatImageProps) {
         type="button"
         onClick={() => setLightboxOpen(true)}
         className={cn(
-          'group block max-w-full rounded-xl border border-border-subtle bg-surface-sunken/40 text-left',
-          'shadow-soft hover:border-border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/30',
+          'group block max-w-full text-left',
+          'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/30',
+          thumbnail && 'overflow-hidden',
           className,
         )}
         aria-label={t('chat.media.expandImage', { defaultValue: 'View larger' })}
@@ -123,7 +126,11 @@ export function ChatImage({ src, alt = '', className }: ChatImageProps) {
           loading="lazy"
           decoding="async"
           onError={() => setFailed(true)}
-          className="max-h-[min(70vh,480px)] w-full rounded-xl object-contain"
+          className={cn(
+            thumbnail
+              ? 'h-full w-full object-cover'
+              : 'max-h-[min(70vh,480px)] w-full object-contain',
+          )}
         />
       </button>
       <MediaLightbox

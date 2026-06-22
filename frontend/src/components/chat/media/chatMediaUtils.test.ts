@@ -78,6 +78,27 @@ describe('resolveMarkdownImageSrcFromAttachments', () => {
     );
   });
 
+  it('uses alt text as a filename fallback when markdown src is empty', () => {
+    expect(
+      resolveMarkdownImageSrcFromAttachments('', [
+        { id, name: '3d_rose.gif', previewUrl: signed },
+      ], '3d_rose.gif'),
+    ).toBe(signed);
+  });
+
+  it('resolves assistant inline media by filename', () => {
+    expect(
+      resolveMarkdownImageSrcFromAttachments('3d_rose.gif', [
+        {
+          id,
+          name: '3d_rose.gif',
+          previewUrl: signed,
+          downloadUrl: `/api/v1/files/${id}/download?token=signed`,
+        },
+      ]),
+    ).toBe(signed);
+  });
+
   it('does not rewrite managed file preview refs', () => {
     expect(resolveMarkdownImageSrcFromAttachments(signed, [{ id, name: 'other.gif' }])).toBe(signed);
   });

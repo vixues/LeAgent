@@ -101,22 +101,25 @@ function pathBasename(path: string): string {
 export function resolveMarkdownImageSrcFromAttachments(
   src: string | undefined,
   attachments: readonly MarkdownImageAttachmentLike[] | undefined,
+  fallbackName?: string,
 ): string | undefined {
   const raw = src?.trim();
-  if (!raw || !attachments?.length) return src;
+  const fallback = fallbackName?.trim();
+  if (!attachments?.length) return src;
+  if (!raw && !fallback) return src;
 
-  if (URL_SCHEME_RE.test(raw)) {
+  if (raw && URL_SCHEME_RE.test(raw)) {
     const scheme = raw.slice(0, raw.indexOf(':') + 1).toLowerCase();
     if (scheme === 'http:' || scheme === 'https:' || scheme === 'data:' || scheme === 'blob:') {
       return src;
     }
   }
 
-  if (raw.startsWith('//')) return src;
+  if (raw?.startsWith('//')) return src;
 
-  if (extractApiFilePreviewId(raw) !== null) return src;
+  if (raw && extractApiFilePreviewId(raw) !== null) return src;
 
-  const candidate = pathBasename(raw);
+  const candidate = pathBasename(raw || fallback || '');
   if (!candidate || candidate.includes('..')) return src;
 
   const candLower = candidate.toLowerCase();

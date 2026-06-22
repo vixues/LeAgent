@@ -82,11 +82,18 @@ function attachmentImageResolveKey(atts: Attachment[] | undefined): string {
 }
 
 const RenderedMarkdown = memo(
-  ({ content, attachments }: { content: string; attachments?: Attachment[] }) => (
-    <Markdown content={content} imageAttachments={attachments} />
-  ),
+  ({
+    content,
+    attachments,
+    streaming,
+  }: {
+    content: string;
+    attachments?: Attachment[];
+    streaming?: boolean;
+  }) => <Markdown content={content} imageAttachments={attachments} streaming={streaming} />,
   (prev, next) =>
     prev.content === next.content &&
+    prev.streaming === next.streaming &&
     attachmentImageResolveKey(prev.attachments) === attachmentImageResolveKey(next.attachments),
 );
 RenderedMarkdown.displayName = 'RenderedMarkdown';
@@ -176,16 +183,27 @@ function AgentMessageInner({
   const [copied, setCopied] = useState(false);
   const [feedbackBusy, setFeedbackBusy] = useState(false);
   const feedbackLock = useRef(false);
-  const artifacts = useArtifactStore((s) => s.artifacts);
-
-  const messageArtifacts = Object.values(artifacts).filter(
-    (a) => a.messageId === message.id,
+  // Scope the subscription to this message's artifacts. Subscribing to the whole
+  // `artifacts` map re-rendered every assistant row whenever any artifact was
+  // added or opened; `useShallow` keeps this row stable unless its own
+  // artifacts change.
+  const messageArtifacts = useArtifactStore(
+    useShallow((s) => Object.values(s.artifacts).filter((a) => a.messageId === message.id)),
   );
   // Attachments rendered inline (assistant media) are excluded from the card grid.
   const cardAttachments = useMemo(() => {
     const all = Array.isArray(message.attachments) ? message.attachments : [];
     const inlineIds = new Set((message.inlineMedia ?? []).map((m) => m.id));
     return all.filter((a) => !inlineIds.has(a.id));
+  }, [message.attachments, message.inlineMedia]);
+  const markdownImageAttachments = useMemo(() => {
+    const all = [...(message.attachments ?? []), ...(message.inlineMedia ?? [])];
+    const seen = new Set<string>();
+    return all.filter((attachment) => {
+      if (seen.has(attachment.id)) return false;
+      seen.add(attachment.id);
+      return true;
+    });
   }, [message.attachments, message.inlineMedia]);
   const sortedTaskProgress = useMemo(() => {
     if (!message.taskProgress?.length) {
@@ -237,6 +255,10 @@ function AgentMessageInner({
   );
 
   const inlineTodoSteps = useMemo(() => {
+    // Keep workflow overlay changes invalidating this derived list; the merge
+    // reads status through the message snapshot but the overlay revision drives
+    // re-render cadence for active workflow cards.
+    void workflowOverlayRevision;
     if (!isTodoAnchorMessage || !messageHasTodoActivity(message)) {
       return [];
     }
@@ -466,7 +488,11 @@ function AgentMessageInner({
       {message.content ? (
         <div className="relative -ml-20 w-[calc(100%+5rem)] pl-20">
           <div className="chat-prose w-full min-w-0">
-            <RenderedMarkdown content={message.content} attachments={message.attachments} />
+            <RenderedMarkdown
+              content={message.content}
+              attachments={markdownImageAttachments}
+              streaming={assistantStreamingLive}
+            />
             {assistantStreamingLive && (
               <span
                 className="inline-block w-0.5 h-[1em] bg-primary-500 animate-pulse ml-0.5 align-text-bottom"
@@ -534,7 +560,32 @@ function AgentMessageInner({
 
 AgentMessageInner.displayName = 'AgentMessage';
 
-export const AgentMessage = memo(AgentMessageInner);
+/**
+ * Custom comparator. The streaming row gets a fresh `message` reference every
+ * rAF flush (so it still re-renders), while stable rows skip rendering. We
+ * compare `precedingUserForRegenerate` by the fields that actually drive the
+ * regenerate affordance (id, content, attachment count) instead of by
+ * reference, so a rebuilt lookup map during streaming doesn't churn every row.
+ */
+function agentMessagePropsEqual(prev: AgentMessageProps, next: AgentMessageProps): boolean {
+  if (
+    prev.message !== next.message ||
+    prev.streamActive !== next.streamActive ||
+    prev.sessionId !== next.sessionId ||
+    prev.className !== next.className
+  ) {
+    return false;
+  }
+  const prevUser = prev.precedingUserForRegenerate;
+  const nextUser = next.precedingUserForRegenerate;
+  return (
+    prevUser?.id === nextUser?.id &&
+    prevUser?.content === nextUser?.content &&
+    (prevUser?.attachments?.length ?? 0) === (nextUser?.attachments?.length ?? 0)
+  );
+}
+
+export const AgentMessage = memo(AgentMessageInner, agentMessagePropsEqual);
 
 interface AssistantMessageActionsProps {
   copied: boolean;

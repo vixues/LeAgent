@@ -1,4 +1,4 @@
-import { useMemo, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import ReactMarkdown, { type Components } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
@@ -25,6 +25,56 @@ interface MarkdownProps {
    * against these session attachments so ``ChatImage`` gets a real preview URL.
    */
   imageAttachments?: readonly Attachment[];
+  /**
+   * Hot streaming row. While true we (a) skip ``rehype-highlight`` so code fences
+   * are not re-tokenised on every token, and (b) throttle the markdown re-parse
+   * to ~10 Hz instead of the ~60 Hz rAF content flush. A final highlighted parse
+   * runs once this flips back to ``false`` at stream end.
+   */
+  streaming?: boolean;
+}
+
+/** Throttle the parsed content to ``intervalMs`` while streaming; flush immediately when streaming stops. */
+const STREAMING_PARSE_INTERVAL_MS = 100;
+
+function useThrottledContent(content: string, streaming: boolean): string {
+  const [throttled, setThrottled] = useState(content);
+  const latestRef = useRef(content);
+  const lastFlushRef = useRef(0);
+  const timerRef = useRef<number | null>(null);
+  latestRef.current = content;
+
+  useEffect(() => {
+    if (!streaming) {
+      if (timerRef.current != null) {
+        window.clearTimeout(timerRef.current);
+        timerRef.current = null;
+      }
+      setThrottled(content);
+      return;
+    }
+    const now = Date.now();
+    const elapsed = now - lastFlushRef.current;
+    if (elapsed >= STREAMING_PARSE_INTERVAL_MS) {
+      lastFlushRef.current = now;
+      setThrottled(latestRef.current);
+    } else if (timerRef.current == null) {
+      timerRef.current = window.setTimeout(() => {
+        timerRef.current = null;
+        lastFlushRef.current = Date.now();
+        setThrottled(latestRef.current);
+      }, STREAMING_PARSE_INTERVAL_MS - elapsed);
+    }
+  }, [content, streaming]);
+
+  useEffect(
+    () => () => {
+      if (timerRef.current != null) window.clearTimeout(timerRef.current);
+    },
+    [],
+  );
+
+  return streaming ? throttled : content;
 }
 
 /** Long-form docs / skill SKILL.md body — tuned for modals and guides. */
@@ -126,13 +176,28 @@ function stripThinkTags(text: string): string {
   return text.replace(/<think>[\s\S]*?<\/redacted_thinking>/gi, '').replace(/^\n+/, '');
 }
 
-export function Markdown({ content, className, variant = 'default', imageAttachments }: MarkdownProps) {
-  const safeContent = useMemo(() => stripThinkTags(content), [content]);
+export function Markdown({
+  content,
+  className,
+  variant = 'default',
+  imageAttachments,
+  streaming = false,
+}: MarkdownProps) {
+  const parseContent = useThrottledContent(content, streaming);
+  const safeContent = useMemo(() => stripThinkTags(parseContent), [parseContent]);
   const remarkPlugins = useMemo(
     () => [remarkGfm, remarkMath, remarkCallouts],
     [],
   );
-  const rehypePlugins = useMemo(() => [rehypeKatex, rehypeHighlight], []);
+  // Defer both KaTeX and syntax highlighting until the stream settles. Both
+  // `rehype-katex` and `rehype-highlight` re-process the whole subtree on every
+  // parse; running them at streaming cadence dominates CPU for math/code-heavy
+  // replies. While streaming we render raw markdown only and apply the final
+  // typeset/highlight pass once `streaming` flips back to `false`.
+  const rehypePlugins = useMemo(
+    () => (streaming ? [] : [rehypeKatex, rehypeHighlight]),
+    [streaming],
+  );
 
   const components = useMemo(
     () => ({
@@ -217,7 +282,14 @@ export function Markdown({ content, className, variant = 'default', imageAttachm
       },
       img: ({ src, alt }: { src?: string; alt?: string }) => {
         const resolved =
-          resolveMarkdownImageSrcFromAttachments(src, imageAttachments) ?? src ?? '';
+          resolveMarkdownImageSrcFromAttachments(src, imageAttachments, alt) ?? src ?? '';
+        if (!resolved.trim()) {
+          return (
+            <span className="inline-flex max-w-full rounded-md bg-surface-sunken px-2 py-1 text-xs text-muted-foreground">
+              {typeof alt === 'string' && alt.trim() ? alt : 'Image unavailable'}
+            </span>
+          );
+        }
         return (
           <span
             className={cn(
@@ -346,6 +418,17 @@ export function Markdown({ content, className, variant = 'default', imageAttachm
     [variant, imageAttachments],
   );
 
+  // Reuse the same element reference between throttle flushes so React skips
+  // reconciling (and re-parsing) the markdown subtree on every parent render.
+  const rendered = useMemo(
+    () => (
+      <ReactMarkdown remarkPlugins={remarkPlugins} rehypePlugins={rehypePlugins} components={components}>
+        {safeContent}
+      </ReactMarkdown>
+    ),
+    [safeContent, remarkPlugins, rehypePlugins, components],
+  );
+
   return (
     <div
       className={cn(
@@ -354,9 +437,7 @@ export function Markdown({ content, className, variant = 'default', imageAttachm
         className
       )}
     >
-      <ReactMarkdown remarkPlugins={remarkPlugins} rehypePlugins={rehypePlugins} components={components}>
-        {safeContent}
-      </ReactMarkdown>
+      {rendered}
     </div>
   );
 }
