@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
+import { Fragment, useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router-dom';
 import { BookOpen, LayoutTemplate, PawPrint, ArrowDown } from 'lucide-react';
@@ -6,16 +6,24 @@ import { cn } from '@/lib/utils';
 import { useDailyChatGreetings } from '@/hooks/useDailyChatGreetings';
 import { PetSceneStage } from '@/components/pet/PetSceneStage';
 import { useChatStore } from '@/stores/chat';
-import { findPrecedingUserMessage } from '@/lib/regenerateAssistantReply';
 import { AgentMessage } from './AgentMessage';
 import { UserMessage } from './UserMessage';
+import { useConversationVirtualizer } from './virtual/useConversationVirtualizer';
+import { VirtualConversationList } from './virtual/VirtualConversationList';
 import type { Message } from '@/types/chat';
+
+/** Above this loaded-message count the custom virtualizer takes over from the
+ * direct `messages.map`. Short threads keep the simpler non-virtual path. */
+const VIRTUALIZE_THRESHOLD = 60;
 
 interface ChatMessagesProps {
   className?: string;
   onSuggestionClick?: (content: string) => void;
   onEditAndResend?: (userMessageId: string, newContent: string) => void | Promise<void>;
 }
+
+/** Stable reference so the session-scoped selector never returns a fresh array. */
+const EMPTY_MESSAGES: Message[] = [];
 
 const emptyCardFocus = cn(
   'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/30',
@@ -86,13 +94,17 @@ export function ChatMessages({
   const dailyGreetings = useDailyChatGreetings();
   const currentSessionId = useChatStore((state) => state.currentSessionId);
   const isStreaming = useChatStore((state) => state.isStreaming);
-  const messagesMap = useChatStore((state) => state.messages);
+  // Subscribe only to the active session's messages. Subscribing to the whole
+  // `state.messages` map re-rendered this list whenever any session streamed,
+  // because `appendToMessage` replaces the top-level map every rAF flush.
+  const messages = useChatStore((state) =>
+    state.currentSessionId
+      ? (state.messages[state.currentSessionId] ?? EMPTY_MESSAGES)
+      : EMPTY_MESSAGES,
+  );
   const messagePages = useChatStore((state) => state.messagePages);
   const messagesLoadingSessionId = useChatStore((state) => state.messagesLoadingSessionId);
   const fetchOlderMessages = useChatStore((state) => state.fetchOlderMessages);
-  const messages: Message[] = currentSessionId
-    ? (messagesMap[currentSessionId] ?? [])
-    : [];
   const streamTailForScroll = useMemo(() => {
     const m = messages.at(-1);
     if (!m) return '';
@@ -100,6 +112,28 @@ export function ChatMessages({
       m.toolCalls?.reduce((acc, tc) => acc + (tc.argumentsRaw?.length ?? 0), 0) ?? 0;
     return `${m.id}:${m.content.length}:${tcChars}:${m.isStreaming}`;
   }, [messages]);
+  // Precompute preceding-user lookup. Streaming replaces the `messages` array
+  // reference on every rAF content flush, so keying this on `messages` directly
+  // recomputed an O(n) map ~60 fps. The role ordering only changes when a row
+  // is added/removed/remapped, so we key on a structural signature and read the
+  // latest array via a ref to avoid that per-frame churn.
+  const messagesRef = useRef(messages);
+  messagesRef.current = messages;
+  const lastMessageId = messages.length ? messages[messages.length - 1]!.id : '';
+  const messageStructureKey = `${messages.length}:${lastMessageId}`;
+  const precedingUserByMessageId = useMemo(() => {
+    const map = new Map<string, Message>();
+    let lastUser: Message | undefined;
+    for (const m of messagesRef.current) {
+      if (m.role === 'user') {
+        lastUser = m;
+      } else if (lastUser) {
+        map.set(m.id, lastUser);
+      }
+    }
+    return map;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [messageStructureKey]);
   const pageState = currentSessionId ? messagePages[currentSessionId] : undefined;
   const hasOlderMessages = Boolean(pageState?.hasOlder);
   const isLoadingOlderMessages = Boolean(pageState?.isLoadingOlder);
@@ -114,6 +148,42 @@ export function ChatMessages({
   const prependScrollHeightRef = useRef<number | null>(null);
   const [isNearBottom, setIsNearBottom] = useState(true);
   const [showJumpPill, setShowJumpPill] = useState(false);
+
+  // Tail-lock mirror for the virtualizer: when pinned to the bottom, height
+  // growth should push content up rather than trigger anchor compensation.
+  const tailLockedRef = useRef(true);
+  useEffect(() => {
+    tailLockedRef.current = isNearBottom;
+  }, [isNearBottom]);
+
+  const virtualize = messages.length > VIRTUALIZE_THRESHOLD;
+
+  const renderMessageRow = useCallback(
+    (message: Message) =>
+      message.role === 'user' ? (
+        <UserMessage
+          message={message}
+          isStreaming={isStreaming}
+          onEditAndResend={onEditAndResend}
+          sessionId={currentSessionId}
+        />
+      ) : (
+        <AgentMessage
+          message={message}
+          sessionId={currentSessionId}
+          streamActive={isStreaming}
+          precedingUserForRegenerate={precedingUserByMessageId.get(message.id)}
+        />
+      ),
+    [isStreaming, onEditAndResend, currentSessionId, precedingUserByMessageId],
+  );
+
+  const { virtualItems, totalHeight, registerRow } = useConversationVirtualizer({
+    scrollRef: scrollContainerRef,
+    messages,
+    enabled: virtualize,
+    tailLockedRef,
+  });
 
   const loadOlderMessages = useCallback(() => {
     if (!currentSessionId || !hasOlderMessages || isLoadingOlderMessages) return;
@@ -345,47 +415,43 @@ export function ChatMessages({
       onScroll={handleScroll}
       className={cn('chat-messages-scroll min-h-0', className)}
     >
-      <div className="mx-auto w-full max-w-[72ch] pl-20 pr-6 py-6 space-y-8">
-        {hasOlderMessages || isLoadingOlderMessages ? (
-          <div className="flex justify-center">
-            <button
-              type="button"
-              onClick={loadOlderMessages}
-              disabled={isLoadingOlderMessages}
-              className={cn(
-                'rounded-full border border-border-subtle bg-surface px-3 py-1.5',
-                'text-xs font-medium text-muted-foreground shadow-soft',
-                'hover:text-foreground hover:bg-surface-sunken disabled:opacity-60',
-                'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/30',
-              )}
-            >
-              {isLoadingOlderMessages
-                ? t('chat.loadingOlderMessages', { defaultValue: 'Loading older messages...' })
-                : t('chat.loadOlderMessages', { defaultValue: 'Load older messages' })}
-            </button>
-          </div>
-        ) : null}
-        {messages.map((message) =>
-          message.role === 'user' ? (
-            <UserMessage
-              key={message.id}
-              message={message}
-              isStreaming={isStreaming}
-              onEditAndResend={onEditAndResend}
-              sessionId={currentSessionId}
-            />
-          ) : (
-            <AgentMessage
-              key={message.id}
-              message={message}
-              sessionId={currentSessionId}
-              streamActive={isStreaming}
-              precedingUserForRegenerate={findPrecedingUserMessage(messages, message.id)}
-            />
-          ),
-        )}
-        <div ref={sentinelRef} className="h-1" aria-hidden="true" />
-      </div>
+      {hasOlderMessages || isLoadingOlderMessages ? (
+        <div className="mx-auto w-full max-w-[72ch] pl-20 pr-6 pt-6 flex justify-center">
+          <button
+            type="button"
+            onClick={loadOlderMessages}
+            disabled={isLoadingOlderMessages}
+            className={cn(
+              'rounded-full border border-border-subtle bg-surface px-3 py-1.5',
+              'text-xs font-medium text-muted-foreground shadow-soft',
+              'hover:text-foreground hover:bg-surface-sunken disabled:opacity-60',
+              'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/30',
+            )}
+          >
+            {isLoadingOlderMessages
+              ? t('chat.loadingOlderMessages', { defaultValue: 'Loading older messages...' })
+              : t('chat.loadOlderMessages', { defaultValue: 'Load older messages' })}
+          </button>
+        </div>
+      ) : null}
+
+      {virtualize ? (
+        <div className="pt-6">
+          <VirtualConversationList
+            items={virtualItems}
+            totalHeight={totalHeight}
+            registerRow={registerRow}
+            renderRow={renderMessageRow}
+          />
+        </div>
+      ) : (
+        <div className="mx-auto w-full max-w-[72ch] pl-20 pr-6 py-6 space-y-8">
+          {messages.map((message) => (
+            <Fragment key={message.id}>{renderMessageRow(message)}</Fragment>
+          ))}
+        </div>
+      )}
+      <div ref={sentinelRef} className="h-1" aria-hidden="true" />
 
       {/* Jump to latest pill */}
       {showJumpPill && (
