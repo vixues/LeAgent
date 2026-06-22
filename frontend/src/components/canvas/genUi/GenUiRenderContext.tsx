@@ -17,7 +17,7 @@ const GenUiRenderContext = createContext<GenUiRenderContextValue | null>(null);
 export function GenUiRenderProvider({
   sessionId,
   messageId,
-  jsEnabled = false,
+  jsEnabled = true,
   children,
 }: {
   sessionId?: string;

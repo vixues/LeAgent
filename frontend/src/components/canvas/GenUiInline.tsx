@@ -39,7 +39,7 @@ export function GenUiInline({
   const key = genUiTreeKey(sessionId, messageId);
   const tree = useGenUiStore((s) => s.trees[key]);
   const [expanded, setExpanded] = useState(false);
-  const [jsEnabled, setJsEnabled] = useState(false);
+  const [jsEnabled, setJsEnabled] = useState(true);
   const [screenshotting, setScreenshotting] = useState(false);
   const [cameraOpen, setCameraOpen] = useState(false);
   const [floatingOpen, setFloatingOpen] = useState(false);

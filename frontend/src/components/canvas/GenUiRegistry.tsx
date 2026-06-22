@@ -1203,7 +1203,7 @@ export function GenUiTreeView({
   contentRef,
   sessionId,
   messageId,
-  jsEnabled = false,
+  jsEnabled = true,
 }: {
   tree: GenUiTreeV1 | null | undefined;
   /** When set (e.g. GenUiInline screenshot), points at the scrollable tree body only. */

@@ -72,7 +72,7 @@ function CanvasPanel({ artifact, className }: CanvasPanelProps) {
   const [tab, setTab] = useState<CanvasTab>('preview');
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [iframeKey, setIframeKey] = useState(0);
-  const [jsEnabled, setJsEnabled] = useState(false);
+  const [jsEnabled, setJsEnabled] = useState(true);
   const [cameraAllowed, setCameraAllowed] = useState(false);
   const [screenshotting, setScreenshotting] = useState(false);
   const [previewFrameError, setPreviewFrameError] = useState(false);

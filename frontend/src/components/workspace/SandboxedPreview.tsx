@@ -101,7 +101,7 @@ export default function SandboxedPreview({
   const { t } = useTranslation();
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const [key, setKey] = useState(0);
-  const [jsEnabled, setJsEnabled] = useState(false);
+  const [jsEnabled, setJsEnabled] = useState(true);
 
   const srcDoc = useMemo(() => {
     if (artifact.type === 'react') {
