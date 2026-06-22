@@ -252,7 +252,8 @@ function collectPathsFromCodeExecution(
     if (!Array.isArray(arr)) return;
     for (const entry of arr) {
       if (entry && typeof entry === 'object') {
-        const p = strArg(entry as Record<string, unknown>, 'path');
+        const record = entry as Record<string, unknown>;
+        const p = strArg(record, 'file_path') || strArg(record, 'path');
         if (p) upsert(p, 'execute');
       }
     }
