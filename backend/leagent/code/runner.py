@@ -97,12 +97,18 @@ def _listing(
         mime = _guess_mime(path)
         if root is not None and root == base:
             try:
-                rel = str(path.relative_to(root))
+                location = str(path.relative_to(root))
             except ValueError:
-                rel = str(path)
-            entry: dict[str, Any] = {"path": rel, "bytes": size}
+                location = str(path)
         else:
-            entry = {"path": str(path), "bytes": size}
+            location = str(path)
+        # ``file_path`` is the canonical produced-file key (tool-parameter
+        # contract). ``path`` is kept as a legacy alias for older readers.
+        entry: dict[str, Any] = {
+            "file_path": location,
+            "path": location,
+            "bytes": size,
+        }
         if mime:
             entry["mime"] = mime
         produced.append(entry)

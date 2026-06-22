@@ -370,6 +370,7 @@ async def ingest_previewable_produced_files(
 
         if uploads is not None and _path_under_uploads(resolved, uploads):
             entry = dict(raw_entry)
+            entry["file_path"] = str(resolved)
             entry["path"] = str(resolved)
             updated.append(entry)
             continue
@@ -391,7 +392,9 @@ async def ingest_previewable_produced_files(
 
         storage = Path(str(reg.get("storage_path") or "")).expanduser()
         entry = dict(raw_entry)
-        entry["path"] = str(storage) if storage.is_file() else str(resolved)
+        managed_path = str(storage) if storage.is_file() else str(resolved)
+        entry["file_path"] = managed_path
+        entry["path"] = managed_path
         entry["source_path"] = str(resolved)
         entry["file_id"] = str(reg.get("id") or "")
         if reg.get("preview_url"):

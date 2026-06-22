@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import os
 import platform
+import time
 from datetime import datetime, timezone
 
 import structlog
@@ -39,6 +40,62 @@ async def _run_git(args: list[str], cwd: str) -> str:
     return ""
 
 
+def _git_cache_ttl_seconds() -> float:
+    raw = os.getenv("LEAGENT_ENV_GIT_CACHE_TTL_S", "15")
+    try:
+        return max(0.0, float(raw))
+    except (TypeError, ValueError):
+        return 15.0
+
+
+# cwd -> (expires_at_monotonic, git_state). Git state rarely changes within a
+# session, so this keeps repeated turns off the (subprocess-heavy) git path.
+_GIT_STATE_CACHE: dict[str, tuple[float, dict[str, object]]] = {}
+
+
+async def _collect_git_state(cwd: str) -> dict[str, object]:
+    """Resolve git branch / dirty / ahead-behind, running the queries in parallel."""
+    is_git = (await _run_git(["rev-parse", "--is-inside-work-tree"], cwd)) == "true"
+    state: dict[str, object] = {
+        "is_git": is_git,
+        "branch": "",
+        "dirty": False,
+        "modified_count": 0,
+        "ahead": 0,
+        "behind": 0,
+    }
+    if not is_git:
+        return state
+
+    # Independent read-only queries — run concurrently instead of serially.
+    branch, porcelain, behind_str, ahead_str = await asyncio.gather(
+        _run_git(["rev-parse", "--abbrev-ref", "HEAD"], cwd),
+        _run_git(["status", "--porcelain"], cwd),
+        _run_git(["rev-list", "--count", "HEAD..@{u}"], cwd),
+        _run_git(["rev-list", "--count", "@{u}..HEAD"], cwd),
+    )
+    state["branch"] = branch
+    if porcelain:
+        state["dirty"] = True
+        state["modified_count"] = len(porcelain.splitlines())
+    state["behind"] = int(behind_str) if behind_str.isdigit() else 0
+    state["ahead"] = int(ahead_str) if ahead_str.isdigit() else 0
+    return state
+
+
+async def _git_state_cached(cwd: str) -> dict[str, object]:
+    ttl = _git_cache_ttl_seconds()
+    now = time.monotonic()
+    if ttl > 0:
+        cached = _GIT_STATE_CACHE.get(cwd)
+        if cached is not None and cached[0] > now:
+            return cached[1]
+    state = await _collect_git_state(cwd)
+    if ttl > 0:
+        _GIT_STATE_CACHE[cwd] = (now + ttl, state)
+    return state
+
+
 class EnvironmentSource:
     """Collects runtime environment info: date, cwd, OS, git status."""
 
@@ -60,26 +117,13 @@ class EnvironmentSource:
             os_name = platform.system()
             shell = os.environ.get("SHELL", "")
 
-            is_git = (await _run_git(["rev-parse", "--is-inside-work-tree"], cwd)) == "true"
-            git_branch = ""
-            git_dirty = False
-            git_modified_count = 0
-            git_ahead = 0
-            git_behind = 0
-
-            if is_git:
-                git_branch = await _run_git(["rev-parse", "--abbrev-ref", "HEAD"], cwd)
-
-                porcelain = await _run_git(["status", "--porcelain"], cwd)
-                if porcelain:
-                    git_dirty = True
-                    git_modified_count = len(porcelain.splitlines())
-
-                ahead_str = await _run_git(["rev-list", "--count", "HEAD..@{u}"], cwd)
-                git_behind = int(ahead_str) if ahead_str.isdigit() else 0
-
-                behind_str = await _run_git(["rev-list", "--count", "@{u}..HEAD"], cwd)
-                git_ahead = int(behind_str) if behind_str.isdigit() else 0
+            git_state = await _git_state_cached(cwd)
+            is_git = bool(git_state["is_git"])
+            git_branch = str(git_state["branch"])
+            git_dirty = bool(git_state["dirty"])
+            git_modified_count = int(git_state["modified_count"])  # type: ignore[arg-type]
+            git_ahead = int(git_state["ahead"])  # type: ignore[arg-type]
+            git_behind = int(git_state["behind"])  # type: ignore[arg-type]
 
             sandbox_mode = ""
             approval_policy = ""

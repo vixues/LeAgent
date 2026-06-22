@@ -54,7 +54,8 @@ class SpeechToTextTool(BaseTool):
     timeout_sec = 300
     max_retries = 1
     search_hint = "speech transcribe whisper audio ASR STT meeting"
-    is_concurrency_safe = False
+    # Stateless per-call network transcription: safe to dispatch in parallel.
+    is_concurrency_safe = True
     is_read_only = True
     interrupt_behavior = "cancel"
     max_result_size_chars = 500_000

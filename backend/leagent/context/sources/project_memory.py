@@ -63,6 +63,88 @@ def _read_truncated(path: Path) -> str:
     return content
 
 
+def _gather_project_memory(
+    cwd: Path,
+    repo_root: Path | None,
+    respect_git_boundary: bool,
+    denylist: list[str],
+    allowlist: list[str],
+) -> tuple[list[ProjectMemoryRecord], list[str]]:
+    """Synchronous filesystem walk + reads.
+
+    Runs the blocking ``stat``/``read_text`` calls in one unit so the caller can
+    offload it to a worker thread and keep the event loop responsive.
+    """
+    candidates: list[tuple[Path, ProjectMemoryOrigin]] = []
+
+    # --- Global bucket ---
+    global_agents = _leagent_home() / "AGENTS.md"
+    if global_agents.is_file():
+        candidates.append((global_agents, ProjectMemoryOrigin.GLOBAL))
+
+    # --- Project bucket: walk from cwd up to repo root (or fs root) ---
+    stop_at = repo_root if (repo_root and respect_git_boundary) else Path(cwd.anchor)
+    current = cwd
+    project_paths_seen: set[Path] = set()
+
+    while True:
+        for name in ("AGENTS.md", ".leagent/memory.md"):
+            candidate = current / name
+            if candidate.is_file() and candidate not in project_paths_seen:
+                project_paths_seen.add(candidate)
+                candidates.append((candidate, ProjectMemoryOrigin.PROJECT))
+        if current == stop_at or current == current.parent:
+            break
+        current = current.parent
+
+    # --- Local bucket: cwd/AGENTS.md only if cwd is strictly deeper than project root ---
+    effective_root = repo_root or stop_at
+    if cwd != effective_root:
+        local_agents = cwd / "AGENTS.md"
+        if local_agents.is_file() and local_agents not in project_paths_seen:
+            candidates.append((local_agents, ProjectMemoryOrigin.LOCAL))
+
+    # --- Filter and read ---
+    sources: list[ProjectMemoryRecord] = []
+    passing_sections: list[str] = []
+
+    for path, origin in candidates:
+        path_str = str(path)
+
+        if _matches_list(path_str, allowlist):
+            pass  # allowlist bypasses deny
+        elif _matches_list(path_str, denylist):
+            sources.append(
+                ProjectMemoryRecord(
+                    path=path_str,
+                    origin=origin,
+                    content="",
+                    size=0,
+                    injected=False,
+                    skip_reason="denylisted",
+                )
+            )
+            continue
+
+        content = _read_truncated(path)
+        if not content.strip():
+            continue
+
+        sources.append(
+            ProjectMemoryRecord(
+                path=path_str,
+                origin=origin,
+                content=content,
+                size=len(content),
+                injected=True,
+            )
+        )
+        fname = path.name
+        passing_sections.append(f"<{fname}>\n{content}\n</{fname}>")
+
+    return sources, passing_sections
+
+
 class ProjectMemorySource:
     """Three-bucket discovery of AGENTS.md and memory.md files."""
 
@@ -82,80 +164,20 @@ class ProjectMemorySource:
     async def resolve(self, ctx: ResolveContext) -> ContextBlock | None:
         try:
             cwd = Path(ctx.cwd).resolve()
-            denylist = ctx.project_memory_denylist
-            allowlist = ctx.project_memory_allowlist
 
-            candidates: list[tuple[Path, ProjectMemoryOrigin]] = []
-
-            # --- Global bucket ---
-            global_agents = _leagent_home() / "AGENTS.md"
-            if global_agents.is_file():
-                candidates.append((global_agents, ProjectMemoryOrigin.GLOBAL))
-
-            # --- Project bucket: walk from cwd up to repo root (or fs root) ---
-            repo_root: Path | None = None
+            # git toplevel is async (subprocess); the rest is blocking filesystem
+            # I/O, offloaded to a worker thread so the event loop stays free.
             toplevel = await _git_toplevel(str(cwd))
-            if toplevel:
-                repo_root = Path(toplevel).resolve()
+            repo_root: Path | None = Path(toplevel).resolve() if toplevel else None
 
-            stop_at = repo_root if (repo_root and ctx.respect_git_boundary) else Path(cwd.anchor)
-            current = cwd
-            project_paths_seen: set[Path] = set()
-
-            while True:
-                for name in ("AGENTS.md", ".leagent/memory.md"):
-                    candidate = current / name
-                    if candidate.is_file() and candidate not in project_paths_seen:
-                        project_paths_seen.add(candidate)
-                        candidates.append((candidate, ProjectMemoryOrigin.PROJECT))
-                if current == stop_at or current == current.parent:
-                    break
-                current = current.parent
-
-            # --- Local bucket: cwd/AGENTS.md only if cwd is strictly deeper than project root ---
-            effective_root = repo_root or stop_at
-            if cwd != effective_root:
-                local_agents = cwd / "AGENTS.md"
-                if local_agents.is_file() and local_agents not in project_paths_seen:
-                    candidates.append((local_agents, ProjectMemoryOrigin.LOCAL))
-
-            # --- Filter and read ---
-            sources: list[ProjectMemoryRecord] = []
-            passing_sections: list[str] = []
-
-            for path, origin in candidates:
-                path_str = str(path)
-
-                if _matches_list(path_str, allowlist):
-                    pass  # allowlist bypasses deny
-                elif _matches_list(path_str, denylist):
-                    sources.append(
-                        ProjectMemoryRecord(
-                            path=path_str,
-                            origin=origin,
-                            content="",
-                            size=0,
-                            injected=False,
-                            skip_reason="denylisted",
-                        )
-                    )
-                    continue
-
-                content = _read_truncated(path)
-                if not content.strip():
-                    continue
-
-                sources.append(
-                    ProjectMemoryRecord(
-                        path=path_str,
-                        origin=origin,
-                        content=content,
-                        size=len(content),
-                        injected=True,
-                    )
-                )
-                fname = path.name
-                passing_sections.append(f"<{fname}>\n{content}\n</{fname}>")
+            sources, passing_sections = await asyncio.to_thread(
+                _gather_project_memory,
+                cwd,
+                repo_root,
+                ctx.respect_git_boundary,
+                list(ctx.project_memory_denylist),
+                list(ctx.project_memory_allowlist),
+            )
 
             if not passing_sections:
                 return None

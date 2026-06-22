@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import os
+import time
+
 import structlog
 
 from leagent.context.sources import SOURCE_REGISTRY
@@ -14,6 +17,20 @@ from leagent.context.types import (
 )
 
 logger = structlog.get_logger(__name__)
+
+
+def _recall_budget_seconds() -> float | None:
+    """Soft deadline (seconds) for awaiting recall before assembling the prompt.
+
+    Bounds the time-to-first-token contribution of memory recall. ``0`` / unset
+    disables the deadline (await indefinitely, legacy behaviour).
+    """
+    raw = os.getenv("LEAGENT_RECALL_BUDGET_S", "2.0")
+    try:
+        budget = float(raw)
+    except (TypeError, ValueError):
+        return 2.0
+    return budget if budget > 0 else None
 
 
 class RecallSource:
@@ -48,7 +65,21 @@ class RecallSource:
             if handle is None:
                 return None
 
-            bundle = await handle.consume()
+            _recall_started = time.perf_counter()
+            _recall_status = "success"
+            try:
+                bundle = await handle.consume(timeout=_recall_budget_seconds())
+            finally:
+                try:
+                    from leagent.utils.metrics import get_metrics
+
+                    get_metrics().record_agent_turn_phase(
+                        "recall",
+                        time.perf_counter() - _recall_started,
+                        status=_recall_status,
+                    )
+                except Exception:
+                    logger.debug("recall_metrics_failed", exc_info=True)
             if bundle is None or not bundle.entries:
                 return None
 

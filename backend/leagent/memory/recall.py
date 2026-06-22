@@ -43,6 +43,10 @@ DEFAULT_LIMIT_PER_STORE = 4
 DEFAULT_TOTAL_LIMIT = 8
 RECENCY_HALF_LIFE_DAYS = 14.0
 
+# Strong refs to in-flight background recency-bookkeeping tasks so they are not
+# garbage-collected before completion (recall result is returned immediately).
+_BACKGROUND_NOTE_TASKS: set[asyncio.Task[None]] = set()
+
 
 @dataclass(slots=True)
 class RecallOptions:
@@ -128,12 +132,25 @@ class RetrievalPipeline:
         collapsed = self._collapse_semantic_over_episodic(deduped)
         bundle.extend(collapsed[: max(1, options.limit)])
 
-        for entry in bundle.entries:
-            if entry.kind is MemoryKind.EPISODIC:
-                try:
-                    await self._episodic.note_recall(entry.source_id)
-                except Exception as exc:  # noqa: BLE001
-                    logger.debug("recall_note_failed: %s", exc)
+        episodic_ids = [
+            entry.source_id
+            for entry in bundle.entries
+            if entry.kind is MemoryKind.EPISODIC
+        ]
+        if episodic_ids:
+            # Recency bookkeeping sits on the per-turn critical path (recall is
+            # consumed before the first LLM call). Fire it in the background so
+            # the bundle is returned without waiting on these DB writes.
+            async def _note_recalls(ids: list[UUID]) -> None:
+                for source_id in ids:
+                    try:
+                        await self._episodic.note_recall(source_id)
+                    except Exception as exc:  # noqa: BLE001
+                        logger.debug("recall_note_failed: %s", exc)
+
+            task = asyncio.create_task(_note_recalls(episodic_ids))
+            _BACKGROUND_NOTE_TASKS.add(task)
+            task.add_done_callback(_BACKGROUND_NOTE_TASKS.discard)
         return bundle
 
     def _vector_search_enabled(self, options: RecallOptions) -> bool:

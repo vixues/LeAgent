@@ -476,16 +476,28 @@ async def _query_loop(params: QueryParams) -> AsyncIterator[Any]:
         except Exception:
             logger.debug("microcompact_metrics_failed", exc_info=True)
 
+        # Approximate the transcript size once and reuse it to gate the
+        # progressive-compress, pre-compact-hook, and autocompact stages.
+        # Recomputing it inside each stage was redundant, and below half the
+        # autocompact threshold every stage is a no-op — so we skip the
+        # (LLM-free but O(transcript)) autocompact scan entirely there.
         try:
             settings = get_settings()
-            approx_tokens = _approximate_tokens(messages_for_query)
-            compress_threshold = settings.session.autocompact_token_threshold * 0.6
-            if approx_tokens > compress_threshold:
+            ac_threshold = settings.session.autocompact_token_threshold
+        except Exception:
+            settings = None
+            ac_threshold = 0
+        approx_tokens = _approximate_tokens(messages_for_query)
+
+        if settings is not None and ac_threshold and approx_tokens > ac_threshold * 0.6:
+            try:
                 _stage_started = time.perf_counter()
                 messages_for_query = apply_progressive_transcript_compress(
                     messages_for_query,
                     settings=settings,
                 )
+                # Content shrank; refresh the estimate for the gates below.
+                approx_tokens = _approximate_tokens(messages_for_query)
                 try:
                     from leagent.utils.metrics import get_metrics
 
@@ -495,31 +507,25 @@ async def _query_loop(params: QueryParams) -> AsyncIterator[Any]:
                     )
                 except Exception:
                     logger.debug("progressive_transcript_compress_metrics_failed", exc_info=True)
-        except Exception:
-            logger.exception("progressive_transcript_compress_failed")
+            except Exception:
+                logger.exception("progressive_transcript_compress_failed")
 
         # PreCompact hook (Claude ``PreCompact``): notify observers right
-        # before the transcript summarization runs. Gated on the same token
-        # threshold autocompact uses so it only fires when a compaction is
-        # actually likely, not every turn.
+        # before the transcript summarization runs. Gated on the autocompact
+        # token threshold so it only fires when a compaction is actually likely.
         _hooks = getattr(state.tool_use_context, "hooks", None)
-        if _hooks is not None:
+        if _hooks is not None and approx_tokens > ac_threshold:
             try:
-                _settings = get_settings()
-                if (
-                    _approximate_tokens(messages_for_query)
-                    > _settings.session.autocompact_token_threshold
-                ):
-                    from uuid import uuid4 as _uuid4
+                from uuid import uuid4 as _uuid4
 
-                    from leagent.agent.base import AgentContext
+                from leagent.agent.base import AgentContext
 
-                    _compact_ctx = AgentContext(
-                        session_id=getattr(state.tool_use_context, "session_id", None)
-                        or _uuid4(),
-                        user_id=getattr(state.tool_use_context, "user_id", None),
-                    )
-                    await _hooks.dispatch_pre_compact(_compact_ctx, "autocompact")
+                _compact_ctx = AgentContext(
+                    session_id=getattr(state.tool_use_context, "session_id", None)
+                    or _uuid4(),
+                    user_id=getattr(state.tool_use_context, "user_id", None),
+                )
+                await _hooks.dispatch_pre_compact(_compact_ctx, "autocompact")
             except Exception:
                 logger.debug("pre_compact_hook_failed", exc_info=True)
 
@@ -528,19 +534,22 @@ async def _query_loop(params: QueryParams) -> AsyncIterator[Any]:
         # but we no longer fold environment / recall into it here —
         # recall is rendered into the system prompt at L5.
         full_system_prompt = params.system_prompt
-        _stage_started = time.perf_counter()
-        messages_for_query = await params.deps.autocompact(
-            messages_for_query, state.tool_use_context, full_system_prompt
-        )
-        try:
-            from leagent.utils.metrics import get_metrics
-
-            get_metrics().record_agent_turn_phase(
-                "autocompact",
-                time.perf_counter() - _stage_started,
+        # Autocompact returns the transcript unchanged well below its threshold;
+        # skip the scan there. Always run it when the threshold is unknown/zero.
+        if (not ac_threshold) or approx_tokens > ac_threshold * 0.5:
+            _stage_started = time.perf_counter()
+            messages_for_query = await params.deps.autocompact(
+                messages_for_query, state.tool_use_context, full_system_prompt
             )
-        except Exception:
-            logger.debug("autocompact_metrics_failed", exc_info=True)
+            try:
+                from leagent.utils.metrics import get_metrics
+
+                get_metrics().record_agent_turn_phase(
+                    "autocompact",
+                    time.perf_counter() - _stage_started,
+                )
+            except Exception:
+                logger.debug("autocompact_metrics_failed", exc_info=True)
 
         # Drop orphan tool rows at the head (e.g. corrupted session or a prior
         # compaction bug). OpenAI rejects ``tool`` without a preceding assistant

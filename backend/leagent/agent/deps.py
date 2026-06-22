@@ -11,6 +11,7 @@ import asyncio
 import base64 as _b64
 import binascii as _binascii
 import json
+import os
 import time
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, AsyncIterator, Protocol
@@ -27,10 +28,28 @@ if TYPE_CHECKING:
 
 logger = structlog.get_logger(__name__)
 
+def _env_float(name: str, default: float) -> float:
+    try:
+        return float(os.getenv(name, "") or default)
+    except (TypeError, ValueError):
+        return default
+
+
+def _env_int(name: str, default: int) -> int:
+    try:
+        return int(os.getenv(name, "") or default)
+    except (TypeError, ValueError):
+        return default
+
+
 # Throttle streamed tool JSON fragments (large canvas_publish HTML arguments).
 _TOOL_CALL_DELTA_MIN_INTERVAL_MS = 48
 _TOOL_CALL_DELTA_MIN_BYTE_STEP = 512
-_STREAM_FIRST_EVENT_TIMEOUT_SEC = 12.0
+# Fail fast if the provider sends nothing (TTFT guard). Env-tunable so ops can
+# trade off fail-fast latency against flaky-provider tolerance.
+_STREAM_FIRST_EVENT_TIMEOUT_SEC = _env_float("LEAGENT_STREAM_FIRST_EVENT_TIMEOUT_SEC", 12.0)
+# Max stream (re)attempts before falling back to a non-streamed completion.
+_STREAM_MAX_ATTEMPTS = max(1, _env_int("LEAGENT_STREAM_MAX_ATTEMPTS", 3))
 
 
 def _partial_arguments_dict(raw: str) -> dict[str, Any] | None:
@@ -734,7 +753,7 @@ def _make_llm_call_model(llm: "LLMService") -> CallModel:
         if model_task:
             stream_kw["task"] = model_task
 
-        max_attempts = 3
+        max_attempts = _STREAM_MAX_ATTEMPTS
         attempt = 0
         emitted_visible_content = False
         while True:

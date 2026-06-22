@@ -10,8 +10,10 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import time
 from abc import ABC, abstractmethod
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from enum import Enum
 from collections.abc import AsyncIterator
@@ -673,6 +675,31 @@ class BaseTool(ABC):
 # ---------------------------------------------------------------------------
 
 
+_SYNC_TOOL_EXECUTOR: ThreadPoolExecutor | None = None
+
+
+def _sync_tool_executor() -> ThreadPoolExecutor:
+    """Dedicated thread pool for synchronous tool bodies.
+
+    Running ``execute_sync`` on the default loop executor shared it with
+    ``asyncio.to_thread`` and library internals, so a burst of slow sync tools
+    under concurrent chats could starve unrelated offloaded work. A dedicated
+    pool isolates tool execution. Sized via ``LEAGENT_SYNC_TOOL_WORKERS``.
+    """
+    global _SYNC_TOOL_EXECUTOR
+    if _SYNC_TOOL_EXECUTOR is None:
+        try:
+            configured = int(os.getenv("LEAGENT_SYNC_TOOL_WORKERS", "0") or 0)
+        except ValueError:
+            configured = 0
+        max_workers = configured if configured > 0 else min(32, (os.cpu_count() or 4) * 4)
+        _SYNC_TOOL_EXECUTOR = ThreadPoolExecutor(
+            max_workers=max_workers,
+            thread_name_prefix="leagent-sync-tool",
+        )
+    return _SYNC_TOOL_EXECUTOR
+
+
 class SyncTool(BaseTool):
     """Base class for tools with synchronous execute implementations."""
 
@@ -682,7 +709,9 @@ class SyncTool(BaseTool):
 
     async def execute(self, params: dict[str, Any], context: ToolContext) -> Any:
         loop = asyncio.get_running_loop()
-        return await loop.run_in_executor(None, self.execute_sync, params, context)
+        return await loop.run_in_executor(
+            _sync_tool_executor(), self.execute_sync, params, context
+        )
 
 
 # ---------------------------------------------------------------------------

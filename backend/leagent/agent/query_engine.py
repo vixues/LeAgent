@@ -398,17 +398,37 @@ class QueryEngine:
 
         _playbook_ids = playbook_ids_from_context(tool_extra=self.config.tool_extra)
 
+        async def _prepare_turn_timed() -> Any:
+            started = time.perf_counter()
+            status = "success"
+            try:
+                return await self._context.prepare_turn(
+                    query_text or "",
+                    task_id=turn_uuid,
+                    persona_override=self.config.system_prompt or "",
+                    append_extra=append_extra_turn,
+                    template_vars={},
+                    playbook_ids=_playbook_ids,
+                    recall_handle=recall_handle,
+                    project_roots=_project_roots_for_turn,
+                )
+            except Exception:
+                status = "error"
+                raise
+            finally:
+                try:
+                    from leagent.utils.metrics import get_metrics
+
+                    get_metrics().record_agent_turn_phase(
+                        "prepare_turn",
+                        time.perf_counter() - started,
+                        status=status,
+                    )
+                except Exception:
+                    logger.debug("prepare_turn_metrics_failed", exc_info=True)
+
         turn, tools_schema = await asyncio.gather(
-            self._context.prepare_turn(
-                query_text or "",
-                task_id=turn_uuid,
-                persona_override=self.config.system_prompt or "",
-                append_extra=append_extra_turn,
-                template_vars={},
-                playbook_ids=_playbook_ids,
-                recall_handle=recall_handle,
-                project_roots=_project_roots_for_turn,
-            ),
+            _prepare_turn_timed(),
             _get_tools_schema(),
         )
 

@@ -501,15 +501,30 @@ class RecallHandle:
             )
         )
 
-    async def consume(self) -> RecallBundle:
-        """Await the in-flight task, caching the result for reuse."""
+    async def consume(self, *, timeout: float | None = None) -> RecallBundle:
+        """Await the in-flight task, caching the result for reuse.
+
+        When ``timeout`` is set and recall does not finish within that budget,
+        an empty bundle is returned *without* cancelling the underlying task
+        (the result is not cached, so the prompt assembly proceeds without
+        recall this turn). This keeps a slow embedding / vector search off the
+        time-to-first-token critical path.
+        """
         if self._result is not None:
             return self._result
         if self._task is None:
             self._result = RecallBundle(query="")
             return self._result
         try:
-            self._result = await self._task
+            if timeout is not None:
+                self._result = await asyncio.wait_for(
+                    asyncio.shield(self._task), timeout
+                )
+            else:
+                self._result = await self._task
+        except asyncio.TimeoutError:
+            logger.info("recall_handle_consume_timeout: budget=%.3fs", timeout)
+            return RecallBundle(query="")
         except Exception as exc:  # noqa: BLE001
             logger.warning("recall_handle_consume_failed: %s", exc)
             self._result = RecallBundle(query="")
