@@ -55,6 +55,12 @@ def _include(
 _include(v1_router, "leagent.api.v1.meta", prefix="/meta", tags=["v1-meta"])
 _include(v1_router, "leagent.api.v1.health", prefix="/health", tags=["v1-health"])
 _include(v1_router, "leagent.api.v1.chat", prefix="/chat", tags=["v1-chat"])
+_include(
+    v1_router,
+    "leagent.api.v1.chat_projects",
+    prefix="/chat-projects",
+    tags=["v1-chat-projects"],
+)
 _include(v1_router, "leagent.api.v1.tools", prefix="/tools", tags=["v1-tools"])
 _include(v1_router, "leagent.api.v1.rules", prefix="/rules", tags=["v1-rules"])
 _include(v1_router, "leagent.api.v1.models", prefix="/models", tags=["v1-models"])

@@ -22,6 +22,7 @@ PARENT_ID_TABLES: frozenset[str] = frozenset(
         "users",
         "workspaces",
         "pet_projects",
+        "chat_projects",
         "files",
         "chat_sessions",
         "roles",

@@ -108,6 +108,7 @@ class ChatSession(BaseModel, table=True):
     name: Optional[str] = Field(default=None, max_length=200)
     user_id: UUID = Field(foreign_key="users.id", index=True)
     flow_id: Optional[UUID] = Field(default=None, foreign_key="flows.id", index=True)
+    project_id: Optional[UUID] = Field(default=None, foreign_key="chat_projects.id", index=True)
     workspace_id: Optional[UUID] = Field(default=None, nullable=True, index=True)
     is_active: bool = Field(default=True)
     message_count: int = Field(default=0)
@@ -171,6 +172,7 @@ class SessionCreate(SQLModel):
 
     name: Optional[str] = None
     flow_id: Optional[UUID] = None
+    project_id: Optional[UUID] = None
 
 
 PINNED_MESSAGE_IDS_KEY = "pinned_message_ids"
@@ -287,6 +289,7 @@ class SessionRead(SQLModel):
     name: Optional[str]
     user_id: UUID
     flow_id: Optional[UUID]
+    project_id: Optional[UUID]
     is_active: bool
     message_count: int
     last_message_at: Optional[datetime]
@@ -304,6 +307,7 @@ def chat_session_to_read(cs: ChatSession) -> SessionRead:
         name=cs.name,
         user_id=cs.user_id,
         flow_id=cs.flow_id,
+        project_id=cs.project_id,
         is_active=cs.is_active,
         message_count=cs.message_count,
         last_message_at=cs.last_message_at,

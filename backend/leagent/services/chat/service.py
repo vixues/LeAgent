@@ -179,6 +179,7 @@ class ChatService(Service):
         *,
         name: str | None = None,
         flow_id: UUID | None = None,
+        project_id: UUID | None = None,
         metadata: dict[str, Any] | None = None,
     ) -> ChatSession:
         """Create a new chat session.
@@ -187,6 +188,7 @@ class ChatService(Service):
             user_id: Owner of the session
             name: Optional session name
             flow_id: Optional associated flow
+            project_id: Optional chat project grouping
             metadata: Optional session metadata
 
         Returns:
@@ -200,6 +202,7 @@ class ChatService(Service):
             user_id=user_id,
             name=name,
             flow_id=flow_id,
+            project_id=project_id,
             session_metadata=json.dumps(metadata) if metadata else None,
         )
 
@@ -272,6 +275,7 @@ class ChatService(Service):
         user_id: UUID,
         *,
         active_only: bool = True,
+        project_id: UUID | None = None,
         offset: int = 0,
         limit: int = 50,
     ) -> list[SessionRead]:
@@ -280,6 +284,7 @@ class ChatService(Service):
         Args:
             user_id: The user ID
             active_only: Only return active sessions
+            project_id: Optional project filter
             offset: Pagination offset
             limit: Maximum number of sessions
 
@@ -293,12 +298,25 @@ class ChatService(Service):
             if session_dialect_name(db) == "sqlite":
                 u_txt = await sqlite_parent_id_text(db, "users", user_id)
                 active_sql = " AND is_active = 1" if active_only else ""
+                params: dict[str, Any] = {
+                    "u_plain": u_txt.replace("-", "").lower(),
+                    "lim": limit,
+                    "off": offset,
+                }
+                project_sql = ""
+                if project_id is not None:
+                    project_sql = (
+                        " AND lower(replace(CAST(project_id AS TEXT), '-', '')) = :pid_plain"
+                    )
+                    p_txt = await sqlite_parent_id_text(db, "chat_projects", project_id)
+                    params["pid_plain"] = p_txt.replace("-", "").lower()
                 r = await db.execute(
                     text(
-                        f"SELECT id FROM chat_sessions WHERE CAST(user_id AS TEXT) = :u"
-                        f"{active_sql} ORDER BY updated_at DESC LIMIT :lim OFFSET :off"
+                        "SELECT id FROM chat_sessions "
+                        "WHERE lower(replace(CAST(user_id AS TEXT), '-', '')) = :u_plain"
+                        f"{active_sql}{project_sql} ORDER BY updated_at DESC LIMIT :lim OFFSET :off"
                     ),
-                    {"u": u_txt, "lim": limit, "off": offset},
+                    params,
                 )
                 sessions = []
                 for row in r.all():
@@ -317,11 +335,36 @@ class ChatService(Service):
                 )
                 if active_only:
                     stmt = stmt.where(ChatSession.is_active == True)
+                if project_id is not None:
+                    stmt = stmt.where(ChatSession.project_id == project_id)
 
                 result = await db.execute(stmt)
                 sessions = list(result.scalars().all())
 
         return [chat_session_to_read(s) for s in sessions]
+
+    async def move_session_to_project(
+        self,
+        session_id: UUID,
+        *,
+        user_id: UUID,
+        project_id: UUID | None,
+    ) -> ChatSession | None:
+        """Move a session into a chat project, or detach it when ``project_id`` is ``None``."""
+        if self._db is None:
+            return None
+        async with self._db.session() as db:
+            session = await load_chat_session_by_id(db, session_id, owner_user_id=user_id)
+            if session is None:
+                return None
+            session.project_id = project_id
+            session.updated_at = utc_now()
+            db.add(session)
+            await db.flush()
+            await db.refresh(session)
+        if self._cache:
+            await self._cache.delete(f"session:{session_id}", namespace="chat")
+        return session
 
     async def filter_message_ids_for_session(
         self,

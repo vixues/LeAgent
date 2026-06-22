@@ -23,6 +23,7 @@ from fastapi import (
     Depends,
     File,
     Form,
+    Header,
     HTTPException,
     Query,
     UploadFile,
@@ -40,6 +41,7 @@ from leagent.schema.api import PaginatedResponse
 from leagent.services.auth import CurrentUserId  # noqa: TC001
 from leagent.db import DatabaseService, get_database_service
 from leagent.services.chat.service import ChatService
+from leagent.services.chat.projects import ChatProjectService
 from leagent.db.models.message import (
     MessageRead,
     MessageRole,
@@ -51,6 +53,48 @@ from leagent.db.models.message import (
 logger = structlog.get_logger(__name__)
 
 router = APIRouter()
+
+
+def _project_locked_error() -> HTTPException:
+    return HTTPException(status_code=status.HTTP_423_LOCKED, detail="Project locked")
+
+
+async def _require_project_access(
+    db: DatabaseService,
+    *,
+    project_id: UUID | None,
+    user_id: UUID,
+    unlock_token: str | None,
+) -> None:
+    try:
+        await ChatProjectService(db).require_project_access(
+            project_id,
+            user_id=user_id,
+            unlock_token=unlock_token,
+        )
+    except PermissionError as exc:
+        if str(exc) == "Project locked":
+            raise _project_locked_error() from exc
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found") from exc
+
+
+async def _require_session_project_access(
+    db: DatabaseService,
+    *,
+    session: Any,
+    user_id: UUID,
+    unlock_token: str | None,
+) -> None:
+    try:
+        await ChatProjectService(db).require_session_project_access(
+            session,
+            user_id=user_id,
+            unlock_token=unlock_token,
+        )
+    except PermissionError as exc:
+        if str(exc) == "Project locked":
+            raise _project_locked_error() from exc
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found") from exc
 
 
 # ---------------------------------------------------------------------------
@@ -152,6 +196,8 @@ async def chat_stream_endpoint(
     session_id: str | None = Form(default=None),
     files: list[UploadFile] = File(default=[]),
     history: str | None = Form(default=None),
+    project_id: str | None = Form(default=None),
+    project_unlock_token: str | None = Form(default=None),
     folder_id: str | None = Form(default=None),
     file_ids: str | None = Form(default=None),
     tool_replies: str | None = Form(default=None),
@@ -174,6 +220,9 @@ async def chat_stream_endpoint(
     into ``tool_extra['project_roots']`` for every tool call. The
     coding agent and ``project_*`` tools use this transparently.
     """
+    # Captured at endpoint entry so time-to-first-token includes pre-stream work
+    # (file ingest, context resolution, user-row persist) — not just the LLM.
+    request_start_perf = time.perf_counter()
     incoming_file_parts = [f for f in (files or []) if f is not None]
     has_text = bool(message and message.strip())
     has_folder = bool(folder_id and str(folder_id).strip())
@@ -195,13 +244,34 @@ async def chat_stream_endpoint(
     if session_id:
         with suppress(ValueError):
             parsed_session_id = UUID(session_id)
+    parsed_project_id: UUID | None = None
+    if project_id:
+        with suppress(ValueError):
+            parsed_project_id = UUID(project_id)
+    await _require_project_access(
+        db,
+        project_id=parsed_project_id,
+        user_id=user_id,
+        unlock_token=project_unlock_token,
+    )
 
     if not parsed_session_id:
         new_session = await chat_svc.create_session(
             user_id,
             name=f"Chat {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M')}",
+            project_id=parsed_project_id,
         )
         parsed_session_id = new_session.id
+    else:
+        existing_session = await chat_svc.get_session(parsed_session_id, user_id=user_id)
+        if not existing_session:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
+        await _require_session_project_access(
+            db,
+            session=existing_session,
+            user_id=user_id,
+            unlock_token=project_unlock_token,
+        )
 
     # ---- Ingest uploaded files via SessionManager ----
     attachment_paths: list[str] = []
@@ -213,25 +283,41 @@ async def chat_stream_endpoint(
     # optimistic placeholder rows instead of showing files that never landed on disk.
     had_upload_attempt = bool(incoming_file_parts)
 
-    if incoming_file_parts:
-        session_attachment_payloads, uploaded_paths, ingest_errors = await _attach_chat_files(
-            user_id, parsed_session_id, incoming_file_parts,
-        )
-        persisted_file_ids = [a["id"] for a in session_attachment_payloads]
-        attachment_paths.extend(uploaded_paths)
+    # These pre-stream lookups are independent: file ingest writes new File rows
+    # while the resolvers issue read-only queries against different tables, and
+    # each opens its own DB session (safe under SQLite-WAL / PG pooling). Resolve
+    # them concurrently to cut time-to-first-token — file ingest (disk + text
+    # extraction) is the slowest, so overlapping it with the folder/knowledge/
+    # project lookups is the main win.
+    async def _ingest_uploaded_files() -> tuple[
+        list[dict[str, Any]], list[str], list[dict[str, str]]
+    ]:
+        if incoming_file_parts:
+            return await _attach_chat_files(user_id, parsed_session_id, incoming_file_parts)
+        return [], [], []
 
-    context_items = await _resolve_folder_context(user_id, db, folder_id, file_ids)
+    (
+        (session_attachment_payloads, uploaded_paths, ingest_errors),
+        context_items,
+        knowledge_paths,
+        project_path_for_turn,
+    ) = await asyncio.gather(
+        _ingest_uploaded_files(),
+        _resolve_folder_context(user_id, db, folder_id, file_ids),
+        _resolve_knowledge_message_paths(user_id, db, message),
+        _resolve_project_folder_path(user_id, db, project_folder_id),
+    )
+
+    persisted_file_ids = [a["id"] for a in session_attachment_payloads]
+    attachment_paths.extend(uploaded_paths)
     attachment_paths.extend(_context_item_paths(context_items))
-    attachment_paths.extend(await _resolve_knowledge_message_paths(user_id, db, message))
+    attachment_paths.extend(knowledge_paths)
+
     selected_folder_context_note = await _resolve_folder_context_note(
         user_id,
         db,
         folder_id,
         attached_file_count=len(context_items),
-    )
-
-    project_path_for_turn = await _resolve_project_folder_path(
-        user_id, db, project_folder_id,
     )
     if project_path_for_turn:
         # Persist on the session so reloads / resume keep the binding
@@ -421,6 +507,22 @@ async def chat_stream_endpoint(
         pet_bubble_snapshot: dict[str, Any] | None = None
         last_complete_event: dict[str, Any] | None = None
         workspace_attachment_ids: list[str] = []
+        first_token_recorded = False
+
+        def _record_ttft() -> None:
+            nonlocal first_token_recorded
+            if first_token_recorded:
+                return
+            first_token_recorded = True
+            try:
+                from leagent.utils.metrics import get_metrics
+
+                get_metrics().record_agent_turn_phase(
+                    "time_to_first_token",
+                    time.perf_counter() - request_start_perf,
+                )
+            except Exception:
+                logger.debug("ttft_metrics_failed", exc_info=True)
 
         def remember_workspace_attachments(payload: Any) -> None:
             if not isinstance(payload, dict):
@@ -545,6 +647,7 @@ async def chat_stream_endpoint(
                 ):
                     response_content = acc_text
                     if etype == "token":
+                        _record_ttft()
                         yield _format_frontend_event("content", edata.get("token", ""))
                     elif etype == "thinking":
                         thought = edata.get("thought", "") if isinstance(edata, dict) else ""
@@ -621,6 +724,7 @@ async def chat_stream_endpoint(
                         if not response_content:
                             response_content = edata.get("text", "") or response_content
                             if response_content:
+                                _record_ttft()
                                 yield _format_frontend_event("content", response_content)
                     elif etype == "error":
                         _err_payload: dict[str, Any] = {
@@ -915,6 +1019,7 @@ async def create_chat_completion(
     user_id: CurrentUserId,
     chat_svc: ChatSvc,
     db: Annotated[DatabaseService, Depends(get_database_service)],
+    x_chat_project_token: str | None = Header(default=None, alias="X-Chat-Project-Token"),
 ):
     """Create a chat completion (OpenAI-compatible). Streaming or non-streaming."""
     if not request.messages:
@@ -925,11 +1030,28 @@ async def create_chat_completion(
 
     session_id = request.session_id
     if not session_id:
+        await _require_project_access(
+            db,
+            project_id=request.project_id,
+            user_id=user_id,
+            unlock_token=x_chat_project_token,
+        )
         new_session = await chat_svc.create_session(
             user_id,
             name=f"Chat {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M')}",
+            project_id=request.project_id,
         )
         session_id = new_session.id
+    else:
+        existing_session = await chat_svc.get_session(session_id, user_id=user_id)
+        if not existing_session:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
+        await _require_session_project_access(
+            db,
+            session=existing_session,
+            user_id=user_id,
+            unlock_token=x_chat_project_token,
+        )
 
     last_user_message = next(
         (m for m in reversed(request.messages) if m.role == MessageRole.USER), None,
@@ -1029,12 +1151,21 @@ async def create_session(
     data: SessionCreate,
     user_id: CurrentUserId,
     chat_svc: ChatSvc,
+    db: Annotated[DatabaseService, Depends(get_database_service)],
+    x_chat_project_token: str | None = Header(default=None, alias="X-Chat-Project-Token"),
 ) -> SessionRead:
     """Create a new chat session."""
+    await _require_project_access(
+        db,
+        project_id=data.project_id,
+        user_id=user_id,
+        unlock_token=x_chat_project_token,
+    )
     session = await chat_svc.create_session(
         user_id,
         name=data.name or f"New Chat {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M')}",
         flow_id=data.flow_id,
+        project_id=data.project_id,
     )
     logger.info("Created chat session %s for user %s", session.id, user_id)
     return chat_session_to_read(session)
@@ -1044,16 +1175,29 @@ async def create_session(
 async def list_sessions(
     user_id: CurrentUserId,
     chat_svc: ChatSvc,
+    db: Annotated[DatabaseService, Depends(get_database_service)],
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, ge=1, le=100),
     is_active: bool | None = Query(default=None),
     flow_id: UUID | None = Query(default=None),
+    project_id: UUID | None = Query(default=None),
+    x_chat_project_token: str | None = Header(default=None, alias="X-Chat-Project-Token"),
 ) -> PaginatedResponse[SessionRead]:
     """List chat sessions for the current user."""
+    await _require_project_access(
+        db,
+        project_id=project_id,
+        user_id=user_id,
+        unlock_token=x_chat_project_token,
+    )
     active_only = is_active if is_active is not None else True
     offset = (page - 1) * page_size
     sessions = await chat_svc.list_sessions(
-        user_id, active_only=active_only, offset=offset, limit=page_size,
+        user_id,
+        active_only=active_only,
+        project_id=project_id,
+        offset=offset,
+        limit=page_size,
     )
     total = len(sessions)
     return PaginatedResponse[SessionRead](
@@ -1071,11 +1215,19 @@ async def get_session(
     session_id: UUID,
     user_id: CurrentUserId,
     chat_svc: ChatSvc,
+    db: Annotated[DatabaseService, Depends(get_database_service)],
+    x_chat_project_token: str | None = Header(default=None, alias="X-Chat-Project-Token"),
 ) -> SessionRead:
     """Get a specific chat session."""
     session = await chat_svc.get_session(session_id, user_id=user_id)
     if not session:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
+    await _require_session_project_access(
+        db,
+        session=session,
+        user_id=user_id,
+        unlock_token=x_chat_project_token,
+    )
     return chat_session_to_read(session)
 
 
@@ -1084,11 +1236,19 @@ async def list_session_attachments(
     session_id: UUID,
     user_id: CurrentUserId,
     chat_svc: ChatSvc,
+    db: Annotated[DatabaseService, Depends(get_database_service)],
+    x_chat_project_token: str | None = Header(default=None, alias="X-Chat-Project-Token"),
 ) -> SessionAttachmentsResponse:
     """List all files attached to the session (uploads + tool workspace ingest)."""
     session = await chat_svc.get_session(session_id, user_id=user_id)
     if not session:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
+    await _require_session_project_access(
+        db,
+        session=session,
+        user_id=user_id,
+        unlock_token=x_chat_project_token,
+    )
 
     from leagent.main import get_service_manager
 
@@ -1122,11 +1282,19 @@ async def list_session_authorized_paths(
     session_id: UUID,
     user_id: CurrentUserId,
     chat_svc: ChatSvc,
+    db: Annotated[DatabaseService, Depends(get_database_service)],
+    x_chat_project_token: str | None = Header(default=None, alias="X-Chat-Project-Token"),
 ) -> AuthorizedPathsResponse:
     """List directories the user granted for tool access in this chat session."""
     session = await chat_svc.get_session(session_id, user_id=user_id)
     if not session:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
+    await _require_session_project_access(
+        db,
+        session=session,
+        user_id=user_id,
+        unlock_token=x_chat_project_token,
+    )
     raw = await chat_svc.list_authorized_roots(session_id, user_id=user_id)
     paths = [AuthorizedPathEntry(path=str(x["path"]), label=x.get("label")) for x in raw]
     return AuthorizedPathsResponse(session_id=session_id, paths=paths)
@@ -1141,11 +1309,19 @@ async def add_session_authorized_path(
     body: AuthorizedPathCreateBody,
     user_id: CurrentUserId,
     chat_svc: ChatSvc,
+    db: Annotated[DatabaseService, Depends(get_database_service)],
+    x_chat_project_token: str | None = Header(default=None, alias="X-Chat-Project-Token"),
 ) -> AuthorizedPathsResponse:
     """Grant an absolute directory for this session (validated like project paths)."""
     session = await chat_svc.get_session(session_id, user_id=user_id)
     if not session:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
+    await _require_session_project_access(
+        db,
+        session=session,
+        user_id=user_id,
+        unlock_token=x_chat_project_token,
+    )
     try:
         updated = await chat_svc.add_authorized_root(
             session_id, user_id, path=body.path, label=body.label,
@@ -1164,12 +1340,20 @@ async def remove_session_authorized_path(
     session_id: UUID,
     user_id: CurrentUserId,
     chat_svc: ChatSvc,
+    db: Annotated[DatabaseService, Depends(get_database_service)],
+    x_chat_project_token: str | None = Header(default=None, alias="X-Chat-Project-Token"),
     path: str = Query(..., min_length=1, max_length=4096),
 ) -> AuthorizedPathsResponse:
     """Revoke a previously granted directory (match on stored path string)."""
     session = await chat_svc.get_session(session_id, user_id=user_id)
     if not session:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
+    await _require_session_project_access(
+        db,
+        session=session,
+        user_id=user_id,
+        unlock_token=x_chat_project_token,
+    )
     updated = await chat_svc.remove_authorized_root(session_id, user_id, path=path)
     paths = [AuthorizedPathEntry(path=str(x["path"]), label=x.get("label")) for x in updated]
     return AuthorizedPathsResponse(session_id=session_id, paths=paths)
@@ -1369,7 +1553,9 @@ async def get_session_agent_memory(
     session_id: UUID,
     user_id: CurrentUserId,
     chat_svc: ChatSvc,
+    db: Annotated[DatabaseService, Depends(get_database_service)],
     limit: int = Query(default=50, ge=1, le=100),
+    x_chat_project_token: str | None = Header(default=None, alias="X-Chat-Project-Token"),
 ) -> AgentMemorySnapshotRead:
     """Read-only snapshot of cognitive agent memory for the session owner."""
     from leagent.main import get_service_manager
@@ -1377,6 +1563,12 @@ async def get_session_agent_memory(
     session = await chat_svc.get_session(session_id, user_id=user_id)
     if not session:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
+    await _require_session_project_access(
+        db,
+        session=session,
+        user_id=user_id,
+        unlock_token=x_chat_project_token,
+    )
 
     sm = get_service_manager()
     mem = sm.agent_memory
@@ -1462,13 +1654,24 @@ async def get_session_prompt_preview(
     session_id: UUID,
     user_id: CurrentUserId,
     chat_svc: ChatSvc,
+    db: Annotated[DatabaseService, Depends(get_database_service)],
     query: str | None = Query(
         default=None,
         max_length=100_000,
         description="Override preview query; defaults to latest user message in session.",
     ),
+    x_chat_project_token: str | None = Header(default=None, alias="X-Chat-Project-Token"),
 ) -> PromptPreviewRead:
     """Assemble the current system prompt (same pipeline as the agent)."""
+    session = await chat_svc.get_session(session_id, user_id=user_id)
+    if not session:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
+    await _require_session_project_access(
+        db,
+        session=session,
+        user_id=user_id,
+        unlock_token=x_chat_project_token,
+    )
     return await _compose_prompt_preview(
         session_id=session_id,
         user_id=user_id,
@@ -1482,7 +1685,9 @@ async def compact_session_context(
     session_id: UUID,
     user_id: CurrentUserId,
     chat_svc: ChatSvc,
+    db: Annotated[DatabaseService, Depends(get_database_service)],
     body: CompactContextRequest | None = None,
+    x_chat_project_token: str | None = Header(default=None, alias="X-Chat-Project-Token"),
 ) -> CompactContextResponse:
     """Dry-run transcript compression for token metrics only.
 
@@ -1511,6 +1716,12 @@ async def compact_session_context(
     session = await chat_svc.get_session(session_id, user_id=user_id)
     if not session:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
+    await _require_session_project_access(
+        db,
+        session=session,
+        user_id=user_id,
+        unlock_token=x_chat_project_token,
+    )
 
     force_llm = body.force_llm if body else False
     before_count = 0
@@ -1543,11 +1754,19 @@ async def list_session_agent_tasks(
     session_id: UUID,
     user_id: CurrentUserId,
     chat_svc: ChatSvc,
+    db: Annotated[DatabaseService, Depends(get_database_service)],
+    x_chat_project_token: str | None = Header(default=None, alias="X-Chat-Project-Token"),
 ) -> AgentTasksListResponse:
     """List in-flight agent runs for this session (monitoring; in-process scope only)."""
     session = await chat_svc.get_session(session_id, user_id=user_id)
     if not session:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
+    await _require_session_project_access(
+        db,
+        session=session,
+        user_id=user_id,
+        unlock_token=x_chat_project_token,
+    )
 
     from leagent.agent.controller import AgentController
 
@@ -1572,11 +1791,19 @@ async def cancel_session(
     session_id: UUID,
     user_id: CurrentUserId,
     chat_svc: ChatSvc,
+    db: Annotated[DatabaseService, Depends(get_database_service)],
+    x_chat_project_token: str | None = Header(default=None, alias="X-Chat-Project-Token"),
 ) -> SessionCancelResponse:
     """Cancel a running agent session, killing all backend tasks and subprocesses."""
     session = await chat_svc.get_session(session_id, user_id=user_id)
     if not session:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
+    await _require_session_project_access(
+        db,
+        session=session,
+        user_id=user_id,
+        unlock_token=x_chat_project_token,
+    )
 
     from leagent.agent.controller import AgentController
 
@@ -1613,6 +1840,8 @@ async def resume_checkpoint(
     body: ResumeCheckpointRequest,
     user_id: CurrentUserId,
     chat_svc: ChatSvc,
+    db: Annotated[DatabaseService, Depends(get_database_service)],
+    x_chat_project_token: str | None = Header(default=None, alias="X-Chat-Project-Token"),
 ) -> ResumeCheckpointResponse:
     """Accept a checkpoint-based resume request for a paused agent turn.
 
@@ -1628,6 +1857,12 @@ async def resume_checkpoint(
     session = await chat_svc.get_session(session_id, user_id=user_id)
     if not session:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
+    await _require_session_project_access(
+        db,
+        session=session,
+        user_id=user_id,
+        unlock_token=x_chat_project_token,
+    )
 
     try:
         from leagent.sdk.kernel.checkpoint import build_checkpoint_store
@@ -1660,8 +1895,19 @@ async def delete_session(
     session_id: UUID,
     user_id: CurrentUserId,
     chat_svc: ChatSvc,
+    db: Annotated[DatabaseService, Depends(get_database_service)],
+    x_chat_project_token: str | None = Header(default=None, alias="X-Chat-Project-Token"),
 ) -> None:
     """Delete a chat session and all its messages."""
+    session = await chat_svc.get_session(session_id, user_id=user_id)
+    if not session:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
+    await _require_session_project_access(
+        db,
+        session=session,
+        user_id=user_id,
+        unlock_token=x_chat_project_token,
+    )
     deleted = await chat_svc.delete_session(session_id, user_id, soft=False)
     if not deleted:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
@@ -1674,11 +1920,19 @@ async def update_session(
     body: SessionUpdateRequest,
     user_id: CurrentUserId,
     chat_svc: ChatSvc,
+    db: Annotated[DatabaseService, Depends(get_database_service)],
+    x_chat_project_token: str | None = Header(default=None, alias="X-Chat-Project-Token"),
 ) -> SessionRead:
     """Update a chat session (name, active flag, and/or session metadata patch)."""
     existing = await chat_svc.get_session(session_id, user_id=user_id)
     if not existing:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
+    await _require_session_project_access(
+        db,
+        session=existing,
+        user_id=user_id,
+        unlock_token=x_chat_project_token,
+    )
 
     if body.metadata_patch:
         sanitized = await chat_svc.sanitize_metadata_patch(session_id, body.metadata_patch)
@@ -1688,6 +1942,21 @@ async def update_session(
             )
             if merged is None:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
+
+    if "project_id" in body.model_fields_set:
+        await _require_project_access(
+            db,
+            project_id=body.project_id,
+            user_id=user_id,
+            unlock_token=x_chat_project_token,
+        )
+        moved = await chat_svc.move_session_to_project(
+            session_id,
+            user_id=user_id,
+            project_id=body.project_id,
+        )
+        if not moved:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
 
     if body.name is not None or body.is_active is not None:
         updated = await chat_svc.update_session(
@@ -1712,11 +1981,19 @@ async def patch_session_todo_status(
     body: SessionTodoStatusPatchRequest,
     user_id: CurrentUserId,
     chat_svc: ChatSvc,
+    db: Annotated[DatabaseService, Depends(get_database_service)],
+    x_chat_project_token: str | None = Header(default=None, alias="X-Chat-Project-Token"),
 ) -> SessionRead:
     """Update one session-scoped agent todo status (manual UI interaction)."""
     existing = await chat_svc.get_session(session_id, user_id=user_id)
     if not existing:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
+    await _require_session_project_access(
+        db,
+        session=existing,
+        user_id=user_id,
+        unlock_token=x_chat_project_token,
+    )
 
     from leagent.main import get_service_manager
 
@@ -1755,17 +2032,25 @@ async def get_session_messages(
     session_id: UUID,
     user_id: CurrentUserId,
     chat_svc: ChatSvc,
+    db: Annotated[DatabaseService, Depends(get_database_service)],
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=50, ge=1, le=200),
     role: MessageRole | None = Query(default=None),
     before: datetime | None = Query(default=None),
     after: datetime | None = Query(default=None),
     order: str = Query(default="asc", pattern="^(asc|desc)$"),
+    x_chat_project_token: str | None = Header(default=None, alias="X-Chat-Project-Token"),
 ) -> PaginatedResponse[MessageRead]:
     """Get messages for a session with pagination and filtering."""
     session = await chat_svc.get_session(session_id, user_id=user_id)
     if not session:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
+    await _require_session_project_access(
+        db,
+        session=session,
+        user_id=user_id,
+        unlock_token=x_chat_project_token,
+    )
 
     items, total = await chat_svc.get_messages_paginated(
         session_id,
@@ -1793,8 +2078,19 @@ async def patch_message_feedback(
     body: MessageFeedbackBody,
     user_id: CurrentUserId,
     chat_svc: ChatSvc,
+    db: Annotated[DatabaseService, Depends(get_database_service)],
+    x_chat_project_token: str | None = Header(default=None, alias="X-Chat-Project-Token"),
 ) -> dict[str, Any]:
     """Set or clear assistant message rating; feedback informs memory formation policy."""
+    session = await chat_svc.get_session(session_id, user_id=user_id)
+    if not session:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
+    await _require_session_project_access(
+        db,
+        session=session,
+        user_id=user_id,
+        unlock_token=x_chat_project_token,
+    )
     ok = await chat_svc.patch_assistant_message_rating(
         session_id,
         message_id,
@@ -1870,6 +2166,8 @@ async def run_chat_workflow_step(
     body: ChatWorkflowStepRunRequest,
     user_id: CurrentUserId,
     chat_svc: ChatSvc,
+    db: Annotated[DatabaseService, Depends(get_database_service)],
+    x_chat_project_token: str | None = Header(default=None, alias="X-Chat-Project-Token"),
 ) -> dict[str, Any]:
     """Execute a single workflow step tool call after digest verification."""
     from leagent.chat_workflow.arguments import (
@@ -1889,6 +2187,16 @@ async def run_chat_workflow_step(
     from leagent.tools.executor import get_executor
     from leagent.tools.registry import get_registry
     from leagent.file.attachment_context import tool_extra_for_chat_session
+
+    session = await chat_svc.get_session(session_id, user_id=user_id)
+    if not session:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
+    await _require_session_project_access(
+        db,
+        session=session,
+        user_id=user_id,
+        unlock_token=x_chat_project_token,
+    )
 
     msg = await chat_svc.get_session_message(session_id, body.message_id, user_id=user_id)
     if not msg:
@@ -2052,9 +2360,19 @@ async def list_session_executions(
     session_id: UUID,
     user_id: CurrentUserId,
     chat_svc: ChatSvc,
+    db: Annotated[DatabaseService, Depends(get_database_service)],
+    x_chat_project_token: str | None = Header(default=None, alias="X-Chat-Project-Token"),
 ) -> list[SessionExecutionRead]:
     """Return active in-process execution runs for a chat session."""
-    await chat_svc.get_session(session_id, user_id=user_id)
+    session = await chat_svc.get_session(session_id, user_id=user_id)
+    if not session:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
+    await _require_session_project_access(
+        db,
+        session=session,
+        user_id=user_id,
+        unlock_token=x_chat_project_token,
+    )
     from leagent.runtime.execution_registry import get_execution_run_registry
 
     runs = get_execution_run_registry().list_for_session(str(session_id))
@@ -2122,11 +2440,18 @@ async def send_message(
     user_id: CurrentUserId,
     chat_svc: ChatSvc,
     db: Annotated[DatabaseService, Depends(get_database_service)],
+    x_chat_project_token: str | None = Header(default=None, alias="X-Chat-Project-Token"),
 ):
     """Send a message in a session and get a response."""
     session = await chat_svc.get_session(session_id, user_id=user_id)
     if not session:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
+    await _require_session_project_access(
+        db,
+        session=session,
+        user_id=user_id,
+        unlock_token=x_chat_project_token,
+    )
     if not session.is_active:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Session is not active")
 
@@ -2211,15 +2536,23 @@ async def send_message_with_attachments(
     session_id: UUID,
     user_id: CurrentUserId,
     chat_svc: ChatSvc,
+    db: Annotated[DatabaseService, Depends(get_database_service)],
     content: str = Form(default=""),
     files: list[UploadFile] = File(default=[]),
     stream: bool = Form(default=True),
     model: str | None = Form(default=None),
+    project_unlock_token: str | None = Form(default=None),
 ):
     """Send a message with file attachments."""
     session = await chat_svc.get_session(session_id, user_id=user_id)
     if not session:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
+    await _require_session_project_access(
+        db,
+        session=session,
+        user_id=user_id,
+        unlock_token=project_unlock_token,
+    )
 
     persisted_file_ids: list[str] = []
     if files:
@@ -2245,7 +2578,14 @@ async def send_message_with_attachments(
         model=model,
         attachments=persisted_file_ids if persisted_file_ids else None,
     )
-    return await send_message(session_id, request, user_id, chat_svc)
+    return await send_message(
+        session_id,
+        request,
+        user_id,
+        chat_svc,
+        db,
+        x_chat_project_token=project_unlock_token,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -2312,6 +2652,20 @@ async def websocket_endpoint(
     session = await chat_svc.get_session(session_id, user_id=user_id)
     if not session:
         await websocket.close(code=4003, reason="Session not found or access denied")
+        return
+    project_token = (
+        websocket.headers.get("x-chat-project-token")
+        or websocket.query_params.get("project_token")
+    )
+    try:
+        await _require_session_project_access(
+            db,
+            session=session,
+            user_id=user_id,
+            unlock_token=project_token,
+        )
+    except HTTPException as exc:
+        await websocket.close(code=4003, reason=str(exc.detail))
         return
 
     await manager.connect(websocket, session_id)

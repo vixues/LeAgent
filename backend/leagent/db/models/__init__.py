@@ -39,6 +39,7 @@ from leagent.db.models.pet_project import (
     PetProject,
     PetProjectFile,
 )
+from leagent.db.models.chat_project import ChatProject
 from leagent.db.models.flow import (
     Flow,
     FlowCreate,
@@ -159,6 +160,8 @@ __all__ = [
     # Pet Space
     "PetProject",
     "PetProjectFile",
+    # Chat Projects
+    "ChatProject",
     # Folder
     "Folder",
     "FolderCreate",

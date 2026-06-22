@@ -26,6 +26,7 @@ class ChatCompletionRequest(BaseModel):
     model: str = Field(default="default", description="Model to use for completion")
     messages: list[ChatCompletionMessage]
     session_id: UUID | None = None
+    project_id: UUID | None = None
     stream: bool = Field(default=True, description="Whether to stream the response")
     temperature: float = Field(default=0.7, ge=0.0, le=2.0)
     max_tokens: int | None = Field(default=None, ge=1, le=128000)
@@ -107,6 +108,7 @@ class SendMessageRequest(BaseModel):
 class SessionUpdateRequest(BaseModel):
     name: str | None = None
     is_active: bool | None = None
+    project_id: UUID | None = None
     metadata_patch: dict[str, Any] | None = Field(
         default=None,
         description="Shallow-merged into chat_sessions.session_metadata (merge_session_metadata).",
