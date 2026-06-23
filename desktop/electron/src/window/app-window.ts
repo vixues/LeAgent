@@ -1,6 +1,6 @@
 import path from 'node:path';
 import { app, BrowserWindow } from 'electron';
-import type { AppPage } from '../constants.js';
+import { IPC, TITLE_BAR_HEIGHT, type AppPage } from '../constants.js';
 import { getBackendServer } from '../server/backend-server.js';
 import { log } from '../logger.js';
 import { setRuntimeWindows } from '../ipc/runtime.js';
@@ -9,6 +9,33 @@ import { closeSplash, createSplashWindow, getSplashWindow } from './splash-windo
 
 let mainWindow: BrowserWindow | null = null;
 let currentPage: AppPage = 'splash';
+
+/**
+ * Platform-specific frameless title-bar config so the renderer can paint its own
+ * professional, system-native title bar:
+ *  - macOS: keep native traffic lights (`hiddenInset`), vertically centered.
+ *  - Windows: native Window Controls Overlay (min/max/close drawn by the OS).
+ *  - Linux: fully frameless; the renderer draws custom window controls.
+ */
+function titleBarOptions(): Electron.BrowserWindowConstructorOptions {
+  if (process.platform === 'darwin') {
+    return {
+      titleBarStyle: 'hiddenInset',
+      trafficLightPosition: { x: 14, y: Math.round((TITLE_BAR_HEIGHT - 16) / 2) },
+    };
+  }
+  if (process.platform === 'win32') {
+    return {
+      titleBarStyle: 'hidden',
+      titleBarOverlay: {
+        color: '#00000000',
+        symbolColor: '#9aa0a6',
+        height: TITLE_BAR_HEIGHT,
+      },
+    };
+  }
+  return { frame: false };
+}
 
 export function createMainWindow(preloadPath: string): BrowserWindow {
   const { width, height } = getDefaultWindowSize();
@@ -20,6 +47,7 @@ export function createMainWindow(preloadPath: string): BrowserWindow {
     minHeight: 640,
     show: false,
     backgroundColor: '#070708',
+    ...titleBarOptions(),
     webPreferences: {
       preload: preloadPath,
       contextIsolation: true,
@@ -38,6 +66,14 @@ export function createMainWindow(preloadPath: string): BrowserWindow {
   mainWindow.on('closed', () => {
     mainWindow = null;
   });
+
+  const emitMaximizeState = (maximized: boolean) => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send(IPC.WINDOW_MAXIMIZE_CHANGED, maximized);
+    }
+  };
+  mainWindow.on('maximize', () => emitMaximizeState(true));
+  mainWindow.on('unmaximize', () => emitMaximizeState(false));
 
   mainWindow.webContents.on('did-fail-load', (_event, errorCode, errorDescription, validatedURL) => {
     log.error(`Main window failed to load ${validatedURL} (${errorCode}): ${errorDescription}`);

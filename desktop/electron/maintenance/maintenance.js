@@ -5,6 +5,21 @@
   const statusEl = document.getElementById('status');
   const api = window.leagent;
 
+  // Frameless window controls: native traffic lights (mac) / overlay (win) cover
+  // this themselves; Linux ('custom') needs our own buttons to move/close.
+  const titlebar = document.getElementById('titlebar');
+  const winControls = document.getElementById('winControls');
+  const style = api?.window?.style;
+  if (style === 'mac' && titlebar) {
+    titlebar.style.paddingLeft = '78px';
+  }
+  if (style === 'custom' && winControls) {
+    winControls.hidden = false;
+    document.getElementById('winMin')?.addEventListener('click', () => api?.window?.minimize?.());
+    document.getElementById('winMax')?.addEventListener('click', () => api?.window?.maximizeToggle?.());
+    document.getElementById('winClose')?.addEventListener('click', () => api?.window?.close?.());
+  }
+
   function setStatus(msg) {
     if (statusEl) statusEl.textContent = msg;
   }

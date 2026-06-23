@@ -7,6 +7,20 @@
   <link rel="stylesheet" href="maintenance.css" />
 </head>
 <body>
+  <div class="titlebar" id="titlebar">
+    <span class="titlebar-brand">LeAgent</span>
+    <div class="titlebar-controls" id="winControls" hidden>
+      <button type="button" class="winbtn" id="winMin" title="Minimize" aria-label="Minimize">
+        <svg width="10" height="10" viewBox="0 0 10 10"><rect x="0" y="4.5" width="10" height="1" fill="currentColor"/></svg>
+      </button>
+      <button type="button" class="winbtn" id="winMax" title="Maximize" aria-label="Maximize">
+        <svg width="10" height="10" viewBox="0 0 10 10"><rect x="0.5" y="0.5" width="9" height="9" fill="none" stroke="currentColor" stroke-width="1"/></svg>
+      </button>
+      <button type="button" class="winbtn winbtn-close" id="winClose" title="Close" aria-label="Close">
+        <svg width="10" height="10" viewBox="0 0 10 10"><path d="M0.5 0.5L9.5 9.5M9.5 0.5L0.5 9.5" stroke="currentColor" stroke-width="1.1"/></svg>
+      </button>
+    </div>
+  </div>
   <div class="container">
     <h1>LeAgent Maintenance</h1>
     <p class="subtitle" id="subtitle">Checking installation…</p>

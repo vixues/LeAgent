@@ -1,9 +1,11 @@
 import { Notification, type BrowserWindow } from 'electron';
-import { autoUpdater } from 'electron-updater';
+import electronUpdater from 'electron-updater';
 import { IPC, UPDATER_CHECK_INTERVAL_MS, UPDATER_INITIAL_DELAY_MS } from '../constants.js';
 import { isAutoUpdateEnabled } from '../config/desktop-config.js';
 import { log } from '../logger.js';
 import { ipcMain } from 'electron';
+
+const { autoUpdater } = electronUpdater;
 
 let checkTimer: ReturnType<typeof setInterval> | null = null;
 

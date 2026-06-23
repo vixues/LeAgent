@@ -7,6 +7,60 @@ body {
   font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
   background: #070708;
   color: #e8e8ea;
+  padding-top: 36px;
+}
+
+.titlebar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-left: 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(7, 7, 8, 0.95);
+  -webkit-app-region: drag;
+  user-select: none;
+  z-index: 100;
+}
+
+.titlebar-brand {
+  font-size: 13px;
+  font-weight: 500;
+  color: #9aa0a6;
+}
+
+.titlebar-controls {
+  display: flex;
+  height: 100%;
+  -webkit-app-region: no-drag;
+}
+
+.winbtn {
+  width: 46px;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  color: #9aa0a6;
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+
+.winbtn:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #e8e8ea;
+}
+
+.winbtn-close:hover {
+  background: #dc2626;
+  color: #fff;
 }
 
 .container {

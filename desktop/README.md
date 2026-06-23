@@ -54,6 +54,8 @@ The Electron **main process** is native ESM (`package.json` → `"type": "module
 
 | Dependency | Version | Notes |
 |------------|---------|-------|
+| `electron` | ^42.4.1 | Desktop shell runtime |
+| `electron-builder` | ^26.15.3 | Cross-platform packaging |
 | `electron-log` | ^5.4.4 | Import `electron-log/main.js` in main process |
 | `electron-updater` | ^6.8.9 | Latest stable v6 (v7 is alpha — not used) |
 | `electron-store` | ^11.0.2 | ESM-only persistence |

@@ -15,6 +15,7 @@ import {
 import { registerAppIPC } from '../ipc/register-app.js';
 import { registerServerIPC } from '../ipc/register-server.js';
 import { registerUpdaterIPC, stopUpdaterTimer } from '../ipc/register-updater.js';
+import { registerWindowIPC } from '../ipc/register-window.js';
 import { setRuntimeWindows } from '../ipc/runtime.js';
 import { buildMenu } from '../menu.js';
 import type { BrowserWindow } from 'electron';
@@ -40,6 +41,7 @@ export class LeAgentDesktopApp {
 
     registerAppIPC();
     registerServerIPC();
+    registerWindowIPC();
     registerUpdaterIPC(this.mainWindow);
     buildMenu(this.mainWindow);
     setRetryBootHandler(() => this.retryBoot());

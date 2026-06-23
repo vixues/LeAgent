@@ -22,6 +22,9 @@ export const UPDATER_INITIAL_DELAY_MS = 30_000;
 /** Minimum free disk space warning threshold (bytes). */
 export const MIN_DISK_SPACE_BYTES = 2 * 1024 * 1024 * 1024;
 
+/** Custom title bar height (px). Shared by the main window, Windows overlay, and the renderer. */
+export const TITLE_BAR_HEIGHT = 36;
+
 export const IPC = {
   APP_GET_VERSION: 'app:getVersion',
   APP_GET_PATHS: 'app:getPaths',
@@ -53,6 +56,13 @@ export const IPC = {
   UPDATER_UPDATE_AVAILABLE: 'updater:updateAvailable',
   UPDATER_DOWNLOAD_PROGRESS: 'updater:downloadProgress',
   UPDATER_DOWNLOADED: 'updater:downloaded',
+
+  WINDOW_MINIMIZE: 'window:minimize',
+  WINDOW_MAXIMIZE_TOGGLE: 'window:maximizeToggle',
+  WINDOW_CLOSE: 'window:close',
+  WINDOW_IS_MAXIMIZED: 'window:isMaximized',
+  WINDOW_SET_OVERLAY: 'window:setOverlay',
+  WINDOW_MAXIMIZE_CHANGED: 'window:maximizeChanged',
 } as const;
 
 export type AppPage = 'splash' | 'maintenance' | 'app';

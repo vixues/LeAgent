@@ -32,8 +32,8 @@
   "devDependencies": {
     "@electron/notarize": "^2.5.0",
     "@types/node": "^22.10.0",
-    "electron": "^33.3.1",
-    "electron-builder": "^26.10.0",
+    "electron": "^42.4.1",
+    "electron-builder": "^26.15.3",
     "png-to-ico": "^3.0.1",
     "sharp": "^0.34.5",
     "typescript": "^5.7.2",

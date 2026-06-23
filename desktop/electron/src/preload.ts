@@ -2,8 +2,29 @@ import { contextBridge, ipcRenderer } from 'electron';
 
 type Callback<T = unknown> = (data: T) => void;
 
+type TitleBarStyle = 'mac' | 'overlay' | 'custom';
+
+const titleBarStyle: TitleBarStyle =
+  process.platform === 'darwin' ? 'mac' : process.platform === 'win32' ? 'overlay' : 'custom';
+
 const leagentBridge = {
   platform: process.platform,
+
+  window: {
+    /** How window controls are rendered: native traffic lights, native overlay, or custom. */
+    style: titleBarStyle,
+    minimize: () => ipcRenderer.invoke('window:minimize'),
+    maximizeToggle: () => ipcRenderer.invoke('window:maximizeToggle') as Promise<boolean>,
+    close: () => ipcRenderer.invoke('window:close'),
+    isMaximized: () => ipcRenderer.invoke('window:isMaximized') as Promise<boolean>,
+    setOverlay: (options: { color?: string; symbolColor?: string }) =>
+      ipcRenderer.invoke('window:setOverlay', options),
+    onMaximizeChanged: (cb: Callback<boolean>) => {
+      const handler = (_e: Electron.IpcRendererEvent, maximized: boolean) => cb(maximized);
+      ipcRenderer.on('window:maximizeChanged', handler);
+      return () => ipcRenderer.removeListener('window:maximizeChanged', handler);
+    },
+  },
 
   runtime: {
     onProgress: (cb: Callback<{ percent: number; detail: string }>) => {
