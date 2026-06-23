@@ -1321,7 +1321,7 @@ function ToolCallStrip({ tools }: { tools: ToolCall[] }) {
             'bg-background/60 text-muted-foreground transition-colors',
             'hover:bg-muted/40 hover:text-foreground',
             'disabled:pointer-events-none disabled:opacity-40',
-            'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/45 focus-visible:ring-offset-2 focus-visible:ring-offset-background',
+            'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/40 focus-visible:ring-offset-2 focus-visible:ring-offset-background',
           )}
           onClick={togglePanel}
           aria-expanded={showDetails}

@@ -27,7 +27,7 @@ export class HeightIndex {
     this.tree = new Float64Array(this.n + 1);
     // O(n) construction: each node seeds its parent.
     for (let i = 1; i <= this.n; i++) {
-      this.tree[i] += this.heights[i - 1]!;
+      this.tree[i]! += this.heights[i - 1]!;
       const parent = i + (i & -i);
       if (parent <= this.n) this.tree[parent]! += this.tree[i]!;
     }

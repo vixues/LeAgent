@@ -32,9 +32,9 @@ export function AgentSessionTimeline({
     const el = rowRefs.current.get(scrollTargetId);
     if (el) {
       el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-      el.classList.add('ring-2', 'ring-primary/40');
+      el.classList.add('ring-2', 'ring-primary-500/40');
       const timer = window.setTimeout(() => {
-        el.classList.remove('ring-2', 'ring-primary/40');
+        el.classList.remove('ring-2', 'ring-primary-500/40');
       }, 1200);
       onScrolled?.();
       return () => window.clearTimeout(timer);

@@ -209,7 +209,7 @@ export function TodoListBlock({
                     onClick={() => void handleStatusClick(step)}
                     className={cn(
                       'mt-0.5 rounded-md p-0.5 transition-colors',
-                      'hover:bg-muted/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40',
+                      'hover:bg-muted/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/40',
                       rowBusy && 'opacity-50',
                     )}
                     title={t('chat.sessionTodos.cycleStatus', {

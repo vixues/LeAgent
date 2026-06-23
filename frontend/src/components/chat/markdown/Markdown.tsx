@@ -99,41 +99,151 @@ interface MdNode {
   type: string;
   value?: string;
   children?: MdNode[];
+  data?: {
+    hName?: string;
+    hProperties?: Record<string, unknown>;
+  };
+}
+
+/** Supported callout / admonition kinds → display title. */
+const CALLOUT_TITLES: Record<string, string> = {
+  note: 'Note',
+  info: 'Info',
+  tip: 'Tip',
+  success: 'Success',
+  warning: 'Warning',
+  caution: 'Caution',
+  danger: 'Danger',
+  important: 'Important',
+};
+
+function normalizeCalloutType(raw: string): string {
+  const t = raw.toLowerCase();
+  return t in CALLOUT_TITLES ? t : 'note';
 }
 
 /**
- * Remark plugin to transform :::type callout blocks into HTML divs.
- * Supports :::note, :::warning, :::tip
+ * Build a callout as a real ``div`` (via mdast → hast ``hName``) so that the
+ * body keeps its parsed markdown — links, bold, inline code, nested lists —
+ * and flows through the same themed component overrides as the rest of chat.
+ */
+function makeCalloutNode(type: string, body: MdNode[]): MdNode {
+  const title: MdNode = {
+    type: 'paragraph',
+    data: { hName: 'div', hProperties: { className: ['chat-callout-title'] } },
+    children: [{ type: 'text', value: CALLOUT_TITLES[type] ?? 'Note' }],
+  };
+  return {
+    type: 'blockquote',
+    data: {
+      hName: 'div',
+      hProperties: { className: ['chat-callout', `chat-callout-${type}`] },
+    },
+    children: [title, ...body],
+  };
+}
+
+/**
+ * Remark plugin for admonitions. Supports two authoring styles:
+ *   • GitHub-style alerts:  ``> [!NOTE]`` / ``[!TIP]`` / ``[!WARNING]`` …
+ *   • Container syntax:     ``:::note … :::`` (single- or multi-paragraph)
+ * Both render through the themed ``.chat-callout`` styles with markdown intact.
  */
 function remarkCallouts() {
   return (tree: MdNode) => {
     const children = tree.children;
     if (!children) return;
-    const result: MdNode[] = [];
+    const out: MdNode[] = [];
 
     for (let i = 0; i < children.length; i++) {
       const node = children[i]!;
-      if (
-        node.type === 'paragraph' &&
-        node.children &&
-        node.children.length > 0
-      ) {
-        const firstChild = node.children[0]!;
-        if (firstChild.type === 'text' && typeof firstChild.value === 'string') {
-          const match = firstChild.value.match(/^:::(note|warning|tip)\s*\n?([\s\S]*?):::$/);
-          if (match) {
-            result.push({
-              type: 'html',
-              value: `<div class="chat-callout chat-callout-${match[1]}"><div class="chat-callout-title">${match[1]}</div>${(match[2] ?? '').trim()}</div>`,
-            });
+
+      // 1) GitHub-style alerts inside a blockquote: > [!NOTE]
+      if (node.type === 'blockquote' && node.children && node.children.length > 0) {
+        const firstPara = node.children[0]!;
+        const firstText = firstPara.children?.[0];
+        if (
+          firstPara.type === 'paragraph' &&
+          firstText &&
+          firstText.type === 'text' &&
+          typeof firstText.value === 'string'
+        ) {
+          const m = firstText.value.match(/^\[!(\w+)\][ \t]*(?:\r?\n)?/);
+          if (m) {
+            const type = normalizeCalloutType(m[1]!);
+            firstText.value = firstText.value.slice(m[0].length);
+            if (firstText.value === '') firstPara.children!.shift();
+            if (!firstPara.children || firstPara.children.length === 0) {
+              node.children!.shift();
+            }
+            out.push(makeCalloutNode(type, node.children!));
             continue;
           }
         }
       }
-      result.push(node);
+
+      // 2) Container syntax: :::note … :::
+      if (node.type === 'paragraph' && node.children && node.children.length > 0) {
+        const firstText = node.children[0]!;
+        if (firstText.type === 'text' && typeof firstText.value === 'string') {
+          const open = firstText.value.match(/^:::(\w+)[ \t]*(?:\r?\n)?/);
+          if (open) {
+            const type = normalizeCalloutType(open[1]!);
+            const last = node.children[node.children.length - 1]!;
+            const closesHere =
+              node.children.length >= 1 &&
+              last.type === 'text' &&
+              typeof last.value === 'string' &&
+              /\r?\n?:::[ \t]*$/.test(last.value);
+
+            if (closesHere) {
+              firstText.value = firstText.value.slice(open[0].length);
+              last.value = last.value!.replace(/\r?\n?:::[ \t]*$/, '');
+              const inner = node.children.filter(
+                (c) => !(c.type === 'text' && c.value === ''),
+              );
+              out.push(makeCalloutNode(type, [{ type: 'paragraph', children: inner }]));
+              continue;
+            }
+
+            // Multi-paragraph container: scan forward for a lone ``:::`` line.
+            let close = -1;
+            for (let j = i + 1; j < children.length; j++) {
+              const cand = children[j]!;
+              const ct = cand.children?.[0];
+              if (
+                cand.type === 'paragraph' &&
+                cand.children?.length === 1 &&
+                ct?.type === 'text' &&
+                typeof ct.value === 'string' &&
+                ct.value.trim() === ':::'
+              ) {
+                close = j;
+                break;
+              }
+            }
+            if (close !== -1) {
+              firstText.value = firstText.value.slice(open[0].length);
+              const body: MdNode[] = [];
+              if (firstText.value.trim() !== '') {
+                body.push(node);
+              } else if (node.children.length > 1) {
+                node.children.shift();
+                body.push(node);
+              }
+              for (let j = i + 1; j < close; j++) body.push(children[j]!);
+              out.push(makeCalloutNode(type, body));
+              i = close;
+              continue;
+            }
+          }
+        }
+      }
+
+      out.push(node);
     }
 
-    tree.children = result;
+    tree.children = out;
   };
 }
 
@@ -173,7 +283,7 @@ function extractTextContent(nodes?: Array<{ value?: string; children?: Array<{ v
  */
 function stripThinkTags(text: string): string {
   if (!text.includes('<think>')) return text;
-  return text.replace(/<think>[\s\S]*?<\/redacted_thinking>/gi, '').replace(/^\n+/, '');
+  return text.replace(/<think>[\s\S]*?<\/think>/gi, '').replace(/^\n+/, '');
 }
 
 export function Markdown({
@@ -306,7 +416,7 @@ export function Markdown({
           className={
             variant === 'article'
               ? 'my-5 space-y-2.5 pl-5 list-disc marker:text-muted-foreground text-foreground/90 [&_ul]:mt-2'
-              : 'list-disc list-inside space-y-1 my-2'
+              : 'list-disc pl-5 space-y-1 my-2'
           }
         >
           {children}
@@ -317,7 +427,7 @@ export function Markdown({
           className={
             variant === 'article'
               ? 'my-5 space-y-2.5 pl-5 list-decimal marker:text-muted-foreground text-foreground/90 [&_ol]:mt-2'
-              : 'list-decimal list-inside space-y-1 my-2'
+              : 'list-decimal pl-5 space-y-1 my-2'
           }
         >
           {children}
@@ -340,7 +450,7 @@ export function Markdown({
           className={
             variant === 'article'
               ? 'not-prose overflow-x-auto my-7 rounded-xl ring-1 ring-border/55 bg-surface/40 shadow-sm'
-              : 'overflow-x-auto my-3'
+              : 'overflow-x-auto my-3 rounded-lg ring-1 ring-border-subtle'
           }
         >
           <table

@@ -339,28 +339,71 @@
   margin-top: 0.85em;
 }
 
+/* Tight, predictable rhythm at the block edges. */
+.chat-prose > :first-child { margin-top: 0; }
+.chat-prose > :last-child { margin-bottom: 0; }
+
 .chat-prose h1,
 .chat-prose h2,
 .chat-prose h3,
-.chat-prose h4 {
+.chat-prose h4,
+.chat-prose h5,
+.chat-prose h6 {
   font-weight: 600;
-  letter-spacing: -0.01em;
+  letter-spacing: -0.011em;
   line-height: 1.3;
-  margin-top: 1.4em;
-  margin-bottom: 0.4em;
+  margin-top: 1.5em;
+  margin-bottom: 0.5em;
   color: rgb(var(--chat-text));
+  text-wrap: balance;
 }
-.chat-prose h1 { font-size: 1.5rem; }
-.chat-prose h2 { font-size: 1.25rem; }
+.chat-prose h1 {
+  font-size: 1.5rem;
+  padding-bottom: 0.3em;
+  border-bottom: 1px solid rgb(var(--chat-border-subtle));
+}
+.chat-prose h2 {
+  font-size: 1.25rem;
+  padding-bottom: 0.25em;
+  border-bottom: 1px solid rgb(var(--chat-border-subtle));
+}
 .chat-prose h3 { font-size: 1.1rem; }
 .chat-prose h4 { font-size: 1rem; }
+.chat-prose h5 { font-size: 0.9375rem; }
+.chat-prose h6 { font-size: 0.875rem; color: rgb(var(--chat-text-secondary)); }
 
 .chat-prose p {
   margin: 0;
 }
 
-.chat-prose strong { font-weight: 600; color: rgb(var(--chat-text)); }
+.chat-prose strong { font-weight: 650; color: rgb(var(--chat-text)); }
 .chat-prose em { font-style: italic; }
+.chat-prose del { color: rgb(var(--chat-text-tertiary)); text-decoration-thickness: 1px; }
+.chat-prose mark {
+  background: rgb(var(--chat-accent) / 0.18);
+  color: inherit;
+  padding: 0 0.2em;
+  border-radius: 3px;
+}
+.chat-prose sub, .chat-prose sup { font-size: 0.75em; }
+.chat-prose abbr[title] {
+  text-decoration: underline dotted;
+  text-underline-offset: 2px;
+  cursor: help;
+}
+.chat-prose kbd {
+  display: inline-block;
+  font-family: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace;
+  font-size: 0.78em;
+  line-height: 1.4;
+  padding: 1px 6px;
+  color: rgb(var(--chat-text));
+  background: rgb(var(--chat-surface-sunken));
+  border: 1px solid rgb(var(--chat-border));
+  border-bottom-width: 2px;
+  border-radius: 5px;
+  white-space: nowrap;
+}
 .chat-prose a {
   color: rgb(var(--chat-accent));
   text-decoration: underline;
@@ -379,6 +422,8 @@
 }
 .chat-prose ul { list-style-type: disc; }
 .chat-prose ol { list-style-type: decimal; }
+.chat-prose ul ul { list-style-type: circle; }
+.chat-prose ul ul ul { list-style-type: square; }
 .chat-prose li { margin: 0.2em 0; padding-left: 0.25em; }
 .chat-prose li::marker { color: rgb(var(--chat-text-tertiary)); }
 
@@ -387,13 +432,33 @@
   margin-top: 0.25em;
 }
 
+/* GFM task lists — drop the bullet, align the checkbox with the text. */
+.chat-prose li:has(> input[type='checkbox']) {
+  list-style: none;
+  margin-left: -1.25em;
+}
+.chat-prose li > input[type='checkbox'] {
+  margin-right: 0.55em;
+  vertical-align: middle;
+  transform: translateY(-1px);
+}
+.chat-prose li:has(> input[type='checkbox']:checked) {
+  color: rgb(var(--chat-text-tertiary));
+}
+
+/* Definition lists */
+.chat-prose dt { font-weight: 600; color: rgb(var(--chat-text)); }
+.chat-prose dd { margin: 0.2em 0 0.6em 1.25em; color: rgb(var(--chat-text-secondary)); }
+
 .chat-prose blockquote {
-  border-left: 3px solid rgb(var(--chat-accent) / 0.4);
-  padding: 4px 16px;
+  border-left: 3px solid rgb(var(--chat-accent) / 0.5);
+  border-radius: 0 var(--r-sm) var(--r-sm) 0;
+  background: rgb(var(--chat-surface-sunken) / 0.55);
+  padding: 8px 16px;
   margin: 0;
   color: rgb(var(--chat-text-secondary));
-  font-style: italic;
 }
+.chat-prose blockquote > * + * { margin-top: 0.6em; }
 
 .chat-prose hr {
   border: 0;
@@ -420,25 +485,39 @@
   border-collapse: collapse;
   font-size: 0.9em;
   font-variant-numeric: tabular-nums;
-  display: block;
-  overflow-x: auto;
-  white-space: nowrap;
 }
 
 .chat-prose table thead {
-  background: rgb(var(--chat-surface-sunken));
+  background: rgb(var(--chat-surface-sunken) / 0.85);
 }
 
 .chat-prose table th,
 .chat-prose table td {
-  padding: 8px 12px;
-  border: 1px solid rgb(var(--chat-border-subtle));
+  padding: 8px 14px;
+  border-bottom: 1px solid rgb(var(--chat-border-subtle));
   text-align: left;
+  vertical-align: top;
 }
 
 .chat-prose table th {
   font-weight: 600;
-  color: rgb(var(--chat-text));
+  font-size: 0.82em;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: rgb(var(--chat-text-secondary));
+}
+
+.chat-prose table tbody tr {
+  transition: background-color var(--chat-duration) var(--chat-ease);
+}
+.chat-prose table tbody tr:nth-child(even) {
+  background: rgb(var(--chat-surface-sunken) / 0.35);
+}
+.chat-prose table tbody tr:hover {
+  background: rgb(var(--chat-accent) / 0.05);
+}
+.chat-prose table tbody tr:last-child td {
+  border-bottom: 0;
 }
 
 .chat-prose img {
@@ -453,34 +532,79 @@
   padding: 0.25em 0;
 }
 
-/* Callout / admonition styles (kept compatible with existing remark plugin) */
+/* ─────────────────────────────────────────────────────────────
+   Callouts / admonitions (GitHub alerts + ::: containers)
+   Theme-aware accent via per-type --cal triplet; icon via mask.
+   ───────────────────────────────────────────────────────────── */
 .chat-callout {
-  border-left: 3px solid;
-  border-radius: var(--r-md);
-  padding: 12px 16px;
+  --cal: var(--chat-accent);
+  display: flow-root;
+  border-left: 3px solid rgb(var(--cal));
+  border-radius: 0 var(--r-md) var(--r-md) 0;
+  padding: 10px 16px;
   margin: 12px 0;
+  background: rgb(var(--cal) / 0.07);
 }
-
-.chat-callout-note {
-  border-color: rgb(var(--chat-accent));
-  background: rgb(var(--chat-accent) / 0.06);
-}
-
-.chat-callout-warning {
-  border-color: #e09040;
-  background: rgba(224, 144, 64, 0.06);
-}
-
-.chat-callout-tip {
-  border-color: #40a060;
-  background: rgba(64, 160, 96, 0.06);
-}
+.chat-callout > * + * { margin-top: 0.55em; }
+.chat-callout > :first-child { margin-top: 0; }
+.chat-callout > :last-child { margin-bottom: 0; }
 
 .chat-callout-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
   font-weight: 600;
   font-size: 0.8125rem;
-  margin-bottom: 4px;
-  text-transform: capitalize;
+  letter-spacing: 0.01em;
+  color: rgb(var(--cal));
+  line-height: 1.2;
+}
+.chat-callout-title::before {
+  content: '';
+  width: 15px;
+  height: 15px;
+  flex: none;
+  background: rgb(var(--cal));
+  -webkit-mask: var(--cal-icon) center / contain no-repeat;
+  mask: var(--cal-icon) center / contain no-repeat;
+}
+
+/* Per-type accent (light) */
+.chat-callout-note,
+.chat-callout-info { --cal: var(--chat-accent); }
+.chat-callout-tip,
+.chat-callout-success { --cal: 22 163 74; }      /* green-600 */
+.chat-callout-warning,
+.chat-callout-caution { --cal: 217 119 6; }       /* amber-600 */
+.chat-callout-danger { --cal: 220 38 38; }        /* red-600 */
+.chat-callout-important { --cal: 147 51 234; }    /* purple-600 */
+
+/* Per-type accent (dark — lift for contrast on the ink surface) */
+html.dark .chat-callout-tip,
+html.dark .chat-callout-success { --cal: 74 222 128; }   /* green-400 */
+html.dark .chat-callout-warning,
+html.dark .chat-callout-caution { --cal: 251 191 36; }   /* amber-400 */
+html.dark .chat-callout-danger { --cal: 248 113 113; }   /* red-400 */
+html.dark .chat-callout-important { --cal: 192 132 252; }/* purple-400 */
+
+/* Per-type icons (Lucide, encoded as mask data URIs) */
+.chat-callout-note,
+.chat-callout-info,
+.chat-callout-important {
+  --cal-icon: url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2024%2024'%20fill='none'%20stroke='%23000'%20stroke-width='2.2'%20stroke-linecap='round'%20stroke-linejoin='round'%3E%3Ccircle%20cx='12'%20cy='12'%20r='10'/%3E%3Cpath%20d='M12%2016v-4'/%3E%3Cpath%20d='M12%208h.01'/%3E%3C/svg%3E");
+}
+.chat-callout-tip {
+  --cal-icon: url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2024%2024'%20fill='none'%20stroke='%23000'%20stroke-width='2.2'%20stroke-linecap='round'%20stroke-linejoin='round'%3E%3Cpath%20d='M9%2018h6'/%3E%3Cpath%20d='M10%2022h4'/%3E%3Cpath%20d='M15.09%2014c.18-.98.65-1.74%201.41-2.5A4.65%204.65%200%200%200%2018%208%206%206%200%200%200%206%208c0%201%20.23%202.23%201.5%203.5.76.76%201.23%201.52%201.41%202.5'/%3E%3C/svg%3E");
+}
+.chat-callout-success {
+  --cal-icon: url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2024%2024'%20fill='none'%20stroke='%23000'%20stroke-width='2.2'%20stroke-linecap='round'%20stroke-linejoin='round'%3E%3Cpath%20d='M21.801%2010A10%2010%200%201%201%2017%203.335'/%3E%3Cpath%20d='m9%2011%203%203L22%204'/%3E%3C/svg%3E");
+}
+.chat-callout-warning,
+.chat-callout-caution {
+  --cal-icon: url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2024%2024'%20fill='none'%20stroke='%23000'%20stroke-width='2.2'%20stroke-linecap='round'%20stroke-linejoin='round'%3E%3Cpath%20d='m21.73%2018-8-14a2%202%200%200%200-3.48%200l-8%2014A2%202%200%200%200%204%2021h16a2%202%200%200%200%201.73-3'/%3E%3Cpath%20d='M12%209v4'/%3E%3Cpath%20d='M12%2017h.01'/%3E%3C/svg%3E");
+}
+.chat-callout-danger {
+  --cal-icon: url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2024%2024'%20fill='none'%20stroke='%23000'%20stroke-width='2.2'%20stroke-linecap='round'%20stroke-linejoin='round'%3E%3Cpath%20d='M2.586%2016.726A2%202%200%200%201%202%2015.312V8.688a2%202%200%200%201%20.586-1.414l4.688-4.688A2%202%200%200%201%208.688%202h6.624a2%202%200%200%201%201.414.586l4.688%204.688A2%202%200%200%201%2022%208.688v6.624a2%202%200%200%201-.586%201.414l-4.688%204.688a2%202%200%200%201-1.414.586H8.688a2%202%200%200%201-1.414-.586z'/%3E%3Cpath%20d='M12%208v4'/%3E%3Cpath%20d='M12%2016h.01'/%3E%3C/svg%3E");
 }
 
 /* KaTeX overrides for chat */
