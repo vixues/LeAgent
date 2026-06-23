@@ -87,6 +87,7 @@ function walkPatchFileRef(
   node: GenUiNode | undefined,
   fileId: string,
   dimCaption: string | undefined,
+  dims?: { width?: unknown; height?: unknown },
 ): void {
   if (!node) return;
   if (MEDIA_KINDS.has(node.kind as GenUiMediaKind)) {
@@ -94,9 +95,17 @@ function walkPatchFileRef(
     props.fileId = fileId;
     props.src = `/api/v1/files/${fileId}/preview`;
     if (dimCaption) props.caption = dimCaption;
+    const w = typeof dims?.width === 'number' ? dims.width : null;
+    const h = typeof dims?.height === 'number' ? dims.height : null;
+    if (w && h) {
+      props.aspect = `${w}:${h}`;
+      props.width = w;
+      props.height = h;
+      props.fit = props.fit ?? 'contain';
+    }
     node.props = props;
   }
-  for (const child of node.children || []) walkPatchFileRef(child, fileId, dimCaption);
+  for (const child of node.children || []) walkPatchFileRef(child, fileId, dimCaption, dims);
 }
 
 /** Align every media leaf in a GenUI tree with the canonical managed ``file_id``. */
@@ -109,7 +118,7 @@ export function patchAssetTreeFileRef(
   const w = typeof dims?.width === 'number' ? dims.width : null;
   const h = typeof dims?.height === 'number' ? dims.height : null;
   const dimCaption = w && h ? `${w}\u00d7${h}` : undefined;
-  walkPatchFileRef(cloned.root, fileId.trim(), dimCaption);
+  walkPatchFileRef(cloned.root, fileId.trim(), dimCaption, dims);
   return cloned;
 }
 
@@ -136,6 +145,19 @@ export function buildAssetTreeFromRunState(
   const h = typeof md.height === 'number' ? md.height : null;
   const caption = media.caption || (w && h ? `${w}\u00d7${h}` : undefined);
   const title = label?.trim() || nodeId;
+  const mediaProps: Record<string, unknown> = {
+    src: media.src,
+    fileId: media.fileId,
+    caption,
+    rounded: true,
+    maxHeight: 320,
+    fit: 'contain',
+  };
+  if (w && h) {
+    mediaProps.aspect = `${w}:${h}`;
+    mediaProps.width = w;
+    mediaProps.height = h;
+  }
   return {
     schemaVersion: '1',
     root: {
@@ -146,13 +168,7 @@ export function buildAssetTreeFromRunState(
         {
           nodeId: `asset-run-${nodeId}-media`,
           kind: media.kind,
-          props: {
-            src: media.src,
-            fileId: media.fileId,
-            caption,
-            rounded: true,
-            maxHeight: 320,
-          },
+          props: mediaProps,
         },
       ],
     },

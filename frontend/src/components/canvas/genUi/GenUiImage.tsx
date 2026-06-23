@@ -20,6 +20,21 @@ const FIT_MAP: Record<string, string> = {
   fill: 'object-fill',
 };
 
+/** CSS aspect-ratio value from a ``"W:H"`` prop or explicit width/height numbers. */
+function resolveAspectRatio(
+  aspect: unknown,
+  width: unknown,
+  height: unknown,
+): string | undefined {
+  if (typeof aspect === 'string' && aspect.trim()) {
+    return aspect.trim().replace(':', ' / ');
+  }
+  const w = typeof width === 'number' && width > 0 ? width : null;
+  const h = typeof height === 'number' && height > 0 ? height : null;
+  if (w && h) return `${w} / ${h}`;
+  return undefined;
+}
+
 const SHADOW_MAP: Record<string, string> = {
   none: '',
   sm: 'shadow-sm',
@@ -50,12 +65,15 @@ export function GenUiImage({ node }: { node: GenUiNode }) {
   }, [blobUrl]);
 
   const maxH = p.maxHeight ? `${p.maxHeight as number}px` : undefined;
-  const fitClass = FIT_MAP[(p.fit as string) || ''] || 'object-cover';
+  const fit = ((p.fit as string) || 'contain').trim();
+  const fitClass = FIT_MAP[fit] || 'object-contain';
+  const aspectRatio = resolveAspectRatio(p.aspect, p.width, p.height);
+  const aspectStyle = aspectRatio ? ({ aspectRatio } as CSSProperties) : undefined;
+  const useCoverLayout = fit === 'cover' || fit === 'fill';
+  const imgSizeClass = useCoverLayout
+    ? 'w-full max-h-[min(70vh,560px)]'
+    : 'mx-auto block max-w-full w-auto h-auto max-h-[min(70vh,560px)]';
   const shadowClass = SHADOW_MAP[(p.shadow as string) || 'none'] || '';
-  const aspectStyle =
-    typeof p.aspect === 'string' && p.aspect.trim()
-      ? ({ aspectRatio: p.aspect.trim().replace(':', ' / ') } as CSSProperties)
-      : undefined;
   const priority = b(p.priority);
   const rounded = b(p.rounded);
   const altText = s(p.alt) || s(p.caption) || 'image';
@@ -184,13 +202,13 @@ export function GenUiImage({ node }: { node: GenUiNode }) {
       src={displaySrc}
       alt={altText}
       className={cn(
-        'w-full max-h-[min(70vh,560px)]',
+        imgSizeClass,
         fitClass,
         rounded && 'rounded-xl',
         shadowClass,
         useLightbox && 'cursor-zoom-in',
       )}
-      style={{ ...aspectStyle, maxHeight: maxH }}
+      style={{ ...(useCoverLayout ? aspectStyle : undefined), maxHeight: maxH }}
       loading={priority ? 'eager' : 'lazy'}
       decoding={priority ? 'auto' : 'async'}
       onError={() => setFailed(true)}
@@ -202,7 +220,7 @@ export function GenUiImage({ node }: { node: GenUiNode }) {
       {useLightbox ? (
         <button
           type="button"
-          className="block w-full text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/40 rounded-xl"
+          className="flex w-full justify-center text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/40 rounded-xl"
           onClick={() => setLightboxOpen(true)}
         >
           {img}
