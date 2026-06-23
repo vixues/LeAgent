@@ -149,6 +149,11 @@ class MediaRef:
         if comp == "Image":
             props.setdefault("rounded", True)
             props.setdefault("maxHeight", 320)
+            props.setdefault("fit", "contain")
+            if self.width and self.height:
+                props["aspect"] = f"{self.width}:{self.height}"
+                props["width"] = self.width
+                props["height"] = self.height
         return {"kind": comp, "props": props}
 
 
