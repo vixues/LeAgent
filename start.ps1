@@ -180,8 +180,13 @@ function Print-Banner {
     }
     Info "version  $(Get-LeAgentVersion)"
     Info "platform windows   mode $Mode"
-    Info "backend  http://${HostBind}:${BackendPort}"
-    Info "frontend http://localhost:${FrontendPort}"
+    if ($Mode -eq 'prod') {
+        Info "app      http://${HostBind}:${BackendPort}  (API + static UI)"
+    }
+    else {
+        Info "backend  http://${HostBind}:${BackendPort}"
+        Info "frontend http://localhost:${FrontendPort}"
+    }
     Write-Host ''
 }
 
@@ -615,6 +620,9 @@ function Start-BackendService {
     $uvQ = $uv -replace '/', '\\'
     $bdQ = $BackendDir -replace '/', '\\'
     if ($Mode -eq 'prod') {
+        Build-Frontend
+        $dist = (Join-Path $ScriptDir 'frontend\dist') -replace '\\', '/'
+        $env:LEAGENT_FRONTEND_DIST = $dist
         $inner = "`"$uvQ`" run --directory `"$bdQ`" leagent app start --host $HostBind --port $BackendPort --workers 4 --production"
     }
     else {
@@ -625,23 +633,21 @@ function Start-BackendService {
 }
 
 function Start-FrontendService {
+    if ($Mode -eq 'prod') {
+        Info 'Production UI is served by the backend (LEAGENT_FRONTEND_DIST)'
+        Info "Open http://${HostBind}:${BackendPort}  — not :${FrontendPort}"
+        return
+    }
     Kill-Port ([int]$FrontendPort)
     $fe = (Join-Path $ScriptDir 'frontend') -replace '/', '\\'
     $nodeDir = (Split-Path $script:NODE_BIN -Parent) -replace '/', '\\'
     $logPath = (Join-Path $LogDir 'frontend.log') -replace '\\', '/'
-    if ($Mode -eq 'prod') {
-        Build-Frontend
-        Step 'Starting frontend (static serve)'
-        $inner = "cd /d `"$fe`" && set PATH=$nodeDir;%PATH% && npx --yes serve -s dist -l $FrontendPort"
-    }
-    else {
-        Install-FrontendDeps
-        Step 'Starting frontend (vite dev)'
-        $viteApi = if ($env:VITE_API_PROXY_TARGET) { $env:VITE_API_PROXY_TARGET } else { "http://127.0.0.1:$BackendPort" }
-        $viteWs = if ($env:VITE_WS_PROXY_TARGET) { $env:VITE_WS_PROXY_TARGET } else { "ws://127.0.0.1:$BackendPort" }
-        $nodeExe = $script:NODE_BIN -replace '/', '\\'
-        $inner = "cd /d `"$fe`" && set VITE_API_PROXY_TARGET=$viteApi&& set VITE_WS_PROXY_TARGET=$viteWs&& set PATH=$nodeDir;%PATH% && `"$nodeExe`" .\node_modules\vite\bin\vite.js --port $FrontendPort --host"
-    }
+    Install-FrontendDeps
+    Step 'Starting frontend (vite dev)'
+    $viteApi = if ($env:VITE_API_PROXY_TARGET) { $env:VITE_API_PROXY_TARGET } else { "http://127.0.0.1:$BackendPort" }
+    $viteWs = if ($env:VITE_WS_PROXY_TARGET) { $env:VITE_WS_PROXY_TARGET } else { "ws://127.0.0.1:$BackendPort" }
+    $nodeExe = $script:NODE_BIN -replace '/', '\\'
+    $inner = "cd /d `"$fe`" && set VITE_API_PROXY_TARGET=$viteApi&& set VITE_WS_PROXY_TARGET=$viteWs&& set PATH=$nodeDir;%PATH% && `"$nodeExe`" .\node_modules\vite\bin\vite.js --port $FrontendPort --host"
     Start-LeAgentBackgroundCmd 'Frontend' 'frontend' "$inner >> `"$logPath`" 2>&1"
 }
 
@@ -755,6 +761,37 @@ function Stop-LeAgentChildren {
     Success 'Shutdown complete'
 }
 
+function Stop-LeAgent {
+    # Kill a running supervisor (from the lock file) so its log-tail jobs and
+    # streaming are torn down, then free the ports. Mirrors stop_leagent in
+    # start.sh — without this, a `stop` from another shell leaves the streaming
+    # supervisor (and its tail jobs) alive.
+    if (Test-Path $LockFile) {
+        $lockPid = (Get-Content $LockFile -ErrorAction SilentlyContinue | Select-Object -First 1)
+        if ($lockPid) {
+            $lockPid = "$lockPid".Trim()
+            $proc = if ($lockPid -match '^\d+$') { Get-Process -Id ([int]$lockPid) -ErrorAction SilentlyContinue } else { $null }
+            if ($proc -and ([int]$lockPid -ne $PID)) {
+                Info "Stopping start.ps1 supervisor (PID $lockPid)"
+                try { Stop-Process -Id ([int]$lockPid) -ErrorAction SilentlyContinue } catch { }
+                $waited = 0
+                while ($waited -lt $ShutdownGraceSec) {
+                    if (-not (Get-Process -Id ([int]$lockPid) -ErrorAction SilentlyContinue)) { break }
+                    Start-Sleep -Seconds 1
+                    $waited++
+                }
+                if (Get-Process -Id ([int]$lockPid) -ErrorAction SilentlyContinue) {
+                    try { Stop-Process -Id ([int]$lockPid) -Force -ErrorAction SilentlyContinue } catch { }
+                }
+            }
+        }
+        Remove-Item $LockFile -Force -ErrorAction SilentlyContinue
+    }
+    Kill-Port ([int]$BackendPort)
+    Kill-Port ([int]$FrontendPort)
+    Success "Stopped LeAgent processes on ports $BackendPort, $FrontendPort"
+}
+
 function Register-InterruptHandler {
     # Set-StrictMode Latest treats [Console]::CancelKeyPress as a missing property
     # (it is a .NET event). Register via reflection so Ctrl+C shutdown works on Windows.
@@ -849,12 +886,7 @@ switch ($Command) {
         }
     }
     'stop' {
-        Kill-Port ([int]$BackendPort)
-        Kill-Port ([int]$FrontendPort)
-        if (Test-Path $LockFile) {
-            Remove-Item $LockFile -Force -ErrorAction SilentlyContinue
-        }
-        Success "Stopped LeAgent processes on ports $BackendPort, $FrontendPort"
+        Stop-LeAgent
     }
     'backend' {
         Print-Banner

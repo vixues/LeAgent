@@ -35,6 +35,7 @@ export PYTHONIOENCODING="${PYTHONIOENCODING:-utf-8}"
 
 CHILD_PIDS=()
 SPAWNED_LOG_FILES=()
+TAIL_PID=""
 
 # Predictable file permissions in production.
 umask 022
@@ -103,8 +104,12 @@ BANNER
     printf "${NC}"
     info "version  ${BOLD}$(_leagent_version)${NC}"
     info "platform ${BOLD}${PLATFORM}${NC}   mode ${BOLD}${MODE}${NC}"
-    info "backend  ${DIM}http://${HOST}:${BACKEND_PORT}${NC}"
-    info "frontend ${DIM}http://localhost:${FRONTEND_PORT}${NC}"
+    if [ "$MODE" = "prod" ]; then
+        info "app      ${DIM}http://${HOST}:${BACKEND_PORT}${NC}  ${DIM}(API + static UI)${NC}"
+    else
+        info "backend  ${DIM}http://${HOST}:${BACKEND_PORT}${NC}"
+        info "frontend ${DIM}http://localhost:${FRONTEND_PORT}${NC}"
+    fi
     echo ""
 }
 
@@ -176,6 +181,7 @@ release_lock() {
 }
 
 stop_leagent() {
+    _kill_stray_log_tails
     _kill_port "$BACKEND_PORT"
     _kill_port "$FRONTEND_PORT"
     if [ -f "$LOCK_FILE" ]; then
@@ -233,6 +239,19 @@ _kill_port() {
 }
 
 _ensure_log_dir() { mkdir -p "$LOG_DIR"; }
+
+# Reap orphaned `tail -F` processes left following our logs by a previous run.
+# These cause duplicated output and "file inaccessible/appeared" noise when the
+# next run rotates the log files.
+_kill_stray_log_tails() {
+    command -v pgrep >/dev/null 2>&1 || return 0
+    local pids
+    pids="$(pgrep -f "tail .*${LOG_DIR}/" 2>/dev/null || true)"
+    # Never kill the tail belonging to this process.
+    [ -n "${TAIL_PID:-}" ] && pids="$(echo "$pids" | grep -v "^${TAIL_PID}\$" || true)"
+    [ -n "$pids" ] && echo "$pids" | xargs kill 2>/dev/null || true
+    return 0
+}
 
 # ── Log rotation ────────────────────────────────────────────────
 _rotate_log() {
@@ -583,7 +602,9 @@ _stream_logs() {
         return
     fi
     local backlog="${LEAGENT_LOG_BACKLOG:-200}"
-    tail -n "$backlog" -F "${SPAWNED_LOG_FILES[@]}"
+    tail -n "$backlog" -F "${SPAWNED_LOG_FILES[@]}" &
+    TAIL_PID=$!
+    wait "$TAIL_PID"
 }
 
 _wait_or_stream() {
@@ -601,12 +622,15 @@ _wait_or_stream() {
 
 # ── Service start ───────────────────────────────────────────────
 start_backend() {
+    _kill_stray_log_tails
     ensure_backend_sync
     ensure_playwright_browsers
     run_database_migrations
     _kill_port "$BACKEND_PORT"
     step "Starting backend"
     if [ "$MODE" = "prod" ]; then
+        build_frontend
+        export LEAGENT_FRONTEND_DIST="$SCRIPT_DIR/frontend/dist"
         _spawn "Backend (prod)" "monolith" \
             uv run --directory "$BACKEND_DIR" leagent app start \
                 --host "$HOST" --port "$BACKEND_PORT" --workers 4 --production
@@ -618,23 +642,21 @@ start_backend() {
 }
 
 start_frontend() {
-    _kill_port "$FRONTEND_PORT"
+    _kill_stray_log_tails
     if [ "$MODE" = "prod" ]; then
-        build_frontend
-        step "Starting frontend (static serve)"
-        _spawn "Frontend (serve)" "frontend" \
-            bash -c 'cd "$1" && PATH="$(dirname "$2"):$PATH" exec npx --yes serve -s dist -l "$3"' \
-                _ "$SCRIPT_DIR/frontend" "$NODE_BIN" "$FRONTEND_PORT"
-    else
-        install_frontend_deps
-        step "Starting frontend (vite dev)"
-        _spawn "Frontend (vite)" "frontend" \
-            bash -c 'cd "$1" && \
-                export VITE_API_PROXY_TARGET="${VITE_API_PROXY_TARGET:-http://127.0.0.1:$4}" && \
-                export VITE_WS_PROXY_TARGET="${VITE_WS_PROXY_TARGET:-ws://127.0.0.1:$4}" && \
-                exec "$2" ./node_modules/vite/bin/vite.js --port "$3" --host' \
-                _ "$SCRIPT_DIR/frontend" "$NODE_BIN" "$FRONTEND_PORT" "$BACKEND_PORT"
+        info "Production UI is served by the backend (LEAGENT_FRONTEND_DIST)"
+        info "Open ${BOLD}http://${HOST}:${BACKEND_PORT}${NC}  — not :${FRONTEND_PORT}"
+        return 0
     fi
+    _kill_port "$FRONTEND_PORT"
+    install_frontend_deps
+    step "Starting frontend (vite dev)"
+    _spawn "Frontend (vite)" "frontend" \
+        bash -c 'cd "$1" && \
+            export VITE_API_PROXY_TARGET="${VITE_API_PROXY_TARGET:-http://127.0.0.1:$4}" && \
+            export VITE_WS_PROXY_TARGET="${VITE_WS_PROXY_TARGET:-ws://127.0.0.1:$4}" && \
+            exec "$2" ./node_modules/vite/bin/vite.js --port "$3" --host' \
+            _ "$SCRIPT_DIR/frontend" "$NODE_BIN" "$FRONTEND_PORT" "$BACKEND_PORT"
 }
 
 wait_for_backend_ready() {
@@ -706,6 +728,10 @@ check_system() {
 cleanup() {
     printf "\n"
     info "Shutting down (grace period: ${SHUTDOWN_GRACE_SEC}s)..."
+    if [ -n "${TAIL_PID:-}" ]; then
+        kill "$TAIL_PID" 2>/dev/null || true
+        TAIL_PID=""
+    fi
     for pid in "${CHILD_PIDS[@]}"; do
         [ -z "$pid" ] && continue
         kill -TERM -- -"$pid" 2>/dev/null || kill -TERM "$pid" 2>/dev/null || true
