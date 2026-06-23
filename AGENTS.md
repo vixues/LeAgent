@@ -303,7 +303,7 @@ alembic downgrade -1
 
 ## Desktop (`desktop/`)
 
-Electron 33 shell (main process **ESM**: `"type": "module"`, `tsc` → `NodeNext`): splash → `InstallationManager` → `BackendServer` (`python -m leagent.server` on `:7860`) → React SPA.
+Electron 42 shell (main process **ESM**: `"type": "module"`, `tsc` → `NodeNext`): splash → `InstallationManager` → `BackendServer` (`python -m leagent.server` on `:7860`) → React SPA.
 
 | Package | Version |
 |---------|---------|
