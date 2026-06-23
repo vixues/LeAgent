@@ -255,6 +255,31 @@ async def _load_skills() -> None:
         logger.warning("Skills loading skipped (non-fatal)", exc_info=True)
 
 
+from starlette.staticfiles import StaticFiles
+
+
+class _SPAStaticFiles(StaticFiles):
+    """``StaticFiles`` that falls back to ``index.html`` for unknown paths.
+
+    A single-page app uses client-side routing, so a hard refresh / deep link
+    on a route like ``/chat`` or ``/workflows/123`` has no matching file on
+    disk. Plain ``StaticFiles`` would return 404; here we serve ``index.html``
+    instead and let the React router resolve the route. Real missing assets
+    (paths with a file extension, e.g. a stale hashed bundle) still 404 so the
+    browser surfaces the error rather than receiving HTML for a ``.js`` request.
+    """
+
+    async def get_response(self, path: str, scope):  # type: ignore[no-untyped-def]
+        from starlette.exceptions import HTTPException as StarletteHTTPException
+
+        try:
+            return await super().get_response(path, scope)
+        except StarletteHTTPException as exc:
+            if exc.status_code == 404 and not Path(path).suffix:
+                return await super().get_response("index.html", scope)
+            raise
+
+
 def mount_frontend_spa_if_configured(app: FastAPI) -> None:
     """Serve the built SPA from ``/`` **after** all API routers are registered.
 
@@ -274,9 +299,8 @@ def mount_frontend_spa_if_configured(app: FastAPI) -> None:
     if not dist.is_dir():
         logger.warning("LEAGENT_FRONTEND_DIST is not a directory: %s", dist)
         return
-    from starlette.staticfiles import StaticFiles
 
-    app.mount("/", StaticFiles(directory=str(dist), html=True), name="spa")
+    app.mount("/", _SPAStaticFiles(directory=str(dist), html=True), name="spa")
     app.state.frontend_spa_mounted = True
     logger.info("Mounted frontend static files from %s", dist)
 
