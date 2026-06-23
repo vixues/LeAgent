@@ -33,6 +33,12 @@
     "copied": "Copied",
     "close": "Close",
     "closeAll": "Close panel",
+    "window": {
+      "minimize": "Minimize",
+      "maximize": "Maximize",
+      "restore": "Restore",
+      "close": "Close"
+    },
     "open": "Open",
     "more": "More",
     "less": "Less",

@@ -14,9 +14,22 @@ interface ImportMeta {
   readonly env: ImportMetaEnv;
 }
 
+/** How window controls are rendered in the desktop shell. */
+type LeAgentTitleBarStyle = 'mac' | 'overlay' | 'custom';
+
 /** Exposed by ``desktop/electron/src/preload.ts`` when running in the Electron shell. */
 interface LeAgentDesktopBridge {
   readonly platform: NodeJS.Platform;
+
+  window: {
+    readonly style: LeAgentTitleBarStyle;
+    minimize: () => Promise<void>;
+    maximizeToggle: () => Promise<boolean>;
+    close: () => Promise<void>;
+    isMaximized: () => Promise<boolean>;
+    setOverlay: (options: { color?: string; symbolColor?: string }) => Promise<void>;
+    onMaximizeChanged: (cb: (maximized: boolean) => void) => () => void;
+  };
 
   runtime: {
     onProgress: (cb: (data: { percent: number; detail: string }) => void) => () => void;

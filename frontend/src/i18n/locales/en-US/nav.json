@@ -33,6 +33,7 @@
     "expandRail": "Expand sidebar",
     "collapseRail": "Collapse sidebar",
     "openMobileMenu": "Open navigation menu",
-    "openAiAssistant": "Open AI assistant"
+    "openAiAssistant": "Open AI assistant",
+    "skipToContent": "Skip to main content"
   }
 }

@@ -33,6 +33,12 @@
     "copied": "已复制",
     "close": "关闭",
     "closeAll": "关闭面板",
+    "window": {
+      "minimize": "最小化",
+      "maximize": "最大化",
+      "restore": "向下还原",
+      "close": "关闭"
+    },
     "open": "打开",
     "more": "更多",
     "less": "收起",

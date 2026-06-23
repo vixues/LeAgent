@@ -33,6 +33,7 @@
     "expandRail": "展开侧栏",
     "collapseRail": "收起侧栏",
     "openMobileMenu": "打开导航菜单",
-    "openAiAssistant": "打开 AI 助手"
+    "openAiAssistant": "打开 AI 助手",
+    "skipToContent": "跳转到主内容"
   }
 }
