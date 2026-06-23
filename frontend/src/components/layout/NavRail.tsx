@@ -48,6 +48,13 @@ interface NavLinkProps {
   active: boolean;
 }
 
+/**
+ * Single-structure nav row that MORPHS between expanded and collapsed instead of
+ * swapping DOM. The icon is fixed and stays anchored on the left; the label and
+ * badge fade + slide while the rail width animates, so every size change is
+ * continuous. `min-w-0 truncate` lets the label shrink to zero smoothly as the
+ * rail narrows, leaving an icon-only row at the collapsed width.
+ */
 const NavLink = memo(function NavLink({ item, collapsed, active }: NavLinkProps) {
   const Icon = item.icon;
 
@@ -60,34 +67,38 @@ const NavLink = memo(function NavLink({ item, collapsed, active }: NavLinkProps)
       onMouseEnter={() => prefetchRoute(item.href)}
       onFocus={() => prefetchRoute(item.href)}
       className={cn(
-        'flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors duration-150',
+        'flex items-center gap-3 rounded-lg px-3 py-2.5 transition-colors duration-150',
         active
           ? 'bg-primary-100 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300'
-          : 'text-muted-foreground hover:bg-surface-sunken dark:hover:bg-surface-elevated hover:text-foreground',
-        collapsed && 'justify-center px-2'
+          : 'text-muted-foreground hover:bg-surface-sunken dark:hover:bg-surface-elevated hover:text-foreground'
       )}
     >
       <span className="flex-shrink-0">
-        <Icon className="w-5 h-5" />
+        <Icon className="h-5 w-5" />
       </span>
-      {!collapsed && (
-        <>
-          <span className="flex-1 min-w-0 text-sm font-medium truncate whitespace-nowrap">
-            {item.label}
-          </span>
-          {item.badge !== undefined && item.badge > 0 && (
-            <span
-              className={cn(
-                'flex-shrink-0 px-1.5 py-0.5 text-xs font-medium rounded-full whitespace-nowrap',
-                active
-                  ? 'bg-primary-200 dark:bg-primary-800 text-primary-800 dark:text-primary-200'
-                  : 'bg-border-subtle dark:bg-surface-elevated text-muted-foreground'
-              )}
-            >
-              {item.badge}
-            </span>
+      <span
+        aria-hidden={collapsed}
+        className={cn(
+          'min-w-0 flex-1 truncate whitespace-nowrap text-sm font-medium',
+          'transition-[opacity,transform] duration-200 ease-out',
+          collapsed ? 'pointer-events-none -translate-x-1 opacity-0' : 'translate-x-0 opacity-100'
+        )}
+      >
+        {item.label}
+      </span>
+      {item.badge !== undefined && item.badge > 0 && (
+        <span
+          className={cn(
+            'flex-shrink-0 rounded-full px-1.5 py-0.5 text-xs font-medium whitespace-nowrap',
+            'transition-opacity duration-200 ease-out',
+            collapsed ? 'pointer-events-none opacity-0' : 'opacity-100',
+            active
+              ? 'bg-primary-200 dark:bg-primary-800 text-primary-800 dark:text-primary-200'
+              : 'bg-border-subtle dark:bg-surface-elevated text-muted-foreground'
           )}
-        </>
+        >
+          {item.badge}
+        </span>
       )}
     </Link>
   );
@@ -197,14 +208,21 @@ const NavRail = ({
           'border border-border',
           'rounded-2xl',
           isMobile
-            ? 'fixed left-2 top-[10px] bottom-2 z-50 w-64 max-w-[min(16rem,calc(100vw-1rem))] shadow-2xl ring-1 ring-black/10 dark:ring-white/10'
+            ? 'fixed left-2 top-[calc(var(--titlebar-height,0px)_+_10px)] bottom-2 z-50 w-64 max-w-[min(16rem,calc(100vw-1rem))] shadow-2xl ring-1 ring-black/10 dark:ring-white/10'
             : cn(
-                'fixed left-2 top-[10px] bottom-2 z-20 transition-[width] duration-300 ease-out',
+                'fixed left-2 top-[calc(var(--titlebar-height,0px)_+_10px)] bottom-2 z-20 transition-[width] duration-200 ease-[cubic-bezier(0.4,0,0.2,1)] [contain:layout_paint] motion-reduce:transition-none',
                 'shadow-soft ring-1 ring-black/[0.06] dark:ring-white/[0.08]',
                 collapsed ? 'w-16' : 'w-64'
               )
         )}
       >
+        {/*
+          Content follows the rail's animating width so every child resizes
+          continuously (icons stay put, labels truncate + fade in sync). The
+          `aside` owns `[contain:layout_paint]`, so this per-frame reflow stays
+          scoped to the rail and never touches the page.
+        */}
+        <div className="flex h-full min-h-0 w-full min-w-0 flex-col">
         <LogoStageRail
           collapsed={collapsed}
           isMobile={isMobile}
@@ -215,67 +233,82 @@ const NavRail = ({
         {/* Navigation */}
         <nav className="flex-1 overflow-y-auto px-2 py-3 space-y-1 no-scrollbar min-h-0">
           <div className="space-y-0.5">
-            {collapsed ? (
-              <NavLink item={homeNavItem} collapsed={collapsed} active={homeActive} />
-            ) : (
-              <div className="space-y-1">
-                <Link
-                  id="nav-chat-assistant"
-                  to="/home"
-                  onMouseEnter={() => prefetchRoute('/home')}
-                  onFocus={() => prefetchRoute('/home')}
-                  onClick={(e) => {
-                    if (homeActive) {
-                      e.preventDefault();
-                      setChatHistoryOpen(!chatHistoryOpen);
-                    }
-                  }}
-                  aria-expanded={homeActive ? chatHistoryOpen : undefined}
-                  aria-controls={homeActive && chatHistoryOpen ? 'nav-chat-history' : undefined}
-                  className={cn(
-                    'flex min-w-0 items-center gap-3 rounded-lg border border-transparent px-3 py-2.5 transition-colors duration-150',
-                    homeActive
-                      ? 'border-primary-200/60 dark:border-primary-800/50 bg-primary-100 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300'
-                      : 'text-muted-foreground hover:bg-surface-sunken dark:hover:bg-surface-elevated hover:text-foreground',
-                  )}
-                  title={
-                    homeActive
+            {/*
+              Home/chat-assistant row uses the SAME morphing shape as NavLink so
+              it resizes continuously with the rail. The chat-history disclosure
+              only mounts when expanded + open.
+            */}
+            <div className="space-y-1">
+              <Link
+                id="nav-chat-assistant"
+                to="/home"
+                onMouseEnter={() => prefetchRoute('/home')}
+                onFocus={() => prefetchRoute('/home')}
+                onClick={(e) => {
+                  if (!collapsed && homeActive) {
+                    e.preventDefault();
+                    setChatHistoryOpen(!chatHistoryOpen);
+                  }
+                }}
+                aria-expanded={!collapsed && homeActive ? chatHistoryOpen : undefined}
+                aria-controls={!collapsed && homeActive && chatHistoryOpen ? 'nav-chat-history' : undefined}
+                className={cn(
+                  'flex items-center gap-3 rounded-lg border border-transparent px-3 py-2.5 transition-colors duration-150',
+                  homeActive
+                    ? 'border-primary-200/60 dark:border-primary-800/50 bg-primary-100 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300'
+                    : 'text-muted-foreground hover:bg-surface-sunken dark:hover:bg-surface-elevated hover:text-foreground',
+                )}
+                title={
+                  collapsed
+                    ? homeNavItem.label
+                    : homeActive
                       ? t('chat.toggleHistorySectionAria', {
                           defaultValue: 'Show or hide chat history',
                         })
                       : undefined
-                  }
+                }
+              >
+                <span className="flex-shrink-0">
+                  <MessageSquare className="h-5 w-5" />
+                </span>
+                <span
+                  aria-hidden={collapsed}
+                  className={cn(
+                    'min-w-0 flex-1 truncate whitespace-nowrap text-sm font-medium',
+                    'transition-[opacity,transform] duration-200 ease-out',
+                    collapsed ? 'pointer-events-none -translate-x-1 opacity-0' : 'translate-x-0 opacity-100',
+                  )}
                 >
-                  <span className="flex-shrink-0">
-                    <MessageSquare className="w-5 h-5" />
-                  </span>
-                  <span className="min-w-0 flex-1 truncate text-sm font-medium whitespace-nowrap">
-                    {homeNavItem.label}
-                  </span>
-                </Link>
-                {chatHistoryOpen && (
-                  <div
-                    id="nav-chat-history"
-                    role="region"
-                    aria-labelledby="nav-chat-assistant"
-                    className="flex max-h-[min(40vh,320px)] min-h-0 flex-col overflow-hidden rounded-lg border border-border-subtle bg-surface-sunken/50 dark:bg-surface-elevated/30"
-                  >
-                    <ChatHistoryPanel variant="nav" />
-                  </div>
-                )}
-              </div>
-            )}
+                  {homeNavItem.label}
+                </span>
+              </Link>
+              {!collapsed && chatHistoryOpen && (
+                <div
+                  id="nav-chat-history"
+                  role="region"
+                  aria-labelledby="nav-chat-assistant"
+                  className="flex max-h-[min(40vh,320px)] min-h-0 flex-col overflow-hidden rounded-lg border border-border-subtle bg-surface-sunken/50 dark:bg-surface-elevated/30"
+                >
+                  <ChatHistoryPanel variant="nav" />
+                </div>
+              )}
+            </div>
             {mainNavItems.map((item) => (
               <NavLink key={item.id} item={item} collapsed={collapsed} active={isActive(item.href)} />
             ))}
           </div>
 
           <div className="mt-4 pt-4 border-t border-border">
-            {!collapsed && (
-              <p className="px-3 mb-1.5 text-[11px] font-semibold text-muted-foreground-tertiary uppercase tracking-wider">
-                {t('nav.resources')}
-              </p>
-            )}
+            <p
+              aria-hidden={collapsed}
+              className={cn(
+                'overflow-hidden px-3 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground-tertiary',
+                'transition-[max-height,opacity,margin] duration-200 ease-out',
+                collapsed ? 'mb-0 max-h-0 opacity-0' : 'mb-1.5 max-h-5 opacity-100',
+              )}
+            >
+              {t('nav.resources')}
+            </p>
             <div className="space-y-0.5">
               {resourceNavItems.map((item) => (
                 <NavLink key={item.id} item={item} collapsed={collapsed} active={isActive(item.href)} />
@@ -300,6 +333,7 @@ const NavRail = ({
             </PetNest>
           </div>
           <UserMenu collapsed={collapsed} />
+        </div>
         </div>
 
       </aside>

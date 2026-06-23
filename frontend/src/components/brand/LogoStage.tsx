@@ -6,7 +6,6 @@ import { getLogoBackdropStyle } from '@/lib/brandingBackdrop';
 import { useTheme } from '@/hooks/useTheme';
 import { useBrandingStore, resolveDisplayName, type BrandFontPreset } from '@/stores/branding';
 import { AppLogo } from './AppLogo';
-import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/Tooltip';
 
 function useBrandingClockHour(): number {
   const [hour, setHour] = useState(() => new Date().getHours());
@@ -80,13 +79,21 @@ export const LogoStageRail = memo(function LogoStageRail({
 
   const stageShell = 'relative w-full overflow-hidden rounded-xl ring-1 ring-black/5 dark:ring-white/10';
 
-  const backdropLayer = (
+  const backdropLayer = (staticFill = false) => (
     <>
-      <div className="logo-stage-backdrop absolute inset-0" style={backdropStyle} aria-hidden />
       <div
         className={cn(
-          'pointer-events-none absolute inset-0 mix-blend-soft-light',
+          'logo-stage-backdrop absolute inset-0 rounded-[inherit]',
+          staticFill && 'logo-stage-backdrop--static',
+        )}
+        style={backdropStyle}
+        aria-hidden
+      />
+      <div
+        className={cn(
+          'pointer-events-none absolute inset-0 rounded-[inherit] mix-blend-soft-light',
           resolvedTheme === 'dark' ? 'opacity-[0.055]' : 'opacity-[0.035]',
+          staticFill && 'opacity-0',
         )}
         style={{
           backgroundImage: `url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E")`,
@@ -96,55 +103,44 @@ export const LogoStageRail = memo(function LogoStageRail({
     </>
   );
 
-  if (collapsed) {
-    return (
-      <div className="px-2 pt-2 pb-1 flex-shrink-0 flex justify-center">
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <button
-              type="button"
-              onClick={() => onCollapsedChange?.(false)}
-              className={cn(
-                stageShell,
-                'flex h-12 w-12 flex-shrink-0 items-center justify-center',
-                'transition-transform duration-150 hover:scale-105 active:scale-95'
-              )}
-              aria-label={t('nav.expandRail')}
-            >
-              {backdropLayer}
-              <span className={cn(frostedInner, 'm-1 flex size-9 items-center justify-center p-0')}>
-                <AppLogo
-          src={customIcon}
-          className="size-7 shadow-none drop-shadow-[0_1px_1px_rgba(0,0,0,0.28)]"
-        />
-              </span>
-            </button>
-          </TooltipTrigger>
-          <TooltipContent side="right">{t('nav.expandRail')}</TooltipContent>
-        </Tooltip>
-      </div>
-    );
-  }
-
-  const expandedBody = (
+  /*
+   * One morphing body for both states. Logo sits in a fixed 40px grid column that
+   * never shrinks — even while the rail width is still animating after click.
+   */
+  const stageBody = (showTitle: boolean) => (
     <>
-      {backdropLayer}
-      <div className={cn(frostedInner, 'm-1.5 min-w-0 flex-1 gap-2 px-2.5 py-2')}>
-        <AppLogo
-          src={customIcon}
-          className={cn(
-            'size-10 shrink-0',
-            resolvedTheme === 'dark'
-              ? 'drop-shadow-[0_1px_2px_rgba(0,0,0,0.38)]'
-              : 'drop-shadow-[0_1px_2px_rgba(15,23,42,0.28)]',
-          )}
-        />
+      {backdropLayer(!showTitle)}
+      <div
+        className={cn(
+          frostedInner,
+          'relative min-h-0 min-w-0 flex-1 items-center gap-2',
+          showTitle
+            ? 'm-1.5 grid grid-cols-[2.5rem_minmax(0,1fr)] px-2.5 py-1.5'
+            : 'm-1 grid grid-cols-1 justify-items-center px-0 py-0',
+        )}
+      >
+        <span className="flex h-10 w-10 items-center justify-center">
+          <AppLogo
+            src={customIcon}
+            className={cn(
+              '!size-10 !min-h-10 !min-w-10 !max-h-10 !max-w-10 object-contain',
+              resolvedTheme === 'dark'
+                ? 'drop-shadow-[0_1px_2px_rgba(0,0,0,0.38)]'
+                : 'drop-shadow-[0_1px_2px_rgba(15,23,42,0.28)]',
+            )}
+          />
+        </span>
         <span
+          aria-hidden={!showTitle}
           className={cn(
-            'min-w-0 flex-1 truncate text-xl font-extrabold leading-snug text-white',
+            'truncate whitespace-nowrap text-xl font-extrabold leading-snug text-white',
+            'transition-[opacity,transform] duration-200 ease-out',
             resolvedTheme === 'dark'
               ? 'drop-shadow-[0_1px_2px_rgba(0,0,0,0.35)]'
               : 'drop-shadow-[0_1px_2px_rgba(15,23,42,0.22)]',
+            showTitle
+              ? 'min-w-0 translate-x-0 opacity-100'
+              : 'pointer-events-none absolute w-0 overflow-hidden opacity-0',
           )}
           style={brandFontStyle}
         >
@@ -162,11 +158,11 @@ export const LogoStageRail = memo(function LogoStageRail({
           onClick={() => onMobileClose?.()}
           className={cn(
             stageShell,
-            'flex min-h-[60px] w-full items-stretch text-left transition-opacity duration-150 active:opacity-90'
+            'flex min-h-[56px] w-full items-stretch text-left transition-opacity duration-150 active:opacity-90'
           )}
           aria-label={title}
         >
-          {expandedBody}
+          {stageBody(true)}
         </Link>
       </div>
     );
@@ -176,15 +172,21 @@ export const LogoStageRail = memo(function LogoStageRail({
     <div className="px-2 pt-2 pb-1 flex-shrink-0">
       <button
         type="button"
-        onClick={() => onCollapsedChange?.(true)}
+        onClick={() => onCollapsedChange?.(!collapsed)}
+        title={collapsed ? t('nav.expandRail') : t('nav.collapseRail')}
         className={cn(
           stageShell,
-          'flex min-h-[60px] w-full items-stretch text-left',
-          'cursor-pointer transition-transform duration-150 hover:scale-[1.01] active:scale-[0.99]'
+          // Fixed heights only — never `aspect-square` here: `collapsed` flips
+          // instantly but the rail width still animates for 200ms, so
+          // aspect-square would briefly match the full expanded width (~238px)
+          // and the tile looks like it zooms before shrinking.
+          'flex w-full items-stretch text-left',
+          'cursor-pointer transition-[height] duration-200 ease-[cubic-bezier(0.4,0,0.2,1)] motion-reduce:transition-none',
+          collapsed ? 'h-12' : 'h-[68px]'
         )}
-        aria-label={t('nav.collapseRail')}
+        aria-label={collapsed ? t('nav.expandRail') : t('nav.collapseRail')}
       >
-        {expandedBody}
+        {stageBody(!collapsed)}
       </button>
     </div>
   );
