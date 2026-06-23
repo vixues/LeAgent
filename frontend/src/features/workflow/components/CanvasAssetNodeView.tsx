@@ -157,7 +157,7 @@ function CanvasAssetNodeViewImpl({ id, data, selected }: NodeProps) {
       <div
         className={cn(
           'relative overflow-visible',
-          selected && 'ring-2 ring-primary rounded-lg',
+          selected && 'ring-2 ring-primary-500 rounded-lg',
         )}
         style={{ width: DEFAULT_MESH_ASSET_WIDTH, height: DEFAULT_MESH_ASSET_HEIGHT }}
       >
@@ -231,7 +231,7 @@ function CanvasAssetNodeViewImpl({ id, data, selected }: NodeProps) {
     <div
       className={cn(
         'relative overflow-visible',
-        selected && imageAsset && 'rounded-sm ring-2 ring-primary',
+        selected && imageAsset && 'rounded-sm ring-2 ring-primary-500',
       )}
     >
       <NodeResizer
@@ -250,7 +250,7 @@ function CanvasAssetNodeViewImpl({ id, data, selected }: NodeProps) {
           imageAsset
             ? 'rounded-sm shadow-sm ring-1 ring-border/80'
             : 'rounded-lg shadow-md ring-1 ring-border/60 bg-surface-elevated',
-          selected && !imageAsset && 'ring-2 ring-primary',
+          selected && !imageAsset && 'ring-2 ring-primary-500',
         )}
       >
         <AssetBody asset={asset} imageSrc={imageSrc} onImageLoad={onImageLoad} />

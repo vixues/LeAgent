@@ -39,8 +39,9 @@ export function NodeShell({
   return (
     <div
       className={cn(
+        // overflow-visible keeps the ±14px link handles from being clipped.
         'relative overflow-visible rounded-lg border border-border bg-surface-elevated text-foreground shadow-md',
-        selected && 'ring-2 ring-primary',
+        selected && 'ring-2 ring-primary-500',
         status ? STATUS_RING[status] : '',
         mode === 'mute' && 'opacity-40 saturate-50',
         mode === 'bypass' &&
@@ -49,8 +50,9 @@ export function NodeShell({
       )}
       style={width != null ? { width } : undefined}
     >
+      {/* Inner radius (7px) matches the 8px node corner minus the 1px border. */}
       <div
-        className="flex items-center justify-between gap-2 rounded-t-lg border-b border-border px-2 py-1.5"
+        className="flex items-center justify-between gap-2 rounded-t-[7px] border-b border-border px-2 py-1.5"
         style={{
           backgroundColor: `color-mix(in srgb, ${accent} 22%, rgb(var(--color-surface-sunken)))`,
         }}

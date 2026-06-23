@@ -156,7 +156,7 @@ function nodeFor(name: string, value: unknown, spec?: WorkflowOutputSpec): GenUi
       return {
         nodeId: nid('img'),
         kind: 'Image',
-        props: { src: cellText(value), alt: name, rounded: true, ...(options ?? {}) },
+        props: { src: cellText(value), alt: name, rounded: true, fit: 'contain', ...(options ?? {}) },
       };
     case 'card':
       return {

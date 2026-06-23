@@ -1,4 +1,4 @@
-import { memo, useCallback } from 'react';
+import { memo, useCallback, useMemo, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   Handle,
@@ -28,6 +28,7 @@ import { NodeArtifactPreview, type ArtifactDescriptor, type ArtifactKind } from 
 import { NodeWidget } from './NodeWidget';
 import { ConnectedInputPreview, useUpstreamInputPreview } from './ConnectedInputPreview';
 import { ART_IMAGE_NODE_TYPES, ArtModelSelect, ArtPresetSelect } from './ArtGenWidgets';
+import { ImageSizeControl, hasImageSizeSlots } from './ImageSizeControl';
 import { AgentModelSelect, isAgentModelNodeType } from './AgentModelWidgets';
 import {
   AgentModelSelect as ControlAgentModelSelect,
@@ -154,8 +155,26 @@ function StandardTypedNodeView({ id, data, selected }: NodeProps) {
     [id, nodeData.values, updateNodeData],
   );
 
+  const setValues = useCallback(
+    (patch: Record<string, unknown>) => {
+      updateNodeData(id, { values: { ...(nodeData.values ?? {}), ...patch } });
+    },
+    [id, nodeData.values, updateNodeData],
+  );
+
   const inputs = def?.inputs ?? [];
   const outputs = def?.outputs ?? [];
+
+  // Merge the bare width/height number inputs into one professional size control
+  // when both are present and neither is driven by an upstream link.
+  const sizeSlots = useMemo(() => {
+    if (!hasImageSizeSlots(inputs)) return null;
+    const widthSlot = inputs.find((s) => s.id === 'width');
+    const heightSlot = inputs.find((s) => s.id === 'height');
+    return widthSlot && heightSlot ? { widthSlot, heightSlot } : null;
+  }, [inputs]);
+  const sizeControlActive =
+    sizeSlots != null && !connectedSet.has('width') && !connectedSet.has('height');
   const mediaItem = mediaFromNodeRunState(runState);
   const isPreviewNode = nodeData.nodeType === 'Art.Preview';
   const isAgentNode =
@@ -188,8 +207,9 @@ function StandardTypedNodeView({ id, data, selected }: NodeProps) {
   return (
     <div
       className={cn(
+        // overflow-visible keeps the ±14px link handles from being clipped.
         'relative min-w-[200px] max-w-[300px] overflow-visible rounded-lg border border-border bg-surface-elevated text-foreground shadow-md',
-        selected && 'ring-2 ring-primary',
+        selected && 'ring-2 ring-primary-500',
         ringClass,
         // ComfyUI parity: muted nodes dim out, bypassed nodes tint purple.
         mode === 'mute' && 'opacity-40 saturate-50',
@@ -199,9 +219,10 @@ function StandardTypedNodeView({ id, data, selected }: NodeProps) {
         dimmed && 'opacity-30 transition-opacity',
       )}
     >
-      {/* Colour-coded title bar (ComfyUI node colour). */}
+      {/* Colour-coded title bar — inner radius (7px) matches the 8px node
+          corner minus the 1px border so the header curve aligns exactly. */}
       <div
-        className="flex items-center justify-between gap-2 rounded-t-lg border-b border-border px-2 py-1.5"
+        className="flex items-center justify-between gap-2 rounded-t-[7px] border-b border-border px-2 py-1.5"
         style={{ backgroundColor: `color-mix(in srgb, ${accent} 22%, rgb(var(--color-surface-sunken)))` }}
       >
         <span className="truncate text-xs font-semibold" title={def?.description}>
@@ -277,22 +298,45 @@ function StandardTypedNodeView({ id, data, selected }: NodeProps) {
       )}
 
       <div className="flex flex-col gap-2 px-2 py-2">
-        {inputs.map((slot, index) => (
-          <InputSlotRow
-            key={`in-${slot.id}`}
-            nodeId={id}
-            nodeType={nodeData.nodeType}
-            providerValue={
-              (nodeData.values?.provider as string | undefined) ??
-              (inputs.find((s) => s.id === 'provider')?.default as string | undefined)
-            }
-            slot={slot}
-            index={index}
-            connected={connectedSet.has(slot.id)}
-            value={nodeData.values?.[slot.id] ?? slot.default}
-            onChange={(v) => setValue(slot.id, v)}
-          />
-        ))}
+        {inputs.map((slot, index) => {
+          // Unify width + height into one `size` anchor: drop the height row
+          // entirely and host the combined control on a single `size` socket.
+          if (sizeControlActive && slot.id === 'height') return null;
+
+          const overrideBody =
+            sizeControlActive && slot.id === 'width' && sizeSlots ? (
+              <ImageSizeControl
+                width={Number(
+                  nodeData.values?.width ?? sizeSlots.widthSlot.default ?? 1024,
+                )}
+                height={Number(
+                  nodeData.values?.height ?? sizeSlots.heightSlot.default ?? 1024,
+                )}
+                widthSlot={sizeSlots.widthSlot}
+                heightSlot={sizeSlots.heightSlot}
+                onChange={(w, h) => setValues({ width: w, height: h })}
+              />
+            ) : undefined;
+
+          return (
+            <InputSlotRow
+              key={`in-${slot.id}`}
+              nodeId={id}
+              nodeType={nodeData.nodeType}
+              providerValue={
+                (nodeData.values?.provider as string | undefined) ??
+                (inputs.find((s) => s.id === 'provider')?.default as string | undefined)
+              }
+              slot={slot}
+              index={index}
+              connected={connectedSet.has(slot.id)}
+              value={nodeData.values?.[slot.id] ?? slot.default}
+              onChange={(v) => setValue(slot.id, v)}
+              overrideBody={overrideBody}
+              overrideLabel={overrideBody ? 'size' : undefined}
+            />
+          );
+        })}
       </div>
 
       {outputs.length > 0 && (
@@ -366,6 +410,8 @@ function InputSlotRow({
   connected,
   value,
   onChange,
+  overrideBody,
+  overrideLabel,
 }: {
   nodeId: string;
   nodeType: string;
@@ -375,6 +421,10 @@ function InputSlotRow({
   connected: boolean;
   value: unknown;
   onChange: (v: unknown) => void;
+  /** Replaces the default widget body (e.g. the combined size control). */
+  overrideBody?: ReactNode;
+  /** Label shown above an overridden body. */
+  overrideLabel?: string;
 }) {
   const upstreamPreview = useUpstreamInputPreview(nodeId, slot.id);
   const isArtImage = ART_IMAGE_NODE_TYPES.has(nodeType);
@@ -402,9 +452,11 @@ function InputSlotRow({
         }}
       />
       <div className="flex flex-col gap-0.5">
-        <span className="text-[10px] text-muted-foreground">{slot.id}</span>
+        <span className="text-[10px] text-muted-foreground">{overrideLabel ?? slot.id}</span>
         {connected && upstreamPreview ? (
           <ConnectedInputPreview descriptor={upstreamPreview} />
+        ) : overrideBody && !connected ? (
+          overrideBody
         ) : artPreset && !connected ? (
           <ArtPresetSelect value={value} onChange={onChange} />
         ) : controlMode && !connected && slot.choices?.length ? (

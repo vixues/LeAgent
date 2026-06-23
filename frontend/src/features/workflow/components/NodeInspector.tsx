@@ -7,6 +7,7 @@ import { cn } from '@/lib/utils';
 import { useNodeDefinition } from '../graph/registryContext';
 import type { WorkflowEditorNode } from '../graph/serialization';
 import { NodeWidget } from './NodeWidget';
+import { ImageSizeControl, hasImageSizeSlots } from './ImageSizeControl';
 
 interface NodeInspectorProps {
   node: WorkflowEditorNode;
@@ -29,6 +30,21 @@ export function NodeInspector({ node, onClose }: NodeInspectorProps) {
       values: { ...(node.data.values ?? {}), [slotId]: value },
     });
   };
+
+  const setValues = (patch: Record<string, unknown>) => {
+    updateNodeData(node.id, {
+      values: { ...(node.data.values ?? {}), ...patch },
+    });
+  };
+
+  // Merge width + height into one `size` control to match the node canvas.
+  const sizeSlots =
+    def && hasImageSizeSlots(def.inputs)
+      ? {
+          widthSlot: def.inputs.find((s) => s.id === 'width')!,
+          heightSlot: def.inputs.find((s) => s.id === 'height')!,
+        }
+      : null;
 
   return (
     <aside className="flex w-80 flex-col border-l border-border bg-surface">
@@ -106,39 +122,75 @@ export function NodeInspector({ node, onClose }: NodeInspectorProps) {
               {t('flowEditor.inputsHeading', 'Inputs')}
             </h4>
             <div className="space-y-3">
-              {def.inputs.map((slot) => (
-                <div key={slot.id}>
-                  <div className="mb-1 flex items-center gap-1.5">
-                    <span
-                      className="inline-block h-2.5 w-2.5 rounded-full"
-                      style={{ background: slot.color }}
-                      title={slot.type}
-                    />
-                    <label className="text-[11px] font-medium text-foreground">
-                      {slot.id}
-                    </label>
-                    {slot.optional && (
-                      <span className="text-[9px] text-muted-foreground">optional</span>
+              {def.inputs.map((slot) => {
+                // Skip height — it's folded into the unified `size` control.
+                if (sizeSlots && slot.id === 'height') return null;
+
+                if (sizeSlots && slot.id === 'width') {
+                  return (
+                    <div key="size">
+                      <div className="mb-1 flex items-center gap-1.5">
+                        <span
+                          className="inline-block h-2.5 w-2.5 rounded-full"
+                          style={{ background: slot.color }}
+                          title={slot.type}
+                        />
+                        <label className="text-[11px] font-medium text-foreground">
+                          size
+                        </label>
+                        {slot.optional && (
+                          <span className="text-[9px] text-muted-foreground">optional</span>
+                        )}
+                      </div>
+                      <ImageSizeControl
+                        width={Number(
+                          node.data.values?.width ?? sizeSlots.widthSlot.default ?? 1024,
+                        )}
+                        height={Number(
+                          node.data.values?.height ?? sizeSlots.heightSlot.default ?? 1024,
+                        )}
+                        widthSlot={sizeSlots.widthSlot}
+                        heightSlot={sizeSlots.heightSlot}
+                        onChange={(w, h) => setValues({ width: w, height: h })}
+                      />
+                    </div>
+                  );
+                }
+
+                return (
+                  <div key={slot.id}>
+                    <div className="mb-1 flex items-center gap-1.5">
+                      <span
+                        className="inline-block h-2.5 w-2.5 rounded-full"
+                        style={{ background: slot.color }}
+                        title={slot.type}
+                      />
+                      <label className="text-[11px] font-medium text-foreground">
+                        {slot.id}
+                      </label>
+                      {slot.optional && (
+                        <span className="text-[9px] text-muted-foreground">optional</span>
+                      )}
+                    </div>
+                    {slot.widget ? (
+                      <NodeWidget
+                        slot={slot}
+                        value={node.data.values?.[slot.id] ?? slot.default}
+                        onChange={(v) => setValue(slot.id, v)}
+                      />
+                    ) : (
+                      <p className="text-[10px] italic text-muted-foreground">
+                        {t('flowEditor.linkOnlyInput', 'Set by linking an upstream node')}
+                      </p>
+                    )}
+                    {slot.tooltip && (
+                      <p className="mt-0.5 text-[10px] text-muted-foreground">
+                        {slot.tooltip}
+                      </p>
                     )}
                   </div>
-                  {slot.widget ? (
-                    <NodeWidget
-                      slot={slot}
-                      value={node.data.values?.[slot.id] ?? slot.default}
-                      onChange={(v) => setValue(slot.id, v)}
-                    />
-                  ) : (
-                    <p className="text-[10px] italic text-muted-foreground">
-                      {t('flowEditor.linkOnlyInput', 'Set by linking an upstream node')}
-                    </p>
-                  )}
-                  {slot.tooltip && (
-                    <p className="mt-0.5 text-[10px] text-muted-foreground">
-                      {slot.tooltip}
-                    </p>
-                  )}
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
         )}
