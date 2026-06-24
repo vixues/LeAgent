@@ -133,6 +133,22 @@ export interface InputsFormOptions {
   title?: string;
   description?: string;
   submitLabel?: string;
+  /**
+   * Stable form id (defaults to ``workflow-inputs-${flowId}``). Chat surfaces
+   * pass a message-scoped id so values don't leak across cards.
+   */
+  formId?: string;
+  /**
+   * Routing target merged into the submit button's ``run_workflow`` payload.
+   * Defaults to the saved-Flow run path when omitted.
+   */
+  runTarget?: Record<string, unknown>;
+  /**
+   * Whether to append the run submit button. Disable for input-only surfaces
+   * (e.g. the step card, whose runs are triggered per-step elsewhere).
+   * Defaults to ``true``.
+   */
+  includeSubmit?: boolean;
 }
 
 /** Build the runnable GenUI input form for a workflow. */
@@ -145,21 +161,27 @@ export function inputsToGenUiTree(
     (s): s is WorkflowInputSpec => Boolean(s) && typeof s === 'object' && Boolean(s.name),
   );
   if (specs.length === 0) return null;
+  const includeSubmit = opts.includeSubmit ?? true;
 
   const children: GenUiNode[] = specs.map(fieldFor);
-  children.push({
-    nodeId: nid('submit'),
-    kind: 'InteractiveButton',
-    props: {
-      label: opts.submitLabel ?? 'Run',
-      icon: 'play',
-      variant: 'primary',
-      action: {
-        type: 'run_workflow',
-        payload: { flowId: opts.flowId },
+  if (includeSubmit) {
+    children.push({
+      nodeId: nid('submit'),
+      kind: 'InteractiveButton',
+      props: {
+        label: opts.submitLabel ?? 'Run',
+        icon: 'play',
+        variant: 'primary',
+        action: {
+          type: 'run_workflow',
+          payload: {
+            flowId: opts.flowId,
+            ...(opts.runTarget ? { target: opts.runTarget } : {}),
+          },
+        },
       },
-    },
-  });
+    });
+  }
 
   return {
     schemaVersion: '1',
@@ -167,7 +189,7 @@ export function inputsToGenUiTree(
       nodeId: nid('form'),
       kind: 'Form',
       props: {
-        formId: `workflow-inputs-${opts.flowId}`,
+        formId: opts.formId ?? `workflow-inputs-${opts.flowId}`,
         title: opts.title,
         description: opts.description,
       },

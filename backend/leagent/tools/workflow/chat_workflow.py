@@ -22,15 +22,14 @@ class ChatWorkflowEmitTool(BaseTool):
 
     name = "chat_workflow_emit"
     description = (
-        "Publish a structured workflow card in the chat. Use when the user asks for a "
-        "repeatable plan with executable steps. Each step calls a registered tool "
-        "(destructive tools blocked; e.g. date_calculator, cache_manager, todo_write) "
-        "with JSON arguments; use placeholders "
-        "${session_id}, ${user_id}, ${user_input} in string values where needed. "
-        "For csv_processor use file_path + operation (read/query/stats/write); "
-        "for data_clean use operations (array of {type: ...}), not operation. "
-        "For csv_processor use operation + file_path (not source_path). "
-        "For data_clean use operations[] + source_path (not operation). "
+        "Publish a linear, button-driven workflow card in chat: an ordered checklist "
+        "of tool steps the user runs in sequence. Use for simple repeatable plans; for "
+        "branching, looping, or parallel graphs use chat_workflow_embed_emit instead. "
+        "Each step calls one registered tool (read-only/non-destructive only) with JSON "
+        "arguments; reference runtime values with ${session_id}, ${user_id}, ${user_input}. "
+        "Tool-arg contracts: csv_processor -> operation + file_path "
+        "(read/query/stats/write/convert); data_clean -> operations (array of {type: ...}) "
+        "+ source_path (never 'operation'). "
         "Pass: version (1), title, optional summary, steps[{id, label, optional hint, "
         "action: {kind: 'tool', tool_id, arguments}}]."
     )

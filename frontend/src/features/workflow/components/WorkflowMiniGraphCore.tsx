@@ -8,7 +8,7 @@ import {
   Background,
   BackgroundVariant,
   Controls,
-  MarkerType,
+  Panel,
   ReactFlow,
   useReactFlow,
   type ColorMode,
@@ -20,6 +20,7 @@ import {
 import { parseStoredFlowDataForChatPreview } from '@/lib/parseFlowDataFromApi';
 import type { FlowEdge, FlowNode } from '@/stores/flow';
 import { ChatWorkflowMiniNode } from '@/components/chat/workflow/ChatWorkflowMiniNode';
+import { ChatWorkflowRunPromptContext } from '@/components/chat/workflow/chatWorkflowRunContext';
 import '@/components/chat/workflow/chat-workflow-flow.css';
 import '@xyflow/react/dist/style.css';
 
@@ -108,6 +109,12 @@ export interface WorkflowMiniGraphCoreProps {
   mode: 'inline' | 'overlay' | 'compact';
   showControls?: boolean;
   showBackground?: boolean;
+  /** Active execution prompt id; enables live per-node status overlay. */
+  runPromptId?: string | null;
+  /** Extra icon buttons rendered below the default zoom/fit controls. */
+  extraControlButtons?: React.ReactNode;
+  /** Workflow content digest shown in the bottom-left corner of the pane. */
+  digest?: string | null;
 }
 
 export function WorkflowMiniGraphCore({
@@ -117,6 +124,9 @@ export function WorkflowMiniGraphCore({
   mode,
   showControls = true,
   showBackground = true,
+  runPromptId = null,
+  extraControlButtons,
+  digest = null,
 }: WorkflowMiniGraphCoreProps) {
   const isOverlay = mode === 'overlay';
   const isCompact = mode === 'compact';
@@ -146,19 +156,15 @@ export function WorkflowMiniGraphCore({
     () =>
       parsedEdges.map((e) => {
         const edge = e as Edge;
+        const { markerEnd: _markerEnd, ...rest } = edge;
         return {
-          ...edge,
+          ...rest,
           type: 'smoothstep',
           style: {
             ...edge.style,
-            stroke: 'rgb(var(--color-text-secondary))',
-            strokeWidth: isCompact ? 1.75 : 2,
-          },
-          markerEnd: {
-            type: MarkerType.ArrowClosed,
-            width: isCompact ? 12 : 14,
-            height: isCompact ? 12 : 14,
-            color: 'rgb(var(--color-text-secondary))',
+            stroke: 'rgb(var(--color-text-tertiary))',
+            strokeWidth: isCompact ? 1.5 : 1.75,
+            strokeLinecap: 'round',
           },
         } as Edge;
       }),
@@ -170,6 +176,7 @@ export function WorkflowMiniGraphCore({
   const minZoom = isOverlay ? 0.04 : isCompact ? 0.06 : 0.08;
 
   return (
+    <ChatWorkflowRunPromptContext.Provider value={runPromptId}>
     <ReactFlow
       className="chat-workflow-flow-inner"
       colorMode={colorMode}
@@ -191,21 +198,18 @@ export function WorkflowMiniGraphCore({
       defaultEdgeOptions={{
         type: 'smoothstep',
         style: {
-          stroke: 'rgb(var(--color-text-secondary))',
-          strokeWidth: isCompact ? 1.75 : 2,
-        },
-        markerEnd: {
-          type: MarkerType.ArrowClosed,
-          width: isCompact ? 12 : 14,
-          height: isCompact ? 12 : 14,
-          color: 'rgb(var(--color-text-secondary))',
+          stroke: 'rgb(var(--color-text-tertiary))',
+          strokeWidth: isCompact ? 1.5 : 1.75,
+          strokeLinecap: 'round',
         },
       }}
     >
       {!isOverlay && !isCompact ? <HorizontalWheelPan rootRef={rootRef} /> : null}
       <FitBinder nodeCount={nodes.length} edgeCount={edges.length} maxZoom={maxZoom} />
       {showControls && !isCompact ? (
-        <Controls showInteractive={false} position="bottom-right" className="!m-2 !shadow-soft" />
+        <Controls showInteractive={false} position="bottom-right" className="!m-2 !shadow-soft">
+          {extraControlButtons}
+        </Controls>
       ) : null}
       {showBackground ? (
         <Background
@@ -215,6 +219,17 @@ export function WorkflowMiniGraphCore({
           color="rgb(var(--color-border-subtle))"
         />
       ) : null}
+      {digest && !isCompact ? (
+        <Panel position="bottom-left" className="!m-2 pointer-events-none">
+          <span
+            className="font-mono text-[10px] text-muted-foreground-tertiary/80"
+            title={digest}
+          >
+            {digest.length <= 8 ? digest : `${digest.slice(0, 4)}…${digest.slice(-4)}`}
+          </span>
+        </Panel>
+      ) : null}
     </ReactFlow>
+    </ChatWorkflowRunPromptContext.Provider>
   );
 }

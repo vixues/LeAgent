@@ -23,6 +23,7 @@ import {
 } from '@/lib/persistNamespace';
 import type {
   ChatSession,
+  ChatWorkflowEmbedRunRecord,
   ChatWorkflowStepRunRecord,
   Message,
   NestedAgentPreviewState,
@@ -108,6 +109,11 @@ interface ChatStore {
     messageId: string,
     stepId: string,
     partial: Partial<ChatWorkflowStepRunRecord>,
+  ) => void;
+  updateWorkflowEmbedRun: (
+    sessionId: string,
+    messageId: string,
+    partial: Partial<ChatWorkflowEmbedRunRecord>,
   ) => void;
   clearMessages: (sessionId: string) => void;
   /** Keep messages up to and including `messageId`; drop the rest. Returns false if id not found. */
@@ -500,7 +506,12 @@ export const useChatStore = create<ChatStore>()(
       },
 
       deleteSession: async (id) => {
-        const wasCurrentSession = get().currentSessionId === id;
+        const state = get();
+        if (isChatStreamBusyForSession(id, state) && state.currentSessionId === id) {
+          get().abortChatStreamFromUser();
+        }
+
+        const wasCurrentSession = state.currentSessionId === id;
         set((state) => {
           const newSessions = state.sessions.filter((s) => s.id !== id);
           const newMessages = { ...state.messages };
@@ -1111,6 +1122,25 @@ export const useChatStore = create<ChatStore>()(
                     ...m.workflow.stepRuns,
                     [stepId]: { ...prev, ...partial },
                   },
+                },
+              };
+            }),
+          },
+        }));
+      },
+
+      updateWorkflowEmbedRun: (sessionId, messageId, partial) => {
+        set((state) => ({
+          messages: {
+            ...state.messages,
+            [sessionId]: (state.messages[sessionId] || []).map((m) => {
+              if (m.id !== messageId || !m.workflowEmbed) return m;
+              const prev = m.workflowEmbed.run ?? { status: 'idle' as const };
+              return {
+                ...m,
+                workflowEmbed: {
+                  ...m.workflowEmbed,
+                  run: { ...prev, ...partial },
                 },
               };
             }),

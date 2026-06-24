@@ -129,6 +129,55 @@ async def test_validate_workflow_embed_accepts_comfy_style_class_aliases(
 
 
 @pytest.mark.asyncio
+async def test_validate_workflow_embed_aliases_tool_id_to_tool(
+    registered_builtins,  # noqa: ARG001
+) -> None:
+    """LLM graphs that use ``tool_id`` should fold into the ``tool`` input."""
+    from leagent.workflow.nodes import get_registry
+
+    flow = {
+        "id": "tool-id-alias",
+        "name": "Tool id alias",
+        "control": {"start": "start", "end": "end", "edges": []},
+        "nodes": {
+            "start": {"class_type": "StartNode", "control": {"next": "step"}},
+            "step": {
+                "class_type": "ToolCallNode",
+                "inputs": {"tool_id": "get_genui_guide", "params": {}},
+                "control": {"next": "end"},
+            },
+            "end": {"class_type": "EndNode"},
+        },
+    }
+    doc, digest = validate_workflow_embed(flow, node_registry=get_registry())
+    assert doc.nodes["step"]["inputs"]["tool"] == "get_genui_guide"
+    assert "tool_id" not in doc.nodes["step"]["inputs"]
+    assert len(digest) == 64
+
+
+@pytest.mark.asyncio
+async def test_validate_workflow_embed_aliases_tool_name_in_list_shape(
+    registered_builtins,  # noqa: ARG001
+) -> None:
+    """Flat list authoring with top-level ``tool_name`` folds into ``tool``."""
+    from leagent.workflow.nodes import get_registry
+
+    flow = {
+        "id": "tool-name-alias",
+        "name": "Tool name alias",
+        "nodes": [
+            {"id": "start", "type": "input", "next": "step"},
+            {"id": "step", "type": "tool", "tool_name": "get_genui_guide", "next": "end"},
+            {"id": "end", "type": "output"},
+        ],
+        "start_node": "start",
+        "end_node": "end",
+    }
+    doc, _digest = validate_workflow_embed(flow, node_registry=get_registry())
+    assert doc.nodes["step"]["inputs"]["tool"] == "get_genui_guide"
+
+
+@pytest.mark.asyncio
 async def test_validate_rejects_list_nodes(registered_builtins) -> None:  # noqa: ARG001
     from leagent.workflow.nodes import get_registry
 
@@ -153,6 +202,66 @@ def test_build_extensions_payload_roundtrip_keys() -> None:
     ext = build_extensions_payload(flow_data=fd, digest="a" * 64)
     assert ext["workflow_embed"]["data"] == fd
     assert ext["workflow_embed"]["digest"] == ext["workflow_embed_digest"]
+
+
+def test_sanitize_embed_inputs_whitelists_declared_and_user_input() -> None:
+    from leagent.chat_workflow.runner import _sanitize_embed_inputs
+
+    flow_data = {"inputs": [{"name": "prompt"}, {"name": "steps"}]}
+    out = _sanitize_embed_inputs(
+        {"prompt": "p", "steps": 5, "evil": "drop me", "user_input": "u"},
+        None,
+        flow_data,
+    )
+    assert out == {"prompt": "p", "steps": 5, "user_input": "u"}
+
+
+def test_sanitize_embed_inputs_handles_empty_and_missing() -> None:
+    from leagent.chat_workflow.runner import _sanitize_embed_inputs
+
+    assert _sanitize_embed_inputs(None, None, {}) == {}
+    assert _sanitize_embed_inputs({}, None, {}) == {}
+    # No declared inputs: only the always-allowed user_input survives.
+    assert _sanitize_embed_inputs({"x": 1, "user_input": "u"}, None, {}) == {"user_input": "u"}
+
+
+@pytest.mark.asyncio
+async def test_start_embed_merges_structured_inputs_into_engine_state(
+    registered_builtins,  # noqa: ARG001
+    sample_canonical_document,
+) -> None:
+    """Structured run inputs are whitelisted and merged into engine inputs."""
+    from uuid import uuid4
+
+    from leagent.chat_workflow.runner import start_chat_workflow_embed_via_engine
+
+    captured: dict[str, object] = {}
+
+    class _FakeWorkflowService:
+        async def start_compiled_document(self, _document, **kwargs):
+            captured.update(kwargs)
+            return {"prompt_id": "p1", "run_id": "r1"}
+
+    class _FakeServiceManager:
+        workflow_service = _FakeWorkflowService()
+
+    outcome = await start_chat_workflow_embed_via_engine(
+        flow_data=sample_canonical_document,
+        service_manager=_FakeServiceManager(),
+        user_id=str(uuid4()),
+        session_id="sess-1",
+        user_input="",
+        inputs={"user_input": "override", "bogus": "drop"},
+    )
+
+    assert outcome.started is True
+    assert outcome.prompt_id == "p1"
+    engine_inputs = captured["inputs"]
+    assert isinstance(engine_inputs, dict)
+    # The structured user_input overrides the empty placeholder; unknown keys drop.
+    assert engine_inputs["user_input"] == "override"
+    assert "bogus" not in engine_inputs
+    assert engine_inputs["session_id"] == "sess-1"
 
 
 @pytest.mark.asyncio

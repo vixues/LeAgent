@@ -29,12 +29,12 @@ logger = structlog.get_logger(__name__)
 class WorkflowSaveTool(SchemaWorkflowTool):
     name = "workflow_save"
     description = (
-        "Persist a workflow graph as a runnable Flow and return its flow_id. "
-        "Accepts flow_data in the SAME JSON shape as the Flow editor / "
-        "chat_workflow_embed_emit (nodes dict, control/start/end, optional ui). "
-        "The graph is validated by the workflow engine before saving. Use the "
-        "returned flow_id with workflow_run to execute it, then workflow_status "
-        "to inspect results — the idea -> design -> run -> evaluate loop."
+        "Persist a workflow graph as a reusable Flow and return its flow_id. flow_data "
+        "uses the SAME JSON shape as chat_workflow_embed_emit / the Flow editor (nodes "
+        "dict, control.start/end, optional ui) and is validated by the engine before "
+        "saving. Drive it with workflow_run, then workflow_status — the "
+        "design -> run -> evaluate loop. Save only when a graph should be kept/reused; "
+        "for one-off runs prefer chat_workflow_embed_emit."
     )
     category = ToolCategory.WORKFLOW
     is_concurrency_safe = False

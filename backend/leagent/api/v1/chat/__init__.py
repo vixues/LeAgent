@@ -64,6 +64,46 @@ def _project_locked_error() -> HTTPException:
     return HTTPException(status_code=status.HTTP_423_LOCKED, detail="Project locked")
 
 
+def _accumulate_workflow_extensions(existing_json: str | None, edata: dict[str, Any]) -> str | None:
+    """Merge a workflow SSE payload into the accumulated message extensions.
+
+    A single assistant turn may emit BOTH a DAG embed (``chat_workflow_embed_emit``)
+    and a step card (``chat_workflow_emit``). They live under disjoint extension
+    keys, so we accumulate rather than overwrite — otherwise the second emit would
+    erase the first card on reload (and the DAG would disappear).
+    """
+    from leagent.chat_workflow.workflow_embed import build_extensions_payload
+
+    acc: dict[str, Any] = {}
+    if existing_json:
+        try:
+            parsed = json.loads(existing_json)
+            if isinstance(parsed, dict):
+                acc = parsed
+        except json.JSONDecodeError:
+            acc = {}
+
+    spec = edata.get("spec")
+    embed = edata.get("embed")
+    if isinstance(embed, dict) and isinstance(embed.get("data"), dict):
+        acc.update(
+            build_extensions_payload(
+                flow_data=embed["data"],
+                digest=str(embed.get("digest") or ""),
+                flow_id=str(embed["flow_id"]) if embed.get("flow_id") else None,
+                title=str(embed.get("title") or "") or None,
+                summary=str(embed.get("summary") or "") or None,
+            )
+        )
+    elif isinstance(spec, dict):
+        acc["chat_workflow"] = spec
+        acc["chat_workflow_digest"] = edata.get("digest")
+    else:
+        return existing_json
+
+    return json.dumps(acc, ensure_ascii=False)
+
+
 async def _require_project_access(
     db: DatabaseService,
     *,
@@ -124,6 +164,7 @@ from leagent.api.schemas.chat import (  # noqa: E402
     ChatCompletionResponse,
     ChatCompletionUsage,
     ChatWorkflowStepRunRequest,
+    ChatWorkflowEmbedRunRequest,
     SessionExecutionRead,
     ChatWorkflowTemplateRead,
     CompactContextRequest,
@@ -726,26 +767,9 @@ async def chat_stream_endpoint(
                     elif etype == "workflow":
                         yield _format_frontend_event("workflow", edata)
                         if isinstance(edata, dict):
-                            spec = edata.get("spec")
-                            embed = edata.get("embed")
-                            if isinstance(embed, dict) and isinstance(embed.get("data"), dict):
-                                from leagent.chat_workflow.workflow_embed import build_extensions_payload
-
-                                last_extensions_json = json.dumps(
-                                    build_extensions_payload(
-                                        flow_data=embed["data"],
-                                        digest=str(embed.get("digest") or ""),
-                                        flow_id=str(embed["flow_id"]) if embed.get("flow_id") else None,
-                                        title=str(embed.get("title") or "") or None,
-                                        summary=str(embed.get("summary") or "") or None,
-                                    ),
-                                    ensure_ascii=False,
-                                )
-                            elif isinstance(spec, dict):
-                                last_extensions_json = json.dumps({
-                                    "chat_workflow": spec,
-                                    "chat_workflow_digest": edata.get("digest"),
-                                })
+                            last_extensions_json = _accumulate_workflow_extensions(
+                                last_extensions_json, edata
+                            )
                     elif etype == "complete":
                         last_complete_event = edata if isinstance(edata, dict) else {}
                         md = edata.get("metadata") or {}
@@ -992,26 +1016,9 @@ async def _generate_openai_sse(
                 elif etype == "workflow":
                     yield {"event": "workflow", "data": json.dumps(edata)}
                     if isinstance(edata, dict):
-                        spec = edata.get("spec")
-                        embed = edata.get("embed")
-                        if isinstance(embed, dict) and isinstance(embed.get("data"), dict):
-                            from leagent.chat_workflow.workflow_embed import build_extensions_payload
-
-                            last_extensions_json = json.dumps(
-                                build_extensions_payload(
-                                    flow_data=embed["data"],
-                                    digest=str(embed.get("digest") or ""),
-                                    flow_id=str(embed["flow_id"]) if embed.get("flow_id") else None,
-                                    title=str(embed.get("title") or "") or None,
-                                    summary=str(embed.get("summary") or "") or None,
-                                ),
-                                ensure_ascii=False,
-                            )
-                        elif isinstance(spec, dict):
-                            last_extensions_json = json.dumps({
-                                "chat_workflow": spec,
-                                "chat_workflow_digest": edata.get("digest"),
-                            })
+                        last_extensions_json = _accumulate_workflow_extensions(
+                            last_extensions_json, edata
+                        )
                 elif etype == "complete" and response_content and output_tokens == 0:
                     yield _format_openai_chunk(completion_id, created, model, {"content": response_content})
                 elif etype == "error":
@@ -1117,7 +1124,22 @@ async def create_chat_completion(
     completion_id = f"chatcmpl-{uuid4().hex[:24]}"
     created = int(time.time())
 
-    agent = build_agent_controller()
+    # Per-app agent customization (leagent.js custom chatbots / agent apps).
+    # Unknown variants are ignored by the context layer (default recipe used).
+    requested_variant: str | None = None
+    if request.agent_variant:
+        from leagent.context.recipe import RECIPE_REGISTRY
+
+        candidate = request.agent_variant.strip()
+        if candidate in RECIPE_REGISTRY:
+            requested_variant = candidate
+    override_model = request.model if request.model not in ("", "default") else None
+
+    agent = build_agent_controller(
+        prompt_variant=requested_variant,
+        extra_system_prompt=request.system_prompt,
+        model_name=override_model,
+    )
     if agent is not None:
         from leagent.services.chat.pet_personality import apply_pet_personality_to_agent
         await apply_pet_personality_to_agent(agent, db, user_id)
@@ -1156,6 +1178,7 @@ async def create_chat_completion(
         id=completion_id,
         created=created,
         model=request.model,
+        session_id=session_id,
         choices=[
             ChatCompletionChoice(
                 index=0,
@@ -2606,6 +2629,174 @@ async def run_chat_workflow_step(
         "data": result.data,
         "error": result.error,
         "duration_ms": result.duration_ms,
+        "prompt_id": outcome.prompt_id,
+        "run_id": outcome.run_id,
+    }
+
+
+@router.post("/sessions/{session_id}/workflow-embeds/{message_id}/run")
+async def run_chat_workflow_embed(
+    session_id: UUID,
+    message_id: UUID,
+    body: ChatWorkflowEmbedRunRequest,
+    user_id: CurrentUserId,
+    chat_svc: ChatSvc,
+    db: Annotated[DatabaseService, Depends(get_database_service)],
+    x_chat_project_token: str | None = Header(default=None, alias="X-Chat-Project-Token"),
+) -> dict[str, Any]:
+    """Execute a whole chat workflow DAG embed after digest verification.
+
+    Returns ``prompt_id`` so the client can subscribe to the per-node execution
+    WebSocket and render live status on the chat mini-graph. The graph runs in
+    the background; the terminal status is persisted to message extensions when
+    it finishes.
+    """
+    from datetime import datetime, timezone
+
+    from leagent.chat_workflow.runner import (
+        evaluate_embed_result,
+        start_chat_workflow_embed_via_engine,
+    )
+    from leagent.main import get_service_manager
+    from leagent.runtime.execution_registry import get_execution_run_registry
+
+    if message_id != body.message_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="message_id mismatch between path and body",
+        )
+
+    session = await chat_svc.get_session(session_id, user_id=user_id)
+    if not session:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
+    await _require_session_project_access(
+        db,
+        session=session,
+        user_id=user_id,
+        unlock_token=x_chat_project_token,
+    )
+
+    msg = await chat_svc.get_session_message(session_id, body.message_id, user_id=user_id)
+    if not msg:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Message not found")
+    if msg.role != MessageRole.ASSISTANT:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Workflow embeds apply only to assistant messages",
+        )
+    if not msg.extensions:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Message has no workflow data",
+        )
+
+    try:
+        ext = json.loads(msg.extensions)
+    except json.JSONDecodeError:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid extensions JSON",
+        ) from None
+
+    embed = ext.get("workflow_embed")
+    if not isinstance(embed, dict) or not isinstance(embed.get("data"), dict):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No workflow_embed in message extensions",
+        )
+
+    digest_stored = embed.get("digest") or ext.get("workflow_embed_digest")
+    if not isinstance(digest_stored, str) or len(digest_stored) < 16:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Stored workflow embed has no digest",
+        )
+    if digest_stored.lower() != body.workflow_digest.strip().lower():
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="workflow_digest does not match stored workflow",
+        )
+
+    sm = None
+    with suppress(Exception):
+        sm = get_service_manager()
+
+    parent_run_id = body.parent_run_id
+    if not parent_run_id:
+        active = get_execution_run_registry().get_active_chat_turn(str(session_id))
+        if active is not None:
+            parent_run_id = active.run_id
+
+    msg_id = body.message_id
+
+    async def _persist_terminal(result: Any | None) -> None:
+        """Background completion hook: persist terminal status to extensions."""
+        from leagent.services.chat.service import get_chat_service
+
+        evaluated = evaluate_embed_result(result)
+        entry: dict[str, Any] = {
+            "status": "success" if evaluated.success else "error",
+            "completed_at": datetime.now(timezone.utc).isoformat(),
+        }
+        if not evaluated.success and evaluated.error:
+            entry["error"] = str(evaluated.error)
+        with suppress(Exception):
+            svc = get_chat_service()
+            await svc.merge_message_extensions(
+                session_id,
+                msg_id,
+                user_id=user_id,
+                patch={"workflow_embed_run": entry},
+            )
+
+    outcome = await start_chat_workflow_embed_via_engine(
+        flow_data=embed["data"],
+        service_manager=sm,
+        user_id=str(user_id),
+        session_id=str(session_id),
+        user_input=body.user_input or "",
+        inputs=body.inputs,
+        parent_run_id=parent_run_id,
+        on_complete=_persist_terminal,
+    )
+
+    if not outcome.started:
+        run_entry = {
+            "status": "error",
+            "completed_at": datetime.now(timezone.utc).isoformat(),
+            "error": outcome.error or "Failed to start workflow",
+        }
+        await chat_svc.merge_message_extensions(
+            session_id,
+            body.message_id,
+            user_id=user_id,
+            patch={"workflow_embed_run": run_entry},
+        )
+        return {
+            "success": False,
+            "error": outcome.error,
+            "prompt_id": None,
+            "run_id": None,
+        }
+
+    run_entry = {
+        "status": "running",
+        "started_at": datetime.now(timezone.utc).isoformat(),
+    }
+    if outcome.prompt_id:
+        run_entry["prompt_id"] = outcome.prompt_id
+    if outcome.run_id:
+        run_entry["run_id"] = outcome.run_id
+    await chat_svc.merge_message_extensions(
+        session_id,
+        body.message_id,
+        user_id=user_id,
+        patch={"workflow_embed_run": run_entry},
+    )
+
+    return {
+        "success": True,
+        "status": "running",
         "prompt_id": outcome.prompt_id,
         "run_id": outcome.run_id,
     }

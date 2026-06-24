@@ -99,6 +99,32 @@ describe('inputsToGenUiTree', () => {
     )!;
     expect(tree.root.children).toHaveLength(2); // ok field + submit
   });
+
+  it('merges a run target into the submit action and overrides the form id', () => {
+    const tree = inputsToGenUiTree([{ name: 'q', type: 'string' }], {
+      flowId: '',
+      formId: 'chat-workflow-embed-m1',
+      runTarget: { kind: 'chat_embed', sessionId: 's1', messageId: 'm1', digest: 'd1' },
+    })!;
+    expect(tree.root.props?.formId).toBe('chat-workflow-embed-m1');
+    const submit = tree.root.children!.at(-1)!;
+    expect(submit.props?.action).toEqual({
+      type: 'run_workflow',
+      payload: {
+        flowId: '',
+        target: { kind: 'chat_embed', sessionId: 's1', messageId: 'm1', digest: 'd1' },
+      },
+    });
+  });
+
+  it('omits the submit button when includeSubmit is false (input-only surface)', () => {
+    const tree = inputsToGenUiTree([{ name: 'user_input', type: 'string' }], {
+      flowId: '',
+      includeSubmit: false,
+    })!;
+    expect(tree.root.children).toHaveLength(1);
+    expect(tree.root.children![0]!.kind).toBe('Input');
+  });
 });
 
 describe('coerceFormValues', () => {

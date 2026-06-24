@@ -72,6 +72,10 @@ _CLASS_TO_TYPE["ScriptAgentNode"] = "script_agent"
 
 _KNOWN_AUTHORING_TYPES: set[str] = set(_TYPE_TO_CLASS.keys())
 
+# LLMs frequently emit ``tool_id`` / ``tool_name`` for the ToolCallNode ``tool``
+# input. Treat them as aliases so authored graphs validate without manual fixes.
+_TOOL_INPUT_ALIASES: tuple[str, ...] = ("tool_id", "tool_name", "toolId", "toolName")
+
 _INPUT_KEYS: tuple[str, ...] = (
     "tool",
     "params",
@@ -108,6 +112,21 @@ _CONTROL_KEYS: tuple[str, ...] = (
 )
 
 
+def _alias_tool_input(inputs: dict[str, Any]) -> dict[str, Any]:
+    """Fold ``tool_id`` / ``tool_name`` aliases into the canonical ``tool`` input."""
+    if not isinstance(inputs, dict) or inputs.get("tool") is not None:
+        return inputs
+    for alias in _TOOL_INPUT_ALIASES:
+        value = inputs.get(alias)
+        if value is not None:
+            out = dict(inputs)
+            out["tool"] = value
+            for drop in _TOOL_INPUT_ALIASES:
+                out.pop(drop, None)
+            return out
+    return inputs
+
+
 def _normalize_registered_class_type(class_type: str) -> str:
     """Map short LLM aliases (e.g. ``tool``) to registered ``*Node`` class names."""
     text = class_type.strip()
@@ -136,6 +155,8 @@ def _finalize_canonical_document(canon: dict[str, Any]) -> dict[str, Any]:
         class_type = spec.get("class_type")
         if isinstance(class_type, str):
             spec["class_type"] = _normalize_registered_class_type(class_type)
+        if isinstance(spec.get("inputs"), dict):
+            spec["inputs"] = _alias_tool_input(spec["inputs"])
         nodes[str(node_id)] = spec
 
     control_raw = out.get("control")
@@ -252,6 +273,12 @@ def _collect_node_inputs(node: dict[str, Any]) -> dict[str, Any]:
         if key in node and node[key] is not None:
             inputs[key] = node[key]
 
+    if inputs.get("tool") is None:
+        for alias in _TOOL_INPUT_ALIASES:
+            if node.get(alias) is not None:
+                inputs["tool"] = node[alias]
+                break
+
     config = node.get("config")
     if isinstance(config, dict):
         if config.get("source") is not None and "source" not in inputs:
@@ -266,6 +293,11 @@ def _collect_node_inputs(node: dict[str, Any]) -> dict[str, Any]:
             inputs["tool"] = config["tool"]
         if config.get("params") is not None and "params" not in inputs:
             inputs["params"] = config["params"]
+        if inputs.get("tool") is None:
+            for alias in _TOOL_INPUT_ALIASES:
+                if config.get(alias) is not None:
+                    inputs["tool"] = config[alias]
+                    break
 
     return inputs
 

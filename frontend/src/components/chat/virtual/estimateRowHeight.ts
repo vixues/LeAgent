@@ -39,7 +39,9 @@ export function estimateRowHeight(message: Message): number {
   if (message.toolCalls?.length) h += 48 + message.toolCalls.length * 6;
   if (message.taskProgress?.length) h += 40 + message.taskProgress.length * 24;
   if (message.attachments?.length || message.inlineMedia?.length) h += 220;
-  if (message.workflow || message.workflowEmbed) h += 160;
+  if (message.workflow) h += 160;
+  // Embed cards render a ~380px mini-graph plus header/run controls.
+  if (message.workflowEmbed) h += 460;
   if (!message.content && message.isStreaming) h += 36;
 
   return Math.max(h, 60) + ROW_GAP;

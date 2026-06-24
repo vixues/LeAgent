@@ -43,7 +43,13 @@ def validate_workflow_embed(
     ok, _outputs, errors = validate(doc, registry=node_registry)
     if not ok:
         detail = json.dumps(errors, ensure_ascii=False)[:4000]
-        raise WorkflowEmbedValidationError(f"workflow validation failed: {detail}")
+        hint = ""
+        if "tool" in detail and ("required" in detail.lower() or "missing" in detail.lower()):
+            hint = (
+                " Hint: ToolCallNode requires an input named 'tool' (the registered "
+                "tool name) — use inputs.tool, not tool_id/tool_name at the node root."
+            )
+        raise WorkflowEmbedValidationError(f"workflow validation failed: {detail}{hint}")
     return doc, graph_hash(doc)
 
 

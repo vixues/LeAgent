@@ -6,9 +6,8 @@ import {
 } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Maximize2 } from 'lucide-react';
-import { ReactFlowProvider } from '@xyflow/react';
+import { ReactFlowProvider, ControlButton } from '@xyflow/react';
 
-import { Button } from '@/components/ui/Button';
 import { Modal, ModalHeader } from '@/components/ui/Modal';
 import { cn } from '@/lib/utils';
 import { WorkflowMiniGraphCore } from '@/features/workflow/components/WorkflowMiniGraphCore';
@@ -18,9 +17,18 @@ export interface ChatWorkflowMiniGraphProps {
   flowData: Record<string, unknown>;
   /** Shown in the floating preview modal header (e.g. workflow title). */
   previewTitle?: string;
+  /** Active execution prompt id; enables live per-node status overlay. */
+  runPromptId?: string | null;
+  /** Workflow content digest shown in the graph pane corner. */
+  digest?: string | null;
 }
 
-function ChatWorkflowMiniGraphInner({ flowData, previewTitle }: ChatWorkflowMiniGraphProps) {
+function ChatWorkflowMiniGraphInner({
+  flowData,
+  previewTitle,
+  runPromptId = null,
+  digest = null,
+}: ChatWorkflowMiniGraphProps) {
   const { t } = useTranslation();
   const [floatingOpen, setFloatingOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
@@ -53,29 +61,28 @@ function ChatWorkflowMiniGraphInner({ flowData, previewTitle }: ChatWorkflowMini
 
   return (
     <>
-      <div className="flex flex-col gap-1.5">
-        <div className="flex items-center justify-end px-0.5">
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            className="shrink-0 gap-1.5"
-            leftIcon={<Maximize2 className="h-3.5 w-3.5" aria-hidden />}
-            aria-label={t('chat.workflow.expandFloatingPreview')}
-            title={t('chat.workflow.expandFloatingHint')}
-            onClick={() => setFloatingOpen(true)}
-          >
-            {t('chat.workflow.expandFloatingPreview')}
-          </Button>
-        </div>
-        <div
-          ref={rootRef}
-          className="chat-workflow-flow h-[min(380px,62vh)] min-h-[300px] w-full overflow-hidden rounded-2xl border border-border-subtle bg-surface-sunken/50 dark:bg-surface-raised/20"
-        >
-          <ReactFlowProvider>
-            <WorkflowMiniGraphCore mode="inline" flowData={flowData} rootRef={rootRef} />
-          </ReactFlowProvider>
-        </div>
+      <div
+        ref={rootRef}
+        className="chat-workflow-flow h-[min(380px,62vh)] min-h-[300px] w-full overflow-hidden rounded-2xl border border-border-subtle bg-surface-sunken/50 dark:bg-surface-raised/20"
+      >
+        <ReactFlowProvider>
+          <WorkflowMiniGraphCore
+            mode="inline"
+            flowData={flowData}
+            rootRef={rootRef}
+            runPromptId={runPromptId}
+            digest={digest}
+            extraControlButtons={
+              <ControlButton
+                onClick={() => setFloatingOpen(true)}
+                title={t('chat.workflow.expandFloatingHint')}
+                aria-label={t('chat.workflow.expandFloatingPreview')}
+              >
+                <Maximize2 className="h-4 w-4" aria-hidden />
+              </ControlButton>
+            }
+          />
+        </ReactFlowProvider>
       </div>
 
       <Modal
@@ -98,7 +105,12 @@ function ChatWorkflowMiniGraphInner({ flowData, previewTitle }: ChatWorkflowMini
             className="chat-workflow-flow h-[min(76vh,calc(100dvh-10rem))] min-h-[400px] w-full overflow-hidden rounded-xl border border-border-subtle bg-surface-sunken/40 dark:bg-surface-raised/25"
           >
             <ReactFlowProvider>
-              <WorkflowMiniGraphCore mode="overlay" flowData={flowData} rootRef={overlayRootRef} />
+              <WorkflowMiniGraphCore
+                mode="overlay"
+                flowData={flowData}
+                rootRef={overlayRootRef}
+                runPromptId={runPromptId}
+              />
             </ReactFlowProvider>
           </div>
         </div>

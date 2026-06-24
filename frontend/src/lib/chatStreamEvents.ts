@@ -23,7 +23,12 @@ import type {
 import { normalizeAttachmentList } from '@/types/chat';
 import { useExecutionSessionStore } from '@/stores/executionSession';
 import { useExecutionOverlay } from '@/features/workflow/store/executionOverlay';
-import type { GenUiTreeV1, UiPatchStreamPayload, UiTreeStreamPayload } from '@/types/genUi';
+import type {
+  GenUiTreeV1,
+  UiPatchStreamPayload,
+  UiStreamStreamPayload,
+  UiTreeStreamPayload,
+} from '@/types/genUi';
 import { isDocProcessorWriteStream } from '@/lib/docProcessorStreamPreview';
 
 export type ChatStreamTranslate = (
@@ -644,21 +649,28 @@ export function applyChatStreamEvent(
           flow_id?: string;
         };
       };
+      // A single turn may emit BOTH a DAG embed and a step card. Keep them on
+      // the same message instead of clearing one another (otherwise the DAG
+      // would flash then disappear when the step card arrives, and vice versa).
       if (d.embed && typeof d.embed.digest === 'string' && d.embed.data && typeof d.embed.data === 'object') {
+        const prevEmbed = s.messages[sessionId]?.find((m) => m.id === assistantMsgId)?.workflowEmbed;
         const emb: ChatWorkflowEmbedState = {
           data: d.embed.data as Record<string, unknown>,
           digest: d.embed.digest,
           title: typeof d.embed.title === 'string' ? d.embed.title : undefined,
           summary: typeof d.embed.summary === 'string' ? d.embed.summary : undefined,
           flowId: typeof d.embed.flow_id === 'string' ? d.embed.flow_id : undefined,
+          // Preserve in-flight run state across a re-emit of the same graph.
+          ...(prevEmbed && prevEmbed.digest === d.embed.digest && prevEmbed.run
+            ? { run: prevEmbed.run }
+            : {}),
         };
-        s.updateMessage(sessionId, assistantMsgId, { workflowEmbed: emb, workflow: undefined });
+        s.updateMessage(sessionId, assistantMsgId, { workflowEmbed: emb });
         break;
       }
       if (!d?.spec || typeof d.digest !== 'string') break;
       const prev = s.messages[sessionId]?.find((m) => m.id === assistantMsgId)?.workflow;
       s.updateMessage(sessionId, assistantMsgId, {
-        workflowEmbed: undefined,
         workflow: {
           spec: d.spec,
           digest: d.digest,
@@ -742,6 +754,14 @@ export function applyChatStreamEvent(
           assistantMsgId,
           data,
         );
+      }
+      break;
+    }
+
+    case 'ui_stream': {
+      const data = event.data as UiStreamStreamPayload;
+      if (data?.ops && Array.isArray(data.ops)) {
+        useGenUiStore.getState().applyStream(sessionId, assistantMsgId, data);
       }
       break;
     }

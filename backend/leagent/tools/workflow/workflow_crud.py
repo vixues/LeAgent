@@ -16,8 +16,8 @@ logger = structlog.get_logger(__name__)
 class WorkflowListTool(SchemaWorkflowTool):
     name = "workflow_list"
     description = (
-        "List available workflows (flows) in the system. "
-        "Returns name, id, status, description and last run time."
+        "List saved workflows (flows), optionally filtered by flow_type or status. "
+        "Returns each flow's id, name, description, status, and last run time."
     )
     category = ToolCategory.WORKFLOW
     is_concurrency_safe = True
@@ -84,8 +84,9 @@ class WorkflowListTool(SchemaWorkflowTool):
 class WorkflowRunTool(SchemaWorkflowTool):
     name = "workflow_run"
     description = (
-        "Trigger a workflow execution by flow ID or name. "
-        "Returns an execution ID that can be used to track progress."
+        "Run a saved workflow by flow_id (from workflow_save) and return an execution_id; "
+        "track progress and results with workflow_status. A run that completes below the "
+        "quality bar returns success=False — refine and re-run in the same turn until it passes."
     )
     is_concurrency_safe = False
     category = ToolCategory.WORKFLOW
@@ -194,7 +195,10 @@ def _coerce_float(value: Any) -> float | None:
 
 class WorkflowStatusTool(SchemaWorkflowTool):
     name = "workflow_status"
-    description = "Get the current status and details of a workflow execution by execution ID."
+    description = (
+        "Get the status, outputs, and errors of a workflow execution by execution_id "
+        "(returned by workflow_run)."
+    )
     category = ToolCategory.WORKFLOW
     is_concurrency_safe = True
     is_read_only = True

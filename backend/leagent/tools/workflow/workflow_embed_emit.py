@@ -21,13 +21,26 @@ class ChatWorkflowEmbedEmitTool(BaseTool):
 
     name = "chat_workflow_embed_emit"
     description = (
-        "Publish a workflow graph in the chat using the SAME JSON shape as the Flow "
-        "editor / Flow.data: top-level keys like nodes (array or dict), edges, optional "
-        "ui, control/start/end, id, name. The graph is validated by the workflow engine "
-        "(no separate chat-only schema). Use for multi-step DAGs with canonical "
-        "class_type values: StartNode, ToolCallNode, EndNode (aliases like tool, input, "
-        "default, output are normalized). Pass: title (short), optional summary, "
-        "flow_data (object)."
+        "Publish a RUNNABLE workflow DAG in chat. The card renders the graph and can be "
+        "Run in-chat with live per-node status. Use for branching / looping / parallel "
+        "pipelines; a plain linear checklist should use chat_workflow_emit. flow_data "
+        "uses the SAME JSON shape as the Flow editor (Flow.data).\n"
+        "Three node primitives:\n"
+        "  - input  -> class_type 'StartNode' (alias 'input')\n"
+        "  - step   -> class_type 'ToolCallNode' (alias 'tool'); "
+        "inputs {tool: <registered tool name>, params: {...}} (tool_id/tool_name accepted)\n"
+        "  - output -> class_type 'EndNode' (alias 'output')\n"
+        "Wire nodes with control.next (control.conditions for branches). Minimal example:\n"
+        "  {\n"
+        "    \"nodes\": {\n"
+        "      \"start\": {\"class_type\": \"StartNode\", \"control\": {\"next\": \"step1\"}},\n"
+        "      \"step1\": {\"class_type\": \"ToolCallNode\", \"inputs\": {\"tool\": \"web_search\", "
+        "\"params\": {\"query\": \"leagent\"}}, \"control\": {\"next\": \"end\"}},\n"
+        "      \"end\": {\"class_type\": \"EndNode\"}\n"
+        "    },\n"
+        "    \"control\": {\"start\": \"start\", \"end\": \"end\"}\n"
+        "  }\n"
+        "Pass: title (short), optional summary, flow_data (object), optional flow_id."
     )
     category = ToolCategory.WORKFLOW
     is_read_only = True

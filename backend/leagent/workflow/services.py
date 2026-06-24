@@ -50,6 +50,9 @@ class WorkflowService:
         # ``prompt_map`` replaces the old per-process ``dict[str, UUID]`` so
         # multi-worker / multi-node deployments share the hot-path lookup.
         self._prompt_to_execution: PromptExecutionMap = prompt_map or InMemoryPromptMap()
+        # Strong refs to fire-and-forget background runs (chat embed DAGs) so the
+        # event loop does not garbage-collect the task mid-flight.
+        self._bg_tasks: set[asyncio.Task[Any]] = set()
 
     # ------------------------------------------------------------------
     # Queue-based API (new)
@@ -308,6 +311,129 @@ class WorkflowService:
             "run_id": exec_run.run_id,
             "result": result,
         }
+
+    async def start_compiled_document(
+        self,
+        document: Any,
+        *,
+        user_id: UUID,
+        session_id: str,
+        inputs: dict[str, Any] | None = None,
+        trigger_type: str = "chat_embed",
+        parent_run_id: str | None = None,
+        extra_data: dict[str, Any] | None = None,
+        on_complete: Any | None = None,
+    ) -> dict[str, Any]:
+        """Start an inline compiled document in the background.
+
+        Returns ``{prompt_id, run_id}`` immediately so the caller can subscribe
+        to the per-prompt execution WebSocket and render live node status while
+        the graph runs. ``on_complete`` (optional async callable) receives the
+        terminal :class:`WorkflowResult` (or ``None`` on hard failure).
+        """
+        from leagent.db.models.workflow_execution import WorkflowExecution
+        from leagent.runtime.execution_factory import begin_execution
+        from leagent.runtime.execution_run import ExecutionScope
+
+        execution_id = uuid4()
+        prompt_id = f"chat-embed-{uuid4().hex[:16]}"
+        started_at = datetime.utcnow()
+        merged_extra = {
+            "session_id": session_id,
+            "user_id": str(user_id),
+            **(extra_data or {}),
+        }
+
+        async with self._db.session() as session:
+            record = WorkflowExecution(
+                id=execution_id,
+                flow_id=None,
+                user_id=user_id,
+                prompt_id=prompt_id,
+                status="running",
+                trigger_type=trigger_type,
+                inputs=json.dumps(inputs or {}),
+                started_at=started_at,
+            )
+            session.add(record)
+            await session.flush()
+
+        await self._prompt_to_execution.set(prompt_id, execution_id)
+
+        exec_run = begin_execution(
+            scope=ExecutionScope.WORKFLOW,
+            session_id=session_id,
+            user_id=str(user_id),
+            parent_run_id=parent_run_id,
+            prompt_id=prompt_id,
+            workflow_execution_id=execution_id,
+        )
+
+        task = asyncio.create_task(
+            self._run_document_background(
+                prompt_id=prompt_id,
+                document=document,
+                user_id=user_id,
+                inputs=inputs or {},
+                trigger_type=trigger_type,
+                execution_id=execution_id,
+                extra_data=merged_extra,
+                exec_run_id=exec_run.run_id,
+                on_complete=on_complete,
+            )
+        )
+        self._bg_tasks.add(task)
+        task.add_done_callback(self._bg_tasks.discard)
+
+        return {"prompt_id": prompt_id, "run_id": exec_run.run_id}
+
+    async def _run_document_background(
+        self,
+        *,
+        prompt_id: str,
+        document: Any,
+        user_id: UUID,
+        inputs: dict[str, Any],
+        trigger_type: str,
+        execution_id: UUID,
+        extra_data: dict[str, Any] | None,
+        exec_run_id: str,
+        on_complete: Any | None,
+    ) -> None:
+        from leagent.runtime.execution_factory import (
+            end_execution,
+            end_execution_unless_blocked,
+        )
+
+        result: WorkflowResult | None = None
+        try:
+            result = await self._execute_inline_document(
+                prompt_id,
+                document,
+                user_id,
+                inputs,
+                trigger_type,
+                execution_id,
+                extra_data,
+            )
+            blocked_statuses = {WorkflowStatus.PAUSED, WorkflowStatus.WAITING_HUMAN}
+            if result.status in blocked_statuses:
+                end_execution_unless_blocked(exec_run_id)
+            else:
+                end_execution(exec_run_id)
+        except Exception:
+            end_execution(exec_run_id)
+            logger.exception(
+                "workflow_embed_background_failed",
+                execution_id=str(execution_id),
+                prompt_id=prompt_id,
+            )
+        finally:
+            if on_complete is not None:
+                try:
+                    await on_complete(result)
+                except Exception:  # noqa: BLE001
+                    logger.exception("workflow_embed_on_complete_failed", prompt_id=prompt_id)
 
     # ------------------------------------------------------------------
     # Legacy API (preserved)

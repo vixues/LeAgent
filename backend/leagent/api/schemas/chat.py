@@ -32,6 +32,12 @@ class ChatCompletionRequest(BaseModel):
     max_tokens: int | None = Field(default=None, ge=1, le=128000)
     tools: list[dict[str, Any]] | None = None
     tool_choice: str | dict[str, Any] | None = None
+    #: Per-app agent customization (used by the non-streaming agent path, e.g.
+    #: leagent.js custom chatbots). ``system_prompt`` is appended to the system
+    #: prompt; ``agent_variant`` selects the persona/recipe (falls back to
+    #: ``default_agent`` when unknown).
+    system_prompt: str | None = Field(default=None, max_length=8000)
+    agent_variant: str | None = Field(default=None, max_length=64)
 
 
 class ChatCompletionChoice(BaseModel):
@@ -53,6 +59,9 @@ class ChatCompletionResponse(BaseModel):
     model: str
     choices: list[ChatCompletionChoice]
     usage: ChatCompletionUsage
+    #: Session the turn ran in. Lets clients (e.g. leagent.js custom apps)
+    #: reuse the session for multi-turn memory when they did not pass one.
+    session_id: UUID | None = None
 
 
 class SessionAttachmentsResponse(BaseModel):
@@ -137,6 +146,32 @@ class ChatWorkflowStepRunResponse(BaseModel):
     data: dict[str, Any] | None = None
     error: str | None = None
     duration_ms: int | None = None
+    prompt_id: str | None = None
+    run_id: str | None = None
+
+
+class ChatWorkflowEmbedRunRequest(BaseModel):
+    """Run a persisted chat workflow DAG embed (whole graph) in-chat."""
+
+    message_id: UUID
+    workflow_digest: str = Field(..., min_length=16, max_length=128)
+    user_input: str = Field(default="", max_length=50_000)
+    # Structured run inputs from the generated GenUI operation panel, keyed by
+    # the workflow's declared input names (resolve as ``${input.<name>}``).
+    inputs: dict[str, Any] | None = Field(default=None)
+    parent_run_id: str | None = Field(default=None, max_length=64)
+
+
+class ChatWorkflowEmbedRunResponse(BaseModel):
+    """HTTP response for starting a chat workflow embed (DAG) run.
+
+    The run executes in the background; ``status`` is ``running`` once started
+    and the terminal status is persisted to message extensions on completion.
+    """
+
+    success: bool
+    status: str | None = None
+    error: str | None = None
     prompt_id: str | None = None
     run_id: str | None = None
 

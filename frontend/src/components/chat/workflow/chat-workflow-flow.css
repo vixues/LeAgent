@@ -1,14 +1,13 @@
 /* Scoped React Flow overrides — only under .chat-workflow-flow */
-/* Use secondary text color so edges stay visible on pale node / pane backgrounds */
+/* Tertiary text color keeps connectors refined yet visible on pale backgrounds */
 .chat-workflow-flow .react-flow__edge-path {
-  stroke: rgb(var(--color-text-secondary));
-  stroke-width: 2px;
+  stroke: rgb(var(--color-text-tertiary));
+  stroke-width: 1.5px;
+  stroke-linecap: round;
 }
 
-.chat-workflow-flow .react-flow__arrowhead polyline,
-.chat-workflow-flow .react-flow__arrowhead polygon {
-  fill: rgb(var(--color-text-secondary));
-  stroke: rgb(var(--color-text-secondary));
+.chat-workflow-flow .react-flow__arrowhead {
+  display: none;
 }
 
 .chat-workflow-flow .react-flow__background {

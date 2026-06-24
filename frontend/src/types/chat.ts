@@ -67,6 +67,17 @@ export interface ChatWorkflowUiState {
   stepRuns: Record<string, ChatWorkflowStepRunRecord>;
 }
 
+export type ChatWorkflowEmbedRunStatus = 'idle' | 'running' | 'success' | 'error';
+
+/** In-chat run state for an embedded DAG (drives the Run button + live status). */
+export interface ChatWorkflowEmbedRunRecord {
+  status: ChatWorkflowEmbedRunStatus;
+  promptId?: string;
+  runId?: string;
+  error?: string;
+  outputs?: Record<string, unknown>;
+}
+
 /** Flow.data-shaped DAG persisted in extensions (same format as Flow editor). */
 export interface ChatWorkflowEmbedState {
   data: Record<string, unknown>;
@@ -74,6 +85,8 @@ export interface ChatWorkflowEmbedState {
   title?: string;
   summary?: string;
   flowId?: string;
+  /** In-chat execution state (transient + hydrated from `workflow_embed_run`). */
+  run?: ChatWorkflowEmbedRunRecord;
 }
 
 /** Hydrate workflow card state from API `extensions` JSON (string or object). */
@@ -172,7 +185,33 @@ export function parseWorkflowEmbedFromExtensions(ext: unknown): ChatWorkflowEmbe
     title: typeof title === 'string' && title.trim() ? title.trim() : undefined,
     summary: typeof summary === 'string' && summary.trim() ? summary.trim() : undefined,
     flowId: typeof flowId === 'string' && flowId.trim() ? flowId.trim() : undefined,
+    run: parseEmbedRunRecord(obj.workflow_embed_run),
   };
+}
+
+function parseEmbedRunRecord(raw: unknown): ChatWorkflowEmbedRunRecord | undefined {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return undefined;
+  const r = raw as Record<string, unknown>;
+  const st = r.status;
+  let status: ChatWorkflowEmbedRunStatus;
+  if (st === 'success' || st === 'error' || st === 'idle') {
+    status = st;
+  } else if (st === 'running') {
+    // A persisted "running" embed cannot still be in-flight after reload.
+    const err = r.error;
+    const completedAt = r.completed_at;
+    status = typeof err === 'string' && err ? 'error' : completedAt ? 'success' : 'idle';
+  } else {
+    return undefined;
+  }
+  const rec: ChatWorkflowEmbedRunRecord = { status };
+  if (typeof r.error === 'string' && r.error) rec.error = r.error;
+  if (typeof r.prompt_id === 'string' && r.prompt_id) rec.promptId = r.prompt_id;
+  if (typeof r.run_id === 'string' && r.run_id) rec.runId = r.run_id;
+  if (r.outputs && typeof r.outputs === 'object' && !Array.isArray(r.outputs)) {
+    rec.outputs = r.outputs as Record<string, unknown>;
+  }
+  return rec;
 }
 
 export interface MessageUsage {
@@ -388,6 +427,7 @@ export interface StreamEvent {
     | 'canvas'
     | 'ui_tree'
     | 'ui_patch'
+    | 'ui_stream'
     | 'pet_bubble'
     | 'user_input_request'
     | 'nested_agent_preview'
