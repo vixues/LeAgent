@@ -8,7 +8,11 @@ import { useI18n } from "@/i18n/I18nProvider";
 import { REPO_URL } from "@/lib/content";
 
 export default function Home() {
-  const { t } = useI18n();
+  const { t, lang } = useI18n();
+  const homePreviewSrc =
+    lang === "en-US"
+      ? "/images/previews/home-preview-en.png"
+      : "/images/previews/home-preview.png";
 
   return (
     <>
@@ -52,7 +56,7 @@ export default function Home() {
           <div className="hero-canvas mt-16">
             <div className="hero-canvas__inner">
               <img
-                src="/images/previews/home-preview.png"
+                src={homePreviewSrc}
                 alt="LeAgent workspace"
                 className="hero-canvas__image"
               />
