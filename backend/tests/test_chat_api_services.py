@@ -78,6 +78,14 @@ def _mock_chat_service() -> MagicMock:
     return svc
 
 
+def _mock_db() -> MagicMock:
+    return MagicMock()
+
+
+def _mock_db() -> MagicMock:
+    return MagicMock()
+
+
 # ---------------------------------------------------------------------------
 # Format helpers
 # ---------------------------------------------------------------------------
@@ -215,11 +223,16 @@ class TestSessionEndpointsDelegation:
         from leagent.db.models.message import SessionCreate
 
         svc = _mock_chat_service()
+        db = _mock_db()
         uid = uuid4()
         fake = _fake_session(uid)
         svc.create_session.return_value = fake
 
-        result = await create_session(SessionCreate(name="My Chat"), uid, svc)
+        with patch(
+            "leagent.api.v1.chat._require_project_access",
+            new_callable=AsyncMock,
+        ):
+            result = await create_session(SessionCreate(name="My Chat"), uid, svc, db)
         svc.create_session.assert_awaited_once()
         call_kw = svc.create_session.call_args
         assert call_kw[0][0] == uid
@@ -229,12 +242,17 @@ class TestSessionEndpointsDelegation:
         from leagent.api.v1.chat import get_session
 
         svc = _mock_chat_service()
+        db = _mock_db()
         uid = uuid4()
         sid = uuid4()
         fake = _fake_session(uid, id=sid)
         svc.get_session.return_value = fake
 
-        result = await get_session(sid, uid, svc)
+        with patch(
+            "leagent.api.v1.chat._require_session_project_access",
+            new_callable=AsyncMock,
+        ):
+            result = await get_session(sid, uid, svc, db)
         svc.get_session.assert_awaited_once_with(sid, user_id=uid)
 
     @pytest.mark.asyncio
@@ -243,10 +261,11 @@ class TestSessionEndpointsDelegation:
         from leagent.api.v1.chat import get_session
 
         svc = _mock_chat_service()
+        db = _mock_db()
         svc.get_session.return_value = None
 
         with pytest.raises(HTTPException) as exc_info:
-            await get_session(uuid4(), uuid4(), svc)
+            await get_session(uuid4(), uuid4(), svc, db)
         assert exc_info.value.status_code == 404
 
     @pytest.mark.asyncio
@@ -254,11 +273,19 @@ class TestSessionEndpointsDelegation:
         from leagent.api.v1.chat import delete_session
 
         svc = _mock_chat_service()
+        db = _mock_db()
         svc.delete_session.return_value = True
 
         uid = uuid4()
         sid = uuid4()
-        await delete_session(sid, uid, svc)
+        fake = _fake_session(uid, id=sid)
+        svc.get_session.return_value = fake
+
+        with patch(
+            "leagent.api.v1.chat._require_session_project_access",
+            new_callable=AsyncMock,
+        ):
+            await delete_session(sid, uid, svc, db)
         svc.delete_session.assert_awaited_once_with(sid, uid, soft=False)
 
     @pytest.mark.asyncio
@@ -267,10 +294,11 @@ class TestSessionEndpointsDelegation:
         from leagent.api.v1.chat import delete_session
 
         svc = _mock_chat_service()
-        svc.delete_session.return_value = False
+        db = _mock_db()
+        svc.get_session.return_value = None
 
         with pytest.raises(HTTPException) as exc_info:
-            await delete_session(uuid4(), uuid4(), svc)
+            await delete_session(uuid4(), uuid4(), svc, db)
         assert exc_info.value.status_code == 404
 
     @pytest.mark.asyncio
@@ -279,6 +307,7 @@ class TestSessionEndpointsDelegation:
         from leagent.db.models.message import chat_session_to_read
 
         svc = _mock_chat_service()
+        db = _mock_db()
         svc.sanitize_metadata_patch = AsyncMock()
         svc.merge_session_metadata = AsyncMock()
         uid = uuid4()
@@ -288,7 +317,11 @@ class TestSessionEndpointsDelegation:
         svc.update_session.return_value = fake
 
         body = SessionUpdateRequest(name="Updated")
-        result = await update_session(sid, body, uid, svc)
+        with patch(
+            "leagent.api.v1.chat._require_session_project_access",
+            new_callable=AsyncMock,
+        ):
+            result = await update_session(sid, body, uid, svc, db)
         svc.update_session.assert_awaited_once_with(sid, uid, name="Updated", is_active=None)
         assert result == chat_session_to_read(fake)
         assert svc.get_session.await_count == 2
@@ -299,10 +332,11 @@ class TestSessionEndpointsDelegation:
         from leagent.api.v1.chat import update_session
 
         svc = _mock_chat_service()
+        db = _mock_db()
         svc.get_session.return_value = None
 
         with pytest.raises(HTTPException) as exc_info:
-            await update_session(uuid4(), SessionUpdateRequest(name="x"), uuid4(), svc)
+            await update_session(uuid4(), SessionUpdateRequest(name="x"), uuid4(), svc, db)
         assert exc_info.value.status_code == 404
 
 
@@ -312,6 +346,7 @@ class TestMessageEndpointsDelegation:
         from leagent.api.v1.chat import get_session_messages
 
         svc = _mock_chat_service()
+        db = _mock_db()
         uid = uuid4()
         sid = uuid4()
         fake_session = _fake_session(uid, id=sid)
@@ -323,7 +358,11 @@ class TestMessageEndpointsDelegation:
             1,
         )
 
-        result = await get_session_messages(sid, uid, svc, page=1, page_size=50)
+        with patch(
+            "leagent.api.v1.chat._require_session_project_access",
+            new_callable=AsyncMock,
+        ):
+            result = await get_session_messages(sid, uid, svc, db, page=1, page_size=50)
         svc.get_session.assert_awaited_once_with(sid, user_id=uid)
         svc.get_messages_paginated.assert_awaited_once()
         assert result.total == 1
@@ -334,10 +373,11 @@ class TestMessageEndpointsDelegation:
         from leagent.api.v1.chat import get_session_messages
 
         svc = _mock_chat_service()
+        db = _mock_db()
         svc.get_session.return_value = None
 
         with pytest.raises(HTTPException) as exc_info:
-            await get_session_messages(uuid4(), uuid4(), svc)
+            await get_session_messages(uuid4(), uuid4(), svc, db)
         assert exc_info.value.status_code == 404
 
     @pytest.mark.asyncio

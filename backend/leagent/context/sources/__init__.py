@@ -44,6 +44,7 @@ def _lazy_load() -> None:
         art_playbook,
         capabilities,
         environment,
+        gated_policy,
         identity,
         playbooks,
         policies,

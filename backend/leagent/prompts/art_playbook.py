@@ -29,14 +29,20 @@ from __future__ import annotations
 import re
 from typing import Any
 
+from leagent.context.relevance import RelevanceGate
+
 __all__ = [
     "ART_ONTOLOGY",
+    "ART_DAG_PRIMITIVES",
     "ART_TOOL_SEQUENCE",
     "ART_REQUEST_HINTS",
+    "ART_GATE",
+    "art_playbook_opt_in",
     "build_art_node_catalog",
     "looks_like_art_request",
     "plan_art_tasks",
     "render_art_playbook",
+    "should_attach_art_playbook",
 ]
 
 ART_ONTOLOGY = (
@@ -52,24 +58,39 @@ ART_ONTOLOGY = (
     "8. export     — engine-ready bundle with import metadata (AssetExportNode)."
 )
 
+ART_DAG_PRIMITIVES = (
+    "DAG primitives (only three building blocks — keep graphs concise):\n"
+    "  - input node      — class_type 'StartNode' (alias 'input'); the entry.\n"
+    "  - processing node — class_type 'ToolCallNode' (alias 'tool') or any Art.* /\n"
+    "                      QualityGateNode / IterativeRefineNode; inputs.tool names\n"
+    "                      a registered tool, inputs.params carries its arguments.\n"
+    "  - output node     — class_type 'EndNode' (alias 'output'); the result.\n"
+    "Wire nodes via control.next (or control.conditions for branches); the engine\n"
+    "validates the same JSON whether emitted to chat or saved to a Flow row."
+)
+
 ART_TOOL_SEQUENCE = (
     "Required tool sequence for authoring + running an art pipeline:\n"
-    "  1. todo_write        — record the decomposed plan as visible steps.\n"
-    "  2. chat_workflow_embed_emit — stream the DAG onto the canvas as you build it.\n"
-    "  3. workflow_save     — validate + persist the graph (returns flow_id + digest).\n"
-    "  4. workflow_run      — execute; below-bar quality returns success=False.\n"
-    "  5. workflow_status   — poll until COMPLETED.\n"
-    "If workflow_run reports below-bar quality, revise the graph/prompts and\n"
-    "re-run within the same turn (the quality gate + refine loop are bounded)."
+    "  1. todo_write             — record the decomposed plan as visible steps.\n"
+    "  2. chat_workflow_embed_emit — publish the DAG as a RUNNABLE chat card; it can\n"
+    "                              be Run in-chat with live per-node status.\n"
+    "  3. Run the card           — execute the whole graph in-chat; below-bar quality\n"
+    "                              surfaces success=False (refine + re-run, bounded).\n"
+    "Promote to a reusable Flow only when asked: workflow_save (persist, returns\n"
+    "flow_id + digest) → workflow_run → workflow_status. Prefer the in-chat run for\n"
+    "one-off pipelines so the user sees node status without leaving the conversation."
 )
 
 #: Keyword hints that flag a request as a game-art task.
+#: Keep this list specific — broad tokens like "asset", "character",
+#: "pipeline", or "render" false-positive on document/office turns.
 ART_REQUEST_HINTS: tuple[str, ...] = (
-    "game art", "game-art", "concept art", "sprite", "texture", "asset",
+    "game art", "game-art", "concept art", "sprite", "texture",
     "3d model", "mesh", "turntable", "vfx", "flipbook", "particle",
-    "character", "prop", "environment art", "pipeline", "render",
+    "environment art", "game asset", "game character", "game prop",
     "unity", "unreal", "godot", "image generation", "img2img", "controlnet",
-    "美术", "贴图", "建模", "角色", "素材", "特效", "原画", "渲染",
+    "art.imagegen", "art.mesh3d", "art.vfxgen", "art.videogen",
+    "美术", "贴图", "建模", "游戏角色", "游戏素材", "特效", "原画", "游戏渲染",
 )
 
 #: Nodes (beyond ``Art.*``) that form the art pipeline backbone.
@@ -84,12 +105,38 @@ _TPL_ART_PATTERN = (
 )
 
 
+#: Single gating primitive for the art playbook (see ``leagent.context.relevance``).
+ART_GATE = RelevanceGate(
+    name="art_playbook",
+    hints=ART_REQUEST_HINTS,
+    opt_in_keys=("art_playbook", "enable_art_playbook", "art_pipeline"),
+)
+
+
 def looks_like_art_request(text: str | None) -> bool:
     """Heuristic: does *text* read like a game-art production request?"""
-    if not text:
-        return False
-    low = text.lower()
-    return any(hint in low for hint in ART_REQUEST_HINTS)
+    return ART_GATE._matches_text(text)
+
+
+def art_playbook_opt_in(
+    *,
+    template_vars: dict[str, Any] | None = None,
+    workflow_hint: str | None = None,
+) -> bool:
+    """Explicit harness opt-in (workflow metadata, template vars, hints)."""
+    return ART_GATE.opted_in(template_vars=template_vars, workflow_hint=workflow_hint)
+
+
+def should_attach_art_playbook(
+    query: str | None,
+    *,
+    workflow_hint: str | None = None,
+    template_vars: dict[str, Any] | None = None,
+) -> bool:
+    """Return whether the art playbook block should be injected this turn."""
+    return ART_GATE.matches(
+        query, workflow_hint=workflow_hint, template_vars=template_vars
+    )
 
 
 def build_art_node_catalog(registry: Any | None = None) -> str:
@@ -125,6 +172,7 @@ def render_art_playbook(registry: Any | None = None) -> str:
         [
             "# Game-art pipeline playbook",
             ART_ONTOLOGY,
+            ART_DAG_PRIMITIVES,
             build_art_node_catalog(registry),
             _TPL_ART_PATTERN,
             ART_TOOL_SEQUENCE,

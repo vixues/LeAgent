@@ -44,8 +44,6 @@ For **posters, PPT-style slide previews, business cards, and themed layouts**, c
 - Need exact component `kind` names and prop hints? Call `list_ui_components`.
 - About to author HTML? Call `get_html_canvas_guide` first.
 
-### Font guidance for document generators
-
-For `pdf_generator` (ReportLab), `cjk_font_path`, or inline code via `code_execution`, use a
-**complete** pan-Unicode font (Noto Sans SC/CJK, Source Han Sans, WenQuanYi Micro Hei,
-Microsoft YaHei) — not supplemental fallback fonts such as Droid Sans Fallback.
+- Generating a PDF/DOCX/PPTX/Excel or CJK chart from a visual turn? The
+  `document_fonts` block loads automatically alongside this one (pan-Unicode
+  font selection lives there — single source of truth).
