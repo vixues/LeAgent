@@ -15,7 +15,7 @@ from typing import Any
 import structlog
 
 from leagent.docgen.markdown import parse_markdown_document
-from leagent.docgen.model import DocumentSpec
+from leagent.docgen.model import DocumentSpec, _coerce_date_str
 from leagent.docgen.themes import list_theme_names
 from leagent.tools.base import SyncTool, ToolCategory, ToolContext
 
@@ -317,6 +317,10 @@ class DocumentGenerateTool(SyncTool):
         for key in _FRONT_MATTER_KEYS:
             if params.get(key) is None and key in front_matter:
                 params[key] = front_matter[key]
+
+        # YAML front matter may yield datetime.date; normalize before spec validation.
+        if params.get("date") is not None:
+            params["date"] = _coerce_date_str(params["date"])
 
         spec = DocumentSpec.model_validate(
             {

@@ -255,4 +255,40 @@ class FileProcessingService:
         except Exception as exc:
             logger.warning("Failed to update file record: %s", exc)
 
+        await self._index_chunks(file_id, result)
+
         return result
+
+    async def _index_chunks(self, file_id: str, result: dict[str, Any]) -> None:
+        """Chunk extracted text and persist to the knowledge storage layer."""
+        extracted = result.get("extracted_text")
+        if not extracted or not isinstance(extracted, str) or not extracted.strip():
+            return
+        try:
+            from uuid import UUID
+
+            from leagent.library.chunking import chunk_text
+            from leagent.services.service_manager import get_service_manager
+
+            sm = get_service_manager()
+            if sm.db is None:
+                return
+
+            logical_id = UUID(file_id)
+            user_id: UUID | None = None
+            from leagent.db.models.file import File
+
+            async with sm.db.session() as session:
+                row = await session.get(File, logical_id)
+                if row is None:
+                    return
+                user_id = row.user_id
+                row.is_indexed = True
+                session.add(row)
+
+            chunks = chunk_text(extracted)
+            await sm.db.repositories.document_chunks.replace_for_file(
+                logical_id, user_id, chunks
+            )
+        except Exception as exc:
+            logger.warning("chunk_index_failed for %s: %s", file_id, exc)

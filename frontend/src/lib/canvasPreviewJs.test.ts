@@ -43,8 +43,15 @@ describe('canvasIframeSandbox', () => {
     expect(canvasIframeSandbox(false, true)).not.toContain('allow-scripts');
   });
 
-  it('includes allow-scripts without allow-same-origin when JS enabled', () => {
+  it('includes allow-scripts and allow-same-origin for API canvas preview', () => {
     const sb = canvasIframeSandbox(true, true);
+    expect(sb).toContain('allow-scripts');
+    expect(sb).toContain('allow-same-origin');
+    expect(sb).toContain('allow-popups');
+  });
+
+  it('omits allow-same-origin for non-API hosted preview without camera', () => {
+    const sb = canvasIframeSandbox(true, false);
     expect(sb).toContain('allow-scripts');
     expect(sb).not.toContain('allow-same-origin');
   });

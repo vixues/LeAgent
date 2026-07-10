@@ -19,7 +19,8 @@ import {
   pickCanvasPreviewPathFromMetadata,
   resolveCanvasPreviewUrl,
 } from '@/lib/previewUrl';
-import { canvasIframeAllow, canvasIframeSandbox, withCanvasPreviewFlags } from '@/lib/canvasPreviewJs';
+import { canvasIframeAllow, canvasIframeSandbox, srcDocIframeSandbox, withCanvasPreviewFlags } from '@/lib/canvasPreviewJs';
+import { useCanvasPreviewDoc } from '@/hooks/useCanvasPreviewDoc';
 import { getCameraAccessIssue, localhostPreviewUrl, stopIframeMediaTracks } from '@/lib/cameraAccess';
 import {
   downloadImageBlob,
@@ -100,17 +101,22 @@ function CanvasPanel({ artifact, className }: CanvasPanelProps) {
   const isApiCanvasPreview =
     Boolean(hostedSrc) &&
     (hostedSrc.includes('/canvas/preview') || hostedSrc.includes('canvas%2Fpreview'));
-  const iframeSandbox = canvasIframeSandbox(
-    jsEnabled,
-    isApiCanvasPreview || ((meta?.trust as string) === 'hosted' && Boolean(hostedSrc)),
-    cameraAllowed,
-  );
+  const { srcDoc: previewDoc, isLoading: previewDocLoading, isError: previewDocError } =
+    useCanvasPreviewDoc(hostedSrc, isApiCanvasPreview);
+  const useSrcDocPreview = isApiCanvasPreview && Boolean(previewDoc) && !previewDocError;
+  const iframeSandbox = useSrcDocPreview
+    ? srcDocIframeSandbox(jsEnabled)
+    : canvasIframeSandbox(
+        jsEnabled,
+        isApiCanvasPreview || ((meta?.trust as string) === 'hosted' && Boolean(hostedSrc)),
+        cameraAllowed,
+      );
 
   const iframeAllow = canvasIframeAllow(cameraAllowed);
 
   useEffect(() => {
     setPreviewFrameError(false);
-  }, [hostedSrc, iframeKey, jsEnabled, cameraAllowed]);
+  }, [hostedSrc, iframeKey, jsEnabled, cameraAllowed, previewDoc, useSrcDocPreview]);
 
   const reloadPreviewIframe = useCallback(() => {
     stopIframeMediaTracks(previewIframeRef.current);
@@ -430,13 +436,24 @@ function CanvasPanel({ artifact, className }: CanvasPanelProps) {
                   check that the API proxy can reach the canvas service.
                 </div>
               )}
-              <div className="relative flex min-h-0 min-w-0 flex-1 basis-0 flex-col bg-white dark:bg-zinc-950">
+              {previewDocError && !previewDocLoading && (
+                <div className="flex-shrink-0 px-3 py-2 text-xs text-amber-800 dark:text-amber-200 bg-amber-50 dark:bg-amber-950/40 border-b border-amber-200/60 dark:border-amber-800/50">
+                  Could not load preview HTML. Use Open in new window or Refresh.
+                </div>
+              )}
+              <div className="relative flex min-h-[min(60vh,640px)] min-w-0 flex-1 basis-0 flex-col bg-white dark:bg-zinc-950">
+                {previewDocLoading && isApiCanvasPreview && !previewDoc ? (
+                  <div className="absolute inset-0 flex items-center justify-center text-xs text-muted-foreground">
+                    {t('chat.media.loading', { defaultValue: 'Loading…' })}
+                  </div>
+                ) : null}
                 <iframe
                   ref={previewIframeRef}
-                  key={`${hostedSrc}-${iframeKey}-${jsEnabled ? 'js' : 'nojs'}-${cameraAllowed ? 'cam' : 'nocam'}`}
+                  key={`${hostedSrc}-${iframeKey}-${jsEnabled ? 'js' : 'nojs'}-${cameraAllowed ? 'cam' : 'nocam'}-${useSrcDocPreview ? 'doc' : 'url'}`}
                   title={artifact.title}
-                  src={hostedSrc}
-                  className="min-h-0 w-full min-w-0 flex-1 border-0"
+                  src={useSrcDocPreview ? undefined : hostedSrc}
+                  srcDoc={useSrcDocPreview ? previewDoc ?? undefined : undefined}
+                  className="absolute inset-0 h-full w-full min-h-0 border-0"
                   sandbox={iframeSandbox || undefined}
                   allow={iframeAllow}
                   referrerPolicy="no-referrer"

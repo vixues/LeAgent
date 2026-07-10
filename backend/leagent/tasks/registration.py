@@ -87,7 +87,12 @@ def _default_builders() -> List[HandlerBuilder]:
 
         return FileProcessingTaskHandler(service_manager=sm)
 
-    return [_agent, _shell, _workflow, _tool, _batch, _file_processing]
+    def _file_gc(sm: "ServiceManager") -> "TaskHandler | None":
+        from leagent.tasks.handlers.file_gc_handler import FileGcTaskHandler
+
+        return FileGcTaskHandler(service_manager=sm)
+
+    return [_agent, _shell, _workflow, _tool, _batch, _file_processing, _file_gc]
 
 
 async def register_default_handlers(

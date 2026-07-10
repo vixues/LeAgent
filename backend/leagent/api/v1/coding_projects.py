@@ -48,6 +48,16 @@ from leagent.project.preview_tokens import decode_preview_token, mint_preview_to
 from leagent.project.proxy import forward_http, forward_websocket
 from leagent.project.runtime import StartTimeoutError
 from leagent.project.templates import list_templates
+from leagent.project.git import (
+    GitCommandError,
+    GitNotInstalledError,
+    git_diff_for_commit,
+    git_diff_worktree,
+    git_log,
+    git_show_file,
+    git_status_porcelain,
+    is_git_repo,
+)
 from leagent.project.workspace import (
     UnsafePathError,
     build_tree,
@@ -304,6 +314,128 @@ async def workspace_git(
 
     root = Path(project.root_path)
     return await git_snapshot(root)
+
+
+async def _coding_project_root(
+    manager: CodingProjectManager,
+    project_id: UUID,
+    user_id: str,
+) -> Path:
+    try:
+        project = await manager.get_for_user(project_id, user_id)
+    except CodingProjectNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Coding project not found"
+        ) from exc
+    return Path(project.root_path)
+
+
+@router.get("/{project_id}/git/log")
+async def coding_project_git_log(
+    project_id: UUID,
+    user_id: CurrentUserId,
+    manager: Annotated[CodingProjectManager, Depends(get_coding_projects)],
+    path: Optional[str] = Query(default=None),
+    limit: int = Query(default=50, ge=1, le=500),
+    offset: int = Query(default=0, ge=0, le=100000),
+) -> list[dict[str, str]]:
+    """Mirror of folders ``/project/git/log`` for coding-projects."""
+    root = await _coding_project_root(manager, project_id, user_id)
+    if not await is_git_repo(root):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Project root is not a git repository.",
+        )
+    try:
+        commits = await git_log(root, path=path, limit=limit, offset=offset)
+    except GitNotInstalledError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc),
+        ) from exc
+    except GitCommandError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc),
+        ) from exc
+    return [c.to_dict() for c in commits]
+
+
+@router.get("/{project_id}/git/show")
+async def coding_project_git_show(
+    project_id: UUID,
+    user_id: CurrentUserId,
+    manager: Annotated[CodingProjectManager, Depends(get_coding_projects)],
+    commit: str = Query(..., min_length=1, max_length=200),
+    path: str = Query(..., min_length=1),
+) -> dict[str, Any]:
+    root = await _coding_project_root(manager, project_id, user_id)
+    if not await is_git_repo(root):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Project root is not a git repository.",
+        )
+    try:
+        body = await git_show_file(root, commit, path)
+    except GitNotInstalledError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc),
+        ) from exc
+    except (GitCommandError, ValueError) as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc),
+        ) from exc
+    return {"commit": commit, "path": path, "content": body}
+
+
+@router.get("/{project_id}/git/diff")
+async def coding_project_git_diff(
+    project_id: UUID,
+    user_id: CurrentUserId,
+    manager: Annotated[CodingProjectManager, Depends(get_coding_projects)],
+    commit: Optional[str] = Query(default=None, max_length=200),
+    path: Optional[str] = Query(default=None),
+    against_worktree: bool = Query(default=False),
+) -> dict[str, Any]:
+    root = await _coding_project_root(manager, project_id, user_id)
+    if not await is_git_repo(root):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Project root is not a git repository.",
+        )
+    try:
+        if against_worktree:
+            diff = await git_diff_worktree(root, path=path)
+            return {"commit": None, "path": path, "diff": diff, "scope": "worktree"}
+        if not commit:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Either commit or against_worktree=true is required.",
+            )
+        diff = await git_diff_for_commit(root, commit, path=path)
+    except GitNotInstalledError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc),
+        ) from exc
+    except (GitCommandError, ValueError) as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc),
+        ) from exc
+    return {"commit": commit, "path": path, "diff": diff, "scope": "commit"}
+
+
+@router.get("/{project_id}/git/status")
+async def coding_project_git_status(
+    project_id: UUID,
+    user_id: CurrentUserId,
+    manager: Annotated[CodingProjectManager, Depends(get_coding_projects)],
+) -> list[dict[str, str]]:
+    root = await _coding_project_root(manager, project_id, user_id)
+    try:
+        entries = await git_status_porcelain(root)
+    except GitNotInstalledError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc),
+        ) from exc
+    return [e.to_dict() for e in entries]
 
 
 # ---------------------------------------------------------------------------

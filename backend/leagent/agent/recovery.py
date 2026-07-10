@@ -366,7 +366,12 @@ class ErrorRecovery:
             context: AgentContext | None = None,
         ) -> BaseToolResult:
             try:
-                base = await self.executor.run_tool(call.name, call.arguments, context)
+                # Forward the LLM's tool_call id so downstream streaming
+                # (tool_output_delta) correlates with the chat tool row.
+                base = await self.executor.run_tool(
+                    call.name, call.arguments, context,
+                    call_id=call.id or None,
+                )
             except ToolExecutionError as exc:
                 recovered = await self.attempt_recovery(
                     BaseToolResult(success=False, error=str(exc)),

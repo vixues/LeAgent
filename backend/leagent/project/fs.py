@@ -153,7 +153,39 @@ def select_project_root(
         raise ProjectRootError(
             f"Project root {str(candidate)!r} does not exist or is not a directory."
         )
-    return candidate
+    return _redirect_to_worktree(context, candidate)
+
+
+def _redirect_to_worktree(context: ToolContext, root: Path) -> Path:
+    """Swap the project root for the session's worktree when one is bound.
+
+    ``workspace_mode = worktree`` sessions operate on an isolated git
+    worktree; every ``project_*`` tool transparently resolves into it.
+    The worktree path is folded into ``context.extra['project_roots']``
+    so the deeper path sandbox accepts it.
+    """
+    session_id = getattr(context, "session_id", None)
+    if session_id is None:
+        return root
+    try:
+        from leagent.project.worktree import get_worktree_registry
+
+        info = get_worktree_registry().resolve(str(session_id), root)
+    except Exception:  # noqa: BLE001
+        return root
+    if info is None:
+        return root
+    wt = Path(info.worktree_path)
+    if not wt.is_dir():
+        logger.warning("worktree_missing", path=info.worktree_path)
+        return root
+    extra = getattr(context, "extra", None)
+    if isinstance(extra, dict):
+        roots = list(extra.get("project_roots") or [])
+        if str(wt) not in [str(r) for r in roots]:
+            roots.append(str(wt))
+            extra["project_roots"] = roots
+    return wt
 
 
 def resolve_in_project(

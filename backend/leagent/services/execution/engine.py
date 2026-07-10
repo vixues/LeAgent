@@ -16,6 +16,7 @@ import shutil
 import subprocess
 import sys
 import time
+from contextlib import suppress
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
@@ -23,6 +24,13 @@ from typing import Any
 
 import structlog
 
+from leagent.services.execution.os_sandbox import (
+    SandboxApplication,
+    SandboxSpec,
+    default_writable_roots,
+    resolve_sandbox_mode,
+    wrap_argv,
+)
 from leagent.services.execution.policies import (
     AgentPolicy,
     CronPolicy,
@@ -102,15 +110,107 @@ def _sandbox_argv(
     python: str,
     workspace: Path,
     isolation_mode: str,
-) -> list[str]:
-    """Build the Python runner argv — direct execution, no namespace isolation."""
-    return [python, "-m", "leagent.code.runner"]
+) -> tuple[list[str], SandboxApplication]:
+    """Build the Python runner argv, wrapped in the OS sandbox when enabled.
+
+    ``isolation_mode`` resolves through :func:`resolve_sandbox_mode`
+    (explicit > ``LEAGENT_SANDBOX_MODE`` env > settings). Modes
+    ``read-only`` / ``workspace-write`` attempt a bwrap/Seatbelt wrapper;
+    probe failures degrade to direct execution with a structured warning.
+    """
+    argv = [python, "-m", "leagent.code.runner"]
+    mode = resolve_sandbox_mode(isolation_mode)
+    spec = SandboxSpec(
+        mode=mode,
+        writable_roots=default_writable_roots(str(workspace)),
+        network_access=_sandbox_network_access(),
+    )
+    app = wrap_argv(argv, spec, cwd=str(workspace))
+    return app.argv, app
+
+
+def _sandbox_network_access() -> bool:
+    raw = os.environ.get("LEAGENT_SANDBOX_NETWORK", "").strip().lower()
+    if raw in ("0", "false", "no", "off"):
+        return False
+    if raw in ("1", "true", "yes", "on"):
+        return True
+    return True  # default on: many code_execution tasks legitimately fetch data
 
 
 def _truncate(text: str, limit: int) -> tuple[str, bool]:
     if len(text) <= limit:
         return text, False
     return text[:limit] + "\n... [truncated]", True
+
+
+async def _pump_output(
+    proc: asyncio.subprocess.Process,
+    *,
+    stdin_data: bytes | None,
+    session_id: str | None,
+    output_meta: dict[str, Any],
+) -> tuple[bytes, bytes]:
+    """Incrementally read stdout/stderr, publishing chunks to the output bus.
+
+    Functionally equivalent to ``proc.communicate()`` but emits
+    ``tool_output_delta`` frames while the process runs so the frontend
+    terminal renders output live instead of waiting for ``tool_result``.
+    """
+    import codecs
+
+    from leagent.services.execution.output_stream import get_tool_output_bus
+
+    bus = get_tool_output_bus()
+    call_id = str(output_meta.get("tool_call_id") or "")
+    tool_name = str(output_meta.get("tool_name") or "")
+    source = str(output_meta.get("source") or "shell")
+
+    if stdin_data is not None and proc.stdin is not None:
+        try:
+            proc.stdin.write(stdin_data)
+            await proc.stdin.drain()
+        except (BrokenPipeError, ConnectionResetError):
+            pass
+        finally:
+            with suppress(Exception):
+                proc.stdin.close()
+
+    async def _pump(reader: asyncio.StreamReader | None, stream: str) -> bytes:
+        if reader is None:
+            return b""
+        decoder = codecs.getincrementaldecoder("utf-8")(errors="replace")
+        collected: list[bytes] = []
+        while True:
+            chunk = await reader.read(8192)
+            if not chunk:
+                break
+            collected.append(chunk)
+            text = decoder.decode(chunk)
+            if text:
+                bus.publish(
+                    session_id, call_id, stream, text,
+                    tool_name=tool_name, source=source,
+                )
+        tail = decoder.decode(b"", final=True)
+        if tail:
+            bus.publish(
+                session_id, call_id, stream, tail,
+                tool_name=tool_name, source=source,
+            )
+        return b"".join(collected)
+
+    stdout_raw, stderr_raw, _ = await asyncio.gather(
+        _pump(proc.stdout, "stdout"),
+        _pump(proc.stderr, "stderr"),
+        proc.wait(),
+    )
+    bus.publish(
+        session_id, call_id, "system", "",
+        tool_name=tool_name, source=source,
+        done=True, exit_code=proc.returncode,
+    )
+    return stdout_raw, stderr_raw
 
 
 def _record_sandbox_metric(result: ExecutionResult, *, isolation_mode: str) -> None:
@@ -258,7 +358,7 @@ class ExecutionEngine:
         payload_bytes = build_runner_stdin(payload)
 
         cwd = workspace or os.getcwd()
-        argv = _sandbox_argv(
+        argv, sandbox_app = _sandbox_argv(
             python=python,
             workspace=Path(cwd),
             isolation_mode=isolation_mode,
@@ -274,7 +374,11 @@ class ExecutionEngine:
             parse_json_envelope=True,
             session_id=session_id,
         )
-        _record_sandbox_metric(result, isolation_mode=isolation_mode)
+        result.metadata.update(sandbox_app.to_metadata())
+        _record_sandbox_metric(
+            result,
+            isolation_mode=sandbox_app.backend if sandbox_app.applied else isolation_mode,
+        )
         return result
 
     async def shell_command(
@@ -287,6 +391,7 @@ class ExecutionEngine:
         extra_env: dict[str, str] | None = None,
         stdin_data: bytes | None = None,
         session_id: str | None = None,
+        output_meta: dict[str, Any] | None = None,
     ) -> ExecutionResult:
         """Run a whitelisted shell command."""
         pol = policy or self._default_policy
@@ -308,8 +413,14 @@ class ExecutionEngine:
         env = pol.sanitized_env(extra_env)
         working_dir = cwd or os.getcwd()
 
-        return await self._run_subprocess(
-            argv,
+        run_argv = argv
+        sandbox_app: SandboxApplication | None = None
+        if pol.sandbox_spec is not None:
+            sandbox_app = wrap_argv(argv, pol.sandbox_spec, cwd=working_dir)
+            run_argv = sandbox_app.argv
+
+        result = await self._run_subprocess(
+            run_argv,
             cwd=working_dir,
             env=env,
             timeout=effective_timeout + pol.grace_sec,
@@ -317,7 +428,11 @@ class ExecutionEngine:
             mode=ExecutionMode.SHELL_COMMAND,
             stdin_data=stdin_data,
             session_id=session_id,
+            output_meta=output_meta,
         )
+        if sandbox_app is not None:
+            result.metadata.update(sandbox_app.to_metadata())
+        return result
 
     async def shell_script(
         self,
@@ -327,6 +442,9 @@ class ExecutionEngine:
         policy: ExecutionPolicy | None = None,
         timeout_sec: float | None = None,
         extra_env: dict[str, str] | None = None,
+        stdin_data: bytes | None = None,
+        session_id: str | None = None,
+        output_meta: dict[str, Any] | None = None,
     ) -> ExecutionResult:
         """Run a free-form shell script (requires policy.allow_free_shell)."""
         pol = policy or self._default_policy
@@ -340,6 +458,30 @@ class ExecutionEngine:
         effective_timeout = pol.effective_timeout(timeout_sec)
         env = pol.sanitized_env(extra_env)
         working_dir = cwd or os.getcwd()
+
+        # POSIX: route through argv so the OS sandbox wrapper and stdin
+        # handling apply uniformly; Windows keeps the native shell path.
+        if not sys.platform.startswith("win"):
+            argv = ["/bin/bash", "-c", script] if os.path.exists("/bin/bash") else ["/bin/sh", "-c", script]
+            run_argv = argv
+            sandbox_app: SandboxApplication | None = None
+            if pol.sandbox_spec is not None:
+                sandbox_app = wrap_argv(argv, pol.sandbox_spec, cwd=working_dir)
+                run_argv = sandbox_app.argv
+            result = await self._run_subprocess(
+                run_argv,
+                cwd=working_dir,
+                env=env,
+                timeout=effective_timeout + pol.grace_sec,
+                policy=pol,
+                mode=ExecutionMode.SHELL_SCRIPT,
+                stdin_data=stdin_data,
+                session_id=session_id,
+                output_meta=output_meta,
+            )
+            if sandbox_app is not None:
+                result.metadata.update(sandbox_app.to_metadata())
+            return result
 
         return await self._run_shell_script(
             script,
@@ -361,6 +503,7 @@ class ExecutionEngine:
         stdin_data: bytes | None = None,
         parse_json_envelope: bool = False,
         session_id: str | None = None,
+        output_meta: dict[str, Any] | None = None,
     ) -> ExecutionResult:
         async with self._semaphore:
             self._active_count += 1
@@ -368,11 +511,23 @@ class ExecutionEngine:
             self._inc_session_count(session_id)
             started = time.monotonic()
             proc: asyncio.subprocess.Process | None = None
+            # Live streaming: publish incremental chunks to the ToolOutputBus
+            # when the caller supplied correlation metadata. The JSON-envelope
+            # path (python runner) stays buffered — its stdout is a protocol
+            # frame, not human-readable output.
+            stream_live = (
+                output_meta is not None
+                and bool(output_meta.get("tool_call_id"))
+                and session_id is not None
+                and not parse_json_envelope
+            )
             try:
                 spawn_kw = _create_subprocess_kwargs(cwd=cwd, env=env)
                 proc = await asyncio.create_subprocess_exec(
                     *argv,
-                    stdin=asyncio.subprocess.PIPE if stdin_data is not None else None,
+                    # DEVNULL when there is nothing to send: PIPE without input
+                    # can surface spurious BrokenPipeError on Windows Proactor.
+                    stdin=asyncio.subprocess.PIPE if stdin_data is not None else subprocess.DEVNULL,
                     stdout=asyncio.subprocess.PIPE,
                     stderr=asyncio.subprocess.PIPE,
                     **spawn_kw,
@@ -380,10 +535,21 @@ class ExecutionEngine:
                 self._register_proc(session_id, proc)
 
                 try:
-                    stdout_raw, stderr_raw = await asyncio.wait_for(
-                        proc.communicate(input=stdin_data),
-                        timeout=timeout,
-                    )
+                    if stream_live:
+                        stdout_raw, stderr_raw = await asyncio.wait_for(
+                            _pump_output(
+                                proc,
+                                stdin_data=stdin_data,
+                                session_id=session_id,
+                                output_meta=output_meta or {},
+                            ),
+                            timeout=timeout,
+                        )
+                    else:
+                        stdout_raw, stderr_raw = await asyncio.wait_for(
+                            proc.communicate(input=stdin_data),
+                            timeout=timeout,
+                        )
                 except asyncio.TimeoutError:
                     _kill_process_group(proc)
                     try:
@@ -410,8 +576,8 @@ class ExecutionEngine:
                         stdout_text, stderr_text, returncode, duration_ms, mode,
                     )
 
-                stdout_text, _ = _truncate(stdout_text, policy.max_output_bytes)
-                stderr_text, _ = _truncate(stderr_text, policy.max_output_bytes)
+                stdout_text, out_trunc = _truncate(stdout_text, policy.max_output_bytes)
+                stderr_text, err_trunc = _truncate(stderr_text, policy.max_output_bytes)
 
                 status = "ok" if returncode == 0 else "error"
                 return ExecutionResult(
@@ -422,8 +588,21 @@ class ExecutionEngine:
                     duration_ms=duration_ms,
                     error=None if returncode == 0 else f"Exit code {returncode}",
                     mode=mode,
+                    metadata={
+                        "stdout_truncated": out_trunc,
+                        "stderr_truncated": err_trunc,
+                    },
                 )
 
+            except FileNotFoundError:
+                duration_ms = int((time.monotonic() - started) * 1000)
+                return ExecutionResult(
+                    status="error",
+                    error=f"Command not found on PATH: {argv[0]!r}",
+                    duration_ms=duration_ms,
+                    mode=mode,
+                    metadata={"not_found": True},
+                )
             except Exception as exc:
                 duration_ms = int((time.monotonic() - started) * 1000)
                 logger.error("execution_crash", error=str(exc), argv=argv[:3])

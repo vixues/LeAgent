@@ -1,6 +1,8 @@
 """Database models for LeAgent (standalone local deployment)."""
 
 from leagent.db.models.agent_checkpoint import AgentCheckpoint
+from leagent.db.models.approval_decision import ApprovalDecisionLog
+from leagent.db.models.change_review import ChangeReview
 from leagent.db.models.agent_memory import (
     AgentEpisode,
     AgentFact,
@@ -34,6 +36,8 @@ from leagent.db.models.file import (
     FileStatus,
     FileType,
     FileUpdate,
+    InboxState,
+    LibraryScope,
 )
 from leagent.db.models.pet_project import (
     PetProject,
@@ -68,6 +72,10 @@ from leagent.db.models.canvas import (
     CanvasContentType,
     CanvasDocument,
 )
+from leagent.db.models.document_chunk import (
+    DocumentChunk,
+    DocumentChunkRead,
+)
 from leagent.db.models.message import (
     ChatSession,
     Message,
@@ -96,6 +104,10 @@ from leagent.db.models.task import (
 __all__ = [
     # Agent checkpoints
     "AgentCheckpoint",
+    # Approval audit
+    "ApprovalDecisionLog",
+    # Change reviews (worktree review queue)
+    "ChangeReview",
     # Agent memory
     "AgentEpisode",
     "AgentFact",
@@ -128,6 +140,9 @@ __all__ = [
     # Canvas
     "CanvasContentType",
     "CanvasDocument",
+    # Document chunks (knowledge storage layer)
+    "DocumentChunk",
+    "DocumentChunkRead",
     # Message
     "Message",
     "ChatSession",
@@ -157,6 +172,8 @@ __all__ = [
     "FileCreate",
     "FileUpdate",
     "FileRead",
+    "LibraryScope",
+    "InboxState",
     # Pet Space
     "PetProject",
     "PetProjectFile",

@@ -17,8 +17,9 @@ from pathlib import Path
 from typing import Annotated, Optional
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from pydantic import BaseModel, Field
+from sse_starlette.sse import EventSourceResponse
 from sqlmodel import col, func, select
 
 from leagent.schema.api import PaginatedResponse
@@ -830,3 +831,216 @@ async def post_project_git_init(
     except GitCommandError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     return {"folder_id": str(folder_id), "path": str(root), **result}
+
+
+# ---------------------------------------------------------------------------
+# Dev-server runtime (folder-scoped; delegates to CodingProjectManager)
+# ---------------------------------------------------------------------------
+
+
+def _get_coding_projects_manager():
+    from leagent.project.manager import get_coding_projects_service
+
+    try:
+        return get_coding_projects_service()
+    except RuntimeError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Coding-projects service is not available.",
+        ) from exc
+
+
+class FolderProjectScaffoldRequest(BaseModel):
+    name: str = Field(..., min_length=1, max_length=200)
+    template: str = Field(..., min_length=1, max_length=64)
+    description: Optional[str] = Field(default=None, max_length=500)
+
+
+@router.post("/{folder_id}/project/scaffold")
+async def scaffold_folder_project(
+    folder_id: UUID,
+    body: FolderProjectScaffoldRequest,
+    user_id: CurrentUserId,
+    db: Annotated[DatabaseService, Depends(get_database_service)],
+) -> dict:
+    """Scaffold a coding project into a folder and enable project mode."""
+    from leagent.project.manager import CodingProjectNotFoundError
+    from leagent.project.paths import ProjectPathSafetyError
+
+    manager = _get_coding_projects_manager()
+    async with db.session() as session:
+        folder = await load_entity_by_id(session, Folder, folder_id, parent_table="folders")
+        if folder is None or folder.is_deleted or folder.user_id != user_id:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Folder not found")
+
+    try:
+        project = await manager.scaffold(
+            user_id=user_id,
+            name=body.name,
+            template=body.template,
+            folder_id=folder_id,
+            description=body.description,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    except FileExistsError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    except ProjectPathSafetyError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+    return {
+        "folder_id": str(folder_id),
+        "project_id": str(project.id),
+        "root_path": project.root_path,
+        "template": project.template,
+    }
+
+
+@router.post("/{folder_id}/project/run")
+async def run_folder_project(
+    folder_id: UUID,
+    user_id: CurrentUserId,
+) -> dict:
+    """Start the dev server for a project-mode folder."""
+    import json
+    from datetime import timezone
+
+    from leagent.config.settings import get_settings
+    from leagent.project.binaries import CodingBinaryNotAllowedError
+    from leagent.project.manager import (
+        CodingProjectNotFoundError,
+        CodingProjectQuotaError,
+    )
+    from leagent.project.runtime import StartTimeoutError
+
+    manager = _get_coding_projects_manager()
+    try:
+        project = await manager.get_by_folder_for_user(folder_id, user_id)
+        project, running, token = await manager.start(
+            project_id=project.id, user_id=user_id
+        )
+    except CodingProjectNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No coding project runtime bound to this folder.",
+        ) from exc
+    except CodingProjectQuotaError as exc:
+        raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=str(exc)) from exc
+    except CodingBinaryNotAllowedError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    except StartTimeoutError as exc:
+        raise HTTPException(status_code=status.HTTP_504_GATEWAY_TIMEOUT, detail=str(exc)) from exc
+    except (FileNotFoundError, RuntimeError) as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+    settings = get_settings()
+    template = manager.get_template(project.template)
+    return {
+        "folder_id": str(folder_id),
+        "project_id": str(project.id),
+        "status": project.status.value,
+        "runtime_kind": project.runtime_kind.value,
+        "port": running.port,
+        "host": running.host,
+        "preview_url": manager.build_preview_url(project.id, token, sub_path=""),
+        "preview_token": token,
+        "expires_at": datetime.now(timezone.utc).timestamp()
+        + settings.coding_projects.preview_token_ttl_seconds,
+        "health_path": template.health_path,
+    }
+
+
+@router.post("/{folder_id}/project/stop")
+async def stop_folder_project(
+    folder_id: UUID,
+    user_id: CurrentUserId,
+) -> dict:
+    """Stop the dev server for a project-mode folder."""
+    from leagent.project.manager import CodingProjectNotFoundError
+
+    manager = _get_coding_projects_manager()
+    try:
+        project = await manager.get_by_folder_for_user(folder_id, user_id)
+        project = await manager.stop(project_id=project.id, user_id=user_id)
+    except CodingProjectNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No coding project runtime bound to this folder.",
+        ) from exc
+    return {
+        "folder_id": str(folder_id),
+        "project_id": str(project.id),
+        "status": project.status.value,
+        "is_running": manager.supervisor.is_running(project.id),
+    }
+
+
+@router.get("/{folder_id}/project/status")
+async def folder_project_status(
+    folder_id: UUID,
+    user_id: CurrentUserId,
+) -> dict:
+    """Return dev-server status for a project-mode folder."""
+    from leagent.project.manager import CodingProjectNotFoundError
+
+    manager = _get_coding_projects_manager()
+    try:
+        project = await manager.get_by_folder_for_user(folder_id, user_id)
+    except CodingProjectNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No coding project runtime bound to this folder.",
+        ) from exc
+    return {
+        "folder_id": str(folder_id),
+        "project_id": str(project.id),
+        "status": project.status.value,
+        "runtime_kind": project.runtime_kind.value,
+        "port": project.port,
+        "pid": project.pid,
+        "is_running": manager.supervisor.is_running(project.id),
+    }
+
+
+@router.get("/{folder_id}/project/logs")
+async def stream_folder_project_logs(
+    folder_id: UUID,
+    user_id: CurrentUserId,
+    request: Request,
+):
+    """SSE log stream for a project-mode folder's dev server."""
+    import asyncio
+    import json
+
+    from leagent.project.manager import CodingProjectNotFoundError
+
+    manager = _get_coding_projects_manager()
+    try:
+        project = await manager.get_by_folder_for_user(folder_id, user_id)
+    except CodingProjectNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No coding project runtime bound to this folder.",
+        ) from exc
+
+    project_id = project.id
+
+    async def _gen():
+        if not manager.supervisor.is_running(project_id):
+            for line in manager.snapshot_logs(project_id):
+                yield {"event": "log", "data": json.dumps(line.to_dict())}
+            yield {"event": "done", "data": "{}"}
+            return
+        try:
+            async for line in manager.stream_logs(project_id):
+                if await request.is_disconnected():
+                    break
+                if line is None:
+                    yield {"event": "done", "data": "{}"}
+                    return
+                yield {"event": "log", "data": json.dumps(line.to_dict())}
+        except asyncio.CancelledError:
+            pass
+        yield {"event": "done", "data": "{}"}
+
+    return EventSourceResponse(_gen())

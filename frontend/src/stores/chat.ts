@@ -87,6 +87,8 @@ interface ChatStore {
   fetchOlderMessages: (sessionId: string) => Promise<void>;
 
   addMessage: (sessionId: string, message: Message) => void;
+  /** Insert a mid-turn steer user row before the in-flight assistant message. */
+  insertSteerMessage: (sessionId: string, message: Message) => void;
   updateMessage: (sessionId: string, messageId: string, updates: Partial<Message>) => void;
   appendToMessage: (sessionId: string, messageId: string, content: string) => void;
   updateToolCall: (sessionId: string, messageId: string, toolCallId: string, updates: Partial<ToolCall>) => void;
@@ -936,6 +938,40 @@ export const useChatStore = create<ChatStore>()(
                     messageCount: updatedMessages.length,
                     updatedAt: new Date().toISOString(),
                     preview: message.role === 'user' ? message.content.slice(0, 50) : s.preview,
+                  }
+                : s
+            ),
+          };
+        });
+      },
+
+      insertSteerMessage: (sessionId, message) => {
+        set((state) => {
+          const sessionMessages = state.messages[sessionId] || [];
+          if (sessionMessages.some((m) => m.id === message.id)) {
+            return state;
+          }
+          let insertIdx = sessionMessages.length;
+          for (let i = sessionMessages.length - 1; i >= 0; i--) {
+            if (sessionMessages[i]?.role === 'assistant') {
+              insertIdx = i;
+              break;
+            }
+          }
+          const updatedMessages = [
+            ...sessionMessages.slice(0, insertIdx),
+            message,
+            ...sessionMessages.slice(insertIdx),
+          ];
+          return {
+            messages: { ...state.messages, [sessionId]: updatedMessages },
+            sessions: state.sessions.map((s) =>
+              s.id === sessionId
+                ? {
+                    ...s,
+                    messageCount: updatedMessages.length,
+                    updatedAt: new Date().toISOString(),
+                    preview: message.content.slice(0, 50),
                   }
                 : s
             ),

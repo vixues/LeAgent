@@ -4,18 +4,78 @@ from __future__ import annotations
 
 from dataclasses import dataclass, replace
 
+import structlog
+
 from leagent.context.types import ContextBlock, ContextScope
+
+logger = structlog.get_logger(__name__)
 
 __all__ = [
     "BudgetRow",
     "MinimiseResult",
     "PINNED_THRESHOLD",
     "TRUNCATION_SUFFIX",
+    "DEFAULT_SOURCE_HARD_CAP_CHARS",
+    "SOURCE_HARD_CAPS",
+    "enforce_source_hard_budgets",
     "minimise",
 ]
 
 PINNED_THRESHOLD = 1000
 TRUNCATION_SUFFIX = "\n…[truncated by context budget]"
+
+#: ~10K tokens ≈ 30K chars (approx_tokens = len // 3). Hard ceiling per
+#: fragment so a single source cannot dominate the prompt (Codex context rule).
+DEFAULT_SOURCE_HARD_CAP_CHARS = 30_000
+
+#: Per-source hard caps (chars). Volatile / bulky sources get tighter budgets.
+SOURCE_HARD_CAPS: dict[str, int] = {
+    "tool_history": 12_000,
+    "recent_reads": 12_000,
+    "recall": 12_000,
+    "working_set": 12_000,
+    "session_attachments": 18_000,
+    "session_artifacts": 12_000,
+    "project_memory": 24_000,
+    "playbooks": 18_000,
+    "art_playbook": 18_000,
+    "document_generation": 18_000,
+    "policies": 18_000,
+}
+
+
+def enforce_source_hard_budgets(
+    blocks: list[ContextBlock],
+    *,
+    default_cap: int = DEFAULT_SOURCE_HARD_CAP_CHARS,
+    caps: dict[str, int] | None = None,
+) -> tuple[list[ContextBlock], list[str]]:
+    """Truncate each block that exceeds its per-source hard char budget.
+
+    Returns ``(blocks, truncated_source_ids)``. Always runs *before*
+    the global :func:`minimise` pass so no single fragment can exceed
+    ~10K tokens regardless of remaining global budget.
+    """
+    table = caps if caps is not None else SOURCE_HARD_CAPS
+    out: list[ContextBlock] = []
+    truncated: list[str] = []
+    for block in blocks:
+        cap = table.get(block.source_id, default_cap)
+        if block.cost <= cap:
+            out.append(block)
+            continue
+        max_body = max(0, cap - len(TRUNCATION_SUFFIX))
+        tb = _truncate_block(block, max_body)
+        out.append(tb)
+        truncated.append(block.source_id)
+        logger.info(
+            "context_source_hard_budget",
+            source_id=block.source_id,
+            original_chars=block.cost,
+            cap_chars=cap,
+            final_chars=tb.cost,
+        )
+    return out, truncated
 
 
 @dataclass(slots=True)

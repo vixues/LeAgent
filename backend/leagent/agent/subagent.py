@@ -70,6 +70,7 @@ class SubagentResult(TypedDict, total=False):
     produced_files: list[dict[str, Any]]
     images: list[dict[str, Any]]
     verification_gap: str | None
+    checkpoint_id: str
 
 
 def make_child_executor(
@@ -256,6 +257,93 @@ def _activity_summary(tool_name: str, content: str, ok: bool) -> str:
     return (base + (f": {snippet}" if snippet else ""))[:500]
 
 
+def _shell_command_blob(inp: dict[str, Any], summary: str | None = None) -> str:
+    """Flatten argv / shell / summary into one searchable string."""
+    parts: list[str] = []
+    argv = inp.get("argv")
+    if isinstance(argv, list):
+        parts.append(" ".join(str(a) for a in argv))
+    shell = inp.get("shell")
+    if isinstance(shell, str) and shell.strip():
+        parts.append(shell)
+    if summary:
+        parts.append(summary)
+    return " ".join(parts).lower()
+
+
+#: Heuristic map: changed-file extension → verification command tokens.
+_VERIFY_BY_EXT: dict[str, tuple[str, ...]] = {
+    ".py": ("pytest", "python -m pytest", "python -m unittest", "mypy", "ruff", "pyright"),
+    ".pyi": ("mypy", "pyright"),
+    ".ts": ("vitest", "jest", "npm test", "pnpm test", "yarn test", "tsc", "eslint"),
+    ".tsx": ("vitest", "jest", "npm test", "pnpm test", "yarn test", "tsc", "eslint"),
+    ".js": ("vitest", "jest", "npm test", "pnpm test", "yarn test", "eslint"),
+    ".jsx": ("vitest", "jest", "npm test", "pnpm test", "yarn test", "eslint"),
+    ".rs": ("cargo test", "cargo check", "cargo clippy"),
+    ".go": ("go test", "golangci-lint"),
+    ".java": ("mvn test", "gradle test", "./gradlew test"),
+}
+
+
+def _expected_verify_tokens(changed_paths: set[str]) -> list[str]:
+    """Union of verification tokens implied by the changed file set."""
+    tokens: list[str] = []
+    seen: set[str] = set()
+    for path in changed_paths:
+        lower = path.lower()
+        for ext, cands in _VERIFY_BY_EXT.items():
+            if lower.endswith(ext):
+                for t in cands:
+                    if t not in seen:
+                        seen.add(t)
+                        tokens.append(t)
+                break
+    return tokens
+
+
+def _matched_verification(
+    shell_blobs: list[str],
+    expected_tokens: list[str],
+) -> bool:
+    """True when at least one shell invocation matches an expected verify token."""
+    if not expected_tokens:
+        # Unknown toolchain: any project_shell counts (legacy heuristic).
+        return bool(shell_blobs)
+    joined = "\n".join(shell_blobs)
+    return any(tok in joined for tok in expected_tokens)
+
+
+def assess_verification_gap(
+    *,
+    changed_paths: set[str],
+    shell_blobs: list[str],
+    enforce: bool,
+    partial: bool,
+    error: str | None,
+) -> str | None:
+    """Return a verification_gap message when changed files lack matching tests.
+
+    Upgrades the old "did any shell run?" check to "did a shell command
+    matching the changed-files toolchain run?" (pytest / vitest / cargo …).
+    """
+    if not enforce or not changed_paths or partial or error is not None:
+        return None
+    expected = _expected_verify_tokens(changed_paths)
+    if _matched_verification(shell_blobs, expected):
+        return None
+    if not shell_blobs:
+        hint = ", ".join(expected[:4]) if expected else "tests/lint/typecheck"
+        return (
+            "Files were modified but project_shell was not run for "
+            f"verification ({hint})."
+        )
+    hint = ", ".join(expected[:4]) if expected else "a matching test/lint command"
+    return (
+        "Files were modified and project_shell ran, but no command matched "
+        f"the expected verification for the changed files ({hint})."
+    )
+
+
 async def _run_engine(
     engine: "QueryEngine",
     prompt: str,
@@ -276,6 +364,7 @@ async def _run_engine(
     tool_calls_count = 0
     partial = False
     error: str | None = None
+    checkpoint_id: str | None = None
     activity_rows: list[dict[str, Any]] = []
     changed_paths: set[str] = set()
     produced_files: list[dict[str, Any]] = []
@@ -288,7 +377,24 @@ async def _run_engine(
         agent_name=str(getattr(cfg, "agent_id", "") or ""),
     )
 
-    async for event in run_loop(engine, prompt, run_state=run_state):
+    # Durable child runs: interrupted sub-agent turns (awaiting_user_input)
+    # save a checkpoint so they can be resumed like parent turns instead of
+    # evaporating (Codex monolithic-session parity).
+    checkpoint_store = None
+    try:
+        from leagent.sdk.kernel.checkpoint import build_checkpoint_store
+
+        db_service = None
+        sm = getattr(getattr(engine.config, "executor", None), "service_manager", None)
+        if sm is not None:
+            db_service = getattr(sm, "database_service", None)
+        checkpoint_store = build_checkpoint_store(db_service)
+    except Exception:  # noqa: BLE001
+        logger.debug("subagent_checkpoint_store_unavailable", exc_info=True)
+
+    async for event in run_loop(
+        engine, prompt, run_state=run_state, checkpoint_store=checkpoint_store,
+    ):
         sdk_msg = event.to_sdk_message()
         if consumer is not None:
             try:
@@ -313,14 +419,15 @@ async def _run_engine(
             tid = str(data.get("id") or "")
             path = _primary_tool_path(name, inp)
             _record_changed_paths(name, inp, changed_paths)
-            activity_rows.append(
-                {
-                    "tool": name,
-                    "path": path,
-                    "tool_call_id": tid,
-                    "summary": None,
-                },
-            )
+            row: dict[str, Any] = {
+                "tool": name,
+                "path": path,
+                "tool_call_id": tid,
+                "summary": None,
+            }
+            if name == "project_shell":
+                row["shell_blob"] = _shell_command_blob(inp)
+            activity_rows.append(row)
         elif mtype == "tool_result":
             tid = str(data.get("tool_use_id") or "")
             ok = bool(data.get("success"))
@@ -349,41 +456,52 @@ async def _run_engine(
                 if activity_rows[j].get("tool_call_id") == tid:
                     tname = str(activity_rows[j].get("tool") or "")
                     activity_rows[j]["summary"] = _activity_summary(tname, content, ok)
+                    if tname == "project_shell":
+                        # Enrich with result argv if the input blob was empty.
+                        prev = str(activity_rows[j].get("shell_blob") or "")
+                        activity_rows[j]["shell_blob"] = (
+                            prev + " " + _shell_command_blob({}, activity_rows[j]["summary"])
+                        ).strip()
                     break
         elif mtype == "result":
             reason = data.get("reason", "completed")
+            cid = data.get("checkpoint_id")
+            if isinstance(cid, str) and cid:
+                checkpoint_id = cid
             if reason != "completed":
                 partial = True
                 err = data.get("error")
                 if err:
                     error = str(err)
 
+    shell_blobs = [
+        str(r.get("shell_blob") or r.get("summary") or "")
+        for r in activity_rows
+        if str(r.get("tool") or "") == "project_shell"
+    ]
     for row in activity_rows:
         row.pop("tool_call_id", None)
+        row.pop("shell_blob", None)
 
-    shell_ran = any(str(r.get("tool") or "") == "project_shell" for r in activity_rows)
     variant = getattr(getattr(engine, "config", None), "prompt_variant", None)
     enforce_shell_verify = str(variant or "") == "coding_agent"
-    verification_gap: str | None = None
-    if (
-        enforce_shell_verify
-        and changed_paths
-        and not shell_ran
-        and not partial
-        and error is None
-    ):
-        verification_gap = (
-            "Files were modified but project_shell was not run for "
-            "verification (tests/lint/typecheck)."
-        )
+    verification_gap = assess_verification_gap(
+        changed_paths=changed_paths,
+        shell_blobs=shell_blobs,
+        enforce=enforce_shell_verify,
+        partial=partial,
+        error=error,
+    )
+    if verification_gap:
         partial = True
         logger.info(
             "coding_agent_verification_gap",
             changed_files_count=len(changed_paths),
             changed_files_preview=sorted(changed_paths)[:12],
+            gap=verification_gap[:200],
         )
 
-    return {
+    result: dict[str, Any] = {
         "text": response_text,
         "success": error is None and not partial,
         "steps_count": tool_calls_count,
@@ -395,6 +513,9 @@ async def _run_engine(
         "images": images,
         "verification_gap": verification_gap,
     }
+    if checkpoint_id:
+        result["checkpoint_id"] = checkpoint_id
+    return result
 
 
 async def _run_subagent_core(

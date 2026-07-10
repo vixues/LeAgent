@@ -29,7 +29,11 @@ export function ChatImage({ src, alt = '', className, thumbnail = false }: ChatI
     [src, invalidManagedRef],
   );
   const hasSignedPreviewToken = useMemo(() => managedFilePreviewHasSignedToken(src), [src]);
-  const { blobUrl, isLoading: blobLoading, isError: blobError } = useChatFileBlobUrl(managedId);
+  const blobFetchId = managedId && !hasSignedPreviewToken ? managedId : null;
+  const { blobUrl, isLoading: blobLoading, isError: blobError } = useChatFileBlobUrl(
+    blobFetchId,
+    alt,
+  );
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const [failed, setFailed] = useState(false);
 
@@ -44,12 +48,14 @@ export function ChatImage({ src, alt = '', className, thumbnail = false }: ChatI
   const trimmedSrc = src?.trim() ?? '';
 
   const displaySrc = useMemo(() => {
+    if (failed && !managedId) return undefined;
     if (invalidManagedRef) return undefined;
     if (!managedId) return trimmedSrc || undefined;
-    if (blobUrl) return blobUrl;
-    if (hasSignedPreviewToken && trimmedSrc) return trimmedSrc;
+    if (hasSignedPreviewToken && trimmedSrc && !failed) return trimmedSrc;
+    if (blobUrl && !failed) return blobUrl;
+    if (failed && hasSignedPreviewToken && trimmedSrc) return trimmedSrc;
     return undefined;
-  }, [invalidManagedRef, managedId, blobUrl, hasSignedPreviewToken, trimmedSrc]);
+  }, [invalidManagedRef, managedId, blobUrl, failed, hasSignedPreviewToken, trimmedSrc]);
 
   if (!trimmedSrc && !blobUrl) return null;
 
@@ -81,9 +87,15 @@ export function ChatImage({ src, alt = '', className, thumbnail = false }: ChatI
   const noDisplayAndBlobFailed =
     Boolean(managedId) && blobError && !blobUrl && !hasSignedPreviewToken;
 
-  const showOpenImageLink =
-    noDisplayAndBlobFailed ||
-    (failed && trimmedSrc && (!displaySrc || (!!managedId && !blobUrl)));
+  const showOpenImageLink = noDisplayAndBlobFailed;
+
+  if (failed && trimmedSrc && !displaySrc) {
+    return (
+      <span className="inline-flex max-w-full rounded-md bg-surface-sunken px-2 py-1 text-xs text-muted-foreground">
+        {alt || t('chat.media.imageUnavailable', { defaultValue: 'Image unavailable' })}
+      </span>
+    );
+  }
 
   if (showOpenImageLink) {
     return (
@@ -113,7 +125,7 @@ export function ChatImage({ src, alt = '', className, thumbnail = false }: ChatI
         type="button"
         onClick={() => setLightboxOpen(true)}
         className={cn(
-          'group block max-w-full text-left',
+          'group block max-w-full overflow-hidden text-left',
           'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/30',
           thumbnail && 'overflow-hidden',
           className,
@@ -127,6 +139,7 @@ export function ChatImage({ src, alt = '', className, thumbnail = false }: ChatI
           decoding="async"
           onError={() => setFailed(true)}
           className={cn(
+            'overflow-hidden',
             thumbnail
               ? 'h-full w-full object-cover'
               : 'max-h-[min(70vh,480px)] w-full object-contain',

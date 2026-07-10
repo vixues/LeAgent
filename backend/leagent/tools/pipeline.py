@@ -74,7 +74,10 @@ class PermissionMiddleware:
             tool_context=ctx.tool_context,
         )
         if not perm.allowed:
-            return ToolResult.fail(f"Permission denied: {perm.reason}")
+            return ToolResult.fail(
+                f"Permission denied: {perm.reason}",
+                approval_required=perm.needs_approval,
+            )
         if perm.updated_params:
             ctx.parameters = perm.updated_params
         return await next_fn(ctx)

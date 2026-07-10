@@ -22,6 +22,8 @@ from leagent.db.models import (
     FileRead,
     FileStatus,
     FileType,
+    InboxState,
+    LibraryScope,
     PetProject,
     PetProjectFile,
 )
@@ -128,6 +130,9 @@ class DocumentSearchResult(BaseModel):
     file_type: FileType
     score: float
     snippet: Optional[str] = None
+    chunk_id: Optional[UUID] = None
+    start_offset: Optional[int] = None
+    end_offset: Optional[int] = None
 
 
 class DocumentSearchResponse(BaseModel):
@@ -142,9 +147,9 @@ class PromoteToKnowledgeRequest(BaseModel):
     """Copy session/workspace files into the system knowledge store."""
 
     file_ids: list[UUID] = Field(..., min_length=1, max_length=MAX_PROMOTE_FILES)
-    session_id: UUID = Field(
-        ...,
-        description="Knowledge-base chat session id (shared catalog session).",
+    session_id: Optional[UUID] = Field(
+        default=None,
+        description="Optional chat session id for provenance stamping.",
     )
 
 
@@ -173,17 +178,15 @@ async def upload_document(
     user_id: CurrentUserId,
     db: Annotated[DatabaseService, Depends(get_database_service)],
     file: UploadFile = File(...),
-    session_id: UUID = Form(...),
+    session_id: Optional[UUID] = Form(default=None),
     folder_id: Optional[UUID] = Form(default=None),
     process_ocr: bool = Form(default=True),
     index_for_search: bool = Form(default=True),
 ) -> DocumentUploadResponse:
-    """Upload a document for processing and indexing.
+    """Upload a document into the knowledge catalog.
 
-    Since every :class:`FileModel` row now lives inside a chat session,
-    document uploads are scoped to the session the user is currently
-    viewing. Callers that need a session-less document repository should
-    create a dedicated "documents" session and reuse its id.
+    Knowledge files are stamped with ``library_scope='knowledge'``; a dedicated
+    chat session is no longer required.
     """
     if not file.filename:
         raise HTTPException(
@@ -208,6 +211,9 @@ async def upload_document(
         content_type=file.content_type,
         user_id=user_id,
         session_id=session_id,
+        library_scope=LibraryScope.KNOWLEDGE.value,
+        origin_type="upload",
+        category="knowledge_upload",
     )
     file_id = ref.id
     safe_name = os.path.basename(ref.storage_key)
@@ -230,12 +236,28 @@ async def upload_document(
             folder_id=folder_id,
             storage_path=storage_path,
             checksum=checksum,
+            library_scope=LibraryScope.KNOWLEDGE,
+            inbox_state=InboxState.NEW,
+            origin_type="upload",
+            is_indexed=index_for_search,
         )
         session.add(db_file)
         await session.flush()
         await session.refresh(db_file)
 
-        return DocumentUploadResponse(
+    from leagent.tasks.jobs import enqueue_file_processing
+
+    await enqueue_file_processing(
+        db,
+        file_id=str(file_id),
+        storage_path=storage_path,
+        mime_type=file.content_type,
+        original_name=file.filename,
+        user_id=user_id,
+        session_id=session_id,
+    )
+
+    return DocumentUploadResponse(
             id=db_file.id,
             name=db_file.name,
             original_name=db_file.original_name,
@@ -265,12 +287,13 @@ async def promote_to_knowledge(
     skipped: list[SkippedPromoteFile] = []
 
     async with db.session() as session:
-        cs = await session.get(ChatSession, body.session_id)
-        if cs is None or cs.user_id != user_id:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Invalid session_id for the current user",
-            )
+        if body.session_id is not None:
+            cs = await session.get(ChatSession, body.session_id)
+            if cs is None or cs.user_id != user_id:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Invalid session_id for the current user",
+                )
 
     for raw_id in body.file_ids:
         async with db.session() as session:
@@ -285,7 +308,7 @@ async def promote_to_knowledge(
                     SkippedPromoteFile(id=raw_id, reason="forbidden")
                 )
                 continue
-            if _is_system_knowledge_storage_path(src.storage_path):
+            if src.library_scope == LibraryScope.KNOWLEDGE:
                 skipped.append(
                     SkippedPromoteFile(id=raw_id, reason="already_in_knowledge")
                 )
@@ -312,6 +335,10 @@ async def promote_to_knowledge(
                 content_type=src.mime_type,
                 user_id=user_id,
                 session_id=body.session_id,
+                library_scope=LibraryScope.KNOWLEDGE.value,
+                origin_type="promote",
+                origin_ref=str(raw_id),
+                category="knowledge_promote",
             )
             file_id = ref.id
             safe_name = os.path.basename(ref.storage_key)
@@ -331,6 +358,11 @@ async def promote_to_knowledge(
                 folder_id=src.folder_id,
                 storage_path=storage_path,
                 checksum=checksum,
+                library_scope=LibraryScope.KNOWLEDGE,
+                inbox_state=InboxState.NEW,
+                origin_type="promote",
+                origin_ref=str(raw_id),
+                is_indexed=True,
             )
             session.add(db_new)
             await session.flush()
@@ -377,8 +409,8 @@ async def list_documents(
         query = select(FileModel).where(
             FileModel.user_id == user_id,
             FileModel.is_deleted == False,
+            FileModel.library_scope == LibraryScope.KNOWLEDGE,
             ~FileModel.id.in_(pet_lib),
-            _storage_path_under_system_knowledge_sql(),
         )
 
         if file_type is not None:
@@ -419,67 +451,45 @@ async def search_documents(
     folder_id: Optional[UUID] = Query(default=None),
     limit: int = Query(default=10, ge=1, le=100),
 ) -> DocumentSearchResponse:
-    """Perform semantic search across indexed documents.
+    """BM25/lexical search across knowledge document chunks."""
+    type_filter: list[FileType] | None = None
+    if file_types:
+        type_filter = [FileType(t.strip()) for t in file_types.split(",") if t.strip()]
 
-    This is a placeholder implementation that performs text-based search.
-    In production, this would integrate with a vector database for semantic search.
-    """
-    async with db.session() as session:
-        pet_lib = _pet_project_library_file_ids_subquery(user_id)
-        db_query = select(FileModel).where(
-            FileModel.user_id == user_id,
-            FileModel.is_deleted == False,
-            FileModel.is_indexed == True,
-            ~FileModel.id.in_(pet_lib),
-            _storage_path_under_system_knowledge_sql(),
-        )
+    chunk_hits = await db.repositories.document_chunks.search(
+        user_id,
+        query,
+        limit=limit,
+        library_scope=LibraryScope.KNOWLEDGE.value,
+    )
 
-        if file_types:
-            type_list = [FileType(t.strip()) for t in file_types.split(",") if t.strip()]
-            if type_list:
-                db_query = db_query.where(FileModel.file_type.in_(type_list))
-
-        if folder_id is not None:
-            db_query = db_query.where(FileModel.folder_id == folder_id)
-
-        db_query = db_query.where(
-            (FileModel.original_name.ilike(f"%{query}%"))
-            | (FileModel.extracted_text.ilike(f"%{query}%"))
-        )
-
-        db_query = db_query.limit(limit)
-
-        result = await session.exec(db_query)
-        files = list(result.all())
-
-        search_results = []
-        for f in files:
-            snippet = None
-            if f.extracted_text:
-                query_lower = query.lower()
-                text_lower = f.extracted_text.lower()
-                idx = text_lower.find(query_lower)
-                if idx >= 0:
-                    start = max(0, idx - 50)
-                    end = min(len(f.extracted_text), idx + len(query) + 50)
-                    snippet = f.extracted_text[start:end]
-                    if start > 0:
-                        snippet = "..." + snippet
-                    if end < len(f.extracted_text):
-                        snippet = snippet + "..."
-
-            search_results.append(
-                DocumentSearchResult(
-                    id=f.id,
-                    name=f.original_name,
-                    file_type=f.file_type,
-                    score=1.0,
-                    snippet=snippet,
-                )
+    search_results: list[DocumentSearchResult] = []
+    for hit in chunk_hits:
+        file_type = FileType.OTHER
+        async with db.session() as session:
+            f = await session.get(FileModel, hit.file_id)
+            if f is None or f.is_deleted:
+                continue
+            if type_filter and f.file_type not in type_filter:
+                continue
+            if folder_id is not None and f.folder_id != folder_id:
+                continue
+            file_type = f.file_type
+        search_results.append(
+            DocumentSearchResult(
+                id=hit.file_id,
+                name=hit.file_name,
+                file_type=file_type,
+                score=hit.score,
+                snippet=hit.snippet,
+                chunk_id=hit.chunk_id,
+                start_offset=hit.start_offset,
+                end_offset=hit.end_offset,
             )
-
-        return DocumentSearchResponse(
-            query=query,
-            results=search_results,
-            total=len(search_results),
         )
+
+    return DocumentSearchResponse(
+        query=query,
+        results=search_results,
+        total=len(search_results),
+    )

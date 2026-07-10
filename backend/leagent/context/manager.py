@@ -18,11 +18,11 @@ from uuid import UUID
 import structlog
 
 from leagent.context.artifact_error_tracker import ArtifactErrorTracker
-from leagent.context.budget import minimise
+from leagent.context.budget import enforce_source_hard_budgets, minimise
 from leagent.context.cache import SourceCache
 from leagent.context.file_state import FileState
 from leagent.context.ledger import ContextLedger, LedgerRow
-from leagent.context.recipe import ContextRecipe, get_recipe
+from leagent.context.recipe import ContextRecipe, get_recipe, merge_recipes
 from leagent.context.sources import get_all_sources
 from leagent.context.sources.base import ResolveContext
 from leagent.context.types import (
@@ -151,6 +151,10 @@ class ContextManager:
         self.artifact_tracker.advance_turn()
 
         recipe = get_recipe(self.recipe)
+        # Monolithic coding session: a project-bound default_agent turn
+        # absorbs the coding recipe's sources instead of delegating.
+        if project_roots and self.recipe == "default_agent":
+            recipe = merge_recipes(recipe, get_recipe("coding_agent"))
         source_classes = get_all_sources()
 
         resolve_ctx = self._build_resolve_context(
@@ -172,6 +176,10 @@ class ContextManager:
             if self.artifact_tracker.needs_workspace_reset:
                 self._refresh_workspace_file_state()
 
+        # Per-source hard caps first (Codex: no fragment > ~10K tokens),
+        # then the global cost-function minimiser.
+        blocks, hard_truncated = enforce_source_hard_budgets(blocks)
+
         effective_budget_chars = (
             budget_max_chars
             if budget_max_chars is not None and budget_max_chars > 0
@@ -182,6 +190,11 @@ class ContextManager:
             max_chars=effective_budget_chars,
             freshness_half_life_seconds=self._cfg("freshness_half_life_seconds", 300.0),
         )
+        if hard_truncated:
+            # Surface hard-cap truncations alongside global budget ones.
+            budget_result.truncated = list(
+                dict.fromkeys([*hard_truncated, *budget_result.truncated])
+            )
 
         system_blocks = [b for b in budget_result.kept if b.render_target == RenderTarget.SYSTEM]
         attachment_blocks = [b for b in budget_result.kept if b.render_target == RenderTarget.ATTACHMENT_USER]

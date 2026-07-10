@@ -23,7 +23,7 @@ from starlette.background import BackgroundTask
 
 from leagent.config.constants import MAX_UPLOAD_SIZE_BYTES
 from leagent.config.settings import get_settings
-from leagent.file.primitives import classify_file_kind
+from leagent.file.primitives import classify_file_kind, sanitize_filename
 from leagent.services.auth import (
     CurrentUserId,
     OptionalUserId,
@@ -38,6 +38,8 @@ from leagent.db.models import (
     FileRead,
     FileStatus,
     FileType,
+    InboxState,
+    LibraryScope,
 )
 from leagent.db.sqlite_compat import (
     file_model_from_sqlite_row,
@@ -67,6 +69,10 @@ async def _store_blob(
     content_type: str | None,
     user_id: UUID | None,
     session_id: UUID | None,
+    library_scope: str = "workspace",
+    origin_type: str | None = "upload",
+    origin_ref: str | None = None,
+    category: str = "upload",
 ):
     """Persist *content* through the single managed-blob ingress.
 
@@ -96,7 +102,10 @@ async def _store_blob(
         user_id=user_id,
         session_id=session_id,
         scope=FileScope.SESSION,
-        category="upload",
+        category=category,
+        library_scope=library_scope,
+        origin_type=origin_type,
+        origin_ref=origin_ref,
         persist_db_row=False,
     )
 
@@ -179,6 +188,31 @@ class FileUploadResponse(BaseModel):
     checksum: str
 
 
+class FileRenameRequest(BaseModel):
+    """Rename a catalog file."""
+
+    name: str = Field(..., min_length=1, max_length=255)
+
+
+class FileSearchResult(BaseModel):
+    """A single file or chunk-level search hit."""
+
+    file_id: UUID
+    file_name: str
+    file_type: FileType
+    score: float
+    snippet: Optional[str] = None
+    chunk_id: Optional[UUID] = None
+    start_offset: Optional[int] = None
+    end_offset: Optional[int] = None
+
+
+class FileSearchResponse(BaseModel):
+    query: str
+    results: list[FileSearchResult]
+    total: int
+
+
 _FILE_KIND_TO_TYPE = {
     "image": FileType.IMAGE,
     "document": FileType.DOCUMENT,
@@ -218,15 +252,15 @@ async def persist_uploaded_file(
     user_id: UUID,
     db: DatabaseService,
     *,
-    session_id: UUID,
+    session_id: UUID | None = None,
     folder_id: UUID | None = None,
+    library_scope: LibraryScope = LibraryScope.WORKSPACE,
+    origin_type: str | None = "upload",
 ) -> FileModel:
     """Save an UploadFile to disk + DB and schedule text extraction.
 
-    Every uploaded file now belongs to exactly one chat session — the
-    :class:`FileModel` row carries a non-nullable ``session_id`` FK so the
-    :class:`SessionManager` and preview endpoint can answer
-    "which session owns this file?" in a single query.
+    ``session_id`` is optional for folder/library uploads that are not tied to
+    a chat turn. Chat attachments still pass a non-null ``session_id``.
     """
     if not upload.filename:
         raise ValueError("Filename is required")
@@ -245,6 +279,8 @@ async def persist_uploaded_file(
         content_type=upload.content_type,
         user_id=user_id,
         session_id=session_id,
+        library_scope=library_scope.value,
+        origin_type=origin_type,
     )
     file_id = ref.id
     safe_name = os.path.basename(ref.storage_key)
@@ -267,6 +303,9 @@ async def persist_uploaded_file(
             folder_id=folder_id,
             storage_path=storage_path,
             checksum=checksum,
+            library_scope=library_scope,
+            inbox_state=InboxState.NEW,
+            origin_type=origin_type,
         )
         session.add(db_file)
         await session.flush()
@@ -432,10 +471,15 @@ async def upload_file(
     user_id: CurrentUserId,
     db: Annotated[DatabaseService, Depends(get_database_service)],
     file: UploadFile = File(...),
-    session_id: UUID = Form(...),
+    session_id: Optional[UUID] = Form(default=None),
     folder_id: Optional[UUID] = Form(default=None),
+    library_scope: Optional[str] = Form(default=None),
 ) -> FileUploadResponse:
-    """Upload a file and attach it to the given chat session."""
+    """Upload a file to the unified catalog.
+
+    ``session_id`` is optional — folder/library uploads may omit it. Chat
+    attachments should still pass the owning session id.
+    """
     if not file.filename:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -448,6 +492,16 @@ async def upload_file(
             detail=f"File too large. Maximum size is {MAX_FILE_SIZE // (1024 * 1024)}MB",
         )
 
+    scope = LibraryScope.WORKSPACE
+    if library_scope:
+        try:
+            scope = LibraryScope(library_scope)
+        except ValueError:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Invalid library_scope: {library_scope}",
+            )
+
     try:
         db_file = await persist_uploaded_file(
             file,
@@ -455,6 +509,7 @@ async def upload_file(
             db,
             session_id=session_id,
             folder_id=folder_id,
+            library_scope=scope,
         )
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
@@ -468,6 +523,112 @@ async def upload_file(
         size=db_file.size,
         checksum=db_file.checksum or "",
     )
+
+
+@router.get("/search", response_model=FileSearchResponse)
+async def search_files(
+    user_id: CurrentUserId,
+    db: Annotated[DatabaseService, Depends(get_database_service)],
+    query: str = Query(..., min_length=1, max_length=1000),
+    library_scope: Optional[str] = Query(default=None),
+    limit: int = Query(default=20, ge=1, le=100),
+) -> FileSearchResponse:
+    """Search the user's catalog by filename and indexed document chunks."""
+    from sqlmodel import col, or_, select
+
+    scope_filter: LibraryScope | None = None
+    if library_scope:
+        try:
+            scope_filter = LibraryScope(library_scope)
+        except ValueError:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Invalid library_scope: {library_scope}",
+            )
+
+    hits: list[FileSearchResult] = []
+    seen_files: set[UUID] = set()
+
+    chunk_hits = await db.repositories.document_chunks.search(
+        user_id,
+        query,
+        limit=limit,
+        library_scope=scope_filter.value if scope_filter else None,
+    )
+    for hit in chunk_hits:
+        seen_files.add(hit.file_id)
+        file_type = FileType.OTHER
+        async with db.session() as session:
+            f = await session.get(FileModel, hit.file_id)
+            if f is None or f.is_deleted:
+                continue
+            file_type = f.file_type
+        hits.append(
+            FileSearchResult(
+                file_id=hit.file_id,
+                file_name=hit.file_name,
+                file_type=file_type,
+                score=hit.score,
+                snippet=hit.snippet,
+                chunk_id=hit.chunk_id,
+                start_offset=hit.start_offset,
+                end_offset=hit.end_offset,
+            )
+        )
+
+    remaining = max(0, limit - len(hits))
+    if remaining > 0:
+        async with db.session() as session:
+            name_q = select(FileModel).where(
+                FileModel.user_id == user_id,
+                FileModel.is_deleted == False,  # noqa: E712
+                or_(
+                    FileModel.name.ilike(f"%{query}%"),  # type: ignore[attr-defined]
+                    FileModel.original_name.ilike(f"%{query}%"),  # type: ignore[attr-defined]
+                ),
+            )
+            if scope_filter is not None:
+                name_q = name_q.where(FileModel.library_scope == scope_filter)
+            name_q = name_q.order_by(col(FileModel.created_at).desc()).limit(remaining)
+            result = await session.exec(name_q)
+            for f in result.all():
+                if f.id in seen_files:
+                    continue
+                hits.append(
+                    FileSearchResult(
+                        file_id=f.id,
+                        file_name=f.original_name,
+                        file_type=f.file_type,
+                        score=0.5,
+                        snippet=None,
+                    )
+                )
+
+    return FileSearchResponse(query=query, results=hits, total=len(hits))
+
+
+@router.patch("/{file_id}", response_model=FileRead)
+async def rename_file(
+    file_id: UUID,
+    body: FileRenameRequest,
+    user_id: CurrentUserId,
+    db: Annotated[DatabaseService, Depends(get_database_service)],
+) -> FileRead:
+    """Rename a catalog file (display name only; storage key unchanged)."""
+    safe = sanitize_filename(body.name)
+    async with db.session() as session:
+        file = await session.get(FileModel, file_id)
+        if file is None or file.is_deleted:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="File not found")
+        if file.user_id != user_id:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+        file.name = safe
+        file.original_name = safe
+        file.updated_at = datetime.utcnow()
+        session.add(file)
+        await session.flush()
+        await session.refresh(file)
+        return FileRead.model_validate(file)
 
 
 @router.post("/bundle/download")

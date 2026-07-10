@@ -107,6 +107,10 @@ export function ChatPermissionRequestBar({
     void submit('allow');
   }, [activeQuestion, customNote, submit]);
 
+  const handleAllowSession = useCallback(() => {
+    void submit('allow for session');
+  }, [submit]);
+
   const handleDeny = useCallback(() => {
     void submit('deny');
   }, [submit]);
@@ -117,6 +121,10 @@ export function ChatPermissionRequestBar({
   const disabled = streamBusyForSession || submitting;
   const allowLabel = q.primary_choice ?? t('chat.userInput.permission.allow');
   const denyLabel = q.secondary_choice ?? t('chat.userInput.permission.deny');
+  // Tool-approval requests (backend approval bridge) offer a session-wide grant.
+  const isApprovalRequest =
+    q.id.startsWith('approval::') ||
+    (q.choices ?? []).some((c) => c.toLowerCase() === 'allow for session');
 
   return (
     <div
@@ -191,6 +199,16 @@ export function ChatPermissionRequestBar({
         >
           {denyLabel}
         </button>
+        {isApprovalRequest ? (
+          <button
+            type="button"
+            onClick={handleAllowSession}
+            disabled={disabled}
+            className="rounded-md border border-border-subtle bg-surface px-3 py-1.5 text-xs font-medium text-foreground hover:bg-surface-sunken"
+          >
+            {t('chat.userInput.permission.allowSession')}
+          </button>
+        ) : null}
         <button
           type="button"
           onClick={() => void handleAllow()}

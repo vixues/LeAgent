@@ -454,6 +454,25 @@ class CodingProjectManager:
     ) -> CodingProject:
         return await self._get_for_user(project_id, user_id)
 
+    async def get_by_folder_for_user(
+        self,
+        folder_id: UUID,
+        user_id: UUID,
+    ) -> CodingProject:
+        """Return the runtime row bound to a project-mode folder."""
+        async with self._db.session() as session:
+            stmt = (
+                select(CodingProject)
+                .where(CodingProject.folder_id == folder_id)
+                .where(CodingProject.user_id == user_id)
+                .where(col(CodingProject.is_deleted).is_(False))
+            )
+            result = await session.exec(stmt)
+            project = result.first()
+            if project is None:
+                raise CodingProjectNotFoundError(f"folder:{folder_id}")
+            return project
+
     async def _get_for_user(
         self,
         project_id: UUID,

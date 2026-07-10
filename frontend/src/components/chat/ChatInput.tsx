@@ -25,7 +25,10 @@ import {
   Video,
 } from 'lucide-react';
 import { isChatStreamBusyForSession, useChatStore } from '@/stores/chat';
+import { getQueuedForSession, useSteerQueueStore } from '@/stores/steerQueue';
 import { useChatDraftStore, buildComposerSendParams } from '@/stores/chatDraft';
+import { generateId } from '@/lib/utils';
+import type { Message } from '@/types/chat';
 import { useLayoutStore } from '@/stores/layout';
 import { useFoldersStore } from '@/stores/foldersStore';
 import { useArtifactStore } from '@/stores/artifact';
@@ -388,14 +391,85 @@ export function ChatInput({
     closePicker();
   };
 
+  /* ─── Steer / Queue (Codex-style mid-turn interaction) ────── */
+  const steer = useSteerQueueStore((s) => s.steer);
+  const queueMessage = useSteerQueueStore((s) => s.queueMessage);
+  const removeQueued = useSteerQueueStore((s) => s.removeQueued);
+  const popNextQueued = useSteerQueueStore((s) => s.popNextQueued);
+  const queuedMessages = useSteerQueueStore((s) =>
+    getQueuedForSession(s, currentSessionId),
+  );
+
+  const handleSteer = useCallback(async () => {
+    const text = content.trim();
+    if (!text || !currentSessionId) return;
+    try {
+      const result = await steer(currentSessionId, text);
+      const userMessage: Message = {
+        id: result.message_id || generateId(),
+        role: 'user',
+        content: text,
+        createdAt: new Date().toISOString(),
+      };
+      useChatStore.getState().insertSteerMessage(currentSessionId, userMessage);
+      setComposerBody('');
+    } catch (error) {
+      setError(
+        error instanceof Error
+          ? error.message
+          : t('chat.steer.failed', { defaultValue: 'Could not steer the running turn.' }),
+      );
+    }
+  }, [content, currentSessionId, setError, steer, t]);
+
+  const handleQueue = useCallback(async () => {
+    const text = content.trim();
+    if (!text || !currentSessionId) return;
+    try {
+      await queueMessage(currentSessionId, text);
+      setComposerBody('');
+    } catch (error) {
+      setError(
+        error instanceof Error
+          ? error.message
+          : t('chat.steer.queueFailed', { defaultValue: 'Could not queue the message.' }),
+      );
+    }
+  }, [content, currentSessionId, queueMessage, setError, t]);
+
+  // Auto-dispatch the next queued message when the running turn finishes.
+  const prevStreamBusyRef = useRef(streamBusyForThisSession);
+  useEffect(() => {
+    const wasBusy = prevStreamBusyRef.current;
+    prevStreamBusyRef.current = streamBusyForThisSession;
+    if (!wasBusy || streamBusyForThisSession || !currentSessionId) return;
+    if (queuedMessages.length === 0) return;
+    void (async () => {
+      const popped = await popNextQueued(currentSessionId).catch(() => null);
+      if (popped?.content) {
+        await onSend(popped.content);
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [streamBusyForThisSession, currentSessionId]);
+
   const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
     if (pickerKind && (e.key === 'Enter' || e.key === 'ArrowUp' || e.key === 'ArrowDown' || e.key === 'Escape')) {
       // Let the picker intercept via its own document listener
       return;
     }
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      if (!streamBusyForThisSession) {
+    if (e.key === 'Enter') {
+      if (streamBusyForThisSession) {
+        // Codex-style composer: while a turn is running, Enter steers the
+        // current turn, Shift+Enter queues for the next one.
+        if (!content.trim()) return;
+        e.preventDefault();
+        if (e.shiftKey) void handleQueue();
+        else void handleSteer();
+        return;
+      }
+      if (!e.shiftKey) {
+        e.preventDefault();
         void handleSend();
       }
     }
@@ -740,6 +814,37 @@ export function ChatInput({
         onClose={closePicker}
       />
 
+      {/* Queued messages (dispatched after the current turn) */}
+      {queuedMessages.length > 0 && (
+        <div className="pb-2 space-y-1">
+          {queuedMessages.map((qm) => (
+            <div
+              key={qm.id}
+              className="flex items-center gap-2 rounded-lg border border-border-subtle bg-surface-sunken px-3 py-1.5 text-xs text-muted-foreground"
+            >
+              <span className="shrink-0 rounded bg-border-subtle px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide">
+                {t('chat.steer.queuedBadge', { defaultValue: 'Queued' })}
+              </span>
+              <span className="min-w-0 flex-1 truncate" title={qm.content}>
+                {qm.content}
+              </span>
+              <button
+                type="button"
+                onClick={() => {
+                  if (currentSessionId) void removeQueued(currentSessionId, qm.id);
+                }}
+                className="shrink-0 p-0.5 rounded-full hover:bg-border-subtle hover:text-foreground transition-colors"
+                aria-label={t('chat.steer.removeQueued', {
+                  defaultValue: 'Remove queued message',
+                })}
+              >
+                <X className="w-3 h-3" />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
       {/* Composer card */}
       <div
         className={cn(
@@ -765,6 +870,8 @@ export function ChatInput({
 
         <textarea
           ref={textareaRef}
+          id="chat-composer-message"
+          name="message"
           data-composer-input
           value={content}
           onChange={handleChange}
@@ -885,6 +992,8 @@ export function ChatInput({
 
       <input
         ref={fileInputRef}
+        id="chat-composer-file"
+        name="attachments"
         type="file"
         multiple
         onChange={handleFileSelect}
@@ -892,7 +1001,11 @@ export function ChatInput({
         accept="image/*,video/mp4,video/webm,video/quicktime,.pdf,.doc,.docx,.xls,.xlsx,.txt,.csv,.md,.json,.yaml,.yml"
       />
       <p className="mt-2 text-center text-[11px] text-muted-foreground-tertiary">
-        {t('chat.inputFooterHint')}
+        {streamBusyForThisSession
+          ? t('chat.steer.hint', {
+              defaultValue: 'Enter steers the running turn · Shift+Enter queues for the next turn',
+            })
+          : t('chat.inputFooterHint')}
       </p>
 
       <CameraCaptureModal open={cameraOpen} onOpenChange={setCameraOpen} />
@@ -917,12 +1030,17 @@ export function ChatInput({
             </p>
             <LocalFolderBrowser onSelect={handleFolderBrowserSelect} />
             <div>
-              <label className="block text-sm font-medium text-foreground mb-1">
+              <label
+                htmlFor="chat-authorized-folder-path"
+                className="block text-sm font-medium text-foreground mb-1"
+              >
                 {t('chat.authorizedFolders.pathLabel', {
                   defaultValue: 'Folder path',
                 })}
               </label>
               <input
+                id="chat-authorized-folder-path"
+                name="authorizedFolderPath"
                 value={authorizedPath}
                 onChange={(event) => setAuthorizedPath(event.target.value)}
                 onBlur={() =>
@@ -937,12 +1055,17 @@ export function ChatInput({
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-foreground mb-1">
+              <label
+                htmlFor="chat-authorized-folder-label"
+                className="block text-sm font-medium text-foreground mb-1"
+              >
                 {t('chat.authorizedFolders.labelLabel', {
                   defaultValue: 'Label (optional)',
                 })}
               </label>
               <input
+                id="chat-authorized-folder-label"
+                name="authorizedFolderLabel"
                 value={authorizedLabel}
                 onChange={(event) => setAuthorizedLabel(event.target.value)}
                 placeholder={t('chat.authorizedFolders.labelPlaceholder', {

@@ -38,6 +38,19 @@ export interface ApplyChatStreamEventParams {
   t: ChatStreamTranslate;
 }
 
+/** Tools that auto-focus the workspace Code tab when they start running. */
+const CODE_TAB_AUTO_FOCUS_TOOLS: ReadonlySet<string> = new Set([
+  'coding_agent',
+  'code_execution',
+  'canvas_publish',
+  'project_shell',
+  'project_write',
+  'project_edit',
+  'project_multiedit',
+  'project_apply_patch',
+  'coding_project_run',
+]);
+
 // ---------------------------------------------------------------------------
 // Content delta batching: accumulate text chunks and flush once per animation
 // frame to reduce DOM update frequency and eliminate frame drops during fast
@@ -347,11 +360,7 @@ export function applyChatStreamEvent(
         status: 'running',
         timestamp: new Date().toISOString(),
       });
-      if (
-        toolName === 'coding_agent' ||
-        toolName === 'code_execution' ||
-        toolName === 'canvas_publish'
-      ) {
+      if (CODE_TAB_AUTO_FOCUS_TOOLS.has(toolName)) {
         useLayoutStore.setState({ workspaceOpen: true, workspaceTab: 'agent' });
       }
       break;
@@ -455,8 +464,13 @@ export function applyChatStreamEvent(
       if (hydrated.length === 0) break;
       const prev =
         s.messages[sessionId]?.find((m) => m.id === assistantMsgId)?.attachments ?? [];
+      const seen = new Set(prev.map((a) => a.id));
+      const merged = [
+        ...prev,
+        ...hydrated.filter((a) => !seen.has(a.id)),
+      ];
       s.updateMessage(sessionId, assistantMsgId, {
-        attachments: [...prev, ...hydrated],
+        attachments: merged,
       });
       void queryClient.invalidateQueries({
         queryKey: ['chat', 'session-attachments', sessionId],

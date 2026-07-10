@@ -11,6 +11,7 @@ independently.
 
 from __future__ import annotations
 
+import hashlib
 import logging
 import mimetypes
 from dataclasses import dataclass, field
@@ -65,6 +66,9 @@ class FileRef:
     session_id: UUID | None = None
     scope: FileScope = FileScope.SESSION
     category: str = "general"
+    library_scope: str = "workspace"
+    origin_type: str | None = None
+    origin_ref: str | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
     created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
@@ -81,6 +85,9 @@ class FileRef:
             "session_id": str(self.session_id) if self.session_id else None,
             "scope": self.scope.value,
             "category": self.category,
+            "library_scope": self.library_scope,
+            "origin_type": self.origin_type,
+            "origin_ref": self.origin_ref,
             "metadata": self.metadata,
             "created_at": self.created_at.isoformat(),
         }
@@ -137,9 +144,13 @@ class FileService:
         session_id: UUID | None = None,
         scope: FileScope = FileScope.SESSION,
         category: str = "upload",
+        library_scope: str = "workspace",
+        origin_type: str | None = None,
+        origin_ref: str | None = None,
         backend_name: str | None = None,
         metadata: dict[str, Any] | None = None,
         persist_db_row: bool = True,
+        dedup: bool = True,
     ) -> FileRef:
         """Ingest a file from any source and return a :class:`FileRef` handle.
 
@@ -177,17 +188,36 @@ class FileService:
         if content_type is None:
             content_type = mimetypes.guess_type(safe_name)[0] or "application/octet-stream"
 
+        checksum = hashlib.sha256(raw).hexdigest()
+        file_size = len(raw)
+
+        # Content dedup: reuse an existing blob when the same user already has
+        # an identical checksum+size row (new catalog entry, shared storage).
+        reused_path: str | None = None
+        if dedup and user_id is not None:
+            reused_path = await self._find_reusable_storage_path(
+                user_id, checksum=checksum, size=file_size
+            )
+
         scope_prefix = ""
         if session_id:
             scope_prefix = f"{session_id}/"
         storage_key = f"{scope_prefix}{file_id}_{safe_name}"
 
-        store_meta = await backend.put(
-            raw,
-            storage_key,
-            content_type=content_type,
-            metadata=metadata or {},
-        )
+        if reused_path:
+            store_meta = {
+                "size": file_size,
+                "checksum": checksum,
+                "storage_path": reused_path,
+                "content_type": content_type,
+            }
+        else:
+            store_meta = await backend.put(
+                raw,
+                storage_key,
+                content_type=content_type,
+                metadata=metadata or {},
+            )
 
         ref = FileRef(
             id=file_id,
@@ -195,15 +225,19 @@ class FileService:
             storage_key=storage_key,
             backend_name=backend_key,
             content_type=content_type,
-            size=store_meta.get("size", len(raw)),
-            checksum=store_meta.get("checksum", ""),
+            size=store_meta.get("size", file_size),
+            checksum=store_meta.get("checksum", checksum),
             user_id=user_id,
             session_id=session_id,
             scope=scope,
             category=category,
+            library_scope=library_scope,
+            origin_type=origin_type,
+            origin_ref=origin_ref,
             metadata={
                 **(metadata or {}),
                 "storage_path": store_meta.get("storage_path", ""),
+                "dedup_reused": bool(reused_path),
             },
         )
         self._refs[file_id] = ref
@@ -332,6 +366,35 @@ class FileService:
 
     # ── internal helpers ─────────────────────────────────────────
 
+    async def _find_reusable_storage_path(
+        self, user_id: UUID, *, checksum: str, size: int
+    ) -> str | None:
+        """Return an existing ``storage_path`` when an identical blob is known."""
+        if self._database is None or not checksum:
+            return None
+        try:
+            from sqlmodel import select
+
+            from leagent.db.models.file import File
+
+            async with self._database.session() as db:
+                stmt = (
+                    select(File.storage_path)
+                    .where(File.user_id == user_id)
+                    .where(File.checksum == checksum)
+                    .where(File.size == size)
+                    .where(File.is_deleted == False)  # noqa: E712
+                    .where(File.storage_path.is_not(None))  # type: ignore[attr-defined]
+                    .limit(1)
+                )
+                result = await db.exec(stmt)
+                path = result.first()
+                if path and Path(path).is_file():
+                    return path
+        except Exception as exc:
+            logger.debug("dedup_lookup_failed: %s", exc)
+        return None
+
     async def _persist_db_row(self, ref: FileRef) -> None:
         if self._database is None:
             return
@@ -341,6 +404,8 @@ class FileService:
                 File,
                 FileStatus,
                 FileType,
+                InboxState,
+                LibraryScope,
             )
 
             kind = classify_file_kind(ref.filename, ref.content_type)
@@ -355,6 +420,10 @@ class FileService:
                 "text": FileType.DOCUMENT,
             }
             file_type = kind_to_file_type.get(kind.value, FileType.OTHER)
+            try:
+                scope_enum = LibraryScope(ref.library_scope)
+            except ValueError:
+                scope_enum = LibraryScope.WORKSPACE
 
             async with self._database.session() as db:
                 db.add(
@@ -370,6 +439,10 @@ class FileService:
                         storage_path=ref.metadata.get("storage_path", ref.storage_key),
                         status=FileStatus.PROCESSED,
                         user_id=ref.user_id,
+                        library_scope=scope_enum,
+                        inbox_state=InboxState.NEW,
+                        origin_type=ref.origin_type,
+                        origin_ref=ref.origin_ref,
                     )
                 )
         except Exception as exc:
@@ -427,5 +500,8 @@ class FileService:
             session_id=UUID(d["session_id"]) if d.get("session_id") else None,
             scope=scope,
             category=d.get("category", "general"),
+            library_scope=d.get("library_scope", "workspace"),
+            origin_type=d.get("origin_type"),
+            origin_ref=d.get("origin_ref"),
             metadata=d.get("metadata", {}),
         )

@@ -32,6 +32,22 @@ class FileStatus(str, Enum):
     FAILED = "failed"
 
 
+class LibraryScope(str, Enum):
+    """Logical catalog scope — identity by column, not storage path."""
+
+    WORKSPACE = "workspace"
+    KNOWLEDGE = "knowledge"
+    ARTIFACT = "artifact"
+
+
+class InboxState(str, Enum):
+    """Information-hub triage state for newly ingested files."""
+
+    NEW = "new"
+    TRIAGED = "triaged"
+    DISMISSED = "dismissed"
+
+
 class FileBase(SQLModel):
     """Base file fields."""
 
@@ -80,6 +96,13 @@ class File(FileBase, BaseModel, SoftDeleteMixin, table=True):
     # Expiration
     expires_at: Optional[datetime] = Field(default=None)
 
+    # Unified library catalog (see migration 0005_library_layer)
+    library_scope: LibraryScope = Field(default=LibraryScope.WORKSPACE, index=True)
+    inbox_state: InboxState = Field(default=InboxState.NEW, index=True)
+    origin_type: Optional[str] = Field(default=None, max_length=40, index=True)
+    origin_ref: Optional[str] = Field(default=None, max_length=100, index=True)
+    is_pinned: bool = Field(default=False)
+
     # Relationships
     folder: Optional["Folder"] = Relationship(back_populates="files")
 
@@ -106,6 +129,9 @@ class FileUpdate(SQLModel):
     extracted_text: Optional[str] = None
     file_metadata: Optional[str] = None
     is_indexed: Optional[bool] = None
+    library_scope: Optional[LibraryScope] = None
+    inbox_state: Optional[InboxState] = None
+    is_pinned: Optional[bool] = None
 
 
 class FileRead(FileBase):
@@ -118,5 +144,10 @@ class FileRead(FileBase):
     page_count: Optional[int]
     has_ocr: bool
     is_indexed: bool
+    library_scope: LibraryScope = LibraryScope.WORKSPACE
+    inbox_state: InboxState = InboxState.TRIAGED
+    origin_type: Optional[str] = None
+    origin_ref: Optional[str] = None
+    is_pinned: bool = False
     created_at: datetime
     updated_at: datetime

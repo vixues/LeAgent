@@ -19,6 +19,10 @@ from leagent.db.repositories.agent_checkpoint import (
     DbCheckpointRepository,
 )
 from leagent.db.repositories.chat import ChatRepository, DbChatRepository
+from leagent.db.repositories.document_chunks import (
+    DbDocumentChunkRepository,
+    DocumentChunkRepository,
+)
 from leagent.db.repositories.files import DbFileRepository, FileRepository
 from leagent.db.repositories.tasks import DbTaskRepository, TaskRepository
 from leagent.db.repositories.workflow_executions import (
@@ -36,6 +40,7 @@ class Repositories:
     def __init__(self, db: "DatabaseService") -> None:
         self._db = db
         self._files: DbFileRepository | None = None
+        self._document_chunks: DbDocumentChunkRepository | None = None
         self._tasks: DbTaskRepository | None = None
         self._chat: DbChatRepository | None = None
         self._checkpoints: DbCheckpointRepository | None = None
@@ -46,6 +51,12 @@ class Repositories:
         if self._files is None:
             self._files = DbFileRepository(self._db)
         return self._files
+
+    @property
+    def document_chunks(self) -> DbDocumentChunkRepository:
+        if self._document_chunks is None:
+            self._document_chunks = DbDocumentChunkRepository(self._db)
+        return self._document_chunks
 
     @property
     def tasks(self) -> DbTaskRepository:
@@ -80,6 +91,8 @@ __all__ = [
     "DbCheckpointRepository",
     "FileRepository",
     "DbFileRepository",
+    "DocumentChunkRepository",
+    "DbDocumentChunkRepository",
     "TaskRepository",
     "DbTaskRepository",
     "WorkflowExecutionRepository",

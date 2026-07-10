@@ -104,12 +104,18 @@ class EnterPlanModeTool(BaseTool):
     async def execute(self, params: dict[str, Any], context: ToolContext) -> Any:
         reason = params.get("reason", "Complex task requires upfront planning")
         context.extra["plan_mode"] = True
+        if context.session_id:
+            from leagent.agent.control import get_session_control_registry
+
+            get_session_control_registry().set_plan_mode(str(context.session_id), True)
         logger.info("plan_mode_entered", session=context.session_id, reason=reason)
         return {
             "status": "plan_mode_active",
             "message": (
-                "Planning mode activated. Create your plan with todo_write "
-                "(top-level todos array), then call exit_plan_mode to begin execution."
+                "Planning mode activated. Only read-only tools and todo_write are "
+                "available; mutating tools are blocked by the executor. Create your "
+                "plan with todo_write (top-level todos array), then call "
+                "exit_plan_mode to begin execution."
             ),
             "reason": reason,
         }
@@ -151,6 +157,10 @@ class ExitPlanModeTool(BaseTool):
     async def execute(self, params: dict[str, Any], context: ToolContext) -> Any:
         execute = params.get("execute_plan", True)
         context.extra.pop("plan_mode", None)
+        if context.session_id:
+            from leagent.agent.control import get_session_control_registry
+
+            get_session_control_registry().set_plan_mode(str(context.session_id), False)
         logger.info("plan_mode_exited", session=context.session_id, execute=execute)
         return {
             "status": "plan_mode_inactive",

@@ -83,6 +83,8 @@ export interface AgentSessionEvent {
   syntaxValid?: boolean | null;
   artifactId?: string;
   errorText?: string;
+  /** LLM tool_call id (correlates with live `tool_output_delta` chunks). */
+  toolCallId?: string;
 }
 
 export interface SessionEventSummary {
@@ -228,6 +230,7 @@ function buildEvent(
     streaming,
     durationMs: tc.duration_ms,
     errorText: str(tc.error),
+    toolCallId: tc.id || undefined,
   };
 
   if (name === 'code_execution') {

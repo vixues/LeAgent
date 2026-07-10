@@ -32,7 +32,6 @@ import {
   FolderPage,
   TasksPage,
   PetSpacePage,
-  CodingProjectsPage,
 } from './routes/lazyPages';
 
 function NotFound() {
@@ -130,7 +129,7 @@ export default function App() {
               <Route path="rules" element={<RulesPage />} />
               <Route path="settings" element={<SettingsPage />} />
               <Route path="folders" element={<FolderPage />} />
-              <Route path="coding-projects" element={<CodingProjectsPage />} />
+              <Route path="coding-projects" element={<Navigate to="/folders" replace />} />
               <Route path="docs" element={<DocsPage />} />
               <Route path="admin" element={<AdminPage />} />
 

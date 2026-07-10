@@ -19,6 +19,16 @@ from leagent.db.models.folder import Folder
 router = APIRouter()
 
 
+def _assert_folder_owner(folder: Folder, user_id: UUID) -> None:
+    if folder.user_id != user_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied to folder")
+
+
+def _assert_file_owner(file: File, user_id: UUID) -> None:
+    if file.user_id != user_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied to file")
+
+
 class FolderItemResponse(BaseModel):
     file_id: UUID
     folder_id: UUID
@@ -49,9 +59,15 @@ async def list_folder_items(
 ) -> list[FolderItemResponse]:
     """List all files in a folder."""
     async with db.session() as session:
+        folder = await load_entity_by_id(session, Folder, folder_id, parent_table="folders")
+        if not folder or folder.is_deleted:
+            raise HTTPException(status_code=404, detail="Folder not found")
+        _assert_folder_owner(folder, user_id)
+
         stmt = (
             select(File)
             .where(File.folder_id == folder_id)
+            .where(File.user_id == user_id)
             .where(File.is_deleted == False)  # noqa: E712
         )
         result = await session.exec(stmt)
@@ -81,10 +97,12 @@ async def add_item_to_folder(
         folder = await load_entity_by_id(session, Folder, data.folder_id, parent_table="folders")
         if not folder or folder.is_deleted:
             raise HTTPException(status_code=404, detail="Folder not found")
+        _assert_folder_owner(folder, user_id)
 
         f = await load_entity_by_id(session, File, data.file_id, parent_table="files")
         if not f or f.is_deleted:
             raise HTTPException(status_code=404, detail="File not found")
+        _assert_file_owner(f, user_id)
 
         f.folder_id = data.folder_id
         f.updated_at = datetime.utcnow()
@@ -115,6 +133,7 @@ async def remove_item_from_folder(
         f = await load_entity_by_id(session, File, file_id, parent_table="files")
         if not f or f.is_deleted:
             raise HTTPException(status_code=404, detail="File not found")
+        _assert_file_owner(f, user_id)
 
         if f.folder_id != folder_id:
             raise HTTPException(status_code=400, detail="File is not in this folder")
@@ -124,6 +143,8 @@ async def remove_item_from_folder(
         session.add(f)
 
         folder = await load_entity_by_id(session, Folder, folder_id, parent_table="folders")
+        if folder and not folder.is_deleted:
+            _assert_folder_owner(folder, user_id)
         if folder and folder.file_count > 0:
             folder.file_count = folder.file_count - 1
             session.add(folder)
@@ -141,10 +162,12 @@ async def move_item(
         f = await load_entity_by_id(session, File, file_id, parent_table="files")
         if not f or f.is_deleted:
             raise HTTPException(status_code=404, detail="File not found")
+        _assert_file_owner(f, user_id)
 
         target = await load_entity_by_id(session, Folder, data.to_folder_id, parent_table="folders")
         if not target or target.is_deleted:
             raise HTTPException(status_code=404, detail="Target folder not found")
+        _assert_folder_owner(target, user_id)
 
         old_folder_id = f.folder_id
         f.folder_id = data.to_folder_id
@@ -153,6 +176,8 @@ async def move_item(
 
         if old_folder_id:
             old_folder = await load_entity_by_id(session, Folder, old_folder_id, parent_table="folders")
+            if old_folder and not old_folder.is_deleted:
+                _assert_folder_owner(old_folder, user_id)
             if old_folder and old_folder.file_count > 0:
                 old_folder.file_count -= 1
                 session.add(old_folder)

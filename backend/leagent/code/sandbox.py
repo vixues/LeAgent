@@ -215,6 +215,13 @@ class SubprocessSandbox:
         )
 
 
+def split_produced_artifacts(
+    produced_files: list[dict[str, Any]],
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Split produced file entries into image vs non-image artifact lists."""
+    return _split_artifacts(produced_files)
+
+
 def _split_artifacts(
     produced_files: list[dict[str, Any]],
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:

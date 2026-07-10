@@ -233,7 +233,7 @@ def extract_produced_path_candidates(
             if isinstance(item, str):
                 add(item, source=f"{key}[{idx}]")
             elif isinstance(item, dict):
-                if item.get("file_id") or item.get("attachment_id"):
+                if item.get("file_id") or item.get("attachment_id") or item.get("managed"):
                     continue
                 add_from_mapping(item, source=f"{key}[{idx}]")
 

@@ -10,9 +10,13 @@ import { MermaidDiagram } from './MermaidDiagram';
 import { ChatImage } from '@/components/chat/media/ChatImage';
 import { ChatInlineVideo } from '@/components/chat/media/ChatInlineVideo';
 import { ChatRtspStream } from '@/components/chat/media/ChatRtspStream';
-import { isProbablyVideoUrl, isRtspUrl } from '@/components/chat/media/chatMediaUtils';
+import {
+  isChatRenderableImageSrc,
+  isProbablyVideoUrl,
+  isRtspUrl,
+  resolveMarkdownImageSrcFromAttachments,
+} from '@/components/chat/media/chatMediaUtils';
 import { resolveCodingProjectPreviewHref } from '@/lib/previewUrl';
-import { resolveMarkdownImageSrcFromAttachments } from '@/components/chat/media/chatMediaUtils';
 import type { Attachment } from '@/types/chat';
 
 interface MarkdownProps {
@@ -393,7 +397,7 @@ export function Markdown({
       img: ({ src, alt }: { src?: string; alt?: string }) => {
         const resolved =
           resolveMarkdownImageSrcFromAttachments(src, imageAttachments, alt) ?? src ?? '';
-        if (!resolved.trim()) {
+        if (!resolved.trim() || !isChatRenderableImageSrc(resolved)) {
           return (
             <span className="inline-flex max-w-full rounded-md bg-surface-sunken px-2 py-1 text-xs text-muted-foreground">
               {typeof alt === 'string' && alt.trim() ? alt : 'Image unavailable'}

@@ -925,7 +925,7 @@ async def get_usage_summary(
                 func.coalesce(func.sum(LLMRequestLog.input_tokens + LLMRequestLog.output_tokens), 0).label("total_tokens"),
                 func.coalesce(func.sum(LLMRequestLog.total_cost_usd), 0.0).label("total_cost_usd"),
                 func.coalesce(func.sum(LLMRequestLog.cache_read_tokens), 0).label("cache_read_tokens"),
-                func.coalesce(func.sum(LLMRequestLog.cache_write_tokens), 0).label("cache_write_tokens"),
+                func.coalesce(func.sum(LLMRequestLog.cache_miss_tokens), 0).label("cache_write_tokens"),
                 func.coalesce(func.avg(LLMRequestLog.latency_ms), 0.0).label("avg_latency_ms"),
                 func.max(LLMRequestLog.created_at).label("last_used_at"),
             )

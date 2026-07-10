@@ -60,7 +60,7 @@ export function canvasIframeSandbox(
       : '';
   }
   const tokens = isApiCanvasPreview
-    ? ['allow-scripts', 'allow-popups', 'allow-popups-to-escape-sandbox']
+    ? ['allow-scripts', 'allow-popups', 'allow-popups-to-escape-sandbox', 'allow-same-origin']
     : ['allow-scripts'];
   if (cameraAllowed) {
     tokens.push('allow-same-origin');

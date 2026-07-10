@@ -1103,6 +1103,12 @@ class AgentController:
                 rc = data.get("reasoning_content")
                 reasoning = rc if isinstance(rc, str) and rc.strip() else None
                 conversation.append_assistant_message(text, reasoning_content=reasoning)
+            elif mtype == "steer":
+                # Mid-turn user steer injected at a tool-batch boundary:
+                # persist it in the conversation as a regular user message.
+                steer_text = str(data.get("content") or "")
+                if steer_text:
+                    conversation.append_user_message(steer_text)
             elif mtype == "result":
                 reason = str(data.get("reason", "completed"))
                 checkpoint_id = data.get("checkpoint_id")

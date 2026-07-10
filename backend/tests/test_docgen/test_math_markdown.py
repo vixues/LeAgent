@@ -179,6 +179,24 @@ def test_front_matter_metadata() -> None:
     assert blocks and blocks[0].type == "heading"
 
 
+def test_front_matter_date_coerced_to_string() -> None:
+    import datetime as dt
+
+    from leagent.docgen.model import DocumentSpec
+
+    md = "---\ntitle: Resume\ndate: 2026-07-10\n---\n\n# Section\n"
+    meta, blocks = parse_markdown_document(md)
+    assert meta["date"] == dt.date(2026, 7, 10)
+    spec = DocumentSpec.model_validate(
+        {
+            "title": meta["title"],
+            "date": meta["date"],
+            "blocks": blocks,
+        }
+    )
+    assert spec.date == "2026-07-10"
+
+
 def test_front_matter_absent() -> None:
     meta, blocks = parse_markdown_document("# Just content\n")
     assert meta == {}

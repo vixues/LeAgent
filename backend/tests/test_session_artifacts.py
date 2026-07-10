@@ -115,6 +115,38 @@ def test_extract_skips_already_managed_produced_files(tmp_path: Path) -> None:
     assert Path(candidates[0].path).name == "chart.png"
 
 
+def test_extract_skips_managed_entries_in_files_array(tmp_path: Path) -> None:
+    """Stale ``files`` mirrors must not re-register already-ingested outputs."""
+    tmp_out = Path("/tmp/matlab_logo_interactive.html")
+    managed_path = tmp_path / "uploads" / "matlab_logo_interactive.html"
+    managed_path.parent.mkdir(parents=True)
+    managed_path.write_text("<html></html>", encoding="utf-8")
+
+    candidates = extract_produced_path_candidates(
+        {
+            "workspace": str(tmp_path / "ws"),
+            "produced_files": [
+                {
+                    "path": str(managed_path),
+                    "file_path": str(managed_path),
+                    "file_id": "registered-id",
+                    "managed": True,
+                    "source_path": str(tmp_out),
+                }
+            ],
+            "files": [
+                {
+                    "path": str(tmp_out),
+                    "file_path": str(tmp_out),
+                    "managed": True,
+                    "file_id": "registered-id",
+                }
+            ],
+        }
+    )
+    assert candidates == []
+
+
 @pytest.mark.asyncio
 async def test_ingest_previewable_produced_files_registers_outside_uploads(
     tmp_path: Path,

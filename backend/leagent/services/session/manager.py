@@ -444,6 +444,7 @@ class SessionManager:
             session_id=session_id,
             scope=FileScope.SESSION,
             category="upload",
+            origin_type="upload",
         )
         kind = classify_file_kind(filename, content_type).value
         attachment = SessionAttachment(
@@ -602,6 +603,52 @@ class SessionManager:
         except Exception as exc:  # noqa: BLE001
             logger.debug("signed_url_generation_failed: %s", exc)
 
+    def _attachment_row_dict(
+        self,
+        attachment: SessionAttachment,
+        *,
+        user_id: UUID | None = None,
+    ) -> dict[str, Any]:
+        """Serialize a session attachment for tool/UI consumers."""
+        self._populate_urls(attachment, user_id=user_id)
+        return {
+            "id": str(attachment.id),
+            "filename": attachment.filename,
+            "name": attachment.filename,
+            "kind": attachment.kind,
+            "content_type": attachment.content_type,
+            "size": attachment.size,
+            "sha256": attachment.sha256,
+            "storage_path": attachment.storage_path,
+            "preview_url": attachment.preview_url,
+            "download_url": attachment.download_url,
+        }
+
+    async def _find_existing_attachment(
+        self,
+        session_id: UUID,
+        *,
+        user_id: UUID | None,
+        src: Path,
+        checksum: str | None = None,
+    ) -> SessionAttachment | None:
+        """Return an existing session attachment for the same tool output, if any."""
+        resolved_src = str(src)
+        async with self.locked(session_id) as state:
+            for existing in state.attachments:
+                extra = existing.extra if isinstance(existing.extra, dict) else {}
+                prior_src = extra.get("source_tool_path")
+                if isinstance(prior_src, str) and prior_src:
+                    try:
+                        if str(Path(prior_src).expanduser().resolve()) == resolved_src:
+                            return existing
+                    except OSError:
+                        if prior_src == resolved_src:
+                            return existing
+                if checksum and existing.sha256 and existing.sha256 == checksum:
+                    return existing
+        return None
+
     async def _register_external_via_service(
         self,
         session_id: UUID,
@@ -611,7 +658,28 @@ class SessionManager:
         label: str,
     ) -> dict[str, Any] | None:
         """Register an external file using FileService.register()."""
+        import hashlib
+
         from leagent.file.primitives import FileScope
+
+        checksum = ""
+        try:
+            digest = hashlib.sha256()
+            with src.open("rb") as handle:
+                for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+                    digest.update(chunk)
+            checksum = digest.hexdigest()
+        except OSError:
+            checksum = ""
+
+        existing = await self._find_existing_attachment(
+            session_id,
+            user_id=user_id,
+            src=src,
+            checksum=checksum or None,
+        )
+        if existing is not None:
+            return self._attachment_row_dict(existing, user_id=user_id)
 
         file_service = self._ensure_file_service()
         try:
@@ -622,6 +690,8 @@ class SessionManager:
                 session_id=session_id,
                 user_id=user_id,
                 category="tool_output",
+                library_scope="artifact",
+                origin_type="tool",
             )
         except Exception as exc:
             logger.warning("register_external_via_service_failed: %s", exc)
@@ -643,6 +713,7 @@ class SessionManager:
         *,
         filename: str,
         content_type: str | None = None,
+        origin_ref: str | None = None,
     ) -> dict[str, Any] | None:
         """Register an in-memory tool artifact as a session attachment.
 
@@ -663,6 +734,9 @@ class SessionManager:
                 session_id=session_id,
                 user_id=user_id,
                 category="tool_output",
+                library_scope="artifact",
+                origin_type="tool",
+                origin_ref=origin_ref,
             )
         except Exception as exc:  # noqa: BLE001
             logger.warning("register_artifact_bytes_failed: %s", exc)
@@ -694,23 +768,32 @@ class SessionManager:
         )
         self._populate_urls(attachment, user_id=user_id)
 
+        new_extra = extra or {}
+        new_src = new_extra.get("source_tool_path")
         async with self.locked(session_id) as state:
             if state.user_id is None and user_id is not None:
                 state.user_id = user_id
+            for existing in state.attachments:
+                existing_extra = existing.extra if isinstance(existing.extra, dict) else {}
+                prior_src = existing_extra.get("source_tool_path")
+                if isinstance(new_src, str) and new_src and isinstance(prior_src, str) and prior_src:
+                    try:
+                        if (
+                            str(Path(new_src).expanduser().resolve())
+                            == str(Path(prior_src).expanduser().resolve())
+                        ):
+                            self._populate_urls(existing, user_id=user_id)
+                            return self._attachment_row_dict(existing, user_id=user_id)
+                    except OSError:
+                        if new_src == prior_src:
+                            self._populate_urls(existing, user_id=user_id)
+                            return self._attachment_row_dict(existing, user_id=user_id)
+                if ref.checksum and existing.sha256 and existing.sha256 == ref.checksum:
+                    self._populate_urls(existing, user_id=user_id)
+                    return self._attachment_row_dict(existing, user_id=user_id)
             state.upsert_attachment(attachment)
 
-        return {
-            "id": str(ref.id),
-            "filename": label,
-            "name": label,
-            "kind": kind,
-            "content_type": ref.content_type,
-            "size": ref.size,
-            "sha256": ref.checksum,
-            "storage_path": attachment.storage_path,
-            "preview_url": attachment.preview_url,
-            "download_url": attachment.download_url,
-        }
+        return self._attachment_row_dict(attachment, user_id=user_id)
 
 # _safe_filename removed – use leagent.file.primitives.sanitize_filename
 

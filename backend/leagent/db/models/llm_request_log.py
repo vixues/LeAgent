@@ -20,11 +20,20 @@ class LLMRequestLog(BaseModel, table=True):
     input_tokens: int = Field(default=0)
     output_tokens: int = Field(default=0)
     cache_read_tokens: int = Field(default=0)
-    cache_write_tokens: int = Field(default=0)
+    cache_miss_tokens: int = Field(default=0)
     total_cost_usd: float = Field(default=0.0)
     latency_ms: float = Field(default=0.0)
     ttfb_ms: float = Field(default=0.0)
     status_code: int = Field(default=200, index=True)
     error: Optional[str] = Field(default=None)
     session_id: Optional[str] = Field(default=None, index=True, max_length=100)
+    user_id: Optional[str] = Field(default=None, index=True, max_length=100)
+    user_message_id: Optional[str] = Field(default=None, index=True, max_length=100)
+    call_index: int = Field(default=0)
+    call_kind: str = Field(default="chat", index=True, max_length=32)
     is_streaming: bool = Field(default=False)
+
+    @property
+    def cache_write_tokens(self) -> int:
+        """Backward-compatible alias for pre-rename API consumers."""
+        return self.cache_miss_tokens

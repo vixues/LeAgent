@@ -12,6 +12,7 @@ often carries stray keys.
 
 from __future__ import annotations
 
+import datetime as dt
 from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -23,6 +24,19 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 class _Model(BaseModel):
     model_config = ConfigDict(extra="ignore", populate_by_name=True)
+
+
+def _coerce_date_str(value: Any) -> str | None:
+    """Normalize YAML/front-matter date values to ISO date strings."""
+    if value is None:
+        return None
+    if isinstance(value, str):
+        return value
+    if isinstance(value, dt.datetime):
+        return value.date().isoformat()
+    if isinstance(value, dt.date):
+        return value.isoformat()
+    return str(value)
 
 
 Alignment = Literal["left", "center", "right", "justify"]
@@ -388,6 +402,11 @@ class CoverSpec(_Model):
     organization: str | None = None
     logo_path: str | None = None
 
+    @field_validator("date", mode="before")
+    @classmethod
+    def _normalize_date(cls, value: Any) -> str | None:
+        return _coerce_date_str(value)
+
 
 class DocumentSpec(_Model):
     """Complete specification of a generated document."""
@@ -413,6 +432,11 @@ class DocumentSpec(_Model):
     encryption: Encryption | None = None
     merge_sources: list[str] = Field(default_factory=list)
     blocks: list[Block] = Field(default_factory=list)
+
+    @field_validator("date", mode="before")
+    @classmethod
+    def _normalize_date(cls, value: Any) -> str | None:
+        return _coerce_date_str(value)
 
     def cover_spec(self) -> CoverSpec | None:
         """Effective cover spec, or None when disabled."""
@@ -519,3 +543,8 @@ class DeckSpec(_Model):
     footer_text: str | None = None
     background: SlideBackground | None = None  # deck-wide default
     slides: list[SlideSpec] = Field(default_factory=list)
+
+    @field_validator("date", mode="before")
+    @classmethod
+    def _normalize_date(cls, value: Any) -> str | None:
+        return _coerce_date_str(value)

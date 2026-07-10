@@ -84,9 +84,31 @@ class RuntimeContext:
             prompt_builder = None
 
         if permission_context is None:
+            import os as _os
+
             from leagent.tools.base import ToolPermissionContext
 
-            permission_context = ToolPermissionContext()
+            # Approval flow knobs (Codex-style): opt-in destructive
+            # confirmation and static ask-rules, both env-configurable.
+            confirm_destructive = _os.environ.get(
+                "LEAGENT_APPROVAL_CONFIRM_DESTRUCTIVE", "",
+            ).strip().lower() in ("1", "true", "yes", "on")
+            ask_rules = [
+                r.strip()
+                for r in _os.environ.get("LEAGENT_APPROVAL_ASK_RULES", "").split(",")
+                if r.strip()
+            ]
+            # Skill scripts are third-party code: always an approval trigger
+            # (Codex `skill_approval` parity). Opt out only explicitly.
+            skill_ask_off = _os.environ.get(
+                "LEAGENT_APPROVAL_SKILL_SCRIPTS", "",
+            ).strip().lower() in ("0", "false", "no", "off")
+            if not skill_ask_off and "run_skill_script" not in ask_rules:
+                ask_rules.append("run_skill_script")
+            permission_context = ToolPermissionContext(
+                confirm_destructive=confirm_destructive,
+                always_ask_rules=ask_rules,
+            )
 
         if hook_manager is None:
             from leagent.agent.hooks import HookManager, create_default_hooks

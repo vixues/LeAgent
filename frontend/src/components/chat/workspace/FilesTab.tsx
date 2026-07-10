@@ -62,6 +62,27 @@ function formatSize(bytes: number) {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+function workspaceFileFingerprint(
+  name: string,
+  size: number,
+  sha256?: string,
+): string {
+  const normalized = name.trim().toLowerCase();
+  if (sha256) return `sha256:${sha256}`;
+  return `name:${normalized}:${size}`;
+}
+
+function attachmentFingerprint(
+  att: Attachment,
+  raw?: Record<string, unknown>,
+): string {
+  const sha =
+    raw && typeof raw.sha256 === 'string' && raw.sha256
+      ? raw.sha256
+      : undefined;
+  return workspaceFileFingerprint(att.name, att.size ?? 0, sha);
+}
+
 function isAiOperated(item: unknown): boolean {
   if (!item || typeof item !== 'object') return false;
   const rec = item as Record<string, unknown>;
@@ -214,43 +235,57 @@ export function FilesTab() {
 
   const workspaceItems = useMemo(() => {
     const out: SessionWorkspaceItem[] = [];
-    const seen = new Set<string>();
+    const seenIds = new Set<string>();
+    const seenFingerprints = new Set<string>();
     const messageIdSet = new Set(sessionMessages.map((m) => m.id));
+
+    const remember = (item: SessionWorkspaceItem, fingerprint: string) => {
+      if (seenIds.has(item.file_id)) return false;
+      if (seenFingerprints.has(fingerprint)) return false;
+      seenIds.add(item.file_id);
+      seenFingerprints.add(fingerprint);
+      out.push(item);
+      return true;
+    };
 
     for (const att of sessionAttachmentList) {
       if (!att.id || !att.name) continue;
-      if (seen.has(att.id)) continue;
-      seen.add(att.id);
       const raw = sessionAttRowsById.get(att.id);
       const extra =
         raw && typeof raw.extra === 'object' && raw.extra !== null
           ? (raw.extra as Record<string, unknown>)
           : undefined;
       const fromTool = typeof extra?.source_tool_path === 'string';
-      out.push({
-        file_id: att.id,
-        file_name: att.name,
-        size: att.size ?? 0,
-        mime_type: att.type,
-        source: 'upload',
-        is_ai: fromTool,
-      });
-    }
-
-    for (const msg of sessionMessages) {
-      for (const att of (msg.attachments ?? []) as Attachment[]) {
-        if (!att.id || !att.name) continue;
-        const key = att.id;
-        if (seen.has(key)) continue;
-        seen.add(key);
-        out.push({
+      remember(
+        {
           file_id: att.id,
           file_name: att.name,
           size: att.size ?? 0,
           mime_type: att.type,
           source: 'upload',
-          is_ai: msg.role === 'assistant',
-        });
+          is_ai: fromTool,
+        },
+        attachmentFingerprint(att, raw),
+      );
+    }
+
+    for (const msg of sessionMessages) {
+      for (const att of (msg.attachments ?? []) as Attachment[]) {
+        if (!att.id || !att.name) continue;
+        if (seenIds.has(att.id)) continue;
+        const fingerprint = attachmentFingerprint(att);
+        if (seenFingerprints.has(fingerprint)) continue;
+        remember(
+          {
+            file_id: att.id,
+            file_name: att.name,
+            size: att.size ?? 0,
+            mime_type: att.type,
+            source: 'upload',
+            is_ai: msg.role === 'assistant',
+          },
+          fingerprint,
+        );
       }
     }
 
@@ -261,10 +296,13 @@ export function FilesTab() {
           artifact.sessionId === currentSessionId ||
           (artifact.messageId ? messageIdSet.has(artifact.messageId) : false);
         if (!inSession) continue;
-        const key = `artifact:${fileId}`;
-        if (seen.has(key) || seen.has(fileId)) continue;
-        seen.add(key);
-        seen.add(fileId);
+        const fingerprint = workspaceFileFingerprint(
+          artifact.title,
+          typeof artifact.metadata?.size === 'number' ? artifact.metadata.size : 0,
+        );
+        if (seenIds.has(fileId) || seenFingerprints.has(fingerprint)) continue;
+        seenIds.add(fileId);
+        seenFingerprints.add(fingerprint);
         out.push({
           file_id: fileId,
           file_name: artifact.title,
@@ -291,8 +329,8 @@ export function FilesTab() {
         (artifact.messageId ? messageIdSet.has(artifact.messageId) : false);
       if (!inSession) continue;
       const key = `canvas:${artifact.id}`;
-      if (seen.has(key)) continue;
-      seen.add(key);
+      if (seenIds.has(key)) continue;
+      seenIds.add(key);
       out.push({
         file_id: key,
         file_name: artifact.title || 'Canvas',
@@ -413,6 +451,8 @@ export function FilesTab() {
         <div className="relative">
           <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground-tertiary" />
           <input
+            id="workspace-files-search"
+            name="workspaceFilesSearch"
             type="text"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
@@ -537,6 +577,7 @@ export function FilesTab() {
                   return (
                     <li key={item.file_id} className="flex items-stretch gap-0.5">
                       <ZipCircleCheckbox
+                        id={`workspace-zip-${item.file_id}`}
                         checked={zipIds.has(item.file_id)}
                         disabled={item.excludeFromZip}
                         onChange={() => toggleZipId(item.file_id)}
@@ -598,6 +639,7 @@ export function FilesTab() {
                       return (
                         <li key={doc.id} className="flex items-stretch gap-0.5">
                           <ZipCircleCheckbox
+                            id={`workspace-zip-kb-${doc.id}`}
                             checked={zipIds.has(doc.id)}
                             onChange={() => toggleZipId(doc.id)}
                             ariaLabel={t('chat.workspace.files.zipToggleAria', {
@@ -870,11 +912,13 @@ function FilePreview({
 }
 
 function ZipCircleCheckbox({
+  id,
   checked,
   disabled,
   onChange,
   ariaLabel,
 }: {
+  id: string;
   checked: boolean;
   disabled?: boolean;
   onChange: () => void;
@@ -882,12 +926,15 @@ function ZipCircleCheckbox({
 }) {
   return (
     <label
+      htmlFor={id}
       className={cn(
         'relative flex items-center pl-1 shrink-0',
         disabled ? 'cursor-not-allowed' : 'cursor-pointer',
       )}
     >
       <input
+        id={id}
+        name={id}
         type="checkbox"
         className="peer sr-only"
         checked={checked}

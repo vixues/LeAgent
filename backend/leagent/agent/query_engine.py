@@ -23,6 +23,7 @@ from leagent.code.pipeline import _CONTEXT_ARTIFACT_STORE_KEY, _CONTEXT_REGISTRY
 from leagent.agent.query import (
     AssistantMessage,
     QueryParams,
+    SteerMessage,
     ToolResultMessage,
     query,
 )
@@ -601,6 +602,11 @@ class QueryEngine:
                         "reasoning_content": item.reasoning_content or "",
                     },
                 )
+            return
+
+        if isinstance(item, SteerMessage):
+            self.mutable_messages.append(item.to_openai())
+            yield SDKMessage(type="steer", data={"content": item.content})
             return
 
         if isinstance(item, ToolResultMessage):

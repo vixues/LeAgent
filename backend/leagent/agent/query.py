@@ -411,6 +411,21 @@ class ToolResultMessage:
         }
 
 
+@dataclass
+class SteerMessage:
+    """User steer injected mid-turn at a tool-batch boundary.
+
+    History stays append-only: the steer becomes a fresh ``user`` message
+    after the current batch's tool results, never a rewrite of anything
+    already sent to the model.
+    """
+
+    content: str
+
+    def to_openai(self) -> dict[str, Any]:
+        return {"role": "user", "content": self.content}
+
+
 # ---------------------------------------------------------------------------
 # Core loop
 # ---------------------------------------------------------------------------
@@ -819,13 +834,33 @@ async def _query_loop(params: QueryParams) -> AsyncIterator[Any]:
             return
 
         # ------------------------------------------------------------------
-        # 5) Tool orchestration
+        # 4c) Approval gate: pause instead of fail-closed (Codex-style)
         # ------------------------------------------------------------------
         capped = effective_tool_calls[: params.max_tool_calls_per_turn]
+        approval_terminal = await _approval_pause_terminal(
+            capped, state.tool_use_context,
+            turn_count=state.turn_count,
+            usage=tracking.get("usage", {}),
+        )
+        if approval_terminal is not None:
+            yield approval_terminal
+            return
+
+        # ------------------------------------------------------------------
+        # 5) Tool orchestration
+        # ------------------------------------------------------------------
         tool_results = await _dispatch_tools(capped, state.tool_use_context)
         for tr in tool_results:
             yield tr
             new_messages.append(tr.to_openai())
+
+        # ------------------------------------------------------------------
+        # 5b) Steer injection: drain pending mid-turn user messages at the
+        #     tool-batch boundary (append-only; Codex-style steering)
+        # ------------------------------------------------------------------
+        for steer in _drain_steer_messages(state.tool_use_context):
+            yield steer
+            new_messages.append(steer.to_openai())
 
         # ------------------------------------------------------------------
         # 6) Next turn
@@ -840,6 +875,174 @@ async def _query_loop(params: QueryParams) -> AsyncIterator[Any]:
             turn_count=state.turn_count + 1,
             transition=Continue(reason=ContinueReason.NEXT_TURN),
         )
+
+
+# ---------------------------------------------------------------------------
+# Steer helper
+# ---------------------------------------------------------------------------
+
+
+def _drain_steer_messages(ctx: "ToolUseContext") -> list[SteerMessage]:
+    """Collect pending steer messages for this session (may be empty)."""
+    session_id = getattr(ctx, "session_id", None)
+    if session_id is None:
+        return []
+    try:
+        from leagent.agent.control import get_session_control_registry
+
+        texts = get_session_control_registry().drain_steer(str(session_id))
+    except Exception:  # noqa: BLE001
+        logger.warning("steer_drain_failed", exc_info=True)
+        return []
+    if texts:
+        logger.info(
+            "steer_injected",
+            extra={"session_id": str(session_id), "count": len(texts)},
+        )
+    return [SteerMessage(content=t) for t in texts]
+
+
+# ---------------------------------------------------------------------------
+# Approval gate helper
+# ---------------------------------------------------------------------------
+
+
+async def _auto_review_resolved(
+    pending: Any,
+    args: dict[str, Any],
+    ctx: "ToolUseContext",
+) -> bool:
+    """Triage a pending approval with the auto-review reviewer.
+
+    Returns ``True`` when the request was resolved without the human
+    (allow → one-shot grant recorded; deny → fail-closed denial stands)
+    and ``False`` to escalate to the user's approval card.
+    """
+    session_id = getattr(ctx, "session_id", None)
+    if session_id is None:
+        return False
+    try:
+        from leagent.tools.approval import get_approval_store
+
+        store = get_approval_store()
+        if store.get_reviewer(str(session_id)) != "auto_review":
+            return False
+
+        from leagent.tools.auto_review import auto_review_decision
+
+        sm = getattr(getattr(ctx, "executor", None), "_service_manager", None)
+        decision, rationale = await auto_review_decision(
+            pending, args, service_manager=sm,
+        )
+    except Exception:  # noqa: BLE001
+        logger.warning("auto_review_failed", exc_info=True)
+        return False
+
+    if decision == "escalate":
+        return False
+
+    if decision == "allow":
+        store.grant(str(session_id), pending.tool_name, scope="once")
+
+    try:
+        from leagent.api.v1.chat.approvals import audit_approval_decision
+
+        await audit_approval_decision(
+            session_id=session_id,
+            user_id=getattr(ctx, "user_id", None),
+            pending=pending,
+            decision="allow_once" if decision == "allow" else "deny",
+            decided_by="auto_review",
+        )
+    except Exception:  # noqa: BLE001
+        logger.warning("auto_review_audit_failed", exc_info=True)
+
+    logger.info(
+        "auto_review_resolved",
+        extra={
+            "tool": pending.tool_name,
+            "decision": decision,
+            "rationale": rationale[:200],
+        },
+    )
+    return True
+
+
+async def _approval_pause_terminal(
+    tool_calls: list[dict[str, Any]],
+    ctx: "ToolUseContext",
+    *,
+    turn_count: int,
+    usage: dict[str, Any],
+) -> Terminal | None:
+    """Return an ``AWAITING_USER_INPUT`` terminal if a call needs approval.
+
+    Instead of dispatching a gated tool (which would fail closed), the
+    turn pauses with a synthesized permission question. The kernel saves
+    a checkpoint; the user's Allow/Deny comes back via ``tool_replies``
+    and (on allow) records a grant so the re-issued call passes.
+
+    When the session's ``approvals_reviewer`` is ``auto_review``, a cheap
+    reviewer model triages the request first: ``allow`` grants the call
+    once (no pause), ``deny`` leaves the fail-closed denial in place, and
+    ``escalate`` falls through to the human approval card.
+    """
+    executor = getattr(ctx, "executor", None)
+    if executor is None or not hasattr(executor, "approval_requirement"):
+        return None
+
+    for call in tool_calls:
+        name = call.get("name") or ""
+        args = call.get("arguments") or {}
+        if not isinstance(args, dict):
+            args = {}
+        try:
+            pending = executor.approval_requirement(name, args, ctx)
+        except Exception:  # noqa: BLE001
+            logger.warning("approval_precheck_failed", extra={"tool": name}, exc_info=True)
+            continue
+        if pending is None:
+            continue
+
+        call_id = str(call.get("id") or "")
+        pending.tool_call_id = call_id
+
+        if await _auto_review_resolved(pending, args, ctx):
+            continue
+        try:
+            from leagent.tools.approval import build_approval_question, get_approval_store
+
+            if ctx.session_id is not None:
+                get_approval_store().set_pending(str(ctx.session_id), pending)
+            question = build_approval_question(
+                tool_call_id=call_id,
+                tool_name=name,
+                reason=pending.reason,
+                detail=pending.detail,
+            )
+        except Exception:  # noqa: BLE001
+            logger.warning("approval_pause_setup_failed", exc_info=True)
+            continue
+
+        logger.info(
+            "approval_pause",
+            extra={"tool": name, "call_id": call_id, "reason": pending.reason},
+        )
+        return Terminal(
+            reason=TerminalReason.AWAITING_USER_INPUT,
+            meta={
+                "turn_count": turn_count,
+                "usage": usage,
+                "tool_call": {
+                    "id": call_id,
+                    "name": name,
+                    "arguments": args,
+                },
+                "questions": [question],
+                "approval_request": pending.to_meta(),
+            },
+        )
+    return None
 
 
 # ---------------------------------------------------------------------------

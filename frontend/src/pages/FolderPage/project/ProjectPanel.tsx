@@ -23,12 +23,14 @@ interface ProjectPanelProps {
   folderId: string;
   folderName: string;
   projectPath: string | null;
+  mode?: 'full' | 'code' | 'git';
 }
 
 export default function ProjectPanel({
   folderId,
   folderName,
   projectPath,
+  mode = 'full',
 }: ProjectPanelProps) {
   const { t } = useTranslation();
   const navigate = useNavigate();
@@ -52,49 +54,64 @@ export default function ProjectPanel({
   };
 
   return (
-    <div className="flex flex-col flex-1 min-h-0">
-      <div className="flex items-center gap-2 px-3 py-2 border-b border-border">
-        <span className="text-xs text-muted-foreground truncate">
-          {projectPath ?? ''}
-        </span>
-        <Button
-          variant="primary"
-          size="sm"
-          className="ml-auto"
-          onClick={handleRunCodingAgent}
-          leftIcon={<Bot className="w-3.5 h-3.5" />}
-        >
-          {t('folders.project.runAgent', {
-            defaultValue: 'Run coding agent on this project',
-          })}
-        </Button>
-      </div>
-      <ProjectGitStatusStrip folderId={folderId} />
-      <div className="grid grid-cols-1 md:grid-cols-[260px_1fr] flex-1 min-h-0">
-        <div className="border-r border-border overflow-auto p-2">
-          <ProjectFileTree
-            folderId={folderId}
-            selectedPath={selectedPath}
-            onSelectFile={setSelectedPath}
-          />
+    <div className="flex min-h-0 flex-1 flex-col">
+      {mode !== 'git' && (
+        <div className="flex items-center gap-2 border-b border-border px-3 py-2">
+          <span className="truncate text-xs text-muted-foreground">
+            {projectPath ?? ''}
+          </span>
+          <Button
+            variant="primary"
+            size="sm"
+            className="ml-auto"
+            onClick={handleRunCodingAgent}
+            leftIcon={<Bot className="h-3.5 w-3.5" />}
+          >
+            {t('folders.project.runAgent', {
+              defaultValue: 'Run coding agent on this project',
+            })}
+          </Button>
         </div>
-        <div className="flex flex-col min-h-0">
-          <ProjectFileViewer
+      )}
+      {mode !== 'code' && <ProjectGitStatusStrip folderId={folderId} />}
+      {mode === 'git' ? (
+        <div className="min-h-0 flex-1 p-3">
+          <ProjectGitHistory
             folderId={folderId}
-            folderName={folderName}
-            projectPath={projectPath}
             filePath={selectedPath}
-            onOpenHistory={() => setHistoryOpen(true)}
+            open
+            onOpenChange={() => {}}
           />
         </div>
-      </div>
+      ) : (
+        <div className="grid min-h-0 flex-1 grid-cols-1 md:grid-cols-[260px_1fr]">
+          <div className="overflow-auto border-r border-border p-2">
+            <ProjectFileTree
+              folderId={folderId}
+              selectedPath={selectedPath}
+              onSelectFile={setSelectedPath}
+            />
+          </div>
+          <div className="flex min-h-0 flex-col">
+            <ProjectFileViewer
+              folderId={folderId}
+              folderName={folderName}
+              projectPath={projectPath}
+              filePath={selectedPath}
+              onOpenHistory={() => setHistoryOpen(true)}
+            />
+          </div>
+        </div>
+      )}
 
-      <ProjectGitHistory
-        folderId={folderId}
-        filePath={selectedPath}
-        open={historyOpen}
-        onOpenChange={setHistoryOpen}
-      />
+      {mode === 'full' && (
+        <ProjectGitHistory
+          folderId={folderId}
+          filePath={selectedPath}
+          open={historyOpen}
+          onOpenChange={setHistoryOpen}
+        />
+      )}
     </div>
   );
 }

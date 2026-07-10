@@ -1303,6 +1303,49 @@ class ToolExecutor:
         """Attach a custom middleware pipeline."""
         self._pipeline = pipeline
 
+    def approval_requirement(
+        self,
+        tool_name: str,
+        parameters: dict[str, Any],
+        context: Any = None,
+    ) -> "PendingApproval | None":
+        """Pre-flight check: does this call need a user approval pause?
+
+        Used by the query loop *before* dispatch so a gated call can
+        surface an Allow/Deny card (``AWAITING_USER_INPUT``) instead of
+        failing closed. Returns ``None`` when the call may proceed (or
+        when it will be hard-denied — hard denials still fail in
+        :meth:`execute`).
+        """
+        from leagent.tools.approval import PendingApproval, params_digest
+
+        if self._permission_context is None:
+            return None
+        try:
+            tool = self._registry.get(tool_name)
+        except ToolNotFoundError:
+            return None
+        tool_ctx = _coerce_context(
+            context, service_manager=self._service_manager, temp_dir=None, extra=None,
+        )
+        perm = check_tool_permission(
+            tool, parameters, self._permission_context, tool_context=tool_ctx,
+        )
+        if not perm.needs_approval:
+            return None
+        detail = ""
+        try:
+            detail = json.dumps(self._sanitize_params(parameters), ensure_ascii=False)[:400]
+        except Exception:  # noqa: BLE001
+            pass
+        return PendingApproval(
+            tool_call_id="",
+            tool_name=tool_name,
+            params_digest=params_digest(parameters),
+            reason=perm.reason or "approval required",
+            detail=detail,
+        )
+
     # ------------------------------------------------------------------
     # Core execute
     # ------------------------------------------------------------------
@@ -1420,10 +1463,14 @@ class ToolExecutor:
                     tool, parameters, self._permission_context, tool_context=tool_ctx,
                 )
                 if not perm.allowed:
+                    fail = ToolResult.fail(
+                        f"Permission denied: {perm.reason}",
+                        approval_required=perm.needs_approval,
+                    )
                     return ExecutionResult(
                         call_id=call_id,
                         tool_name=tool_name,
-                        result=ToolResult.fail(f"Permission denied: {perm.reason}"),
+                        result=fail,
                         started_at=started_at,
                         finished_at=time.monotonic(),
                     )

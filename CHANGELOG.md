@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-07-10
+
+Minor release: human-in-the-loop approvals and change reviews, coding-project worktrees, knowledge library layer, and chat/workspace UX hardening.
+
+### Added
+
+- **Approval flow** — Durable approval decisions, API endpoints, and frontend permission bar integration for gated tool execution.
+- **Change reviews** — Review queue for agent edits with accept/reject workflow (`change_reviews` migration, `ReviewQueueView`).
+- **Auto-review tool** — Agent-side change review helper for plan-mode and verification gaps.
+- **Coding worktrees** — Git worktree support for isolated project runs (`worktree.py`, run groups UI).
+- **Knowledge library layer** — Document chunking, FTS search, and file GC background handler.
+- **OS sandbox** — Host-level sandbox execution path for shell/tools with streamed output.
+- **Steer queue** — Mid-turn user steering with correct message ordering in multi-turn chat.
+- **Canvas preview** — `srcDoc` fetch path for embedded browsers (e.g. Cursor Simple Browser) plus layout fixes.
+
+### Fixed
+
+- **Chat media** — Signed preview URLs, blob MIME correction, and placeholder URL guards for chat images.
+- **Session artifacts** — Dedupe attachments by `source_tool_path` / `sha256`; suppress stale `/tmp` re-registration from code execution.
+- **Files tab** — Fingerprint dedup for duplicate workspace attachments.
+- **Frontend stability** — React Query wiring, infinite re-render fixes in `ChatInput` and `SessionTerminalDock`.
+
 ## [1.1.3] - 2026-05-27
 
 Patch release: tolerant **custom / vLLM** OpenAI-compatible providers, YAML-first model routing, and fixes for tool calls emitted as JSON in assistant content.
@@ -1245,7 +1267,8 @@ _Subsections below keep `— YYYY-MM-DD` on each heading for maintainers (commit
 - **Minor (0.X.0)**: New features, backward compatible
 - **Patch (0.0.X)**: Bug fixes, security patches
 
-[Unreleased]: https://github.com/vixues/LeAgent/compare/v1.1.3...HEAD
+[Unreleased]: https://github.com/vixues/LeAgent/compare/v1.2.0...HEAD
+[1.2.0]: https://github.com/vixues/LeAgent/compare/v1.1.3...v1.2.0
 [1.1.3]: https://github.com/vixues/LeAgent/releases/tag/v1.1.3
 [1.1.2]: https://github.com/vixues/LeAgent/releases/tag/v1.1.2
 [1.1.1]: https://github.com/vixues/LeAgent/releases/tag/v1.1.1

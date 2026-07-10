@@ -38,6 +38,7 @@ async def register_tool_artifact(
     content_type: str | None = None,
     session_id: Any | None = None,
     user_id: Any | None = None,
+    origin_ref: str | None = None,
 ) -> dict[str, Any] | None:
     """Persist *data* as a managed artifact and return its attachment dict.
 
@@ -72,11 +73,16 @@ async def register_tool_artifact(
             data,
             filename=filename,
             content_type=content_type,
+            origin_ref=origin_ref,
         )
 
     # No session context: persist as a managed blob without attachment wiring.
     return await _register_without_session(
-        data, filename=filename, content_type=content_type, user_uuid=user_uuid
+        data,
+        filename=filename,
+        content_type=content_type,
+        user_uuid=user_uuid,
+        origin_ref=origin_ref,
     )
 
 
@@ -86,6 +92,7 @@ async def _register_without_session(
     filename: str,
     content_type: str | None,
     user_uuid: UUID | None,
+    origin_ref: str | None = None,
 ) -> dict[str, Any] | None:
     """Persist a workflow/tool artifact when no chat session is bound.
 
@@ -127,6 +134,9 @@ async def _register_without_session(
             scope=FileScope.OUTPUT,
             user_id=user_uuid,
             category="tool_output",
+            library_scope="artifact",
+            origin_type="tool",
+            origin_ref=origin_ref,
             persist_db_row=True,
         )
     except Exception as exc:  # noqa: BLE001

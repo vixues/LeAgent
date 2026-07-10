@@ -311,6 +311,7 @@
       "permission": {
         "regionLabel": "权限确认",
         "allow": "允许",
+        "allowSession": "本会话始终允许",
         "deny": "拒绝",
         "kindFileAccess": "文件访问",
         "kindToolRun": "工具执行",
@@ -338,6 +339,7 @@
     "media": {
       "loading": "加载中…",
       "openImage": "打开图片",
+      "imageUnavailable": "图片不可用",
       "expandImage": "查看大图",
       "rtspLoading": "正在连接 RTSP 预览…",
       "rtspError": "无法预览 RTSP",
@@ -487,6 +489,13 @@
     "deleteAria": "删除",
     "contextReady": "上下文已就绪",
     "inputFooterHint": "Enter 发送 · Shift+Enter 换行",
+    "steer": {
+      "hint": "Enter 引导当前回合 · Shift+Enter 排队到下一回合",
+      "queuedBadge": "已排队",
+      "removeQueued": "移除已排队消息",
+      "failed": "无法引导正在运行的回合。",
+      "queueFailed": "无法将消息加入队列。"
+    },
     "suggestions": {
       "intro": {
         "label": "LeAgent 能做什么",
@@ -569,6 +578,39 @@
         "scrollTail": "自动滚动到最新输出",
         "terminalTitle": "会话输出",
         "terminalEmpty": "本会话尚无 shell 或脚本输出。",
+        "terminalTabShell": "终端",
+        "terminalTabDev": "开发服务器",
+        "terminalLive": "实时",
+        "terminalDevEmpty": "尚无开发服务器输出。",
+        "subtabs": {
+          "activity": "活动",
+          "runs": "执行记录",
+          "review": "评审"
+        },
+        "runs": {
+          "empty": "尚无执行记录。",
+          "runTitle": "第 {{index}} 轮",
+          "toolCount": "{{count}} 个工具",
+          "errorCount": "{{count}} 个失败"
+        },
+        "review": {
+          "empty": "暂无变更评审。worktree 运行的改动会在此等待批准或拒绝后合并。",
+          "approve": "批准并合并",
+          "reject": "拒绝",
+          "noDiff": "暂无差异内容。",
+          "workspaceMode": "工作区",
+          "modeDirect": "直接模式",
+          "modeWorktree": "worktree",
+          "needProject": "请先绑定项目文件夹。",
+          "submit": "提交评审",
+          "status": {
+            "pending": "待评审",
+            "approved": "已批准",
+            "merged": "已合并",
+            "rejected": "已拒绝",
+            "failed": "失败"
+          }
+        },
         "terminalStick": "滚动：跟随末尾",
         "terminalFree": "滚动：自由",
         "terminalTruncated": "输出已截断",

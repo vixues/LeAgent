@@ -311,6 +311,7 @@
       "permission": {
         "regionLabel": "Permission prompt",
         "allow": "Allow",
+        "allowSession": "Allow for session",
         "deny": "Deny",
         "kindFileAccess": "File access",
         "kindToolRun": "Tool",
@@ -338,6 +339,7 @@
     "media": {
       "loading": "Loading…",
       "openImage": "Open image",
+      "imageUnavailable": "Image unavailable",
       "expandImage": "View larger",
       "rtspLoading": "Starting RTSP preview…",
       "rtspError": "RTSP preview unavailable",
@@ -487,6 +489,13 @@
     "deleteAria": "Delete",
     "contextReady": "Context ready",
     "inputFooterHint": "Enter to send · Shift+Enter for newline",
+    "steer": {
+      "hint": "Enter steers the running turn · Shift+Enter queues for the next turn",
+      "queuedBadge": "Queued",
+      "removeQueued": "Remove queued message",
+      "failed": "Could not steer the running turn.",
+      "queueFailed": "Could not queue the message."
+    },
     "suggestions": {
       "intro": {
         "label": "What can LeAgent do here?",
@@ -569,6 +578,39 @@
         "scrollTail": "Auto-scroll to latest output",
         "terminalTitle": "Session output",
         "terminalEmpty": "No shell or script output in this session yet.",
+        "terminalTabShell": "Shell",
+        "terminalTabDev": "Dev server",
+        "terminalLive": "live",
+        "terminalDevEmpty": "No dev-server output yet.",
+        "subtabs": {
+          "activity": "Activity",
+          "runs": "Runs",
+          "review": "Review"
+        },
+        "runs": {
+          "empty": "No execution records yet.",
+          "runTitle": "Run {{index}}",
+          "toolCount": "{{count}} tools",
+          "errorCount": "{{count}} failed"
+        },
+        "review": {
+          "empty": "No change reviews. Worktree runs land here for approve / reject before merging.",
+          "approve": "Approve & merge",
+          "reject": "Reject",
+          "noDiff": "Diff unavailable.",
+          "workspaceMode": "Workspace",
+          "modeDirect": "direct",
+          "modeWorktree": "worktree",
+          "needProject": "Bind a project folder first.",
+          "submit": "Submit for review",
+          "status": {
+            "pending": "pending",
+            "approved": "approved",
+            "merged": "merged",
+            "rejected": "rejected",
+            "failed": "failed"
+          }
+        },
         "terminalStick": "Scroll: tail",
         "terminalFree": "Scroll: free",
         "terminalTruncated": "Output was truncated",

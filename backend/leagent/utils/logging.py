@@ -29,12 +29,37 @@ import structlog
 request_id_var: ContextVar[str | None] = ContextVar("request_id", default=None)
 user_id_var: ContextVar[str | None] = ContextVar("user_id", default=None)
 tenant_id_var: ContextVar[str | None] = ContextVar("tenant_id", default=None)
+session_id_var: ContextVar[str | None] = ContextVar("session_id", default=None)
+user_message_id_var: ContextVar[str | None] = ContextVar("user_message_id", default=None)
+llm_call_kind_var: ContextVar[str | None] = ContextVar("llm_call_kind", default=None)
+
+
+class _LLMCallCounter:
+    """Per-turn monotonic index for provider HTTP calls."""
+
+    __slots__ = ("value",)
+
+    def __init__(self) -> None:
+        self.value = 0
+
+    def next_index(self) -> int:
+        idx = self.value
+        self.value += 1
+        return idx
+
+
+llm_call_counter_var: ContextVar[_LLMCallCounter | None] = ContextVar(
+    "llm_call_counter",
+    default=None,
+)
 
 # Keys that mirror into the bare ContextVars above for backwards compatibility.
 _MIRRORED_CONTEXT_VARS = {
     "request_id": request_id_var,
     "user_id": user_id_var,
     "tenant_id": tenant_id_var,
+    "session_id": session_id_var,
+    "user_message_id": user_message_id_var,
 }
 
 
@@ -237,13 +262,51 @@ def setup_logging(
     )
 
 
+def bind_turn_log_context(
+    *,
+    session_id: str | None = None,
+    user_id: str | None = None,
+    user_message_id: str | None = None,
+    call_kind: str = "chat",
+) -> None:
+    """Bind chat-turn correlation fields and reset the per-turn LLM call counter."""
+    bind_log_context(
+        session_id=session_id,
+        user_id=user_id,
+        user_message_id=user_message_id,
+    )
+    llm_call_kind_var.set(call_kind)
+    llm_call_counter_var.set(_LLMCallCounter())
+
+
+def next_llm_call_index() -> int:
+    """Return the next call index within the active turn (0-based)."""
+    counter = llm_call_counter_var.get()
+    if counter is None:
+        counter = _LLMCallCounter()
+        llm_call_counter_var.set(counter)
+    return counter.next_index()
+
+
+def current_llm_call_kind(default: str = "chat") -> str:
+    """Return the active LLM call kind label."""
+    return llm_call_kind_var.get() or default
+
+
 __all__ = [
     "setup_logging",
     "get_logger",
     "bind_log_context",
+    "bind_turn_log_context",
     "unbind_log_context",
     "clear_log_context",
+    "next_llm_call_index",
+    "current_llm_call_kind",
     "request_id_var",
     "user_id_var",
     "tenant_id_var",
+    "session_id_var",
+    "user_message_id_var",
+    "llm_call_kind_var",
+    "llm_call_counter_var",
 ]

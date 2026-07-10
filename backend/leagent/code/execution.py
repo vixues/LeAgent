@@ -809,12 +809,17 @@ class CodeExecutionTool(BaseTool):
 
         produced_files = list(result.produced_files or [])
         managed_artifacts: list[dict[str, Any]] = []
+        image_artifacts = list(result.image_artifacts or [])
+        file_artifacts = list(result.file_artifacts or [])
         if not is_error and produced_files:
             produced_files, managed_artifacts = await ingest_previewable_produced_files(
                 context,
                 produced_files,
                 workspace=str(workspace.path),
             )
+            from leagent.code.sandbox import split_produced_artifacts
+
+            image_artifacts, file_artifacts = split_produced_artifacts(produced_files)
 
         envelope = strip_inline_base64_payloads(
             _build_envelope(
@@ -828,8 +833,8 @@ class CodeExecutionTool(BaseTool):
                 stderr_truncated=result.stderr_truncated,
                 result=result.result,
                 produced_files=produced_files,
-                images=result.image_artifacts,
-                files=result.file_artifacts,
+                images=image_artifacts,
+                files=file_artifacts,
                 duration_ms=result.duration_ms,
                 workspace=str(workspace.path),
                 returncode=result.returncode,

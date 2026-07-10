@@ -9,7 +9,10 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass, field
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from leagent.services.execution.os_sandbox import SandboxSpec
 
 
 @dataclass(frozen=True)
@@ -24,6 +27,9 @@ class ExecutionPolicy:
     max_output_bytes: int = 200_000
     allowed_binaries: frozenset[str] | None = None
     allow_free_shell: bool = False
+    #: Optional OS-level sandbox description (bwrap/Seatbelt). ``None``
+    #: preserves legacy direct execution.
+    sandbox_spec: "SandboxSpec | None" = None
     env_allowlist: frozenset[str] = frozenset({
         "PATH", "PYTHONPATH", "PYTHONIOENCODING",
         "LC_ALL", "LC_CTYPE", "LANG", "HOME", "TMPDIR",

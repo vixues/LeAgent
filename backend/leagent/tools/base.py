@@ -721,11 +721,17 @@ class SyncTool(BaseTool):
 
 @dataclass
 class PermissionResult:
-    """Result of a permission check."""
+    """Result of a permission check.
+
+    ``needs_approval`` distinguishes "pause and ask the user"
+    (Codex-style approval flow) from a hard deny: the runtime should
+    surface an Allow/Deny card instead of failing the call.
+    """
 
     allowed: bool
     reason: str | None = None
     updated_params: dict[str, Any] | None = None
+    needs_approval: bool = False
 
 
 @dataclass
@@ -733,6 +739,11 @@ class ToolPermissionContext:
     """Context for evaluating tool permissions.
 
     Mirrors the reference ToolPermissionContext with a simplified Python model.
+    ``approval_policy`` follows Codex semantics:
+
+    * ``untrusted`` — every non-read-only tool needs approval unless granted.
+    * ``on-request`` (default) — only ask-rules / destructive tools ask.
+    * ``never`` — no approval pauses (sandbox still enforces boundaries).
     """
 
     mode: Literal["default", "auto", "bypass"] = "default"
@@ -742,6 +753,104 @@ class ToolPermissionContext:
     bypass_permissions: bool = False
     avoid_permission_prompts: bool = False
     confirm_destructive: bool = False
+    approval_policy: Literal["untrusted", "on-request", "never"] = "on-request"
+
+
+def _session_approval_granted(tool_name: str, tool_context: ToolContext | None) -> bool:
+    """Consult the runtime approval store for an existing grant."""
+    session_id = getattr(tool_context, "session_id", None) if tool_context else None
+    if session_id is None:
+        return False
+    try:
+        from leagent.tools.approval import get_approval_store
+
+        return get_approval_store().is_granted(str(session_id), tool_name)
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def _effective_approval_policy(
+    context: ToolPermissionContext, tool_context: ToolContext | None,
+) -> str:
+    """Session-level policy (approval store) overrides the static default."""
+    session_id = getattr(tool_context, "session_id", None) if tool_context else None
+    if session_id is not None:
+        try:
+            from leagent.tools.approval import get_approval_store
+
+            return get_approval_store().get_policy(str(session_id))
+        except Exception:  # noqa: BLE001
+            pass
+    return context.approval_policy
+
+
+#: Non-read-only tools still permitted while plan mode is active.
+_PLAN_MODE_ALLOWED_TOOLS: frozenset[str] = frozenset({
+    "todo_write",
+    "todo_read",
+    "ask_user",
+    "enter_plan_mode",
+})
+
+
+def _plan_mode_active(tool_context: ToolContext | None) -> bool:
+    """True when the session (or the per-call context) is in plan mode."""
+    if tool_context is None:
+        return False
+    extra = getattr(tool_context, "extra", None)
+    if isinstance(extra, dict) and extra.get("plan_mode"):
+        return True
+    session_id = getattr(tool_context, "session_id", None)
+    if session_id is None:
+        return False
+    try:
+        from leagent.agent.control import get_session_control_registry
+
+        return get_session_control_registry().plan_mode_active(str(session_id))
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def _plan_mode_gate(
+    tool: BaseTool,
+    context: ToolPermissionContext,
+    tool_context: ToolContext | None,
+) -> PermissionResult | None:
+    """Executor-enforced plan mode: read-only tools only, gated exit.
+
+    Returns ``None`` when plan mode is inactive or the tool is permitted,
+    otherwise a blocking :class:`PermissionResult`. ``exit_plan_mode``
+    requires user confirmation of the plan via the approval card (unless
+    prompts are disabled), mirroring Codex's Plan Mode exit approval.
+    """
+    if not _plan_mode_active(tool_context):
+        return None
+
+    if tool.name == "exit_plan_mode":
+        policy = _effective_approval_policy(context, tool_context)
+        ask_disabled = policy == "never" or context.avoid_permission_prompts
+        if ask_disabled or _session_approval_granted(tool.name, tool_context):
+            return None
+        return PermissionResult(
+            allowed=False,
+            needs_approval=True,
+            reason=(
+                "Exiting plan mode requires the user to confirm the plan "
+                "before execution begins"
+            ),
+        )
+
+    if getattr(tool, "is_read_only", False) or tool.name in _PLAN_MODE_ALLOWED_TOOLS:
+        return None
+
+    return PermissionResult(
+        allowed=False,
+        reason=(
+            f"Plan mode is active: tool '{tool.name}' has side effects and is "
+            "blocked. Finish the plan with todo_write, then call "
+            "exit_plan_mode to begin execution."
+        ),
+    )
 
 
 def check_tool_permission(
@@ -766,29 +875,55 @@ def check_tool_permission(
         if fnmatch.fnmatch(tool.name, pattern):
             return PermissionResult(allowed=False, reason=f"Tool '{tool.name}' is in deny list")
 
+    plan_gate = _plan_mode_gate(tool, context, tool_context)
+    if plan_gate is not None:
+        return plan_gate
+
     for pattern in context.always_allow_rules:
         if fnmatch.fnmatch(tool.name, pattern):
             return PermissionResult(allowed=True)
 
+    policy = _effective_approval_policy(context, tool_context)
+    ask_disabled = policy == "never" or context.avoid_permission_prompts
+
     for pattern in context.always_ask_rules:
         if fnmatch.fnmatch(tool.name, pattern):
+            if ask_disabled or _session_approval_granted(tool.name, tool_context):
+                break
             return PermissionResult(
                 allowed=False,
+                needs_approval=True,
                 reason=(
                     f"Tool '{tool.name}' requires explicit user approval "
-                    "(always_ask_rules / configure always_allow to bypass)"
+                    "(always_ask_rules)"
                 ),
             )
 
     if (
         context.confirm_destructive
-        and not context.bypass_permissions
-        and not context.avoid_permission_prompts
+        and not ask_disabled
         and getattr(tool, "is_destructive", False)
+        and not _session_approval_granted(tool.name, tool_context)
     ):
         return PermissionResult(
             allowed=False,
-            reason=f"Destructive tool '{tool.name}' blocked pending operator policy",
+            needs_approval=True,
+            reason=f"Destructive tool '{tool.name}' requires user approval",
+        )
+
+    if (
+        policy == "untrusted"
+        and not context.avoid_permission_prompts
+        and not getattr(tool, "is_read_only", False)
+        and not _session_approval_granted(tool.name, tool_context)
+    ):
+        return PermissionResult(
+            allowed=False,
+            needs_approval=True,
+            reason=(
+                f"Approval policy 'untrusted': tool '{tool.name}' is not "
+                "read-only and needs user approval"
+            ),
         )
 
     ctx = tool_context or ToolContext(user_id=None, session_id=None)

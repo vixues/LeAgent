@@ -9,6 +9,7 @@ __all__ = [
     "ContextRecipe",
     "RECIPE_REGISTRY",
     "get_recipe",
+    "merge_recipes",
 ]
 
 
@@ -124,3 +125,20 @@ RECIPE_REGISTRY: dict[str, ContextRecipe] = {
 def get_recipe(name: str) -> ContextRecipe:
     """Look up a recipe by name, falling back to ``default_agent``."""
     return RECIPE_REGISTRY.get(name, RECIPE_REGISTRY["default_agent"])
+
+
+def merge_recipes(base: ContextRecipe, extra: ContextRecipe) -> ContextRecipe:
+    """Union of two recipes, preserving ``base`` order then appending new sources.
+
+    Used for the monolithic coding session: when ``project_roots`` are bound,
+    the parent (``default_agent``) turn absorbs the ``coding_agent`` recipe's
+    sources instead of delegating to a child engine, so coding-specific
+    context (project memory, playbooks, …) is assembled in-session.
+    """
+    seen = {e.source_id for e in base.entries}
+    merged = list(base.entries) + [e for e in extra.entries if e.source_id not in seen]
+    return ContextRecipe(
+        name=f"{base.name}+{extra.name}",
+        entries=tuple(merged),
+        max_chars=max(base.max_chars, extra.max_chars),
+    )

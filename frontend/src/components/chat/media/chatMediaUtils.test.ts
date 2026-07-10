@@ -3,6 +3,7 @@ import {
   extractApiFileDownloadId,
   extractApiFilePreviewId,
   extractAuthedApiFilePreviewId,
+  isChatRenderableImageSrc,
   isInvalidApiFilePreviewRef,
   managedFilePreviewHasSignedToken,
   resolveMarkdownImageSrcFromAttachments,
@@ -109,5 +110,25 @@ describe('resolveMarkdownImageSrcFromAttachments', () => {
         { id, name: 'a.png', previewUrl: signed },
       ]),
     ).toBe('https://cdn.example.com/a.png');
+  });
+});
+
+describe('isChatRenderableImageSrc', () => {
+  const id = '123e4567-e89b-42d3-a456-426614174000';
+
+  it('accepts managed preview URLs and remote images', () => {
+    expect(isChatRenderableImageSrc(`/api/v1/files/${id}/preview?token=x`)).toBe(true);
+    expect(isChatRenderableImageSrc('https://cdn.example.com/a.png')).toBe(true);
+    expect(isChatRenderableImageSrc('data:image/png;base64,abc')).toBe(true);
+  });
+
+  it('rejects unresolved bare filenames that would 404 locally', () => {
+    expect(isChatRenderableImageSrc('placeholder.png')).toBe(false);
+    expect(isChatRenderableImageSrc('out/plot.png')).toBe(false);
+  });
+
+  it('rejects known external placeholder hosts', () => {
+    expect(isChatRenderableImageSrc('https://i.imgur.com/placeholder.png')).toBe(false);
+    expect(isChatRenderableImageSrc('https://via.placeholder.com/150')).toBe(false);
   });
 });

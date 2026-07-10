@@ -3,10 +3,11 @@
 Real coding work needs to talk to package managers, linters, type
 checkers, test runners, and ``git``. Letting the LLM exec arbitrary
 shell commands is a known-bad idea, so this tool ships with a curated
-whitelist of binaries and runs every invocation through the same
-``SubprocessSandbox`` plumbing the existing ``code_execution`` tool
-uses (sanitised env, hard timeout, ``start_new_session=True`` on POSIX
-so a SIGKILL reaps the whole process group).
+whitelist of binaries and routes every invocation through the unified
+:class:`~leagent.services.execution.engine.ExecutionEngine` — the same
+spawn site as ``code_execution`` — so sanitised env, hard timeout,
+process-group reaping **and the optional OS-level sandbox wrapper
+(bwrap / Seatbelt)** apply consistently.
 
 Two modes:
 
@@ -28,13 +29,10 @@ always returned so the agent can quickly tell success from failure.
 
 from __future__ import annotations
 
-import asyncio
 import os
 import shlex
 import shutil
-import subprocess
 import sys
-import time
 from pathlib import Path
 from typing import Any
 
@@ -314,6 +312,13 @@ class ProjectShellTool(BaseTool):
         free_shell = _free_shell_enabled()
         allow = _allowed_binaries()
 
+        session_id = getattr(context, "session_id", None)
+        output_meta = {
+            "tool_call_id": str(context.extra.get("current_tool_call_id") or ""),
+            "tool_name": self.name,
+            "source": "shell",
+        }
+
         if shell_cmd:
             if not free_shell:
                 return {
@@ -324,9 +329,15 @@ class ProjectShellTool(BaseTool):
                         "binary."
                     ),
                 }
-            return await _run_shell(
-                shell_cmd, cwd=cwd_abs, env=env, timeout=timeout,
+            return await _run_via_engine(
+                shell_script=shell_cmd,
+                cwd=cwd_abs,
+                env=env,
+                timeout=timeout,
                 stdin=stdin_data,
+                session_id=str(session_id) if session_id else None,
+                project_root=root,
+                output_meta=output_meta,
             )
 
         if not isinstance(argv, list) or not argv or not all(
@@ -344,184 +355,154 @@ class ProjectShellTool(BaseTool):
                 ),
             }
 
-        return await _run_argv(
-            _resolve_argv_executable(argv),
+        return await _run_via_engine(
+            argv=_resolve_argv_executable(argv),
             cwd=cwd_abs,
             env=env,
             timeout=timeout,
             stdin=stdin_data,
+            session_id=str(session_id) if session_id else None,
+            project_root=root,
+            output_meta=output_meta,
         )
 
 
-async def _run_argv(
-    argv: list[str],
+def _build_engine_policy(
     *,
+    env: dict[str, str],
+    timeout: float,
+    project_root: Path,
+    free_shell: bool,
+) -> "Any":
+    """Build the per-call :class:`ExecutionPolicy` for the engine.
+
+    The whitelist is enforced by the tool itself (with basename
+    normalisation + interpreter fallback), so the engine-level binary
+    check is disabled. The fully-built env is passed as ``extra_env``
+    on an empty allowlist to reproduce the tool's historic env exactly.
+    The OS sandbox spec (workspace-write over the project root) rides
+    on the policy so ``ExecutionEngine`` wraps the argv when enabled.
+    """
+    from leagent.services.execution.os_sandbox import (
+        SandboxSpec,
+        default_writable_roots,
+        resolve_sandbox_mode,
+    )
+    from leagent.services.execution.policies import ExecutionPolicy
+
+    mode = resolve_sandbox_mode(None)
+    network_raw = os.environ.get("LEAGENT_SANDBOX_NETWORK", "").strip().lower()
+    network_access = network_raw not in ("0", "false", "no", "off")
+    spec = SandboxSpec(
+        mode=mode,
+        writable_roots=default_writable_roots(str(project_root)),
+        network_access=network_access,
+    )
+    return ExecutionPolicy(
+        timeout_sec=timeout,
+        max_timeout_sec=timeout,
+        max_output_bytes=MAX_OUTPUT_BYTES,
+        allowed_binaries=None,
+        allow_free_shell=free_shell,
+        env_allowlist=frozenset(),
+        extra_env=env,
+        sandbox_spec=spec,
+    )
+
+
+async def _run_via_engine(
+    *,
+    argv: list[str] | None = None,
+    shell_script: str | None = None,
     cwd: Path,
     env: dict[str, str],
     timeout: float,
     stdin: str,
+    session_id: str | None,
+    project_root: Path,
+    output_meta: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Spawn ``argv`` directly without going through the shell."""
-    started = time.monotonic()
-    try:
-        # Avoid stdin=PIPE when there is nothing to send: on Windows (Proactor)
-        # asyncio + PIPE can surface empty BrokenPipeError/ConnectionResetError
-        # from communicate(); DEVNULL matches "no stdin" without a pipe pair.
-        use_stdin_pipe = bool((stdin or "").strip())
-        kwargs: dict[str, Any] = dict(
-            stdin=asyncio.subprocess.PIPE if use_stdin_pipe else subprocess.DEVNULL,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-            env=env,
+    """Route the command through the unified :class:`ExecutionEngine`."""
+    from leagent.services.execution.engine import get_execution_engine
+
+    policy = _build_engine_policy(
+        env=env,
+        timeout=timeout,
+        project_root=project_root,
+        free_shell=shell_script is not None,
+    )
+    stdin_data = stdin.encode("utf-8") if (stdin or "").strip() else None
+    engine = get_execution_engine()
+
+    if shell_script is not None:
+        result = await engine.shell_script(
+            shell_script,
             cwd=str(cwd),
+            policy=policy,
+            timeout_sec=timeout,
+            stdin_data=stdin_data,
+            session_id=session_id,
+            output_meta=output_meta,
         )
-        if os.name != "nt":
-            kwargs["start_new_session"] = True
-        proc = await asyncio.create_subprocess_exec(*argv, **kwargs)
-    except FileNotFoundError:
+        display_argv = shlex.split(shell_script) if os.name != "nt" else [shell_script]
+    else:
+        assert argv is not None
+        result = await engine.shell_command(
+            argv,
+            cwd=str(cwd),
+            policy=policy,
+            timeout_sec=timeout,
+            stdin_data=stdin_data,
+            session_id=session_id,
+            output_meta=output_meta,
+        )
+        display_argv = argv
+
+    if result.metadata.get("not_found"):
         return {
             "error": (
-                f"Command not found on PATH: {argv[0]!r}. Install the "
-                "binary or use a different one."
+                f"Command not found on PATH: {display_argv[0]!r}. Install "
+                "the binary or use a different one."
             ),
-            "argv": argv,
+            "argv": display_argv,
         }
-    except OSError as exc:
-        return {"error": f"Failed to spawn {argv[0]!r}: {exc}", "argv": argv}
-
-    return await _await_proc(
-        proc, argv=argv, started=started, timeout=timeout, stdin=stdin,
-    )
-
-
-async def _run_shell(
-    cmd: str,
-    *,
-    cwd: Path,
-    env: dict[str, str],
-    timeout: float,
-    stdin: str,
-) -> dict[str, Any]:
-    """Run ``cmd`` through the system shell (only when opt-in is on)."""
-    started = time.monotonic()
-    use_stdin_pipe = bool((stdin or "").strip())
-    kwargs: dict[str, Any] = dict(
-        stdin=asyncio.subprocess.PIPE if use_stdin_pipe else subprocess.DEVNULL,
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE,
-        env=env,
-        cwd=str(cwd),
-    )
-    if os.name != "nt":
-        kwargs["start_new_session"] = True
-    proc = await asyncio.create_subprocess_shell(cmd, **kwargs)
-    return await _await_proc(
-        proc,
-        argv=shlex.split(cmd) if os.name != "nt" else [cmd],
-        started=started,
-        timeout=timeout,
-        stdin=stdin,
-    )
-
-
-async def _await_proc(
-    proc: asyncio.subprocess.Process,
-    *,
-    argv: list[str],
-    started: float,
-    timeout: float,
-    stdin: str,
-) -> dict[str, Any]:
-    """Common timeout + capture path used by both spawn modes."""
-    try:
-        if (stdin or "").strip():
-            stdout, stderr = await asyncio.wait_for(
-                proc.communicate(input=stdin.encode("utf-8")),
-                timeout=timeout,
-            )
-        else:
-            stdout, stderr = await asyncio.wait_for(
-                proc.communicate(),
-                timeout=timeout,
-            )
-    except asyncio.TimeoutError:
-        _kill(proc)
-        try:
-            await asyncio.wait_for(proc.wait(), timeout=2.0)
-        except asyncio.TimeoutError:
-            pass
-        duration_ms = int((time.monotonic() - started) * 1000)
-        return {
-            "status": "timeout",
-            "argv": argv,
-            "duration_ms": duration_ms,
-            "error": f"Command timed out after {timeout:.0f}s",
-        }
-    except Exception as exc:
-        _kill(proc)
-        try:
-            await asyncio.wait_for(proc.wait(), timeout=2.0)
-        except asyncio.TimeoutError:
-            pass
-        duration_ms = int((time.monotonic() - started) * 1000)
-        detail = f"{type(exc).__name__}: {exc!s}" if str(exc) else repr(exc)
+    if result.status == "crash":
         return {
             "status": "error",
-            "argv": argv,
-            "duration_ms": duration_ms,
-            "error": f"Failed while running subprocess: {detail}",
+            "argv": display_argv,
+            "duration_ms": result.duration_ms,
+            "error": f"Failed while running subprocess: {result.error}",
+        }
+    if result.status == "timeout":
+        return {
+            "status": "timeout",
+            "argv": display_argv,
+            "duration_ms": result.duration_ms,
+            "error": f"Command timed out after {timeout:.0f}s",
         }
 
-    duration_ms = int((time.monotonic() - started) * 1000)
-    rc = proc.returncode if proc.returncode is not None else -1
-    out_text, out_truncated = _decode_capped(stdout)
-    err_text, err_truncated = _decode_capped(stderr)
     out: dict[str, Any] = {
-        "status": "ok" if rc == 0 else "error",
-        "argv": argv,
-        "returncode": rc,
-        "duration_ms": duration_ms,
-        "stdout": out_text,
-        "stderr": err_text,
-        "stdout_truncated": out_truncated,
-        "stderr_truncated": err_truncated,
+        "status": "ok" if result.returncode == 0 else "error",
+        "argv": display_argv,
+        "returncode": result.returncode,
+        "duration_ms": result.duration_ms,
+        "stdout": result.stdout,
+        "stderr": result.stderr,
+        "stdout_truncated": bool(result.metadata.get("stdout_truncated")),
+        "stderr_truncated": bool(result.metadata.get("stderr_truncated")),
     }
+    if result.metadata.get("sandbox_applied"):
+        out["sandbox"] = {
+            "backend": result.metadata.get("sandbox_backend"),
+            "network_isolated": bool(result.metadata.get("sandbox_network_isolated")),
+        }
     try:
         from leagent.services.diagnostics_parsers import extract_shell_diagnostics
 
-        src, diags = extract_shell_diagnostics(argv, out_text, err_text)
+        src, diags = extract_shell_diagnostics(display_argv, result.stdout, result.stderr)
         if src and diags:
             out["diagnostics_source"] = src
             out["diagnostics"] = diags
     except Exception:  # noqa: BLE001 — never fail the shell tool on parser bugs
         logger.debug("shell_diagnostics_parse_skipped", exc_info=True)
     return out
-
-
-def _decode_capped(buf: bytes) -> tuple[str, bool]:
-    """Decode UTF-8 with replacement and cap to ``MAX_OUTPUT_BYTES``."""
-    if len(buf) > MAX_OUTPUT_BYTES:
-        return (
-            buf[:MAX_OUTPUT_BYTES].decode("utf-8", errors="replace")
-            + "\n... [truncated]",
-            True,
-        )
-    return buf.decode("utf-8", errors="replace"), False
-
-
-def _kill(proc: asyncio.subprocess.Process) -> None:
-    """Kill the child process group on POSIX, the process on Windows."""
-    pid = proc.pid
-    if pid is None:
-        return
-    if hasattr(os, "killpg") and hasattr(os, "getpgid"):
-        try:
-            import signal as _signal
-            os.killpg(os.getpgid(pid), _signal.SIGKILL)
-            return
-        except (ProcessLookupError, PermissionError, OSError):
-            pass
-    try:
-        proc.kill()
-    except ProcessLookupError:
-        pass

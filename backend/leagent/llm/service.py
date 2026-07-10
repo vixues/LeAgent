@@ -348,6 +348,20 @@ class LLMService:
                     self.registry.record_failure(provider_name, str(exc))
                 errors.append(f"{provider_name}: {classification.category.value}: {exc}")
                 if yielded or not classification.retryable:
+                    self._record_failed_request_log(
+                        provider=provider_name,
+                        request_model=model_name,
+                        model=final_model,
+                        duration=time.perf_counter() - started,
+                        error=str(exc),
+                        is_streaming=True,
+                        ttfb_ms=(
+                            (first_chunk_at - started) * 1000
+                            if first_chunk_at is not None
+                            else 0.0
+                        ),
+                        status_code=504 if isinstance(exc, LLMTimeoutError) else 500,
+                    )
                     raise
         raise LLMServiceError("; ".join(errors) or "No provider available for routed stream")
 
@@ -613,6 +627,20 @@ class LLMService:
             output_tokens = int(getattr(usage, "completion_tokens", 0) or 0)
             total_cost = self._estimate_cost_usd(model, input_tokens, output_tokens)
 
+            from leagent.utils.logging import (
+                current_llm_call_kind,
+                next_llm_call_index,
+                session_id_var,
+                user_id_var,
+                user_message_id_var,
+            )
+
+            session_id = session_id_var.get()
+            user_id = user_id_var.get()
+            user_message_id = user_message_id_var.get()
+            call_index = next_llm_call_index()
+            call_kind = current_llm_call_kind()
+
             async def _insert() -> None:
                 try:
                     from leagent.db import get_database_service
@@ -627,14 +655,23 @@ class LLMService:
                                 request_model=request_model or model or "unknown",
                                 input_tokens=input_tokens,
                                 output_tokens=output_tokens,
-                                cache_read_tokens=int(getattr(usage, "prompt_cache_hit_tokens", 0) or 0),
-                                cache_write_tokens=int(getattr(usage, "prompt_cache_miss_tokens", 0) or 0),
+                                cache_read_tokens=int(
+                                    getattr(usage, "prompt_cache_hit_tokens", 0) or 0
+                                ),
+                                cache_miss_tokens=int(
+                                    getattr(usage, "prompt_cache_miss_tokens", 0) or 0
+                                ),
                                 total_cost_usd=total_cost,
                                 latency_ms=duration * 1000,
                                 ttfb_ms=ttfb_ms,
                                 status_code=status_code,
                                 error=error,
                                 is_streaming=is_streaming,
+                                session_id=session_id,
+                                user_id=user_id,
+                                user_message_id=user_message_id,
+                                call_index=call_index,
+                                call_kind=call_kind,
                             )
                         )
                 except Exception:
@@ -643,6 +680,31 @@ class LLMService:
             asyncio.create_task(_insert())
         except Exception:
             logger.debug("llm_request_log_schedule_failed")
+
+    def _record_failed_request_log(
+        self,
+        *,
+        provider: str,
+        request_model: str,
+        model: str,
+        duration: float,
+        error: str,
+        is_streaming: bool = False,
+        ttfb_ms: float = 0.0,
+        status_code: int = 500,
+    ) -> None:
+        """Persist a failed provider call for admin visibility."""
+        self._record_request_log(
+            LLMResponse(model=model, usage=TokenUsage()),
+            provider=provider,
+            request_model=request_model,
+            model=model,
+            duration=duration,
+            is_streaming=is_streaming,
+            ttfb_ms=ttfb_ms,
+            status_code=status_code,
+            error=error[:2000] if error else None,
+        )
 
 
 def data_url_for_image(path: str) -> str:

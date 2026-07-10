@@ -58,6 +58,29 @@ export function isProbablyVideoUrl(href: string | undefined): boolean {
   return VIDEO_EXT_RE.test(href);
 }
 
+/** True when ``href`` is a known dummy / broken placeholder hosts should not fetch. */
+export function isKnownPlaceholderImageUrl(href: string | undefined): boolean {
+  const raw = href?.trim().toLowerCase();
+  if (!raw) return true;
+  if (raw.endsWith('/placeholder.png') || raw.endsWith('/placeholder.jpg')) return true;
+  if (raw.endsWith('/placeholder.jpeg') || raw.endsWith('/placeholder.webp')) return true;
+  if (raw.includes('via.placeholder.com') || raw.includes('placehold.co')) return true;
+  if (/imgur\.com\/placeholder\./i.test(raw)) return true;
+  return false;
+}
+
+/** True when ``href`` can be passed to {@link ChatImage} without a doomed relative fetch (e.g. bare ``placeholder.png``). */
+export function isChatRenderableImageSrc(href: string | undefined): boolean {
+  const raw = href?.trim();
+  if (!raw) return false;
+  const lower = raw.toLowerCase();
+  if (lower.startsWith('data:') || lower.startsWith('blob:')) return true;
+  if (/^https?:\/\//i.test(raw)) return !isKnownPlaceholderImageUrl(raw);
+  if (extractApiFilePreviewId(raw) !== null) return true;
+  if (raw.startsWith('/') && raw.includes('/files/') && raw.includes('/preview')) return true;
+  return false;
+}
+
 export function isRtspUrl(href: string | undefined): boolean {
   if (!href) return false;
   const h = href.trim().toLowerCase();

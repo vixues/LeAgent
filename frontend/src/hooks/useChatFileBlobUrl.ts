@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { resolveEffectiveMime } from '@/lib/mimeForPreview';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || '/api/v1';
 
@@ -12,11 +13,34 @@ export type ChatFileBlobUrlState = {
 
 const IDLE: ChatFileBlobUrlState = { blobUrl: null, isLoading: false, isError: false };
 
+async function previewResponseToObjectUrl(
+  res: Response,
+  hintFilename?: string,
+): Promise<string> {
+  const headerType = res.headers
+    .get('Content-Type')
+    ?.split(';')[0]
+    ?.trim()
+    .toLowerCase();
+  const buf = await res.arrayBuffer();
+  const effectiveMime = resolveEffectiveMime(null, hintFilename ?? '');
+  const useType =
+    headerType && headerType !== 'application/octet-stream'
+      ? headerType
+      : effectiveMime.startsWith('image/')
+        ? effectiveMime
+        : 'image/png';
+  return URL.createObjectURL(new Blob([buf], { type: useType }));
+}
+
 /**
  * Fetches ``GET /files/:id/preview`` with auth for inline chat/media previews.
  * Unlike pet preview hooks, does not filter by image MIME — supports previewable types the API serves.
  */
-export function useChatFileBlobUrl(fileId: string | null): ChatFileBlobUrlState {
+export function useChatFileBlobUrl(
+  fileId: string | null,
+  hintFilename?: string,
+): ChatFileBlobUrlState {
   const [state, setState] = useState<ChatFileBlobUrlState>(IDLE);
 
   useEffect(() => {
@@ -40,9 +64,11 @@ export function useChatFileBlobUrl(fileId: string | null): ChatFileBlobUrlState 
           setState({ blobUrl: null, isLoading: false, isError: true });
           return;
         }
-        const blob = await res.blob();
-        if (cancelled) return;
-        const u = URL.createObjectURL(blob);
+        const u = await previewResponseToObjectUrl(res, hintFilename);
+        if (cancelled) {
+          URL.revokeObjectURL(u);
+          return;
+        }
         revoked = u;
         setState({ blobUrl: u, isLoading: false, isError: false });
       } catch {
@@ -53,7 +79,7 @@ export function useChatFileBlobUrl(fileId: string | null): ChatFileBlobUrlState 
       cancelled = true;
       if (revoked) URL.revokeObjectURL(revoked);
     };
-  }, [fileId]);
+  }, [fileId, hintFilename]);
 
   return state;
 }

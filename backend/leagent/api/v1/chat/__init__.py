@@ -54,6 +54,11 @@ logger = structlog.get_logger(__name__)
 
 router = APIRouter()
 
+# Worktree workspace-mode + change-review queue endpoints.
+from leagent.api.v1.chat.reviews import router as _reviews_router  # noqa: E402
+
+router.include_router(_reviews_router)
+
 
 def _project_locked_error() -> HTTPException:
     return HTTPException(status_code=status.HTTP_423_LOCKED, detail="Project locked")
@@ -417,34 +422,51 @@ async def chat_stream_endpoint(
 
     if has_tool_replies:
         from leagent.main import get_service_manager
+        from leagent.api.v1.chat.approvals import (
+            audit_approval_decision as _audit_approval_decision,
+            transform_approval_reply as _transform_approval_reply,
+        )
 
         sm = get_service_manager()
         for tr in parsed_tool_replies:
+            # Approval-card replies get rewritten into model-facing guidance
+            # and record a grant + durable audit row (Codex-style approvals).
+            reply_content, approval_pending, approval_decision = _transform_approval_reply(
+                parsed_session_id, tr,
+            )
+            if approval_pending is not None and approval_decision is not None:
+                await _audit_approval_decision(
+                    session_id=parsed_session_id,
+                    user_id=user_id,
+                    pending=approval_pending,
+                    decision=approval_decision,
+                )
+
             replaced_session = False
             if sm is not None and getattr(sm, "session_manager", None) is not None:
                 replaced_session = await sm.session_manager.replace_pending_tool_reply(
                     parsed_session_id,
                     tool_call_id=tr["tool_call_id"],
-                    content=tr["content"],
+                    content=reply_content,
                 )
             if not replaced_session and sm is not None and getattr(sm, "session_manager", None) is not None:
                 await sm.session_manager.append_tool_result(
                     parsed_session_id,
                     tool_call_id=tr["tool_call_id"],
-                    content=tr["content"],
+                    content=reply_content,
                 )
 
             replaced_db = await chat_svc.replace_tool_message_if_pending(
                 parsed_session_id,
                 tr["tool_call_id"],
-                tr["content"],
+                reply_content,
                 user_id=user_id,
             )
             if not replaced_db:
                 await chat_svc.add_message(
                     parsed_session_id,
                     MessageRole.TOOL,
-                    tr["content"],
+                    reply_content,
                     user_id=user_id,
                     tool_call_id=tr["tool_call_id"],
                 )
@@ -457,6 +479,14 @@ async def chat_stream_endpoint(
             attachments=persisted_file_ids if persisted_file_ids else None,
         )
         stream_user_message_id = user_row.id
+        from leagent.utils.logging import bind_turn_log_context
+
+        bind_turn_log_context(
+            session_id=str(parsed_session_id),
+            user_id=str(user_id),
+            user_message_id=str(stream_user_message_id),
+            call_kind="chat",
+        )
 
     partial_assistant_tool_calls: list[dict[str, Any]] | None = None
 
@@ -1832,6 +1862,232 @@ async def cancel_session(
         processes_killed=procs_killed,
         message=msg,
     )
+
+
+@router.get("/sessions/{session_id}/terminal-stream")
+async def terminal_stream(
+    session_id: UUID,
+    user_id: CurrentUserId,
+    chat_svc: ChatSvc,
+) -> EventSourceResponse:
+    """Live terminal SSE: incremental subprocess output for this session.
+
+    Emits ``tool_output_delta`` frames (tool_call_id + stream + chunk)
+    published by :class:`ExecutionEngine` while ``project_shell`` /
+    ``code_execution`` commands run — the frontend xterm dock renders
+    them without waiting for the final ``tool_result``.
+    """
+    session = await chat_svc.get_session(session_id, user_id=user_id)
+    if not session:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
+
+    from leagent.services.execution.output_stream import get_tool_output_bus
+
+    bus = get_tool_output_bus()
+
+    async def _gen():
+        async for chunk in bus.subscribe(str(session_id)):
+            yield {
+                "event": "message",
+                "data": json.dumps(
+                    {"type": "tool_output_delta", "data": chunk.to_dict()},
+                    ensure_ascii=False,
+                ),
+            }
+
+    return EventSourceResponse(_gen())
+
+
+@router.get("/sessions/{session_id}/tool-output/{call_id}")
+async def get_tool_output(
+    session_id: UUID,
+    call_id: str,
+    user_id: CurrentUserId,
+    chat_svc: ChatSvc,
+) -> dict[str, Any]:
+    """Return the retained full output of one tool call (post-truncation recovery)."""
+    session = await chat_svc.get_session(session_id, user_id=user_id)
+    if not session:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
+
+    from leagent.services.execution.output_stream import get_tool_output_bus
+
+    payload = get_tool_output_bus().get_full_output(str(session_id), call_id)
+    if payload is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No retained output for this tool call.",
+        )
+    return {"session_id": str(session_id), **payload}
+
+
+@router.post("/sessions/{session_id}/steer")
+async def steer_session(
+    session_id: UUID,
+    body: dict[str, Any],
+    user_id: CurrentUserId,
+    chat_svc: ChatSvc,
+) -> dict[str, Any]:
+    """Inject a user message into the *running* turn (Codex-style steer).
+
+    The query loop drains steer messages at the next tool-batch boundary
+    and appends them as fresh user messages (append-only history).
+    Returns 409 when no agent turn is active for the session.
+    """
+    session = await chat_svc.get_session(session_id, user_id=user_id)
+    if not session:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
+    content = str((body or {}).get("message") or "").strip()
+    if not content:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="message must be non-empty",
+        )
+
+    from leagent.agent.controller import AgentController
+    from leagent.agent.control import get_session_control_registry
+
+    if session_id not in AgentController._session_tasks:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="No active agent turn to steer; send a normal message instead.",
+        )
+
+    get_session_control_registry().push_steer(str(session_id), content)
+    # Persist the steer as a user message so history reloads include it.
+    row = await chat_svc.add_message(session_id, MessageRole.USER, content, user_id=user_id)
+    return {
+        "session_id": str(session_id),
+        "queued_for_injection": True,
+        "message_id": str(row.id) if row is not None else None,
+    }
+
+
+@router.post("/sessions/{session_id}/queue")
+async def queue_session_message(
+    session_id: UUID,
+    body: dict[str, Any],
+    user_id: CurrentUserId,
+    chat_svc: ChatSvc,
+) -> dict[str, Any]:
+    """Queue a message to dispatch as the next turn once the current one ends."""
+    session = await chat_svc.get_session(session_id, user_id=user_id)
+    if not session:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
+    content = str((body or {}).get("message") or "").strip()
+    if not content:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="message must be non-empty",
+        )
+    from leagent.agent.control import get_session_control_registry
+
+    msg = get_session_control_registry().queue_message(str(session_id), content)
+    return {"session_id": str(session_id), "queued": msg.to_dict()}
+
+
+@router.get("/sessions/{session_id}/queue")
+async def list_queued_session_messages(
+    session_id: UUID,
+    user_id: CurrentUserId,
+    chat_svc: ChatSvc,
+) -> dict[str, Any]:
+    """List messages queued for dispatch after the current turn."""
+    session = await chat_svc.get_session(session_id, user_id=user_id)
+    if not session:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
+    from leagent.agent.control import get_session_control_registry
+
+    items = get_session_control_registry().list_queued(str(session_id))
+    return {"session_id": str(session_id), "queued": [m.to_dict() for m in items]}
+
+
+@router.delete("/sessions/{session_id}/queue/{message_id}")
+async def delete_queued_session_message(
+    session_id: UUID,
+    message_id: str,
+    user_id: CurrentUserId,
+    chat_svc: ChatSvc,
+) -> dict[str, Any]:
+    """Remove a queued message before it is dispatched."""
+    session = await chat_svc.get_session(session_id, user_id=user_id)
+    if not session:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
+    from leagent.agent.control import get_session_control_registry
+
+    removed = get_session_control_registry().remove_queued(str(session_id), message_id)
+    if not removed:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Queued message not found")
+    return {"session_id": str(session_id), "removed": message_id}
+
+
+@router.post("/sessions/{session_id}/queue/pop")
+async def pop_queued_session_message(
+    session_id: UUID,
+    user_id: CurrentUserId,
+    chat_svc: ChatSvc,
+) -> dict[str, Any]:
+    """Pop the next queued message for dispatch (used by the frontend on turn end)."""
+    session = await chat_svc.get_session(session_id, user_id=user_id)
+    if not session:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
+    from leagent.agent.control import get_session_control_registry
+
+    msg = get_session_control_registry().pop_next_queued(str(session_id))
+    return {
+        "session_id": str(session_id),
+        "message": msg.to_dict() if msg is not None else None,
+    }
+
+
+@router.post("/sessions/{session_id}/approval-policy")
+async def set_session_approval_policy(
+    session_id: UUID,
+    body: dict[str, Any],
+    user_id: CurrentUserId,
+    chat_svc: ChatSvc,
+) -> dict[str, Any]:
+    """Set the session's approval policy: untrusted | on-request | never."""
+    session = await chat_svc.get_session(session_id, user_id=user_id)
+    if not session:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
+    from leagent.tools.approval import get_approval_store
+
+    store = get_approval_store()
+    policy = str((body or {}).get("policy") or "").strip().lower()
+    reviewer = str((body or {}).get("reviewer") or "").strip().lower()
+    try:
+        if policy:
+            store.set_policy(str(session_id), policy)
+        if reviewer:
+            store.set_reviewer(str(session_id), reviewer)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc),
+        ) from exc
+    return {
+        "session_id": str(session_id),
+        "policy": store.get_policy(str(session_id)),
+        "reviewer": store.get_reviewer(str(session_id)),
+    }
+
+
+@router.get("/sessions/{session_id}/approval-policy")
+async def get_session_approval_policy(
+    session_id: UUID,
+    user_id: CurrentUserId,
+    chat_svc: ChatSvc,
+) -> dict[str, Any]:
+    """Return the session's current approval policy."""
+    session = await chat_svc.get_session(session_id, user_id=user_id)
+    if not session:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
+    from leagent.tools.approval import get_approval_store
+
+    store = get_approval_store()
+    return {
+        "session_id": str(session_id),
+        "policy": store.get_policy(str(session_id)),
+        "reviewer": store.get_reviewer(str(session_id)),
+    }
 
 
 @router.post("/sessions/{session_id}/resume-checkpoint", response_model=ResumeCheckpointResponse)

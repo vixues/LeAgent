@@ -6,12 +6,12 @@ import { Icon } from "@/components/Icon";
 import { useI18n } from "@/i18n/I18nProvider";
 
 const WALLPAPER_IMAGES = [
-  "/images/pets/wallpapers/xuan.png",
-  "/images/pets/wallpapers/qing-shan.png",
-  "/images/pets/wallpapers/vermillion.png",
-  "/images/pets/wallpapers/raw-silk.png",
-  "/images/pets/wallpapers/ink-mood.png",
-  "/images/pets/wallpapers/cang.png",
+  "/images/pets/wallpapers/town-dusk.png",
+  "/images/pets/wallpapers/floating-realm.png",
+  "/images/pets/wallpapers/seaside-beach.png",
+  "/images/pets/wallpapers/pastoral-fields.png",
+  "/images/pets/wallpapers/snowy-horizon.png",
+  "/images/pets/wallpapers/enchanted-forest.png",
 ];
 
 const COMPANION_IMAGES = [

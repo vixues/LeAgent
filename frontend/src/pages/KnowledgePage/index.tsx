@@ -1,4 +1,4 @@
-import { useState, useRef, useMemo, useCallback, useEffect } from 'react';
+import { useState, useRef, useMemo, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
@@ -25,7 +25,6 @@ import { PageLoader } from '@/components/common/PageLoader';
 import { EmptyState } from '@/components/common/EmptyState';
 import { SearchInput } from '@/components/common/SearchInput';
 import { apiClient } from '@/api/client';
-import { getOrCreateKnowledgeSessionId } from '@/lib/knowledgeSession';
 import { useRealtimeFileSync } from '@/hooks/useRealtimeFileSync';
 import { UniversalFilePreview } from '@/components/files/UniversalFilePreview';
 import { downloadAuthenticatedFile } from '@/lib/downloadAuthenticatedFile';
@@ -37,6 +36,9 @@ interface DocumentSearchResult {
   file_type: string;
   score: number;
   snippet?: string | null;
+  chunk_id?: string | null;
+  start_offset?: number | null;
+  end_offset?: number | null;
 }
 
 interface DocumentSearchResponse {
@@ -105,12 +107,6 @@ export default function KnowledgePage() {
     },
     [t, toast],
   );
-
-  useEffect(() => {
-    getOrCreateKnowledgeSessionId().catch(() => {
-      // Upload path will retry; session is only needed for /documents/upload
-    });
-  }, []);
 
   const { data: documentsData, isLoading: listLoading } = useDocuments({ enabled: !isSearchMode });
 

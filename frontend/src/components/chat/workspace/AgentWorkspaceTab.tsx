@@ -11,17 +11,23 @@ import {
   type AgentEventKind,
   type AgentSessionEvent,
 } from '@/lib/agentSessionEvents';
+import { cn } from '@/lib/utils';
 import { useChatStore } from '@/stores/chat';
 import { useCodeArtifactStore, type CodeArtifactEntry } from '@/stores/codeArtifact';
+import { useChangeReviews } from '@/hooks/useChangeReviews';
 import { SessionHeader } from './code/SessionHeader';
 import { ChangedFilesRail } from './code/ChangedFilesRail';
 import { ArtifactsRail } from './code/ArtifactsRail';
 import { AgentSessionTimeline } from './code/AgentSessionTimeline';
 import { SessionTerminalDock } from './code/SessionTerminalDock';
+import { RunGroupsView } from './code/RunGroupsView';
+import { ReviewQueueView } from './code/ReviewQueueView';
 import { eventKindMeta } from './code/eventMeta';
 
 const EMPTY_CODE_ARTIFACT_IDS: string[] = [];
 const EMPTY_CODE_ARTIFACTS: CodeArtifactEntry[] = [];
+
+type CodeSubTab = 'activity' | 'runs' | 'review';
 
 /** Canonical ordering for the filter chip strip. */
 const KIND_ORDER: AgentEventKind[] = [
@@ -101,7 +107,14 @@ export function AgentWorkspaceTab() {
   const [selectedKinds, setSelectedKinds] = useState<Set<AgentEventKind>>(() => new Set());
   const [scrollTargetId, setScrollTargetId] = useState<string | null>(null);
   const [terminalCollapsed, setTerminalCollapsed] = useState(true);
+  const [subTab, setSubTab] = useState<CodeSubTab>('activity');
   const autoExpandedRef = useRef<Set<string>>(new Set());
+
+  const pendingReviews = useChangeReviews(currentSessionId);
+  const pendingReviewCount = useMemo(
+    () => (pendingReviews.data ?? []).filter((r) => r.status === 'pending').length,
+    [pendingReviews.data],
+  );
 
   // Auto-expand newly-streaming events once (does not fight a manual collapse).
   useEffect(() => {
@@ -155,6 +168,7 @@ export function AgentWorkspaceTab() {
   }, []);
 
   const handleSelectFile = useCallback((eventId: string) => {
+    setSubTab('activity');
     setExpandedIds((prev) => {
       if (prev.has(eventId)) return prev;
       const next = new Set(prev);
@@ -168,6 +182,10 @@ export function AgentWorkspaceTab() {
     const log = buildSessionLog(events);
     if (log) void navigator.clipboard?.writeText(log);
   }, [events]);
+
+  const handleTerminalToggle = useCallback(() => {
+    setTerminalCollapsed((v) => !v);
+  }, []);
 
   // --- Empty state ---
 
@@ -205,21 +223,59 @@ export function AgentWorkspaceTab() {
 
       <ArtifactsRail artifacts={artifacts} />
 
-      <div className="chat-sessions-scroll -mr-1 min-h-0 flex-1 overflow-y-auto pr-1">
-        <AgentSessionTimeline
-          events={filteredEvents}
-          isExpanded={isExpanded}
-          onToggle={handleToggle}
-          wrap={wrap}
-          scrollTargetId={scrollTargetId}
-          onScrolled={() => setScrollTargetId(null)}
-        />
+      <div className="flex shrink-0 items-center gap-0.5">
+        {(
+          [
+            ['activity', t('chat.workspace.agent.subtabs.activity', { defaultValue: 'Activity' })],
+            ['runs', t('chat.workspace.agent.subtabs.runs', { defaultValue: 'Runs' })],
+            ['review', t('chat.workspace.agent.subtabs.review', { defaultValue: 'Review' })],
+          ] as [CodeSubTab, string][]
+        ).map(([id, label]) => (
+          <button
+            key={id}
+            type="button"
+            onClick={() => setSubTab(id)}
+            className={cn(
+              'rounded-md px-2 py-1 text-[11px] font-medium transition-colors',
+              subTab === id
+                ? 'bg-surface-sunken text-foreground'
+                : 'text-muted-foreground hover:text-foreground',
+            )}
+            aria-pressed={subTab === id}
+          >
+            {label}
+            {id === 'review' && pendingReviewCount > 0 && (
+              <span className="ml-1 rounded-full bg-amber-500/20 px-1.5 py-0.5 text-[9px] font-semibold tabular-nums text-amber-600 dark:text-amber-400">
+                {pendingReviewCount}
+              </span>
+            )}
+          </button>
+        ))}
       </div>
+
+      {subTab === 'activity' && (
+        <div className="chat-sessions-scroll -mr-1 min-h-0 flex-1 overflow-y-auto pr-1">
+          <AgentSessionTimeline
+            events={filteredEvents}
+            isExpanded={isExpanded}
+            onToggle={handleToggle}
+            wrap={wrap}
+            scrollTargetId={scrollTargetId}
+            onScrolled={() => setScrollTargetId(null)}
+          />
+        </div>
+      )}
+
+      {subTab === 'runs' && (
+        <RunGroupsView events={filteredEvents} onSelectEvent={handleSelectFile} />
+      )}
+
+      {subTab === 'review' && <ReviewQueueView />}
 
       <SessionTerminalDock
         events={terminalEvents}
         collapsed={terminalCollapsed}
-        onToggle={() => setTerminalCollapsed((v) => !v)}
+        onToggle={handleTerminalToggle}
       />
     </div>
   );

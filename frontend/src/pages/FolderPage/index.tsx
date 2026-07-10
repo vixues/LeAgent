@@ -26,11 +26,17 @@ import {
   useFolderDetail,
   useCreateFolder,
   useDeleteFolder,
+  useUpdateFolder,
   useUploadFileToFolder,
   useRemoveFileFromFolder,
   type FolderTreeNode,
   type FolderFileItem,
 } from '@/hooks/useFolders';
+import {
+  useCodingProjectTemplates,
+  useScaffoldFolderProject,
+} from '@/hooks/useFolderProjectRuntime';
+import { CreateCodingProjectModal } from '@/pages/CodingProjects/CreateCodingProjectModal';
 import { useFoldersStore } from '@/stores/foldersStore';
 import { useChatDraftStore } from '@/stores/chatDraft';
 import { useRealtimeFileSync } from '@/hooks/useRealtimeFileSync';
@@ -41,6 +47,7 @@ import FilePreviewPanel from './components/FilePreviewPanel';
 import FolderContextMenu from './components/FolderContextMenu';
 import ProjectModeBadge from './project/ProjectModeBadge';
 import ProjectPanel from './project/ProjectPanel';
+import FolderProjectRunPanel from './project/FolderProjectRunPanel';
 
 /**
  * FolderPage — redesigned to match the app's design system.
@@ -74,8 +81,16 @@ export default function FolderPage() {
 
   const createFolder = useCreateFolder();
   const deleteFolder = useDeleteFolder();
+  const updateFolder = useUpdateFolder();
   const uploadFile = useUploadFileToFolder();
   const removeFile = useRemoveFileFromFolder();
+  const scaffoldProject = useScaffoldFolderProject();
+  const { data: templates = [] } = useCodingProjectTemplates();
+
+  const [scaffoldOpen, setScaffoldOpen] = useState(false);
+  const [scaffoldName, setScaffoldName] = useState('');
+  const [scaffoldDesc, setScaffoldDesc] = useState('');
+  const [scaffoldTemplate, setScaffoldTemplate] = useState('');
 
   const navigate = useNavigate();
   const setFolderContext = useChatDraftStore((s) => s.setFolderContext);
@@ -111,9 +126,16 @@ export default function FolderPage() {
     [createFolder, refetchTree, fetchFolders, t]
   );
 
-  const handleRenameFolder = useCallback(() => {
-    window.alert('Rename coming soon');
-  }, []);
+  const handleRenameFolder = useCallback(
+    async (folderId: string) => {
+      const name = window.prompt(t('folders.newFolderPrompt'));
+      if (!name?.trim()) return;
+      await updateFolder.mutateAsync({ id: folderId, name: name.trim() });
+      refetchTree();
+      fetchFolders();
+    },
+    [updateFolder, refetchTree, fetchFolders, t],
+  );
 
   const handleDeleteFolder = useCallback(
     async (folderId: string) => {
@@ -296,29 +318,50 @@ export default function FolderPage() {
             Otherwise render the original full-width file list.
           */}
           {selectedFolderId && folderDetail?.is_project ? (
-            <Tabs defaultValue="project" className="flex-1 flex flex-col min-h-0">
-              <TabsList className="mx-4 sm:mx-5 mt-3 self-start">
-                <TabsTrigger value="project">
-                  {t('folders.project.tab', { defaultValue: 'Project' })}
-                </TabsTrigger>
+            <Tabs defaultValue="code" className="flex min-h-0 flex-1 flex-col">
+              <TabsList className="mx-4 mt-3 self-start sm:mx-5">
                 <TabsTrigger value="files">
                   {t('folders.project.filesTab', { defaultValue: 'Files' })}
                 </TabsTrigger>
+                <TabsTrigger value="code">
+                  {t('folders.project.codeTab', { defaultValue: 'Code' })}
+                </TabsTrigger>
+                <TabsTrigger value="git">
+                  {t('folders.project.gitTab', { defaultValue: 'Git' })}
+                </TabsTrigger>
+                <TabsTrigger value="run">
+                  {t('folders.project.runTab', { defaultValue: 'Run' })}
+                </TabsTrigger>
               </TabsList>
-              <TabsContent value="project" className="flex-1 flex flex-col min-h-0 mt-3">
-                <ProjectPanel
-                  folderId={selectedFolderId}
-                  folderName={folderDetail.name}
-                  projectPath={folderDetail.project_path ?? null}
-                />
-              </TabsContent>
-              <TabsContent value="files" className="flex-1 flex flex-col min-h-0">
+              <TabsContent value="files" className="mt-3 flex min-h-0 flex-1 flex-col">
                 <FileListView
                   files={fileList}
                   isLoading={itemsLoading}
                   onPreview={setPreviewFile}
                   onRemove={handleRemoveFile}
                   onUpload={handleUpload}
+                />
+              </TabsContent>
+              <TabsContent value="code" className="mt-3 flex min-h-0 flex-1 flex-col">
+                <ProjectPanel
+                  folderId={selectedFolderId}
+                  folderName={folderDetail.name}
+                  projectPath={folderDetail.project_path ?? null}
+                  mode="code"
+                />
+              </TabsContent>
+              <TabsContent value="git" className="mt-3 flex min-h-0 flex-1 flex-col">
+                <ProjectPanel
+                  folderId={selectedFolderId}
+                  folderName={folderDetail.name}
+                  projectPath={folderDetail.project_path ?? null}
+                  mode="git"
+                />
+              </TabsContent>
+              <TabsContent value="run" className="mt-3 flex min-h-0 flex-1 flex-col">
+                <FolderProjectRunPanel
+                  folderId={selectedFolderId}
+                  folderName={folderDetail.name}
                 />
               </TabsContent>
             </Tabs>
@@ -367,8 +410,35 @@ export default function FolderPage() {
           folderId={contextMenu.folderId}
           onClose={() => setContextMenu(null)}
           onNewSubfolder={handleCreateFolder}
-          onRename={handleRenameFolder}
+          onRename={() => contextMenu && handleRenameFolder(contextMenu.folderId)}
           onDelete={handleDeleteFolder}
+        />
+      )}
+
+      {selectedFolderId && (
+        <CreateCodingProjectModal
+          open={scaffoldOpen}
+          onClose={() => setScaffoldOpen(false)}
+          templates={templates}
+          name={scaffoldName}
+          onNameChange={setScaffoldName}
+          description={scaffoldDesc}
+          onDescriptionChange={setScaffoldDesc}
+          template={scaffoldTemplate}
+          onTemplateChange={setScaffoldTemplate}
+          isSubmitting={scaffoldProject.isPending}
+          onSubmit={async () => {
+            if (!selectedFolderId) return;
+            await scaffoldProject.mutateAsync({
+              folderId: selectedFolderId,
+              name: scaffoldName.trim(),
+              template: scaffoldTemplate,
+              description: scaffoldDesc.trim() || undefined,
+            });
+            setScaffoldOpen(false);
+            refetchTree();
+            fetchFolders();
+          }}
         />
       )}
     </PageShell>

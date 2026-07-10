@@ -90,8 +90,29 @@ class DatabaseService:
 
         async with self._engine.begin() as conn:
             await conn.run_sync(SQLModel.metadata.create_all)
+            await self._ensure_document_chunk_fts(conn)
         logger.info("Database tables created")
         await self.ensure_identity_stubs()
+
+    async def _ensure_document_chunk_fts(self, conn: Any) -> None:
+        """Create the SQLite FTS5 chunk index when using the metadata path.
+
+        Alembic migration ``0006_document_chunks`` installs this on migrated
+        deployments; ``create_tables`` (the zero-config SQLite bootstrap) must
+        mirror it so knowledge search has a BM25 index either way. No-op on
+        PostgreSQL, which uses the lexical fallback.
+        """
+        if self._engine.dialect.name != "sqlite":
+            return
+        try:
+            from sqlalchemy import text as _sa_text
+
+            from leagent.library.fts import FTS_DDL
+
+            for ddl in FTS_DDL:
+                await conn.execute(_sa_text(ddl))
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("document_chunks_fts bootstrap skipped: %s", exc)
 
     async def ensure_identity_stubs(self) -> None:
         """Insert minimal ``users`` / ``workspaces`` rows for FK targets (messages, pet_projects, …)."""

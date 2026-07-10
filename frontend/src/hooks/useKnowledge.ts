@@ -1,6 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { apiClient, HttpError } from '@/api/client';
-import { clearKnowledgeSessionId, getOrCreateKnowledgeSessionId } from '@/lib/knowledgeSession';
+import { apiClient } from '@/api/client';
 import { emitRealtimeFileEvent } from './useRealtimeFileSync';
 
 export interface DocumentFile {
@@ -78,10 +77,8 @@ export function useUploadDocument() {
 
   return useMutation({
     mutationFn: async ({ file, folder_id }: { file: File; folder_id?: string }) => {
-      const sessionId = await getOrCreateKnowledgeSessionId();
       const formData = new FormData();
       formData.append('file', file);
-      formData.append('session_id', sessionId);
       if (folder_id) formData.append('folder_id', folder_id);
       return apiClient.upload('/documents/upload', formData);
     },
@@ -109,23 +106,8 @@ export function usePromoteToKnowledge() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async (payload: { file_ids: string[]; session_id: string }) => {
-      const run = (body: { file_ids: string[]; session_id: string }) =>
-        apiClient.post<PromoteToKnowledgeResponse>('/documents/promote', body);
-      try {
-        return await run(payload);
-      } catch (e) {
-        const staleSession =
-          e instanceof HttpError &&
-          e.status === 400 &&
-          typeof e.message === 'string' &&
-          e.message.includes('Invalid session_id');
-        if (!staleSession) throw e;
-        clearKnowledgeSessionId();
-        const session_id = await getOrCreateKnowledgeSessionId();
-        return run({ ...payload, session_id });
-      }
-    },
+    mutationFn: async (payload: { file_ids: string[]; session_id?: string }) =>
+      apiClient.post<PromoteToKnowledgeResponse>('/documents/promote', payload),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['documents'] });
       emitRealtimeFileEvent('uploaded');

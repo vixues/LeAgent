@@ -149,7 +149,6 @@ const NavRail = ({
   const resourceNavItems = useMemo<NavItem[]>(() => [
     { id: 'knowledge', label: t('nav.knowledge'), icon: BookOpen, href: '/knowledge' },
     { id: 'folders', label: t('nav.folders'), icon: FolderKanban, href: '/folders' },
-    { id: 'coding-projects', label: t('nav.codingProjects', 'Coding Projects'), icon: PlayCircle, href: '/coding-projects' },
     { id: 'tools', label: t('nav.tools'), icon: Wrench, href: '/tools' },
     { id: 'mcp', label: t('nav.mcp'), icon: Plug, href: '/mcp' },
     { id: 'skills', label: t('nav.skills'), icon: Zap, href: '/skills' },
