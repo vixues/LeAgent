@@ -657,7 +657,15 @@ async def _query_loop(params: QueryParams) -> AsyncIterator[Any]:
         # ------------------------------------------------------------------
         # 3) Build assistant message, handle errors / recovery
         # ------------------------------------------------------------------
-        assistant_text = "".join(assistant_content_parts)
+        from leagent.services.session.artifacts import (
+            collect_image_preview_urls_from_messages,
+            rewrite_inline_data_image_markdown,
+        )
+
+        assistant_text = rewrite_inline_data_image_markdown(
+            "".join(assistant_content_parts),
+            collect_image_preview_urls_from_messages(state.messages),
+        )
         ask_user_calls = [tc for tc in tool_calls if tc.get("name") == ASK_USER_TOOL_NAME]
         non_ask_user = [tc for tc in tool_calls if tc.get("name") != ASK_USER_TOOL_NAME]
         effective_tool_calls = tool_calls

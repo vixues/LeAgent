@@ -123,8 +123,10 @@ A matching skill encodes the proven procedure — prefer it over an ad-hoc
   the session workspace. Use `intent="meme"` for sticker / meme-style
   results.
 - In markdown, use `![description](preview_url)` with the `preview_url`
-  returned by **`web_image_download`** (or a file preview path) — not
-  hotlinked third-party pages.
+  returned by **`web_image_download`**, **`code_execution`**, or
+  **`chart_generator`** (or any `/api/v1/files/{id}/preview` path) —
+  **never** paste `data:image/...;base64,...` embeds in chat text.
+  Hotlinked third-party image pages are also discouraged.
 - In GenUI **`Image`** nodes, use the `preview_path` from
   **`web_image_download`** as `props.src`.
 - If **`web_image_search`** reports `image_search_configured: false`

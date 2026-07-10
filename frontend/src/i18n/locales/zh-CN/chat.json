@@ -361,7 +361,9 @@
       "cameraPermissionHint": "请在浏览器弹窗中允许摄像头访问，或检查系统隐私设置。",
       "cameraIframeHint": "预览已授权摄像头。若未弹出权限请求，请在页面内再次点击「开始」或「打开摄像头」。",
       "cameraInsecureContext": "当前地址无法使用摄像头",
-      "cameraOpenedLocalhost": "已在 localhost 新标签页打开预览，请在该页面允许摄像头访问。"
+      "cameraOpenedLocalhost": "已在 localhost 新标签页打开预览，请在该页面允许摄像头访问。",
+      "previewEmbeddedBlocked": "内嵌浏览器无法完整加载预览。",
+      "openExternal": "在浏览器中打开"
     },
     "camera": {
       "title": "拍摄照片",
@@ -525,7 +527,8 @@
       "collapse": "收起",
       "expand": "展开",
       "remove": "移除 {{name}}",
-      "dropHint": "释放以添加"
+      "dropHint": "释放以添加",
+      "download": "下载 {{name}}"
     },
     "commands": "命令",
     "commandPalette": "命令面板",
@@ -657,7 +660,8 @@
         "zipToggleAria": "加入压缩下载",
         "canvasPreview": "画布预览",
         "canvasNoPreview": "该画布项暂无预览地址。",
-        "selectHint": "点击文件以在本会话中预览。"
+        "selectHint": "点击文件以在本会话中预览。",
+        "openAction": "在标签页中打开"
       },
       "folders": {
         "empty": "还没有文件夹。",

@@ -15,6 +15,7 @@ import {
   isProbablyVideoUrl,
   isRtspUrl,
   resolveMarkdownImageSrcFromAttachments,
+  rewriteMarkdownDataImages,
 } from '@/components/chat/media/chatMediaUtils';
 import { resolveCodingProjectPreviewHref } from '@/lib/previewUrl';
 import type { Attachment } from '@/types/chat';
@@ -298,7 +299,10 @@ export function Markdown({
   streaming = false,
 }: MarkdownProps) {
   const parseContent = useThrottledContent(content, streaming);
-  const safeContent = useMemo(() => stripThinkTags(parseContent), [parseContent]);
+  const safeContent = useMemo(
+    () => rewriteMarkdownDataImages(stripThinkTags(parseContent), imageAttachments),
+    [parseContent, imageAttachments],
+  );
   const remarkPlugins = useMemo(
     () => [remarkGfm, remarkMath, remarkCallouts],
     [],

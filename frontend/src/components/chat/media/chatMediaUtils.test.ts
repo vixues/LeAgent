@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  collectImageAttachmentPreviewUrls,
   extractApiFileDownloadId,
   extractApiFilePreviewId,
   extractAuthedApiFilePreviewId,
@@ -7,6 +8,7 @@ import {
   isInvalidApiFilePreviewRef,
   managedFilePreviewHasSignedToken,
   resolveMarkdownImageSrcFromAttachments,
+  rewriteMarkdownDataImages,
 } from './chatMediaUtils';
 
 const id = '123e4567-e89b-42d3-a456-426614174000';
@@ -110,6 +112,36 @@ describe('resolveMarkdownImageSrcFromAttachments', () => {
         { id, name: 'a.png', previewUrl: signed },
       ]),
     ).toBe('https://cdn.example.com/a.png');
+  });
+
+  it('rewrites data:image embeds to the latest managed preview URL', () => {
+    expect(
+      resolveMarkdownImageSrcFromAttachments('data:image/png;base64,abc', [
+        { id, name: 'plot.png', previewUrl: signed },
+      ]),
+    ).toBe(signed);
+  });
+});
+
+describe('rewriteMarkdownDataImages', () => {
+  const id = '123e4567-e89b-42d3-a456-426614174000';
+  const signed = `/api/v1/files/${id}/preview?token=signed`;
+
+  it('rewrites inline base64 markdown images to preview URLs', () => {
+    const md = `![terrain](data:image/png;base64,${'A'.repeat(300)})`;
+    expect(
+      rewriteMarkdownDataImages(md, [{ id, name: 'terrain.png', previewUrl: signed }]),
+    ).toBe(`![terrain](${signed})`);
+  });
+
+  it('collects image preview URLs from attachments', () => {
+    expect(
+      collectImageAttachmentPreviewUrls([
+        { id: 'a', name: 'a.png', previewUrl: '/a' },
+        { id: 'b', name: 'b.txt', previewUrl: '/b' },
+        { id: 'c', name: 'c.png', previewUrl: '/c' },
+      ]),
+    ).toEqual(['/a', '/c']);
   });
 });
 

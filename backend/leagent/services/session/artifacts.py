@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import mimetypes
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterable
@@ -83,6 +84,16 @@ def coerce_tool_result_data(raw: Any) -> dict[str, Any]:
     return {}
 
 
+_DATA_IMAGE_MARKDOWN_RE = re.compile(
+    r"!\[([^\]]*)\]\(data:image/[^;)]+;base64,[^)]+\)",
+    re.IGNORECASE,
+)
+_DATA_IMAGE_BARE_RE = re.compile(
+    r"data:image/[^;)]+;base64,[A-Za-z0-9+/=\s]{200,}",
+    re.IGNORECASE,
+)
+
+
 def strip_inline_base64_payloads(value: Any) -> Any:
     """Return ``value`` without inline base64 blobs.
 
@@ -99,6 +110,104 @@ def strip_inline_base64_payloads(value: Any) -> Any:
     if isinstance(value, list):
         return [strip_inline_base64_payloads(item) for item in value]
     return value
+
+
+def strip_base64_from_text(text: str) -> str:
+    """Remove inline ``data:image/...;base64,...`` blobs from free-form text."""
+
+    if not text or "data:image" not in text.lower():
+        return text
+    return _DATA_IMAGE_BARE_RE.sub("[base64 image omitted]", text)
+
+
+def _preview_path_from_image_entry(entry: dict[str, Any]) -> str | None:
+    for key in ("preview_url", "preview_path", "previewUrl", "previewPath"):
+        value = entry.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    file_id = entry.get("file_id") or entry.get("id")
+    if isinstance(file_id, str) and file_id.strip():
+        return f"/api/v1/files/{file_id.strip()}/preview"
+    return None
+
+
+def _scan_image_preview_urls(data: dict[str, Any]) -> list[str]:
+    urls: list[str] = []
+    for key in ("managed_artifacts", "images", "produced_files"):
+        items = data.get(key)
+        if not isinstance(items, list):
+            continue
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            mime = str(item.get("mime") or item.get("content_type") or "").lower()
+            if key == "produced_files" and mime and not mime.startswith("image/"):
+                continue
+            preview = _preview_path_from_image_entry(item)
+            if preview:
+                urls.append(preview)
+    return urls
+
+
+def collect_image_preview_urls_from_messages(messages: list[Any]) -> list[str]:
+    """Collect managed image preview URLs from recent tool results."""
+
+    seen: set[str] = set()
+    ordered: list[str] = []
+
+    def add(url: str) -> None:
+        if url in seen:
+            return
+        seen.add(url)
+        ordered.append(url)
+
+    for msg in reversed(messages):
+        if not isinstance(msg, dict) or msg.get("role") != "tool":
+            continue
+        content = msg.get("content")
+        if not isinstance(content, str) or not content.strip():
+            continue
+        try:
+            parsed = json.loads(content)
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(parsed, dict):
+            continue
+        for url in _scan_image_preview_urls(parsed):
+            add(url)
+
+    ordered.reverse()
+    return ordered
+
+
+def rewrite_inline_data_image_markdown(text: str, preview_urls: list[str]) -> str:
+    """Rewrite markdown/base64 image embeds to managed preview URLs."""
+
+    if not text or "data:image" not in text.lower():
+        return text
+
+    url_iter = iter(preview_urls)
+
+    def next_preview() -> str | None:
+        try:
+            return next(url_iter)
+        except StopIteration:
+            return None
+
+    def repl_markdown(match: re.Match[str]) -> str:
+        alt = match.group(1)
+        preview = next_preview()
+        if preview:
+            return f"![{alt}]({preview})"
+        return f"*{alt or 'Image'}*"
+
+    out = _DATA_IMAGE_MARKDOWN_RE.sub(repl_markdown, text)
+
+    def repl_bare(_match: re.Match[str]) -> str:
+        preview = next_preview()
+        return preview or "[inline image omitted — use preview_url from tool result]"
+
+    return _DATA_IMAGE_BARE_RE.sub(repl_bare, out)
 
 
 def _file_uri_to_path(raw: str) -> str | None:
@@ -500,8 +609,11 @@ __all__ = [
     "RegisteredArtifact",
     "attachment_dicts",
     "coerce_tool_result_data",
+    "collect_image_preview_urls_from_messages",
     "extract_produced_path_candidates",
     "ingest_previewable_produced_files",
     "is_previewable_produced_file",
+    "rewrite_inline_data_image_markdown",
+    "strip_base64_from_text",
     "strip_inline_base64_payloads",
 ]

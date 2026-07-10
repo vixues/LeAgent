@@ -799,7 +799,9 @@ class CodeExecutionTool(BaseTool):
 
         from leagent.services.session.artifacts import (
             ingest_previewable_produced_files,
+            strip_base64_from_text,
             strip_inline_base64_payloads,
+            _scan_image_preview_urls,
         )
 
         persisted_file = self._persist_source(source, context)
@@ -827,7 +829,7 @@ class CodeExecutionTool(BaseTool):
                 source=source,
                 error=result.error,
                 error_type=error_type,
-                stdout=result.stdout,
+                stdout=strip_base64_from_text(result.stdout),
                 stderr=result.stderr,
                 stdout_truncated=result.stdout_truncated,
                 stderr_truncated=result.stderr_truncated,
@@ -845,6 +847,14 @@ class CodeExecutionTool(BaseTool):
         )
         if managed_artifacts:
             envelope["managed_artifacts"] = managed_artifacts
+        preview_paths = _scan_image_preview_urls(envelope)
+        if preview_paths:
+            envelope["display_hint"] = (
+                "Show generated images with preview URLs in markdown "
+                "(`![caption](preview_url)`) or GenUI `Image` nodes — "
+                "never embed `data:image/...;base64,...` in chat text. "
+                f"Available: {', '.join(preview_paths)}"
+            )
 
         from leagent.code.pipeline import record_operation
 

@@ -112,6 +112,16 @@ _SCRIPT_SRC_ALLOWLIST: tuple[str, ...] = (
 _THREE_JS_GLOBAL_CDN = "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"
 _THREE_JS_BOOTSTRAP = f'<script src="{_THREE_JS_GLOBAL_CDN}"></script>\n'
 
+_THREE_SCRIPT_HINT_RE = re.compile(r"(?i)three(?:\.min)?\.js|/npm/three@|from ['\"]three['\"]")
+
+
+def _html_already_loads_three(html: str) -> bool:
+    return bool(_THREE_SCRIPT_HINT_RE.search(html))
+
+
+def _three_bootstrap_for_html(html: str) -> str:
+    return "" if _html_already_loads_three(html) else _THREE_JS_BOOTSTRAP
+
 _SVG_TAGS: frozenset[str] = frozenset(
     {
         "svg",
@@ -330,8 +340,7 @@ def _validate_embed_url(url: str, *, allow_loopback: bool = False) -> str:
 
 
 # Shared Tailwind + base CSS for canvas preview (fragment wrap and full-document inject).
-_PREVIEW_HEAD_ASSETS = (
-    """
+_PREVIEW_HEAD_CORE = """
 <link rel="preconnect" href="https://fonts.googleapis.com"/>
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet"/>
@@ -350,9 +359,6 @@ tailwind.config = {
   darkMode: 'media',
 }
 </script>
-"""
-    + _THREE_JS_BOOTSTRAP
-    + """
 <style>
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
   html { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; height: 100%; }
@@ -361,7 +367,6 @@ tailwind.config = {
     color: #1a1a2e;
     background: #ffffff;
     line-height: 1.6;
-    padding: 24px;
     min-height: 100%;
   }
   body::-webkit-scrollbar { width: 0; height: 0; }
@@ -379,20 +384,57 @@ tailwind.config = {
   @media (prefers-color-scheme: dark) {
     .wa-card { background: #1a1a2e; border-color: #334155; }
   }
+  canvas { display: block; max-width: 100%; }
 </style>
 """
-)
+
+_PREVIEW_IFRAME_BOOTSTRAP = """
+<script>
+(function () {
+  function syncViewport() {
+    var h = window.innerHeight || document.documentElement.clientHeight || 0;
+    if (h > 0) {
+      document.documentElement.style.height = h + 'px';
+      document.body.style.minHeight = h + 'px';
+    }
+    window.dispatchEvent(new Event('resize'));
+  }
+  syncViewport();
+  window.addEventListener('load', function () {
+    syncViewport();
+    setTimeout(syncViewport, 0);
+    setTimeout(syncViewport, 120);
+    setTimeout(syncViewport, 400);
+  });
+  window.addEventListener('resize', syncViewport);
+  if (window.ResizeObserver) {
+    try {
+      new ResizeObserver(syncViewport).observe(document.documentElement);
+    } catch (e) {}
+  }
+})();
+</script>
+"""
+
+
+def _preview_head_assets(html: str) -> str:
+    """Tailwind shell + optional Three.js global (skip when agent HTML already loads it)."""
+    return _PREVIEW_HEAD_CORE + _three_bootstrap_for_html(html)
+
+
+_PREVIEW_HEAD_ASSETS = _PREVIEW_HEAD_CORE + _THREE_JS_BOOTSTRAP
 
 _CANVAS_BODY_MARKER = "__LEAGENT_CANVAS_BODY__"
 
 
 def _wrap_html_fragment(body: str) -> str:
     """Wrap a body fragment in a full document with Tailwind + base styles."""
+    head_assets = _preview_head_assets(body)
     return (
         "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n"
         '<meta charset="utf-8"/>\n'
         '<meta name="viewport" content="width=device-width, initial-scale=1"/>\n'
-        f"{_PREVIEW_HEAD_ASSETS}\n"
+        f"{head_assets}\n"
         "</head>\n<body>\n"
         f"{_CANVAS_BODY_MARKER}\n"
         "</body>\n</html>"
@@ -470,6 +512,21 @@ def _inject_camera_lifecycle_script(html: str) -> str:
     return html + _CAMERA_LIFECYCLE_SCRIPT
 
 
+def _inject_preview_iframe_bootstrap(html: str) -> str:
+    if "__leagentPreviewIframeBootstrap" in html:
+        return html
+    script = _PREVIEW_IFRAME_BOOTSTRAP.replace(
+        "<script>",
+        "<script>/* __leagentPreviewIframeBootstrap */",
+        1,
+    )
+    m = re.search(r"(?i)</body\s*>", html)
+    if m:
+        pos = m.start()
+        return html[:pos] + script + html[pos:]
+    return html + script
+
+
 def _inject_preview_assets_into_full_document(html: str) -> str:
     """When the agent returns a full <!DOCTYPE html>… doc, it often omits Tailwind; inject ours."""
     low = html.lower()
@@ -477,21 +534,22 @@ def _inject_preview_assets_into_full_document(html: str) -> str:
         return html
     if "cdn.tailwindcss.com" in low:
         return html
+    assets = _preview_head_assets(html)
     m = re.search(r"(?i)</head\s*>", html)
     if m:
         pos = m.start()
-        return html[:pos] + "\n" + _PREVIEW_HEAD_ASSETS + "\n" + html[pos:]
+        return html[:pos] + "\n" + assets + "\n" + html[pos:]
     m2 = re.search(r"(?i)<head[^>]*>", html)
     if m2:
         pos = m2.end()
-        return html[:pos] + "\n" + _PREVIEW_HEAD_ASSETS + "\n" + html[pos:]
+        return html[:pos] + "\n" + assets + "\n" + html[pos:]
     m3 = re.search(r"(?i)<html[^>]*>", html)
     if m3:
         pos = m3.end()
         return (
             html[:pos]
             + "\n<head>\n"
-            + _PREVIEW_HEAD_ASSETS
+            + assets
             + "\n</head>\n"
             + html[pos:]
         )
@@ -617,6 +675,7 @@ def build_preview_html(
         html = _wrap_html_fragment(body)
     if allow_js:
         html = _inject_camera_lifecycle_script(html)
+        html = _inject_preview_iframe_bootstrap(html)
     return html, "text/html; charset=utf-8"
 
 

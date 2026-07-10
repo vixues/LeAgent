@@ -15,7 +15,8 @@ requires_tools:
 2. **Professional / interactive chart** — anything statistical, scientific, financial, hierarchical,
    3D, or needing zoom/tooltips: GenUI **`ProChart`** via `emit_ui_tree` with `props.spec` (Chart Spec v1).
 3. **Static export** — the user wants a file (PNG/SVG/PDF), a document figure, or print quality:
-   **`chart_generator`** with the same `spec`, then show the image with `Image` (`preview_path`).
+   **`chart_generator`** with the same `spec`, then show the image with `Image` (`preview_path`)
+   or markdown `![caption](preview_url)` — never inline base64.
 
 Before authoring a non-trivial spec, call **`list_chart_types`** for the exact data shape per type.
 The server validates every spec and computes statistics (bins, quartiles, KDE, regression fit,

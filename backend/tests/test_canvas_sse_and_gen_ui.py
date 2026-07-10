@@ -900,7 +900,28 @@ def test_build_preview_html_allow_js_toggle():
     assert "var a = 1" in html_on
     assert "__leagentReleaseMedia" in html_on
     assert "__leagentAttachCamera" in html_on
+    assert "__leagentPreviewIframeBootstrap" in html_on
     assert "__leagentReleaseMedia" not in html_off
+
+
+def test_build_preview_html_skips_duplicate_three_bootstrap():
+    s = _minimal_settings()
+    raw = (
+        '<script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>'
+        '<script>console.log(window.THREE)</script>'
+    )
+    doc = CanvasDocument(
+        id=uuid4(),
+        canvas_id=uuid4(),
+        revision=1,
+        session_id=uuid4(),
+        user_id=uuid4(),
+        title="Three",
+        content_type=CanvasContentType.HTML.value,
+        html_body=raw,
+    )
+    html, _mime = build_preview_html(doc, s, allow_js=True)
+    assert html.count("three.min.js") == 1
 
 
 def test_build_preview_html_uses_sanitized_body_classes():

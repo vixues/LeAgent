@@ -116,10 +116,61 @@ function pathBasename(path: string): string {
   return i >= 0 ? norm.slice(i + 1) : norm;
 }
 
+const DATA_IMAGE_SRC_RE = /^data:image\/[^;]+;base64,/i;
+const DATA_IMAGE_MARKDOWN_RE = /!\[([^\]]*)\]\(data:image\/[^;)]+;base64,[^)]+\)/gi;
+
+function isDataImageSrc(src: string | undefined): boolean {
+  return Boolean(src?.trim() && DATA_IMAGE_SRC_RE.test(src.trim()));
+}
+
+function isImageAttachment(att: MarkdownImageAttachmentLike): boolean {
+  const mime = (att as { type?: string }).type?.toLowerCase() ?? '';
+  const kind = (att as { kind?: string }).kind?.toLowerCase() ?? '';
+  if (kind === 'image' || mime.startsWith('image/')) return true;
+  if (kind && kind !== 'image') return false;
+  return /\.(png|jpe?g|gif|webp|bmp|svg)$/i.test(att.name || '');
+}
+
+/** Most recent image attachment preview URLs (tool-registered artifacts first). */
+export function collectImageAttachmentPreviewUrls(
+  attachments: readonly MarkdownImageAttachmentLike[] | undefined,
+): string[] {
+  if (!attachments?.length) return [];
+  const urls: string[] = [];
+  for (let i = attachments.length - 1; i >= 0; i -= 1) {
+    const att = attachments[i]!;
+    if (!isImageAttachment(att)) continue;
+    const href = pickAttachmentPreviewHref(att);
+    if (href) urls.unshift(href);
+  }
+  return urls;
+}
+
+/**
+ * Rewrite inline ``data:image/...;base64`` markdown embeds to managed preview URLs.
+ * Falls back to italic alt text when no preview URL is available.
+ */
+export function rewriteMarkdownDataImages(
+  content: string,
+  attachments: readonly MarkdownImageAttachmentLike[] | undefined,
+): string {
+  if (!content || !/data:image/i.test(content)) return content;
+  const previews = collectImageAttachmentPreviewUrls(attachments);
+  let index = 0;
+  return content.replace(DATA_IMAGE_MARKDOWN_RE, (_match, alt: string) => {
+    const preview = previews[index];
+    if (preview) {
+      index += 1;
+      return `![${alt}](${preview})`;
+    }
+    return alt?.trim() ? `*${alt}*` : '*Image unavailable*';
+  });
+}
+
 /**
  * When the model embeds ``![](plot.png)`` or ``![](out/plot.png)`` after a tool saved a file
  * that was registered as a chat attachment, rewrite ``src`` to that attachment's preview URL.
- * Leaves http(s), ``data:``, ``blob:``, and existing ``/api/v1/files/{uuid}/preview`` refs unchanged.
+ * Also rewrites ``data:image/...;base64`` embeds to the latest managed preview URL.
  */
 export function resolveMarkdownImageSrcFromAttachments(
   src: string | undefined,
@@ -128,12 +179,18 @@ export function resolveMarkdownImageSrcFromAttachments(
 ): string | undefined {
   const raw = src?.trim();
   const fallback = fallbackName?.trim();
-  if (!attachments?.length) return src;
   if (!raw && !fallback) return src;
+
+  if (raw && isDataImageSrc(raw)) {
+    const previews = collectImageAttachmentPreviewUrls(attachments);
+    return previews[previews.length - 1] ?? undefined;
+  }
+
+  if (!attachments?.length) return src;
 
   if (raw && URL_SCHEME_RE.test(raw)) {
     const scheme = raw.slice(0, raw.indexOf(':') + 1).toLowerCase();
-    if (scheme === 'http:' || scheme === 'https:' || scheme === 'data:' || scheme === 'blob:') {
+    if (scheme === 'http:' || scheme === 'https:' || scheme === 'blob:') {
       return src;
     }
   }

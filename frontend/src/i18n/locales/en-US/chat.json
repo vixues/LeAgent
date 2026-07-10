@@ -361,7 +361,9 @@
       "cameraPermissionHint": "Allow camera access in the browser prompt, or check system privacy settings.",
       "cameraIframeHint": "Camera is enabled for the preview. If no prompt appeared, click Start or Open camera inside the page.",
       "cameraInsecureContext": "Camera is not available on this address",
-      "cameraOpenedLocalhost": "Preview opened on localhost in a new tab — allow camera access there."
+      "cameraOpenedLocalhost": "Preview opened on localhost in a new tab — allow camera access there.",
+      "previewEmbeddedBlocked": "The embedded browser could not load the full preview.",
+      "openExternal": "Open in browser"
     },
     "camera": {
       "title": "Take a photo",
@@ -525,7 +527,8 @@
       "collapse": "Collapse",
       "expand": "Expand",
       "remove": "Remove {{name}}",
-      "dropHint": "Drop to add"
+      "dropHint": "Drop to add",
+      "download": "Download {{name}}"
     },
     "commands": "Commands",
     "commandPalette": "Command palette",
@@ -657,7 +660,8 @@
         "zipToggleAria": "Include in ZIP download",
         "canvasPreview": "Canvas preview",
         "canvasNoPreview": "No preview URL for this canvas item.",
-        "selectHint": "Click a file to preview in this session."
+        "selectHint": "Click a file to preview in this session.",
+        "openAction": "Open as tab"
       },
       "folders": {
         "empty": "You have no folders yet.",

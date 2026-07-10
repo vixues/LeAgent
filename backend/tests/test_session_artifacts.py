@@ -14,9 +14,12 @@ from leagent.agent.query import ToolResultMessage
 from leagent.agent.query_engine import QueryEngine, QueryEngineConfig
 from leagent.services.session.artifacts import (
     ArtifactRegistrar,
+    collect_image_preview_urls_from_messages,
     extract_produced_path_candidates,
     ingest_previewable_produced_files,
     is_previewable_produced_file,
+    rewrite_inline_data_image_markdown,
+    strip_base64_from_text,
     strip_inline_base64_payloads,
 )
 from leagent.tools.base import ToolContext
@@ -212,6 +215,42 @@ def test_strip_inline_base64_payloads_recursively() -> None:
         "images": [{"path": "plot.gif"}],
         "nested": {"keep": "ok"},
     }
+
+
+def test_strip_base64_from_text() -> None:
+    blob = "data:image/png;base64," + ("A" * 300)
+    text = f"plot saved\n{blob}\n"
+    assert blob not in strip_base64_from_text(text)
+    assert "[base64 image omitted]" in strip_base64_from_text(text)
+
+
+def test_rewrite_inline_data_image_markdown_uses_preview_urls() -> None:
+    preview = "/api/v1/files/abc/preview"
+    md = "![plot](data:image/png;base64," + ("A" * 300) + ")"
+    out = rewrite_inline_data_image_markdown(md, [preview])
+    assert out == f"![plot]({preview})"
+
+
+def test_collect_image_preview_urls_from_messages() -> None:
+    messages = [
+        {
+            "role": "tool",
+            "content": json.dumps(
+                {
+                    "managed_artifacts": [
+                        {
+                            "id": "img-1",
+                            "content_type": "image/png",
+                            "preview_url": "/api/v1/files/img-1/preview",
+                        }
+                    ]
+                }
+            ),
+        }
+    ]
+    assert collect_image_preview_urls_from_messages(messages) == [
+        "/api/v1/files/img-1/preview"
+    ]
 
 
 @pytest.mark.asyncio

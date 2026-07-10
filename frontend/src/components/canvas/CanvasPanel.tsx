@@ -19,7 +19,8 @@ import {
   pickCanvasPreviewPathFromMetadata,
   resolveCanvasPreviewUrl,
 } from '@/lib/previewUrl';
-import { canvasIframeAllow, canvasIframeSandbox, srcDocIframeSandbox, withCanvasPreviewFlags } from '@/lib/canvasPreviewJs';
+import { canvasIframeAllow, resolveCanvasPreviewIframeSandbox, withCanvasPreviewFlags } from '@/lib/canvasPreviewJs';
+import { isEmbeddedAppBrowser } from '@/lib/canvasPreviewDoc';
 import { useCanvasPreviewDoc } from '@/hooks/useCanvasPreviewDoc';
 import { getCameraAccessIssue, localhostPreviewUrl, stopIframeMediaTracks } from '@/lib/cameraAccess';
 import {
@@ -101,16 +102,25 @@ function CanvasPanel({ artifact, className }: CanvasPanelProps) {
   const isApiCanvasPreview =
     Boolean(hostedSrc) &&
     (hostedSrc.includes('/canvas/preview') || hostedSrc.includes('canvas%2Fpreview'));
+  const embeddedHost = isEmbeddedAppBrowser();
+  const shouldFetchSrcDoc = isApiCanvasPreview && embeddedHost;
   const { srcDoc: previewDoc, isLoading: previewDocLoading, isError: previewDocError } =
-    useCanvasPreviewDoc(hostedSrc, isApiCanvasPreview);
-  const useSrcDocPreview = isApiCanvasPreview && Boolean(previewDoc) && !previewDocError;
-  const iframeSandbox = useSrcDocPreview
-    ? srcDocIframeSandbox(jsEnabled)
-    : canvasIframeSandbox(
-        jsEnabled,
-        isApiCanvasPreview || ((meta?.trust as string) === 'hosted' && Boolean(hostedSrc)),
-        cameraAllowed,
-      );
+    useCanvasPreviewDoc(hostedSrc, shouldFetchSrcDoc);
+  const useSrcDocPreview =
+    shouldFetchSrcDoc && Boolean(previewDoc) && !previewDocError;
+  const iframeSandbox = resolveCanvasPreviewIframeSandbox({
+    jsEnabled,
+    mode: useSrcDocPreview ? 'srcDoc' : 'src',
+    isApiCanvasPreview:
+      isApiCanvasPreview || ((meta?.trust as string) === 'hosted' && Boolean(hostedSrc)),
+    cameraAllowed,
+    embeddedHost,
+  });
+  const iframeSrc = useSrcDocPreview ? undefined : hostedSrc;
+  const iframeSrcDoc = useSrcDocPreview ? previewDoc ?? undefined : undefined;
+  const showPreviewLoading = shouldFetchSrcDoc && previewDocLoading;
+  const showPreviewUnavailable =
+    shouldFetchSrcDoc && previewDocError && !previewDocLoading;
 
   const iframeAllow = canvasIframeAllow(cameraAllowed);
 
@@ -441,25 +451,39 @@ function CanvasPanel({ artifact, className }: CanvasPanelProps) {
                   Could not load preview HTML. Use Open in new window or Refresh.
                 </div>
               )}
-              <div className="relative flex min-h-[min(60vh,640px)] min-w-0 flex-1 basis-0 flex-col bg-white dark:bg-zinc-950">
-                {previewDocLoading && isApiCanvasPreview && !previewDoc ? (
-                  <div className="absolute inset-0 flex items-center justify-center text-xs text-muted-foreground">
+              <div className="relative min-h-0 flex-1 basis-0 overflow-hidden bg-white dark:bg-zinc-950">
+                {showPreviewLoading ? (
+                  <div className="absolute inset-0 z-10 flex items-center justify-center text-xs text-muted-foreground">
                     {t('chat.media.loading', { defaultValue: 'Loading…' })}
                   </div>
                 ) : null}
-                <iframe
-                  ref={previewIframeRef}
-                  key={`${hostedSrc}-${iframeKey}-${jsEnabled ? 'js' : 'nojs'}-${cameraAllowed ? 'cam' : 'nocam'}-${useSrcDocPreview ? 'doc' : 'url'}`}
-                  title={artifact.title}
-                  src={useSrcDocPreview ? undefined : hostedSrc}
-                  srcDoc={useSrcDocPreview ? previewDoc ?? undefined : undefined}
-                  className="absolute inset-0 h-full w-full min-h-0 border-0"
-                  sandbox={iframeSandbox || undefined}
-                  allow={iframeAllow}
-                  referrerPolicy="no-referrer"
-                  onLoad={() => setPreviewFrameError(false)}
-                  onError={() => setPreviewFrameError(true)}
-                />
+                {showPreviewUnavailable ? (
+                  <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-2 px-4 text-center text-xs text-muted-foreground">
+                    <p>{t('chat.canvas.previewEmbeddedBlocked', { defaultValue: 'Preview could not load in the embedded browser.' })}</p>
+                    <button
+                      type="button"
+                      onClick={handleOpenExternal}
+                      className="rounded-md bg-primary-600 px-3 py-1.5 text-[11px] font-medium text-white hover:bg-primary-700"
+                    >
+                      {t('chat.canvas.openExternal', { defaultValue: 'Open in browser' })}
+                    </button>
+                  </div>
+                ) : null}
+                {!showPreviewLoading && !showPreviewUnavailable ? (
+                  <iframe
+                    ref={previewIframeRef}
+                    key={`${hostedSrc}-${iframeKey}-${jsEnabled ? 'js' : 'nojs'}-${cameraAllowed ? 'cam' : 'nocam'}-${useSrcDocPreview ? 'doc' : 'url'}`}
+                    title={artifact.title}
+                    src={iframeSrc}
+                    srcDoc={iframeSrcDoc}
+                    className="absolute inset-0 h-full w-full border-0"
+                    sandbox={iframeSandbox}
+                    allow={iframeAllow}
+                    referrerPolicy="no-referrer"
+                    onLoad={() => setPreviewFrameError(false)}
+                    onError={() => setPreviewFrameError(true)}
+                  />
+                ) : null}
               </div>
             </div>
           )}

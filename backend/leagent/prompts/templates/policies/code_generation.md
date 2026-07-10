@@ -84,7 +84,11 @@ Code generation policy:
 - **Visualisation.** Use a headless backend, save figures to files
   (`dpi=150` minimum, `bbox_inches="tight"`), and follow
   **`document_fonts`** for pan-Unicode font registration whenever
-  text may include CJK glyphs.
+  text may include CJK glyphs. After `code_execution` returns
+  `managed_artifacts` / `images`, show plots via
+  `![caption](/api/v1/files/{id}/preview)` in markdown or an
+  `emit_ui_tree` **`Image`** node — do **not** print or paste base64
+  image data in stdout or the final answer.
 - **Data processing.** Print summary statistics, row counts, column
   names, shapes, and warnings before heavy transforms so errors can
   be diagnosed from stdout. Save large outputs as files

@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { injectCanvasPreviewBase } from '@/lib/canvasPreviewDoc';
 
 export type CanvasPreviewDocState = {
   /** Fetched HTML suitable for iframe ``srcDoc`` (API canvas preview). */
@@ -16,7 +17,7 @@ const IDLE: CanvasPreviewDocState = {
 /**
  * Load hosted ``/api/v1/canvas/preview`` HTML for ``srcDoc`` rendering.
  * Embedded browsers (e.g. Cursor Simple Browser) often block sandboxed ``src``
- * navigations that work in standalone Chrome; fetching + ``srcDoc`` is reliable.
+ * navigations; fetching + ``srcDoc`` with an injected ``<base>`` is reliable.
  */
 export function useCanvasPreviewDoc(
   previewUrl: string,
@@ -39,7 +40,13 @@ export function useCanvasPreviewDoc(
         if (!res.ok) throw new Error(`preview ${res.status}`);
         const html = await res.text();
         if (cancelled) return;
-        setState({ srcDoc: html, isLoading: false, isError: false });
+        const origin =
+          typeof window !== 'undefined' ? window.location.origin : 'http://127.0.0.1:7860';
+        setState({
+          srcDoc: injectCanvasPreviewBase(html, origin),
+          isLoading: false,
+          isError: false,
+        });
       } catch {
         if (!cancelled) {
           setState({ srcDoc: null, isLoading: false, isError: true });

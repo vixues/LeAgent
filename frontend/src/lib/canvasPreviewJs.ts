@@ -43,11 +43,9 @@ export function canvasIframeAllow(cameraAllowed: boolean): string | undefined {
 }
 
 /**
- * Sandbox token for hosted canvas iframes.
- * ``allow-same-origin`` is added only when the user explicitly authorizes camera —
- * required by browsers for ``getUserMedia`` inside a sandboxed iframe (opaque origin
- * otherwise always denies). Avoid combining ``allow-scripts`` + ``allow-same-origin``
- * unless camera is requested.
+ * Sandbox token for hosted canvas iframes loaded via ``src`` (same-origin preview URL).
+ * ``allow-same-origin`` is required when JS is on so WebGL / ``/api/v1/files`` assets
+ * inside the preview resolve against the app origin (opaque sandbox origins break Three.js).
  */
 export function canvasIframeSandbox(
   jsEnabled: boolean,
@@ -60,15 +58,41 @@ export function canvasIframeSandbox(
       : '';
   }
   const tokens = isApiCanvasPreview
-    ? ['allow-scripts', 'allow-popups', 'allow-popups-to-escape-sandbox', 'allow-same-origin']
+    ? ['allow-scripts', 'allow-same-origin', 'allow-popups', 'allow-popups-to-escape-sandbox']
     : ['allow-scripts'];
-  if (cameraAllowed) {
+  if (cameraAllowed && !tokens.includes('allow-same-origin')) {
     tokens.push('allow-same-origin');
   }
   return tokens.join(' ');
 }
 
-/** Sandbox token for local srcDoc previews (SandboxedPreview, HtmlFrame). */
+/** Sandbox token for local ``srcDoc`` previews (SandboxedPreview, HtmlFrame, API canvas fetch). */
 export function srcDocIframeSandbox(jsEnabled: boolean): string {
-  return jsEnabled ? 'allow-scripts' : '';
+  if (!jsEnabled) return '';
+  return 'allow-scripts allow-popups allow-popups-to-escape-sandbox';
+}
+
+export type CanvasPreviewSandboxMode = 'srcDoc' | 'src';
+
+/** Pick iframe sandbox tokens for canvas preview; omit attribute when ``undefined``. */
+export function resolveCanvasPreviewIframeSandbox(options: {
+  jsEnabled: boolean;
+  mode: CanvasPreviewSandboxMode;
+  isApiCanvasPreview: boolean;
+  cameraAllowed: boolean;
+  embeddedHost: boolean;
+}): string | undefined {
+  const { jsEnabled, mode, isApiCanvasPreview, cameraAllowed, embeddedHost } = options;
+
+  if (embeddedHost && jsEnabled && isApiCanvasPreview && mode === 'srcDoc') {
+    return undefined;
+  }
+
+  if (mode === 'srcDoc') {
+    const sb = srcDocIframeSandbox(jsEnabled);
+    return sb || undefined;
+  }
+
+  const sb = canvasIframeSandbox(jsEnabled, isApiCanvasPreview, cameraAllowed);
+  return sb || undefined;
 }

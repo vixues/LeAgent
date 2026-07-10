@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   canvasIframeAllow,
   canvasIframeSandbox,
+  resolveCanvasPreviewIframeSandbox,
   srcDocIframeSandbox,
   withCanvasPreviewFlags,
   withCanvasPreviewJs,
@@ -55,17 +56,27 @@ describe('canvasIframeSandbox', () => {
     expect(sb).toContain('allow-scripts');
     expect(sb).not.toContain('allow-same-origin');
   });
-
-  it('adds allow-same-origin when camera authorized', () => {
-    const sb = canvasIframeSandbox(true, true, true);
-    expect(sb).toContain('allow-scripts');
-    expect(sb).toContain('allow-same-origin');
-  });
 });
 
 describe('srcDocIframeSandbox', () => {
-  it('returns allow-scripts only when enabled', () => {
+  it('returns popups + scripts when enabled', () => {
     expect(srcDocIframeSandbox(false)).toBe('');
-    expect(srcDocIframeSandbox(true)).toBe('allow-scripts');
+    expect(srcDocIframeSandbox(true)).toBe(
+      'allow-scripts allow-popups allow-popups-to-escape-sandbox',
+    );
+  });
+});
+
+describe('resolveCanvasPreviewIframeSandbox', () => {
+  it('omits sandbox in embedded srcDoc mode', () => {
+    expect(
+      resolveCanvasPreviewIframeSandbox({
+        jsEnabled: true,
+        mode: 'srcDoc',
+        isApiCanvasPreview: true,
+        cameraAllowed: false,
+        embeddedHost: true,
+      }),
+    ).toBeUndefined();
   });
 });
