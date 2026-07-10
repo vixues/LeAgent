@@ -101,9 +101,9 @@ DEFAULT_CODING_AGENT_TOOLS: tuple[str, ...] = (
     "text_processor",
     "markdown_processor",
     # Document/text generation helpers
-    "report_generator",
+    "document_generate",
     "template_filler",
-    "checklist_generator",
+    "checklist_generate",
     # Light parsing utilities the agent occasionally needs
     "json_parser",
     "text_splitter",

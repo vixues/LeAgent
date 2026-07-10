@@ -66,35 +66,25 @@ nodes:
   make_pdf:
     class_type: ToolCallNode
     inputs:
-      tool: report_generator
+      tool: document_generate
       params:
         output_path: ${pdf_ctx.output_pdf}
-        output_format: pdf
-        metadata:
-          title: ${input.report_title}
-          subtitle: 自动导出
-          author: LeAgent
-          date: '2026'
-          organization: Desktop Demo
-        template:
-          layout: standard
-        sections:
-        - type: cover
-        - type: section
-          title: 概述
-          level: 1
-          content: '本报告由工作流在零输入条件下生成，用于验证 report_generator 的 PDF 导出与执行页结果展示。
+        format: pdf
+        title: ${input.report_title}
+        subtitle: 自动导出
+        author: LeAgent
+        date: '2026'
+        cover: true
+        content: |
+          # 概述
 
+          本报告由工作流在零输入条件下生成，用于验证 document_generate 的 PDF 导出与执行页结果展示。
 
-            第二段：可包含换行，便于检查 ReportLab 段落排版。
+          第二段：可包含换行，便于检查 ReportLab 段落排版。
 
-            '
-        - type: section
-          title: 结论
-          level: 1
-          content: '若本节点成功，请在执行记录中查看 output_path 与 file_size_bytes。
+          # 结论
 
-            '
+          若本节点成功，请在执行记录中查看 output_path 与 file_size_bytes。
       output: report
     meta:
       name: 生成 PDF

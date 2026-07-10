@@ -13,7 +13,7 @@ definition exposed to LLMs. There is no silent alias coercion.
 | File-manager target | `path` | `file_manager` (`file_ops`) |
 | Markdown body | `content` | `markdown_processor` |
 | Plain-text body | `data` | `text_processor` |
-| Generated output | `output_path` | `chart_generator`, `pdf_generator` |
+| Generated output | `output_path` | `chart_generator`, `document_generate` |
 | JSON pointer (not filesystem) | `path` | `config_file` query operation |
 
 ## Contract enforcement

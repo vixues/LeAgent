@@ -13,15 +13,15 @@ from typing import Any
 
 
 _DISCOVERY_CACHE: dict[bool, str | None] = {}
+# Tools that write CJK text into rendered artifacts through user-authored
+# code (charts, scripts). document_generate / slides_generate are NOT listed:
+# their font handling is fully automatic via leagent.docgen.fonts.
 _REGULAR_GENERATION_TOOLS: frozenset[str] = frozenset(
     {
         "code_execution",
         "script_agent",
         "coding_agent",
         "chart_generator",
-        "pdf_generator",
-        "word_generator",
-        "pptx_generator",
     }
 )
 
@@ -75,6 +75,7 @@ def _candidate_names(*, is_bold: bool) -> tuple[str, ...]:
     )
     if is_bold:
         return (
+            "NotoSansSC-Bold.ttf",
             "NotoSansSC-Bold.otf",
             "NotoSansCJKSC-Bold.otf",
             "NotoSansCJK-Bold.ttc",
@@ -85,6 +86,7 @@ def _candidate_names(*, is_bold: bool) -> tuple[str, ...]:
             *common,
         )
     return (
+        "NotoSansSC-Regular.ttf",
         "NotoSansSC-Regular.otf",
         "NotoSansCJKSC-Regular.otf",
         "NotoSansCJK-Regular.ttc",
@@ -129,25 +131,48 @@ def clear_cjk_font_discovery_cache() -> None:
     _DISCOVERY_CACHE.clear()
 
 
+def _managed_font_path(*, is_bold: bool) -> str | None:
+    """Font previously auto-downloaded by ``leagent.docgen.fonts.FontManager``.
+
+    Checked here directly (filename convention, no download) to avoid a
+    circular import — docgen builds on this module.
+    """
+    try:
+        from leagent.config.constants import LEAGENT_HOME
+    except Exception:  # noqa: BLE001 - constants must never break discovery
+        return None
+    name = "NotoSansSC-Bold.ttf" if is_bold else "NotoSansSC-Regular.ttf"
+    path = LEAGENT_HOME / "fonts" / name
+    if path.is_file() and path.stat().st_size > 0:
+        return str(path)
+    return None
+
+
 def resolve_cjk_regular_path(*, explicit: str | None = None) -> str | None:
-    """First existing regular (non-bold) CJK font: explicit, then LEAGENT_CJK_FONT, then scan."""
+    """First existing regular CJK font: explicit, LEAGENT_CJK_FONT, managed dir, scan."""
     for raw in (explicit, os.environ.get("LEAGENT_CJK_FONT", "").strip() or None):
         if not raw:
             continue
         p = Path(raw)
         if p.is_file():
             return str(p)
+    managed = _managed_font_path(is_bold=False)
+    if managed:
+        return managed
     return discover_cjk_font_file(is_bold=False)
 
 
 def resolve_cjk_bold_path(*, explicit: str | None = None) -> str | None:
-    """First existing bold CJK font: explicit, then LEAGENT_CJK_FONT_BOLD, then scan."""
+    """First existing bold CJK font: explicit, LEAGENT_CJK_FONT_BOLD, managed dir, scan."""
     for raw in (explicit, os.environ.get("LEAGENT_CJK_FONT_BOLD", "").strip() or None):
         if not raw:
             continue
         p = Path(raw)
         if p.is_file():
             return str(p)
+    managed = _managed_font_path(is_bold=True)
+    if managed:
+        return managed
     return discover_cjk_font_file(is_bold=True)
 
 
@@ -180,7 +205,8 @@ def build_cjk_generation_turn_extra(*, tools: Any | None) -> str:
     if regular:
         lines.append(f"Resolved regular CJK font path: `{regular}`.")
         lines.append(
-            "Use this path for `pdf_generator.cjk_font_path`, ReportLab `TTFont`, python-docx/python-pptx font setup, and matplotlib `font_manager` when a path is needed."
+            "Use this path for ReportLab `TTFont`, python-docx/python-pptx font setup, and matplotlib `font_manager` when writing custom scripts. "
+            "(`document_generate` / `slides_generate` handle fonts automatically — no path needed there.)"
         )
     if bold and bold != regular:
         lines.append(f"Resolved bold CJK font path: `{bold}`.")

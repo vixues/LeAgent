@@ -9,7 +9,7 @@ description = "LeAgent — Intelligent Office Agent Platform"
 readme = "README.md"
 license = "Apache-2.0"
 requires-python = ">=3.11"
-authors = [{ name = "Cheng Yuanqi", email = "vixues@gamil.com" }]
+authors = [{ name = "Cheng Yuanqi", email = "vixues@gmail.com" }]
 
 dependencies = [
     "fastapi>=0.115.0",
@@ -42,6 +42,7 @@ dependencies = [
     "pydantic-settings>=2.6.0",
     "python-dotenv>=1.0.0",
     "email-validator>=2.0.0",
+    "aiosmtplib>=3.0.0",
     "pyyaml>=6.0.0",
     "jinja2>=3.1.0",
     "aiofiles>=24.1.0",
@@ -64,6 +65,11 @@ dependencies = [
     "xlsxwriter>=3.2.0",
     "tabulate>=0.9.0",
     "markdown>=3.5.0",
+    # Document generation subsystem (leagent.docgen) markdown -> IR parser.
+    "markdown-it-py>=3.0.0",
+    "mdit-py-plugins>=0.4.0",
+    "linkify-it-py>=2.1.0",
+    "latex2mathml>=3.81.0",
 ]
 
 [project.optional-dependencies]

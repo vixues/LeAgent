@@ -80,6 +80,10 @@ class TestINV1_NoDirectWriteInBlobPaths:
         "extensions/manager.py": "persists the installed-extensions registry",
         # Workflow definitions are documents, not managed blobs.
         "workflow/io/serializer.py": "serializes workflow definitions to yaml/json",
+        "docgen/fonts.py": "caches sha256-verified font downloads under LEAGENT_HOME/fonts",
+        "docgen/renderers/html.py": "writes rendered HTML/Markdown to sandbox-validated output_path",
+        "docgen/theming.py": "persists custom theme YAML under LEAGENT_HOME/templates/styles",
+        "docgen/templates.py": "persists doc-template YAML under LEAGENT_HOME/templates/docgen",
         # Tier-B tool writes: sandbox-validated output_path / config / temp / auth.
         "tools/_data/records.py": "writes to sandbox-validated output path",
         "tools/doc/config_file_tool.py": "edits config files at sandbox paths",
@@ -87,8 +91,9 @@ class TestINV1_NoDirectWriteInBlobPaths:
         "tools/doc/html_processor.py": "writes processed HTML to output_path",
         "tools/doc/markdown_processor.py": "writes processed Markdown to output_path",
         "tools/doc/text_processor.py": "writes processed text to output_path",
-        "tools/gen/checklist_generator.py": "writes generated checklist to output_path",
-        "tools/gen/report_generator.py": "writes generated report to output_path",
+        "tools/gen/checklist_tool.py": "writes generated checklist to output_path",
+        "tools/gen/document_tool.py": "writes generated document to output_path",
+        "tools/gen/slides_tool.py": "writes generated slides to output_path",
         "tools/gen/template_filler.py": "writes rendered template to output_path",
         "tools/skills/package_skill.py": "packages a skill bundle artifact",
         "tools/util/tool_argument_blob.py": "stages large tool args to sandbox-temp",

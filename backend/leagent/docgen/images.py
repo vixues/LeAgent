@@ -1,8 +1,8 @@
-"""Shared image resolution utility for document generation tools.
+"""Image resolution (path / base64 / URL -> bytes) for document generation.
 
-Resolves image sources (file paths, base64, URLs) into bytes suitable for
-embedding in PDF, Word, and PowerPoint documents. Includes optional resizing
-to keep document file sizes manageable.
+Resolves image sources into bytes suitable for embedding in PDF, Word, and
+PowerPoint documents. Includes optional downsampling to keep file sizes
+manageable.
 """
 
 from __future__ import annotations
@@ -11,7 +11,6 @@ import base64
 import io
 import mimetypes
 from pathlib import Path
-from typing import Any
 
 import structlog
 

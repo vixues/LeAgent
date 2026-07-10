@@ -55,10 +55,12 @@ def test_build_cjk_generation_turn_extra_for_document_tool(
     monkeypatch.setattr(mod, "resolve_cjk_bold_path", lambda **_: None)
 
     assert mod.build_cjk_generation_turn_extra(tools=Tools(set())) == ""
-    extra = mod.build_cjk_generation_turn_extra(tools=Tools({"word_generator"}))
+    # document_generate / slides_generate handle fonts internally — no hint.
+    assert mod.build_cjk_generation_turn_extra(tools=Tools({"document_generate"})) == ""
+    extra = mod.build_cjk_generation_turn_extra(tools=Tools({"chart_generator"}))
     assert str(regular) in extra
     assert "python-docx/python-pptx" in extra
-    assert "pdf_generator.cjk_font_path" in extra
+    assert "document_generate" in extra
 
 
 @pytest.mark.asyncio

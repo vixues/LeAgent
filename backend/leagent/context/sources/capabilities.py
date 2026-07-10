@@ -84,8 +84,30 @@ _ALWAYS_VISIBLE_TOOL_DESCRIPTIONS: dict[str, str] = {
     "task_create": (
         "Background async job queue — creates queued worker tasks, not the in-chat todo list."
     ),
-    "checklist_generator": (
-        "Generate exportable checklist documents (markdown/PDF) — not live session todos."
+    "document_generate": (
+        "Generate professional PDF/DOCX/HTML/Markdown documents from markdown "
+        "content (themes, cover, TOC, tables, charts, callouts, task lists); "
+        "CJK fonts handled automatically. Use for reports — not live session todos."
+    ),
+    "checklist_generate": (
+        "Generate status-tracked checklists (Markdown/JSON/HTML/PDF/DOCX) with "
+        "per-item status, priority, assignee, due date, notes, sub-items, "
+        "progress summary and legend; build from manual items, a workflow, or a "
+        "rules file — for deliverable checklists, not live session todos."
+    ),
+    "slides_generate": (
+        "Generate professional .pptx presentations from structured slides "
+        "(layouts, markdown bullets, charts, tables, speaker notes); CJK-safe."
+    ),
+    "theme_designer": (
+        "Create custom docgen themes from a brand color (contrast-checked "
+        "palette, fonts, light/dark); saved themes resolve by name in "
+        "document_generate / slides_generate."
+    ),
+    "document_template": (
+        "Save reusable Jinja2-parameterized document/deck templates and "
+        "instantiate them with fresh values into PDF/DOCX/HTML/PPTX — for "
+        "recurring, brand-consistent deliverables."
     ),
 }
 

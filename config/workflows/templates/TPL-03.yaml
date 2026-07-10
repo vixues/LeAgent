@@ -77,28 +77,66 @@ nodes:
     inputs:
       timeout_sec: 15.0
       output: deck
-      source: "import os\nfrom pathlib import Path\nimport tempfile\n\ntry:\n    from leagent.config.settings\
-        \ import get_settings\n    settings_upload_dir = get_settings().files.upload_dir\nexcept Exception:\n\
-        \    settings_upload_dir = \"\"\n\ndata = wr if isinstance(wr, dict) else {}\nmeta = data.get(\"\
-        metadata\") or {}\ndoc_title = (meta.get(\"title\") or \"\").strip() or \"演示文稿\"\ncover_title\
-        \ = str(deck_title).strip() if deck_title else doc_title\nsub = str(deck_subtitle).strip() if\
-        \ deck_subtitle else \"由 Word 大纲自动生成\"\nitems = list(data.get(\"content\") or [])\nslides = []\n\
-        slides.append({\n    \"layout\": \"title\",\n    \"title\": cover_title,\n    \"subtitle\": sub,\n\
-        })\nmax_body_slides = 8\nused = 0\nfor item in items:\n    if used >= max_body_slides:\n     \
-        \   break\n    kind = item.get(\"type\")\n    text = (item.get(\"text\") or \"\").strip()\n  \
-        \  if kind == \"heading\" and text:\n        slides.append({\"layout\": \"section_header\", \"\
-        title\": text[:200]})\n        used += 1\n    elif kind == \"paragraph\" and text:\n        slides.append({\n\
-        \            \"layout\": \"title_content\",\n            \"title\": \"要点\",\n            \"content\"\
-        : [{\"type\": \"text\", \"text\": text[:1200]}],\n        })\n        used += 1\nif len(slides)\
-        \ < 2:\n    body = (data.get(\"text\") or \"\")[:4000]\n    slides.append({\n        \"layout\"\
-        : \"title_content\",\n        \"title\": \"正文\",\n        \"content\": [{\"type\": \"text\", \"\
-        text\": body or \"(empty)\"}],\n    })\nroots = [\n    item.strip()\n    for item in os.environ.get(\"\
-        LEAGENT_TOOL_FILE_ROOTS\", \"\").split(\",\")\n    if item.strip()\n]\ncandidates = [\n    *(roots[:1]),\n\
-        \    os.environ.get(\"LEAGENT_FILES_UPLOAD_DIR\"),\n    os.environ.get(\"FILES_UPLOAD_DIR\"),\n\
-        \    settings_upload_dir,\n    os.environ.get(\"LEAGENT_HOME\"),\n    tempfile.gettempdir(),\n\
-        ]\nbase = next(str(item) for item in candidates if item)\nPath(base).mkdir(parents=True, exist_ok=True)\n\
-        out = Path(tempfile.mkdtemp(prefix=\"wf-pptx-\", dir=base)) / \"from_word.pptx\"\nresult = {\"\
-        output_path\": str(out), \"slides\": slides}\nprint(\"deck_ready\")\n"
+      source: |
+        import os
+        from pathlib import Path
+        import tempfile
+
+        try:
+            from leagent.config.settings import get_settings
+            settings_upload_dir = get_settings().files.upload_dir
+        except Exception:
+            settings_upload_dir = ""
+
+        data = wr if isinstance(wr, dict) else {}
+        meta = data.get("metadata") or {}
+        doc_title = (meta.get("title") or "").strip() or "演示文稿"
+        cover_title = str(deck_title).strip() if deck_title else doc_title
+        sub = str(deck_subtitle).strip() if deck_subtitle else "由 Word 大纲自动生成"
+        items = list(data.get("content") or [])
+        slides = [{"layout": "title", "title": cover_title, "subtitle": sub}]
+        max_body_slides = 8
+        used = 0
+        for item in items:
+            if used >= max_body_slides:
+                break
+            kind = item.get("type")
+            text = (item.get("text") or "").strip()
+            if kind == "heading" and text:
+                slides.append({"layout": "section", "title": text[:200]})
+                used += 1
+            elif kind == "paragraph" and text:
+                slides.append({
+                    "layout": "content",
+                    "title": "要点",
+                    "body": text[:1200],
+                })
+                used += 1
+        if len(slides) < 2:
+            body = (data.get("text") or "")[:4000]
+            slides.append({
+                "layout": "content",
+                "title": "正文",
+                "body": body or "(empty)",
+            })
+        roots = [
+            item.strip()
+            for item in os.environ.get("LEAGENT_TOOL_FILE_ROOTS", "").split(",")
+            if item.strip()
+        ]
+        candidates = [
+            *(roots[:1]),
+            os.environ.get("LEAGENT_FILES_UPLOAD_DIR"),
+            os.environ.get("FILES_UPLOAD_DIR"),
+            settings_upload_dir,
+            os.environ.get("LEAGENT_HOME"),
+            tempfile.gettempdir(),
+        ]
+        base = next(str(item) for item in candidates if item)
+        Path(base).mkdir(parents=True, exist_ok=True)
+        out = Path(tempfile.mkdtemp(prefix="wf-pptx-", dir=base)) / "from_word.pptx"
+        result = {"output_path": str(out), "slides": slides}
+        print("deck_ready")
       inputs:
         wr: ${wr}
         deck_title: ${input.ppt_title}
@@ -111,7 +149,7 @@ nodes:
   gen_pptx:
     class_type: ToolCallNode
     inputs:
-      tool: pptx_generator
+      tool: slides_generate
       params:
         output_path: ${deck.output_path}
         title: ${input.ppt_title}

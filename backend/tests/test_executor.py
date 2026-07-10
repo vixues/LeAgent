@@ -324,22 +324,20 @@ class TestToolExecutorSingle:
         assert result.result.error.startswith("Malformed tool arguments JSON")
         assert "Retry with strict JSON" in result.result.error
 
-    async def test_word_generator_accepts_recovered_raw_args(self, tmp_path) -> None:
-        from leagent.tools.gen.word_generator import WordGeneratorTool
+    async def test_document_generate_accepts_recovered_raw_args(self, tmp_path) -> None:
+        from leagent.tools.gen.document_tool import DocumentGenerateTool
 
-        reg = _make_registry(WordGeneratorTool())
+        reg = _make_registry(DocumentGenerateTool())
         executor = ToolExecutor(registry=reg)
-        out_path = tmp_path / "generated.docx"
+        out_path = tmp_path / "generated.md"
         raw = json.dumps(
             {
                 "output_path": str(out_path),
                 "title": "t",
-                "content": [{"type": "paragraph", "text": "hello"}],
+                "content": "# Heading\n\nhello",
             }
         )
-        result = await executor.execute("word_generator", {"__raw__": raw}, _ctx())
-        if not result.result.success and "python-docx is not installed" in str(result.result.error):
-            pytest.skip("python-docx is required for word_generator test")
+        result = await executor.execute("document_generate", {"__raw__": raw}, _ctx())
         assert result.result.success
         assert out_path.exists()
 

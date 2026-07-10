@@ -481,8 +481,8 @@ class TemplateFillerTool(SyncTool):
 
     def _fetch_url(self, url: str) -> str:
         """Fetch template content from URL."""
-        import urllib.request
         import urllib.error
+        import urllib.request
 
         try:
             with urllib.request.urlopen(url, timeout=30) as response:
