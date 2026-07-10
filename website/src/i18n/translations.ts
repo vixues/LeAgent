@@ -53,10 +53,49 @@ interface FeatureScreenshot {
   label: string;
 }
 
+interface ProviderInfo {
+  name: string;
+  note: string;
+}
+
+interface MultiModelBlock {
+  eyebrow: string;
+  title: string;
+  sub: string;
+  providers: ProviderInfo[];
+}
+
+interface WorkflowShape {
+  tag: string;
+  title: string;
+  description: string;
+}
+
+interface WorkflowsPage {
+  heroEyebrow: string;
+  heroTitle: string;
+  heroSub: string;
+  heroMeta: string;
+  featuresEyebrow: string;
+  featuresTitle: string;
+  featuresSub: string;
+  screenshots: FeatureScreenshot[];
+  shapesEyebrow: string;
+  shapesTitle: string;
+  shapesSub: string;
+  shapes: WorkflowShape[];
+  claimsEyebrow: string;
+  claimsTitle: string;
+  claims: Capability[];
+  ctaTitle: string;
+  ctaSub: string;
+}
+
 interface Translation {
   nav: {
     about: string;
     intro: string;
+    workflows: string;
     business: string;
     download: string;
     pets: string;
@@ -94,7 +133,6 @@ interface Translation {
     heroLine1: string;
     heroLine2: string;
     heroSub: string;
-    heroMeta: string;
     overviewEyebrow: string;
     overviewTitle: string;
     overviewLede: string;
@@ -106,8 +144,11 @@ interface Translation {
     title: string;
     sub: string;
     placeholderNote: string;
+    featuresEyebrow: string;
     screenshots: FeatureScreenshot[];
+    multiModel: MultiModelBlock;
   };
+  workflows: WorkflowsPage;
   business: {
     title: string;
     sub: string;
@@ -174,13 +215,14 @@ export const translations: Record<Lang, Translation> = {
     nav: {
       about: "关于",
       intro: "介绍",
+      workflows: "工作流",
       business: "定制开发",
       download: "下载",
       pets: "宠物",
       company: "联系",
     },
     footer: {
-      tagline: "本地优先的 AI 办公自动化平台。\n可自托管部署，开源可审计，无账户与追踪。",
+      tagline: "真正完成工作的开源桌面 AI 智能体。\n规划、工具、工作流与 Generative UI，集于一栈。",
       pages: "页面",
       resources: "资源",
       legal: "法律",
@@ -208,51 +250,51 @@ export const translations: Record<Lang, Translation> = {
       startBuilding: "查看部署方式",
     },
     home: {
-      heroLine1: "本地优先的",
-      heroLine2: "AI 办公自动化平台",
+      heroLine1: "真正完成工作的",
+      heroLine2: "开源桌面 AI 智能体",
       heroSub:
-        "LeAgent 将对话、工具与工作流整合于同一可自托管系统。支持本地部署、开放源码与多模型接入，适用于个人效率、团队流程与企业内部自动化场景。",
-      heroMeta: "Apache-2.0 \u00B7 Python + React \u00B7 默认 SQLite",
+        "LeAgent 不止于对话。它在统一的智能体循环中自主规划、调用工具并自我纠错，亲手设计并运行可视化工作流，把可交互界面实时流式渲染进聊天——内置 100+ 工具，开源、可自托管。",
       overviewEyebrow: "产品概述",
-      overviewTitle: "统一架构，面向可审计的自动化",
+      overviewTitle: "一套技术栈，完整的智能体能力",
       overviewLede:
-        "平台以 QueryEngine 为会话编排核心，提供 80+ 领域工具、可视化工作流与分层 Prompt 管理。数据默认保存在本地，可按需扩展至 PostgreSQL 与向量记忆存储。",
-      principlesEyebrow: "设计原则",
-      principlesTitle: "面向长期部署的基础能力",
+        "以 QueryEngine 会话编排为核心，融合 13 大类、100+ 内置工具、可视化工作流、Generative UI 与多供应商模型路由。开箱即用、相互打通，既可自带云端密钥，也可完全本地运行。",
+      principlesEyebrow: "核心能力",
+      principlesTitle: "把强大的能力交到你手里",
       continueTitle: "进一步了解",
     },
     intro: {
       title: "核心功能与典型场景",
-      sub: "以下能力均可在本地或私有化环境中运行，截图展示界面与交付形态，便于评估是否满足你的业务需求。",
+      sub: "从多轮对话、文档生产到论文研读与代码执行——下列能力开箱即用、相互打通。截图展示真实界面与交付形态。",
       placeholderNote: "截图占位，请将图片放入 public/images/features/",
+      featuresEyebrow: "能力总览",
       screenshots: [
         {
           id: "chat",
           label: "对话",
           title: "多轮对话与工具调用",
           description:
-            "支持流式输出、会话状态管理与工具链调用。适用于问答、文档处理与任务型协作。",
+            "流式输出、会话状态管理与工具链编排。在一次回合内自主规划、调用工具并自我纠错。",
         },
         {
           id: "genuiWeather",
-          label: "GenUI",
-          title: "结构化数据生成交互界面",
+          label: "Generative UI",
+          title: "流式渲染可交互界面",
           description:
-            "根据模型输出渲染天气卡片等 Generative UI 组件，将文本结果转化为可操作的界面元素。",
+            "智能体流式输出声明式 UI 树——KPI 看板、幻灯片、画廊、步骤条，在聊天中内联渲染，并可导出为 PDF / PPTX。",
         },
         {
           id: "codeGeneration",
           label: "代码",
           title: "代码生成、解释与执行",
           description:
-            "在沙箱环境中生成、审阅与运行代码，支持项目级辅助与开发流程集成。",
+            "在隔离沙箱中生成、审阅与运行代码，支持项目级脚手架、跨文件编辑与实时开发服务器。",
         },
         {
           id: "wordGeneration",
           label: "文档",
           title: "Office 文档生成与处理",
           description:
-            "生成与编辑 Word 等办公文档，衔接报告撰写、模板填充与格式规范化流程。",
+            "读写 Word / Excel / PPTX / PDF，配合 OCR、分类与模板填充，一次回合产出排版精良的成稿。",
         },
         {
           id: "webpageGeneration",
@@ -262,13 +304,71 @@ export const translations: Record<Lang, Translation> = {
             "输出页面结构、样式与静态资源草案，用于原型验证与内容发布前的快速迭代。",
         },
         {
-          id: "workflow",
-          label: "工作流",
-          title: "可视化流程编排",
+          id: "paperMode",
+          label: "论文模式",
+          title: "以引用为依据的研究分析",
           description:
-            "基于节点的工作流设计，支持工具节点组合，用于重复性任务自动化。",
+            "打开 PDF，智能体即化身研究分析师：结构与大纲提取、忠实的章节 / 全文摘要、参考文献与 LaTeX 公式抽取、区域翻译——文本抽取完全离线。",
         },
       ],
+      multiModel: {
+        eyebrow: "多模型支持",
+        title: "一个接口，多家模型随心切换",
+        sub: "支持 DeepSeek、通义千问、OpenAI、Anthropic、Azure OpenAI、Ollama、vLLM 等主流供应商。自带云端密钥或本地推理均可，会话内随时切换模型。",
+        providers: [
+          { name: "DeepSeek", note: "推荐默认 · V4 Pro + V4 Flash" },
+          { name: "通义千问 · DashScope", note: "支持思考与搜索模式" },
+          { name: "OpenAI", note: "云端前沿模型" },
+          { name: "Anthropic", note: "Claude 系列模型" },
+          { name: "Azure OpenAI", note: "企业级托管部署" },
+          { name: "Ollama", note: "完全本地推理" },
+          { name: "vLLM", note: "自托管 OpenAI 兼容推理" },
+        ],
+      },
+    },
+    workflows: {
+      heroEyebrow: "可视化工作流",
+      heroTitle: "把每一项能力\n编排成可运行的流程",
+      heroSub:
+        "基于 ReactFlow 的可视化编辑器：每个工具都会自动成为带类型的节点，无需任何胶水代码即可拖拽编排。同一引擎驱动已保存流程、聊天步骤卡与智能体亲手编写的图。",
+      heroMeta: "ReactFlow 编辑器 · 工具即节点 · YAML 导出",
+      featuresEyebrow: "工作流能力",
+      featuresTitle: "从拖拽编排到自纠错生产",
+      featuresSub: "节点编辑与媒体资产流水线，覆盖从设计到产出的完整闭环。",
+      screenshots: [
+        {
+          id: "workflowEditor",
+          label: "节点编辑器",
+          title: "拖拽式 DAG 编辑器",
+          description:
+            "100+ 工具自动暴露为带类型的 `Tool.<name>` 节点，配合类型化媒体插槽，连线即用。支持 YAML 导出与可复用模板。",
+        },
+        {
+          id: "workflowArt",
+          label: "美术资产流水线",
+          title: "游戏美术资产生成与自纠错",
+          description:
+            "图像 / 视频 / 3D 网格 / VFX 的可组合生成节点，配备质量门控与有界自纠错循环，并导出可直接接入引擎（Unity / Unreal / Godot）的资产包。",
+        },
+      ],
+      shapesEyebrow: "统一引擎",
+      shapesTitle: "三种形态，同一执行器",
+      shapesSub: "无论从何处发起，工作流都汇聚到同一个 WorkflowExecutor 运行——一致的调度、重试与状态归属。",
+      shapes: [
+        { tag: "已保存流程", title: "DAG 工作流", description: "在编辑器中设计、保存并复用的有向无环图，可由 Cron 或智能体触发运行。" },
+        { tag: "聊天步骤卡", title: "Playbook 步骤", description: "聊天回合内的步骤卡会编译为线性流程，与编辑器流程共用同一执行器。" },
+        { tag: "聊天内嵌入", title: "图预览嵌入", description: "经校验的 Flow JSON 可在聊天中内联预览，无缝衔接设计与运行。" },
+      ],
+      claimsEyebrow: "为什么强大",
+      claimsTitle: "可视化之下的工程保证",
+      claims: [
+        { title: "工具即节点", description: "每个已注册工具都会自动提升为带类型节点——新能力以可视化方式即时可用，无需胶水代码。" },
+        { title: "并发与可靠性", description: "按就绪批次并发执行独立分支、集中式重试 / 退避、逐节点超时与可持久化暂停 / 恢复。" },
+        { title: "自纠错闭环", description: "质量门控配合有界自纠错循环，让美术资产等输出在不达标时自动重生成。" },
+        { title: "可移植与可复用", description: "YAML 导出、Cron / Webhook 触发与模板库，便于版本管理与跨环境复用。" },
+      ],
+      ctaTitle: "把你的流程搬进 LeAgent",
+      ctaSub: "下载即可在本地搭建第一条工作流，或查看源码了解引擎实现。",
     },
     business: {
       title: "定制开发\n与私有化交付",
@@ -346,34 +446,40 @@ export const translations: Record<Lang, Translation> = {
     },
     principles: [
       {
-        icon: "noAccount",
-        title: "无账户体系",
-        short: "本地或私有化部署即可使用，无需注册与云端账户。",
-        long: "LeAgent 运行于自有环境，不依赖厂商账户体系，便于在内网或隔离网络中交付。",
-      },
-      {
-        icon: "noTracking",
-        title: "无追踪",
-        short: "默认不采集使用数据，不向第三方上报行为信息。",
-        long: "外连请求由配置决定，通常仅指向所选的 LLM 服务接口，便于满足合规与审计要求。",
-      },
-      {
-        icon: "openSource",
-        title: "开放源码",
-        short: "Apache-2.0 许可，代码、工具与工作流均可审查与二次开发。",
-        long: "后端、前端与工具实现均以开源形式发布，支持 Fork、扩展与社区贡献。",
+        icon: "sparkle",
+        title: "会自我纠错的 Agent 运行时",
+        short: "在统一「思考-行动」循环中规划、调用工具并自我纠错。",
+        long: "多轮流式会话、按任务绑定模型、可持久化检查点，以及情景 / 语义 / 程序性三存储认知记忆。",
       },
       {
         icon: "extensible",
-        title: "可扩展架构",
-        short: "CLI、YAML 工作流与工具注册机制，便于集成现有系统。",
-        long: "提供 80+ 工具、声明式规则与可热加载的 Prompt 模板，适合作为自动化平台底座。",
+        title: "100+ 内置工具",
+        short: "13 大类、100+ 离线工具，每个都能直接编排进工作流。",
+        long: "覆盖文档、网页、数据、代码、数据库、媒体与游戏美术生成，统一经由单一执行器分发。",
       },
       {
-        icon: "localData",
-        title: "数据本地化",
-        short: "默认 SQLite 本地存储，可按规模升级数据库与向量检索。",
-        long: "文件访问沙箱化，支持 PostgreSQL 与 Milvus，适配从单机到团队部署的演进路径。",
+        icon: "workflow",
+        title: "智能化可视工作流",
+        short: "基于 ReactFlow 的编辑器，每个工具自动成为带类型的节点。",
+        long: "同一引擎驱动已保存流程、聊天步骤卡与智能体亲手编写的图，支持并发执行与可持久化暂停 / 恢复。",
+      },
+      {
+        icon: "chat",
+        title: "Generative UI",
+        short: "把可交互界面实时流式渲染进聊天，并可导出 PDF / PPTX。",
+        long: "声明式 UI 树通过 SSE 实时流式输出与增量更新——KPI 看板、幻灯片、画廊、步骤条，皆内联呈现。",
+      },
+      {
+        icon: "model",
+        title: "多模型支持",
+        short: "DeepSeek、通义、OpenAI、Anthropic、Ollama、vLLM — 统一接入，随时切换。",
+        long: "按任务绑定 provider / model，支持多家供应商与本地推理，会话内可自由切换。",
+      },
+      {
+        icon: "openSource",
+        title: "开源 · 可自托管",
+        short: "Apache-2.0，代码、工具与工作流均可审查与二次开发，可完全离线运行。",
+        long: "后端、前端与工具实现均以开源形式发布；默认零外部依赖（SQLite、单进程）即可在本地运行。",
       },
     ],
     useCases: [
@@ -440,6 +546,7 @@ cd LeAgent
     nav: {
       about: "About",
       intro: "Intro",
+      workflows: "Workflows",
       business: "Custom",
       download: "Download",
       pets: "Pets",
@@ -447,7 +554,7 @@ cd LeAgent
     },
     footer: {
       tagline:
-        "Local-first AI office automation.\nSelf-hosted, open-source, no accounts or tracking.",
+        "The open-source desktop AI agent that gets work done.\nPlanning, tools, workflows, and Generative UI in one stack.",
       pages: "Pages",
       resources: "Resources",
       legal: "Legal",
@@ -475,51 +582,51 @@ cd LeAgent
       startBuilding: "View deployment",
     },
     home: {
-      heroLine1: "Local-first",
-      heroLine2: "AI office automation",
+      heroLine1: "The open-source desktop",
+      heroLine2: "AI agent that gets work done",
       heroSub:
-        "LeAgent unifies chat, tools, and workflow automation in one self-hosted system. It supports local deployment, open-source inspection, and multi-provider models for personal productivity, team operations, and internal automation.",
-      heroMeta: "Apache-2.0 \u00B7 Python + React \u00B7 SQLite by default",
+        "LeAgent doesn't just chat. It plans, calls tools, and self-corrects in one think-act loop, designs and runs visual workflows, and streams live interactive UI into the chat — with 100+ built-in tools, open-source and self-hostable.",
       overviewEyebrow: "Overview",
-      overviewTitle: "One stack for auditable automation",
+      overviewTitle: "One stack, a complete agent platform",
       overviewLede:
-        "Built around QueryEngine session orchestration, 80+ domain tools, visual workflows, and layered prompts. Data stays on your infrastructure by default, with optional PostgreSQL and vector memory.",
-      principlesEyebrow: "Principles",
-      principlesTitle: "Foundation for long-running deployments",
+        "Built around QueryEngine session orchestration, 100+ tools across 13 categories, visual workflows, Generative UI, and multi-provider model routing. Wired together and ready out of the box — bring cloud keys or stay fully local.",
+      principlesEyebrow: "Capabilities",
+      principlesTitle: "Powerful building blocks, in your hands",
       continueTitle: "Continue",
     },
     intro: {
       title: "Core capabilities and scenarios",
-      sub: "Representative UI flows below run on local or private deployments. Screenshots illustrate interface and deliverables for evaluation.",
+      sub: "From multi-turn chat and document production to paper research and code execution — these capabilities are wired together and work out of the box. Screenshots show the real interface and deliverables.",
       placeholderNote: "Screenshot placeholder — add images under public/images/features/",
+      featuresEyebrow: "Capability overview",
       screenshots: [
         {
           id: "chat",
           label: "Chat",
           title: "Multi-turn dialogue and tool use",
           description:
-            "Streaming responses, session state, and tool orchestration for Q&A, documents, and task workflows.",
+            "Streaming responses, session state, and tool orchestration. Plans, calls tools, and self-corrects within a single turn.",
         },
         {
           id: "genuiWeather",
-          label: "GenUI",
-          title: "Interactive UI from structured output",
+          label: "Generative UI",
+          title: "Live interactive UI, streamed",
           description:
-            "Renders weather cards and other Generative UI components from model output for actionable interfaces.",
+            "Agents stream declarative UI trees — KPI boards, slide decks, galleries, steppers — that render inline in chat and export to PDF or PPTX.",
         },
         {
           id: "codeGeneration",
           label: "Code",
           title: "Generation, review, and execution",
           description:
-            "Sandboxed code assistance for generation, explanation, and project-level development workflows.",
+            "Sandboxed code assistance: scaffold from templates, edit across the tree, and run a live dev server in isolation.",
         },
         {
           id: "wordGeneration",
           label: "Documents",
           title: "Office document generation",
           description:
-            "Produces and edits Word documents for reports, templates, and standardized formatting pipelines.",
+            "Read and write Word / Excel / PPTX / PDF with OCR, classification, and template fill — a polished deliverable in one turn.",
         },
         {
           id: "webpageGeneration",
@@ -529,13 +636,71 @@ cd LeAgent
             "Drafts page structure, styles, and static assets for prototyping and pre-publish iteration.",
         },
         {
-          id: "workflow",
-          label: "Workflow",
-          title: "Visual process orchestration",
+          id: "paperMode",
+          label: "Paper Mode",
+          title: "Citation-grounded research analysis",
           description:
-            "Node-based flows with Cron, Webhooks, and tool nodes for recurring automation tasks.",
+            "Open a PDF and the agent becomes a research analyst: outline extraction, faithful section / whole-paper summaries, reference and LaTeX-formula extraction, and region translation — text extraction fully offline.",
         },
       ],
+      multiModel: {
+        eyebrow: "Multi-model support",
+        title: "One interface, switch models anytime",
+        sub: "DeepSeek, Qwen, OpenAI, Anthropic, Azure OpenAI, Ollama, and vLLM — bring cloud keys or run fully local, and change models per session.",
+        providers: [
+          { name: "DeepSeek", note: "Recommended default · V4 Pro + V4 Flash" },
+          { name: "DashScope (Qwen)", note: "Thinking + search modes" },
+          { name: "OpenAI", note: "Cloud frontier models" },
+          { name: "Anthropic", note: "Claude model family" },
+          { name: "Azure OpenAI", note: "Enterprise hosted deployment" },
+          { name: "Ollama", note: "Fully local inference" },
+          { name: "vLLM", note: "Self-hosted OpenAI-compatible inference" },
+        ],
+      },
+    },
+    workflows: {
+      heroEyebrow: "Visual workflows",
+      heroTitle: "Orchestrate every capability\ninto a runnable flow",
+      heroSub:
+        "A ReactFlow editor where every tool automatically becomes a typed node — drag and wire with zero glue code. One engine backs saved flows, chat step-cards, and agent-authored graphs.",
+      heroMeta: "ReactFlow editor · Tools as nodes · YAML export",
+      featuresEyebrow: "Workflow capabilities",
+      featuresTitle: "From drag-and-drop to self-correcting production",
+      featuresSub: "Node editing and media-asset pipelines cover the full loop from design to production.",
+      screenshots: [
+        {
+          id: "workflowEditor",
+          label: "Node editor",
+          title: "Drag-and-drop DAG editor",
+          description:
+            "100+ tools are auto-exposed as typed `Tool.<name>` nodes with typed media sockets — wire and run. YAML export and reusable templates included.",
+        },
+        {
+          id: "workflowArt",
+          label: "Art asset pipeline",
+          title: "Game-art generation with self-correction",
+          description:
+            "Composable image / video / 3D mesh / VFX nodes with a quality gate and a bounded self-correction loop, exporting an engine-ready (Unity / Unreal / Godot) bundle.",
+        },
+      ],
+      shapesEyebrow: "One engine",
+      shapesTitle: "Three shapes, one executor",
+      shapesSub: "Wherever a flow starts, it converges on the same WorkflowExecutor — consistent scheduling, retries, and state ownership.",
+      shapes: [
+        { tag: "Saved flow", title: "DAG workflow", description: "Directed acyclic graphs designed, saved, and reused in the editor — triggered by Cron or the agent." },
+        { tag: "Chat step-card", title: "Playbook steps", description: "Step-cards inside a chat turn compile to a linear flow and share the same executor as editor runs." },
+        { tag: "In-chat embed", title: "Graph preview", description: "Validated Flow JSON previews inline in chat, bridging design and execution seamlessly." },
+      ],
+      claimsEyebrow: "Why it's powerful",
+      claimsTitle: "Engineering guarantees beneath the canvas",
+      claims: [
+        { title: "Tools are nodes", description: "Every registered tool is lifted into a typed node — new capabilities are instantly available visually, with zero glue code." },
+        { title: "Concurrent and reliable", description: "Batched concurrent execution of independent branches, centralized retry / backoff, per-node timeouts, and durable pause / resume." },
+        { title: "Self-correcting loop", description: "A quality gate plus a bounded self-correction loop regenerates outputs like art assets automatically when they miss the bar." },
+        { title: "Portable and reusable", description: "YAML export, Cron / Webhook triggers, and a template library for versioning and reuse across environments." },
+      ],
+      ctaTitle: "Bring your process into LeAgent",
+      ctaSub: "Download to build your first workflow locally, or read the source to see how the engine works.",
     },
     business: {
       title: "Custom development\nand private delivery",
@@ -613,34 +778,40 @@ cd LeAgent
     },
     principles: [
       {
-        icon: "noAccount",
-        title: "No account system",
-        short: "Deploy locally or privately without vendor accounts or sign-up flows.",
-        long: "LeAgent runs in your environment, suitable for intranet and air-gapped delivery.",
-      },
-      {
-        icon: "noTracking",
-        title: "No tracking",
-        short: "No usage telemetry or third-party analytics by default.",
-        long: "Outbound traffic is configuration-driven, typically limited to chosen LLM endpoints.",
-      },
-      {
-        icon: "openSource",
-        title: "Open source",
-        short: "Apache-2.0 — auditable code, tools, and workflows.",
-        long: "Backend, frontend, and tools are published for inspection, fork, and extension.",
+        icon: "sparkle",
+        title: "Self-correcting agent runtime",
+        short: "Plans, calls tools, and self-corrects in one think-act loop.",
+        long: "Multi-turn streaming sessions, task-based model bindings, durable checkpoints, and episodic / semantic / procedural memory.",
       },
       {
         icon: "extensible",
-        title: "Extensible stack",
-        short: "CLI, YAML workflows, and a tool registry for system integration.",
-        long: "80+ tools, declarative rules, and hot-reloadable prompts as an automation platform base.",
+        title: "100+ built-in tools",
+        short: "100+ offline tools across 13 categories — each one wires into a workflow.",
+        long: "Documents, web, data, code, databases, media, and game-art generation, dispatched through one executor.",
       },
       {
-        icon: "localData",
-        title: "Local data",
-        short: "SQLite by default; scale with PostgreSQL and vector search when needed.",
-        long: "Sandboxed file access and optional Milvus for team-scale deployments.",
+        icon: "workflow",
+        title: "Agentic visual workflows",
+        short: "A ReactFlow editor where every tool is automatically a typed node.",
+        long: "One engine backs saved flows, chat step-cards, and agent-authored graphs, with concurrent execution and durable pause / resume.",
+      },
+      {
+        icon: "chat",
+        title: "Generative UI",
+        short: "Stream live interactive interfaces into chat; export to PDF / PPTX.",
+        long: "Declarative UI trees stream and patch over SSE — KPI boards, slide decks, galleries, steppers — rendered inline.",
+      },
+      {
+        icon: "model",
+        title: "Multi-model support",
+        short: "DeepSeek, Qwen, OpenAI, Anthropic, Ollama, vLLM — one interface, switch anytime.",
+        long: "Task-based provider / model bindings across vendors and local inference — change models per session.",
+      },
+      {
+        icon: "openSource",
+        title: "Open source, self-hostable",
+        short: "Apache-2.0 — auditable code, tools, and workflows; runs fully offline.",
+        long: "Backend, frontend, and tools are published for inspection and extension; zero external dependencies by default (SQLite, single process).",
       },
     ],
     useCases: [

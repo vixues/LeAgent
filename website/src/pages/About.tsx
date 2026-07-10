@@ -16,7 +16,11 @@ export default function About() {
   return (
     <>
       <Section className="pt-32 pb-12">
-        <SectionHead title={t.intro.title} lede={t.intro.sub} />
+        <SectionHead
+          eyebrow={t.intro.featuresEyebrow}
+          title={t.intro.title}
+          lede={t.intro.sub}
+        />
       </Section>
 
       <Section className="pt-0 pb-24">
@@ -28,6 +32,24 @@ export default function About() {
                 index={index}
                 placeholderNote={t.intro.placeholderNote}
               />
+            </Reveal>
+          ))}
+        </div>
+      </Section>
+
+      <Section className="pt-0 pb-28">
+        <SectionHead
+          eyebrow={t.intro.multiModel.eyebrow}
+          title={t.intro.multiModel.title}
+          lede={t.intro.multiModel.sub}
+        />
+        <div className="provider-grid">
+          {t.intro.multiModel.providers.map((p, index) => (
+            <Reveal key={p.name} delay={index * 40}>
+              <div className="provider-card">
+                <p className="provider-card__name">{p.name}</p>
+                <p className="provider-card__note">{p.note}</p>
+              </div>
             </Reveal>
           ))}
         </div>

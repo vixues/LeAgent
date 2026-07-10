@@ -7,3 +7,8 @@ dist
 public/install.sh
 public/install.ps1
 public/install.bat
+public/robots.txt
+public/agents.txt
+public/agents.json
+public/llms.txt
+public/sitemap.xml

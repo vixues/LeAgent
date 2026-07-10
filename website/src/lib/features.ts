@@ -6,4 +6,8 @@ export const FEATURE_IMAGE_BY_ID: Record<string, string> = {
   wordGeneration: "/images/features/word-generation.png",
   webpageGeneration: "/images/features/webpage-generation.png",
   workflow: "/images/features/workflow.png",
+  paperMode: "/images/features/paper-mode.png",
+  multiModel: "/images/features/multi-model.png",
+  workflowEditor: "/images/features/workflow-editor.png",
+  workflowArt: "/images/features/workflow-art.png",
 };

@@ -692,6 +692,76 @@ code, pre, kbd {
   color: var(--color-text-secondary);
 }
 
+/* ── CTA band (workflows page) ───────────────────────────────────── */
+.cta-band {
+  position: relative;
+  overflow: hidden;
+  padding: 2.5rem 2rem;
+  border: 1px solid var(--color-border-subtle);
+  border-radius: 18px;
+  background:
+    radial-gradient(
+      120% 140% at 0% 0%,
+      color-mix(in oklab, var(--color-accent) 12%, transparent) 0%,
+      transparent 55%
+    ),
+    color-mix(in oklab, var(--color-surface-raised) 50%, transparent);
+}
+
+@media (min-width: 768px) {
+  .cta-band {
+    padding: 3.25rem 3rem;
+  }
+}
+
+/* ── Multi-model band (intro page) ───────────────────────────────── */
+.provider-grid {
+  display: grid;
+  gap: 0.75rem;
+  grid-template-columns: 1fr;
+}
+
+@media (min-width: 640px) {
+  .provider-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (min-width: 1024px) {
+  .provider-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+.provider-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  padding: 0.95rem 1.05rem;
+  border: 1px solid var(--color-border-subtle);
+  border-radius: 12px;
+  background-color: color-mix(in oklab, var(--color-surface) 45%, transparent);
+  transition: border-color 0.18s ease, background-color 0.18s ease;
+}
+
+.provider-card:hover {
+  border-color: color-mix(in oklab, var(--color-accent) 30%, var(--color-border-subtle));
+  background-color: color-mix(in oklab, var(--color-surface-raised) 55%, transparent);
+}
+
+.provider-card__name {
+  font-family: var(--font-display);
+  font-size: 0.9375rem;
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+.provider-card__note {
+  font-size: 0.8125rem;
+  line-height: 1.5;
+  color: var(--color-text-secondary);
+}
+
 /*
  * Inline rule — slim hairline used to separate dense editorial blocks
  * within a single section.

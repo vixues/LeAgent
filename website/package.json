@@ -4,8 +4,9 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "prebuild": "cp -f ../scripts/install.sh ../scripts/install.ps1 ../scripts/install.bat public/",
+    "dev": "npm run seo && vite",
+    "prebuild": "npm run seo && cp -f ../scripts/install.sh ../scripts/install.ps1 ../scripts/install.bat public/",
+    "seo": "node scripts/generate-seo.mjs",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",

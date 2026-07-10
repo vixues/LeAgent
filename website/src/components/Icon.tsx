@@ -26,7 +26,9 @@ export type IconName =
   | "sun"
   | "moon"
   | "download"
-  | "sparkle";
+  | "sparkle"
+  | "workflow"
+  | "model";
 
 interface IconProps {
   name: IconName;
@@ -242,6 +244,24 @@ export function Icon({ name, className, strokeWidth = 1.5 }: IconProps) {
         <svg {...common}>
           <path d="M12 3v6M12 15v6M3 12h6M15 12h6" />
           <path d="m6 6 3 3M15 15l3 3M6 18l3-3M15 9l3-3" opacity="0.6" />
+        </svg>
+      );
+    case "workflow":
+      return (
+        <svg {...common}>
+          <rect x="3" y="4" width="6" height="5" rx="1.5" />
+          <rect x="15" y="4" width="6" height="5" rx="1.5" />
+          <rect x="9" y="15" width="6" height="5" rx="1.5" />
+          <path d="M6 9v2.5a1.5 1.5 0 0 0 1.5 1.5H12m6-4v2.5a1.5 1.5 0 0 1-1.5 1.5H12m0 0v2" opacity="0.7" />
+        </svg>
+      );
+    case "model":
+      return (
+        <svg {...common}>
+          <circle cx="12" cy="5" r="2.5" />
+          <circle cx="5" cy="17" r="2.5" />
+          <circle cx="19" cy="17" r="2.5" />
+          <path d="M10.2 6.8 6.8 15M13.8 6.8 17.2 15M7.5 17h9" opacity="0.7" />
         </svg>
       );
   }

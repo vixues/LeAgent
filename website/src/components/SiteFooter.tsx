@@ -40,10 +40,11 @@ export function SiteFooter() {
             <h4 className="mb-4 font-display text-xs font-semibold uppercase tracking-widest text-text-muted">
               {t.footer.pages}
             </h4>
-            <ul className="space-y-2 text-sm">
+            <ul className="grid grid-cols-2 gap-x-6 gap-y-2 text-sm">
               {[
                 { to: "/", label: t.nav.about },
                 { to: "/about", label: t.nav.intro },
+                { to: "/workflows", label: t.nav.workflows },
                 { to: "/business", label: t.nav.business },
                 { to: "/download", label: t.nav.download },
                 { to: "/pets", label: t.nav.pets },

@@ -16,6 +16,7 @@ export function SiteHeader() {
   const navItems = [
     { label: t.nav.about, to: "/" },
     { label: t.nav.intro, to: "/about" },
+    { label: t.nav.workflows, to: "/workflows" },
     { label: t.nav.business, to: "/business" },
     { label: t.nav.download, to: "/download" },
     { label: t.nav.pets, to: "/pets" },
@@ -35,7 +36,10 @@ export function SiteHeader() {
         </Link>
 
         {/* Desktop nav */}
-        <nav className="hidden items-center gap-8 md:flex" aria-label="Main">
+        <nav
+          className="hidden items-center gap-5 md:flex lg:gap-7"
+          aria-label="Main"
+        >
           {navItems.map((item) => {
             const active = pathname === item.to;
             return (
@@ -43,7 +47,7 @@ export function SiteHeader() {
                 key={item.to}
                 to={item.to}
                 className={cn(
-                  "font-body text-base transition-colors duration-200",
+                  "font-body text-[15px] transition-colors duration-200",
                   active
                     ? "text-accent"
                     : "text-text-secondary hover:text-text-primary",
