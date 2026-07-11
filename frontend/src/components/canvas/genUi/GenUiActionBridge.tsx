@@ -13,6 +13,10 @@ import { apiClient } from '@/api/client';
 import { resumeWorkflowExecution } from '@/hooks/useExecutionResume';
 import { useExecutionOverlay } from '@/features/workflow/store/executionOverlay';
 import { useExecutionSessionStore } from '@/stores/executionSession';
+import {
+  runChatWorkflowStep,
+  startChatWorkflowEmbedRun,
+} from '@/components/chat/workflow/chatWorkflowRunActions';
 import type { Message } from '@/types/chat';
 
 interface WorkflowRunResponse {
@@ -37,61 +41,79 @@ export function GenUiActionBridge() {
   tRef.current = t;
 
   useEffect(() => {
-    registerGenUiActionAdapters({
-      async sendMessage(payload, ctx) {
-        const content = (payload.content || '').trim();
-        if (!content) return;
-        const store = useChatStore.getState();
-        const sessionId = ctx.sessionId ?? store.currentSessionId ?? (await store.createSession());
-        if (isChatStreamBusyForSession(sessionId, store)) return;
-        const sessionProjectId =
-          store.sessions.find((s) => s.id === sessionId)?.projectId ??
-          useChatProjectStore.getState().currentProjectId;
+    const sendChat = async (
+      rawContent: string,
+      ctx: { sessionId?: string },
+    ): Promise<void> => {
+      const content = (rawContent || '').trim();
+      if (!content) return;
+      const store = useChatStore.getState();
+      const sessionId = ctx.sessionId ?? store.currentSessionId ?? (await store.createSession());
+      if (isChatStreamBusyForSession(sessionId, store)) return;
+      const sessionProjectId =
+        store.sessions.find((s) => s.id === sessionId)?.projectId ??
+        useChatProjectStore.getState().currentProjectId;
 
-        const userMessageId = generateId();
-        const userMessage: Message = {
-          id: userMessageId,
-          role: 'user',
+      const userMessageId = generateId();
+      const userMessage: Message = {
+        id: userMessageId,
+        role: 'user',
+        content,
+        createdAt: new Date().toISOString(),
+      };
+      store.addMessage(sessionId, userMessage);
+
+      const assistantMsgId = generateId();
+      const assistantMessage: Message = {
+        id: assistantMsgId,
+        role: 'assistant',
+        content: '',
+        createdAt: new Date().toISOString(),
+        isStreaming: true,
+        toolCalls: [],
+      };
+      store.addMessage(sessionId, assistantMessage);
+      store.abortActiveStreamUnlessSession(sessionId);
+      store.beginChatStreamSession(sessionId);
+      store.setError(null);
+
+      const controller = new AbortController();
+      useChatStore.getState().setStreamAbortController(controller);
+
+      try {
+        await runChatStream({
+          sessionId,
+          userMessageId,
+          assistantMsgId,
           content,
-          createdAt: new Date().toISOString(),
-        };
-        store.addMessage(sessionId, userMessage);
+          projectId: sessionProjectId,
+          projectUnlockToken: getChatProjectUnlockToken(sessionProjectId),
+          modelMode: getComposerModelMode(),
+          signal: controller.signal,
+          t: tRef.current,
+        });
+      } catch (err) {
+        handleChatStreamFailure(err, sessionId, assistantMsgId, tRef.current);
+      } finally {
+        useChatStore.getState().releaseChatStreamSessionAndResync(sessionId);
+        useChatStore.getState().releaseStreamAbortController(controller);
+      }
+    };
 
-        const assistantMsgId = generateId();
-        const assistantMessage: Message = {
-          id: assistantMsgId,
-          role: 'assistant',
-          content: '',
-          createdAt: new Date().toISOString(),
-          isStreaming: true,
-          toolCalls: [],
-        };
-        store.addMessage(sessionId, assistantMessage);
-        store.abortActiveStreamUnlessSession(sessionId);
-        store.beginChatStreamSession(sessionId);
-        store.setError(null);
-
-        const controller = new AbortController();
-        useChatStore.getState().setStreamAbortController(controller);
-
-        try {
-          await runChatStream({
-            sessionId,
-            userMessageId,
-            assistantMsgId,
-            content,
-            projectId: sessionProjectId,
-            projectUnlockToken: getChatProjectUnlockToken(sessionProjectId),
-            modelMode: getComposerModelMode(),
-            signal: controller.signal,
-            t: tRef.current,
-          });
-        } catch (err) {
-          handleChatStreamFailure(err, sessionId, assistantMsgId, tRef.current);
-        } finally {
-          useChatStore.getState().releaseChatStreamSessionAndResync(sessionId);
-          useChatStore.getState().releaseStreamAbortController(controller);
-        }
+    registerGenUiActionAdapters({
+      sendMessage(payload, ctx) {
+        return sendChat(payload.content, ctx);
+      },
+      submitForm(payload, ctx) {
+        const entries = Object.entries(payload.values ?? {});
+        if (entries.length === 0) return;
+        const summary = entries
+          .map(([k, v]) => `${k}: ${typeof v === 'string' ? v : JSON.stringify(v)}`)
+          .join('\n');
+        const heading = payload.formId
+          ? `Form "${payload.formId}" submitted:`
+          : 'Form submitted:';
+        return sendChat(`${heading}\n${summary}`, ctx);
       },
       openArtifact(payload, ctx) {
         const messageId = payload.messageId ?? ctx.messageId;
@@ -103,7 +125,8 @@ export function GenUiActionBridge() {
                 (a) =>
                   a.messageId === messageId &&
                   (payload.canvasId
-                    ? (a.metadata as Record<string, unknown> | undefined)?.canvas_id === payload.canvasId
+                    ? (a.metadata as Record<string, unknown> | undefined)?.canvas_id ===
+                      payload.canvasId
                     : a.type === 'html'),
               )
             : undefined);
@@ -130,6 +153,30 @@ export function GenUiActionBridge() {
         useGenUiStore.getState().applyPatch(sessionId, messageId, { patches: payload.patches });
       },
       async runWorkflow(payload, ctx) {
+        const target = payload.target;
+        if (target?.kind === 'chat_embed') {
+          await startChatWorkflowEmbedRun({
+            sessionId: target.sessionId,
+            messageId: target.messageId,
+            digest: target.digest,
+            inputs: payload.values ?? {},
+            fallbackError: tRef.current('chat.workflow.runFailed'),
+          });
+          return;
+        }
+        if (target?.kind === 'chat_step' && target.stepId) {
+          const userInput = payload.values?.user_input;
+          await runChatWorkflowStep({
+            sessionId: target.sessionId,
+            messageId: target.messageId,
+            stepId: target.stepId,
+            digest: target.digest,
+            userInput: typeof userInput === 'string' ? userInput : undefined,
+            fallbackError: tRef.current('chat.workflow.runFailed'),
+          });
+          return;
+        }
+        if (!payload.flowId) return;
         try {
           const res = await apiClient.post<WorkflowRunResponse>(
             `/workflow/flows/${payload.flowId}/run`,

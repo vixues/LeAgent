@@ -9,6 +9,7 @@
  */
 
 import type { UiPatchStreamPayload } from '@/types/genUi';
+import { isSafeHref } from '@/lib/genUiUrl';
 
 export type GenUiActionType =
   | 'send_message'
@@ -58,10 +59,23 @@ export interface SubmitFormActionPayload {
   values: Record<string, unknown>;
 }
 
+/**
+ * Where a ``run_workflow`` action should be dispatched. Defaults to ``flow``
+ * (the saved-Flow run API). Chat surfaces route to the verified chat endpoints
+ * so digest verification + per-message run persistence still apply.
+ */
+export type WorkflowRunTarget =
+  | { kind: 'flow' }
+  | { kind: 'chat_embed'; sessionId: string; messageId: string; digest: string }
+  | { kind: 'chat_step'; sessionId: string; messageId: string; digest: string; stepId?: string };
+
 export interface RunWorkflowActionPayload {
+  /** Saved Flow id. Empty for unsaved chat embeds (use ``target`` instead). */
   flowId: string;
   /** Workflow input values (from the enclosing Form unless inlined). */
   values: Record<string, unknown>;
+  /** Routing target; absent payloads behave as ``{ kind: 'flow' }``. */
+  target?: WorkflowRunTarget;
 }
 
 export interface ResumeWorkflowActionPayload {
@@ -136,6 +150,31 @@ function mergeFormValues(
   return { ...fromForm, ...fromInline };
 }
 
+/** Validate a loose ``run_workflow`` target discriminator. */
+function parseRunTarget(raw: unknown): WorkflowRunTarget | undefined {
+  if (!raw || typeof raw !== 'object') return undefined;
+  const o = raw as Record<string, unknown>;
+  const kind = o.kind;
+  const str = (v: unknown): string => (typeof v === 'string' ? v : '');
+  if (kind === 'flow') return { kind: 'flow' };
+  if (kind === 'chat_embed') {
+    const sessionId = str(o.sessionId);
+    const messageId = str(o.messageId);
+    const digest = str(o.digest);
+    if (!sessionId || !messageId || !digest) return undefined;
+    return { kind: 'chat_embed', sessionId, messageId, digest };
+  }
+  if (kind === 'chat_step') {
+    const sessionId = str(o.sessionId);
+    const messageId = str(o.messageId);
+    const digest = str(o.digest);
+    if (!sessionId || !messageId || !digest) return undefined;
+    const stepId = str(o.stepId);
+    return { kind: 'chat_step', sessionId, messageId, digest, ...(stepId ? { stepId } : {}) };
+  }
+  return undefined;
+}
+
 /**
  * Coerce loose model output into a strongly-typed action.
  * Accepts either a fully-typed `{type, payload}` object or a bare `actionId`
@@ -165,7 +204,7 @@ export function normalizeAction(
       }
       case 'open_url': {
         const url = typeof payload.url === 'string' ? payload.url : '';
-        if (!url) return null;
+        if (!isSafeHref(url)) return null;
         return { type: 'open_url', payload: { url, external: Boolean(payload.external) } };
       }
       case 'open_artifact': {
@@ -211,10 +250,15 @@ export function normalizeAction(
       }
       case 'run_workflow': {
         const flowId = typeof payload.flowId === 'string' ? payload.flowId : '';
-        if (!flowId) return null;
+        const target = parseRunTarget(payload.target);
+        if (!flowId && !target) return null;
         return {
           type: 'run_workflow',
-          payload: { flowId, values: mergeFormValues(payload.values, ctx) },
+          payload: {
+            flowId,
+            values: mergeFormValues(payload.values, ctx),
+            ...(target ? { target } : {}),
+          },
         };
       }
       case 'resume_workflow': {

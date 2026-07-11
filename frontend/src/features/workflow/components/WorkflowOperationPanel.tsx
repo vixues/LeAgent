@@ -196,13 +196,7 @@ export function WorkflowOperationPanel({
                 {inputsHint}
               </p>
             ) : null}
-            <GenUiTreeView
-              tree={inputTree}
-              sessionId={sessionId}
-              messageId={messageId}
-              compact={compact}
-              hideAttribution={compact}
-            />
+            <GenUiTreeView tree={inputTree} sessionId={sessionId} messageId={messageId} />
           </>
         ) : (
           <p className="px-4 py-3 text-xs text-muted-foreground">
@@ -244,13 +238,7 @@ export function WorkflowOperationPanel({
             <MessageCircleQuestion className="h-3.5 w-3.5" />
             {t('runPanel.waiting', 'Waiting for your input')}
           </header>
-          <GenUiTreeView
-            tree={blockedTree}
-            sessionId={sessionId}
-            messageId={messageId}
-            compact={compact}
-            hideAttribution={compact}
-          />
+          <GenUiTreeView tree={blockedTree} sessionId={sessionId} messageId={messageId} />
         </section>
       ) : null}
 
@@ -267,14 +255,7 @@ export function WorkflowOperationPanel({
             ) : null}
           </header>
           {assetEntries.map(({ id, tree }) => (
-            <GenUiTreeView
-              key={id}
-              tree={tree}
-              sessionId={sessionId}
-              messageId={messageId}
-              compact={compact}
-              hideAttribution={compact}
-            />
+            <GenUiTreeView key={id} tree={tree} sessionId={sessionId} messageId={messageId} />
           ))}
         </section>
       ) : null}
@@ -286,13 +267,7 @@ export function WorkflowOperationPanel({
             <SquareActivity className="h-3.5 w-3.5" />
             {t('runPanel.results', 'Results')}
           </header>
-          <GenUiTreeView
-            tree={outputTree}
-            sessionId={sessionId}
-            messageId={messageId}
-            compact={compact}
-            hideAttribution={compact}
-          />
+          <GenUiTreeView tree={outputTree} sessionId={sessionId} messageId={messageId} />
         </section>
       ) : null}
 
