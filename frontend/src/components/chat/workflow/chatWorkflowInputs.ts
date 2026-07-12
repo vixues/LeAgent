@@ -49,21 +49,15 @@ export interface SynthesizedInputOptions {
   description?: string;
 }
 
-/** A single optional ``user_input`` field, with attachments as quick-pick choices. */
+/** A single optional ``user_input`` field for linear step cards and embed fallbacks. */
 export function synthesizedUserInputSpec(opts: SynthesizedInputOptions): WorkflowInputSpec {
-  const paths = opts.attachments.map(attachmentPath).filter((p): p is string => Boolean(p));
-  const base: WorkflowInputSpec = {
+  return {
     name: CHAT_USER_INPUT_FIELD,
     label: opts.label,
     description: opts.description,
     required: false,
+    type: opts.needsFileInput ? 'file' : 'string',
   };
-  if (paths.length > 0) {
-    // Distinct paths, preserving order.
-    const choices = Array.from(new Set(paths));
-    return { ...base, type: 'string', choices };
-  }
-  return { ...base, type: opts.needsFileInput ? 'file' : 'string' };
 }
 
 function isValidSpec(value: unknown): value is WorkflowInputSpec {

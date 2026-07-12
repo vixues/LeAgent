@@ -175,6 +175,7 @@ function EmbedCard({
         formId={`chat-workflow-embed-${messageId}`}
         sessionId={sessionId}
         messageId={messageId}
+        attachments={attachments}
         submitLabel={runStatus === 'idle' ? t('chat.workflow.run') : t('chat.workflow.rerun')}
         header={header}
         slot={slot}
@@ -260,6 +261,7 @@ function StepCard({
         formId={formId}
         sessionId={sessionId}
         messageId={messageId}
+        attachments={attachments}
         includeSubmit={false}
         header={header}
         compact

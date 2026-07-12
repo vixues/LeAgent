@@ -1,10 +1,8 @@
 /**
  * Deterministic mapper: `WorkflowDocument.inputs` → GenUI `Form` tree.
  *
- * The generated form is rendered by the shared `GenUiTreeView`; its submit
- * button dispatches a `run_workflow` action whose values are collected from
- * the form scope. No LLM involved — the tree is derived 1:1 from the
- * declared workflow input specs.
+ * Used by Playground and legacy paths. Workflow run ingress (editor Run panel,
+ * chat workflow cards) uses {@link WorkflowInputPanel} instead.
  */
 
 import type { GenUiNode, GenUiTreeV1 } from '@/types/genUi';

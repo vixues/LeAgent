@@ -12,9 +12,11 @@ import { AppLogo } from '@/components/brand/AppLogo';
 import { cn } from '@/lib/utils';
 
 import { blockedToGenUiTree } from '../genui/blockedToGenUiTree';
-import { inputsToGenUiTree, type WorkflowInputSpec } from '../genui/inputsToGenUiTree';
+import { type WorkflowInputSpec } from '../genui/inputsToGenUiTree';
 import { outputsToGenUiTree, type WorkflowOutputSpec } from '../genui/outputsToGenUiTree';
 import { useExecutionOverlay, type PromptOverlayState } from '../store/executionOverlay';
+import { WorkflowInputPanel } from './WorkflowInputPanel';
+import type { Attachment } from '@/types/chat';
 
 /** Where the generated run form should dispatch its run. */
 export type OperationRunTarget =
@@ -42,6 +44,8 @@ export interface WorkflowOperationPanelProps {
   /** Render context for GenUI form scoping + action dispatch. */
   sessionId?: string;
   messageId?: string;
+  /** Chat session attachments for file / user_input pickers. */
+  attachments?: Attachment[];
   /** Whether the run form appends a submit button (default true). */
   includeSubmit?: boolean;
   submitLabel?: string;
@@ -79,11 +83,10 @@ const EMPTY_OVERLAY: Pick<
 };
 
 /**
- * GenUI-driven workflow I/O surface: the input form (ingress), live status,
+ * GenUI-driven workflow I/O surface: native input form (ingress), live status,
  * pause/review interaction (control plane), generated asset gallery and
  * structured results (egress). Shared by the graph editor's Run panel, the
- * Playground and the in-chat workflow cards. The workflow engine owns
- * orchestration / execution / state; this is a thin schema-generated page.
+ * Playground and the in-chat workflow cards.
  */
 export function WorkflowOperationPanel({
   flowId,
@@ -94,6 +97,7 @@ export function WorkflowOperationPanel({
   formId,
   sessionId,
   messageId,
+  attachments,
   includeSubmit = true,
   submitLabel,
   inputsHint,
@@ -129,15 +133,12 @@ export function WorkflowOperationPanel({
   const { promptId, running, blocked, outputs: resolvedOutputs, nodes, assetHistory, assetOrder, errors: runErrors } =
     overlay;
 
-  const inputTree = useMemo(() => {
-    return inputsToGenUiTree(inputs, {
-      flowId: flowId ?? '',
-      formId,
-      includeSubmit,
-      submitLabel: submitLabel ?? t('runPanel.run', 'Run'),
-      runTarget: runTarget as Record<string, unknown> | undefined,
-    });
-  }, [inputs, flowId, formId, includeSubmit, submitLabel, runTarget, t]);
+  const inputSpecs = useMemo(
+    () => (inputs ?? []).filter((s): s is WorkflowInputSpec => Boolean(s?.name)),
+    [inputs],
+  );
+
+  const resolvedFormKey = formId ?? `workflow-inputs-${flowId ?? 'chat'}`;
 
   const blockedTree = useMemo(() => {
     if (!blocked || !promptId) return null;
@@ -184,20 +185,21 @@ export function WorkflowOperationPanel({
         {compact ? null : (
           <header className={headerClass}>{t('runPanel.inputs', 'Inputs')}</header>
         )}
-        {inputTree ? (
-          <>
-            {inputsHint ? (
-              <p
-                className={cn(
-                  'text-[11px] leading-relaxed text-muted-foreground',
-                  compact ? 'px-3 pt-2.5' : 'px-4 pb-1',
-                )}
-              >
-                {inputsHint}
-              </p>
-            ) : null}
-            <GenUiTreeView tree={inputTree} sessionId={sessionId} messageId={messageId} />
-          </>
+        {inputSpecs.length > 0 ? (
+          <WorkflowInputPanel
+            inputs={inputSpecs}
+            formKey={resolvedFormKey}
+            runTarget={runTarget}
+            flowId={flowId ?? ''}
+            includeSubmit={includeSubmit}
+            submitLabel={submitLabel ?? t('runPanel.run', 'Run')}
+            sessionId={sessionId}
+            messageId={messageId}
+            attachments={attachments}
+            compact={compact}
+            inputsHint={inputsHint}
+            disabled={running}
+          />
         ) : (
           <p className="px-4 py-3 text-xs text-muted-foreground">
             {emptyInputsMessage ??

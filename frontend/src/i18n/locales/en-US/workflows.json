@@ -535,6 +535,14 @@
     "reject": "Reject",
     "comments": "Comments"
   },
+  "workflowInput": {
+    "attachments": "Session attachments",
+    "pickAttachment": "Click to select",
+    "pathPlaceholder": "File path or attachment name",
+    "required": "Missing required inputs: {{names}}",
+    "invalidJson": "Invalid JSON",
+    "runFailed": "Run failed"
+  },
   "ioPanel": {
     "tab": "Inputs / Outputs",
     "inputs": "Workflow inputs",

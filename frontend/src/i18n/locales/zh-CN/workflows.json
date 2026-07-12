@@ -535,6 +535,14 @@
     "reject": "拒绝",
     "comments": "备注"
   },
+  "workflowInput": {
+    "attachments": "会话附件",
+    "pickAttachment": "点击选择",
+    "pathPlaceholder": "文件路径或附件名称",
+    "required": "缺少必填输入：{{names}}",
+    "invalidJson": "JSON 格式无效",
+    "runFailed": "运行失败"
+  },
   "ioPanel": {
     "tab": "输入 / 输出",
     "inputs": "工作流输入",
