@@ -27,6 +27,7 @@ from leagent.agent.query import (
     ToolResultMessage,
     query,
 )
+from leagent.context.sources.gated_policy import resolve_canvas_intent_max_output_tokens
 from leagent.prompts.playbooks import playbook_ids_from_context
 from leagent.agent.transitions import Terminal, TerminalReason
 from leagent.context import ContextManager, FileState
@@ -486,7 +487,10 @@ class QueryEngine:
             max_turns=self.config.max_turns,
             max_tool_calls_per_turn=self.config.max_tool_calls_per_turn,
             temperature=self.config.temperature,
-            max_output_tokens=self.config.max_output_tokens,
+            max_output_tokens=resolve_canvas_intent_max_output_tokens(
+                query_text,
+                base=self.config.max_output_tokens,
+            ),
             model_provider=self.config.model_provider,
             model_name=self.config.model_name,
             model_task=self.config.model_task,

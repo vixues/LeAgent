@@ -23,16 +23,23 @@ from leagent.agent.query import (
     AssistantMessage,
     QueryParams,
     ToolResultMessage,
+    _build_length_recovery_state,
     _dispatch_tools,
     _inject_pending_ask_user_tool_stubs,
     _normalize_ask_user_questions,
+    _prepare_canvas_length_salvage,
     inject_missing_tool_result_stubs,
     query,
 )
 from leagent.agent.query_engine import QueryEngine, QueryEngineConfig, SDKMessage
+from leagent.agent.state import QueryState, AutoCompactTrackingState
 from leagent.agent.tool_use_context import ToolUseContext
 from leagent.agent.transitions import Continue, ContinueReason, Terminal, TerminalReason
 from leagent.context import FileState
+from leagent.context.sources.gated_policy import (
+    CANVAS_INTENT_MAX_OUTPUT_TOKENS,
+    resolve_canvas_intent_max_output_tokens,
+)
 from leagent.tools.base import BaseTool, ToolCategory, ToolContext, ToolPermissionContext
 from leagent.tools.executor import ToolExecutor
 from leagent.tools.registry import ToolRegistry
@@ -86,10 +93,56 @@ class _SleepTool(BaseTool):
         return {"slept": str(params.get("delay", 0))}
 
 
-def _make_registry() -> ToolRegistry:
+class _CanvasPublishStub(BaseTool):
+    """Records canvas_publish calls; optionally enforces force_sharded_html."""
+
+    name = "canvas_publish"
+    description = "Stub canvas publish."
+    category = ToolCategory.CANVAS
+    is_concurrency_safe = True
+    is_read_only = False
+
+    def __init__(self) -> None:
+        self.calls: list[dict[str, Any]] = []
+
+    @property
+    def parameters(self) -> dict[str, Any]:
+        return {
+            "type": "object",
+            "properties": {
+                "title": {"type": "string"},
+                "mode": {"type": "string"},
+                "html": {"type": "string"},
+                "html_files": {"type": "object"},
+                "html_blob_id": {"type": "string"},
+                "session_id": {"type": "string"},
+            },
+            "required": ["title", "mode"],
+        }
+
+    async def execute(self, params: dict[str, Any], context: ToolContext) -> dict[str, Any]:
+        has_inline = bool((params.get("html") or "").strip())
+        has_files = bool(params.get("html_files"))
+        has_blob = bool(params.get("html_blob_id"))
+        if (
+            has_inline
+            and not has_files
+            and not has_blob
+            and bool((context.extra or {}).get("force_sharded_html"))
+        ):
+            raise ValueError(
+                "Inline `html` is blocked after repeated output-length truncation."
+            )
+        self.calls.append(dict(params))
+        return {"published": True, "title": params.get("title")}
+
+
+def _make_registry(*extra_tools: BaseTool) -> ToolRegistry:
     reg = ToolRegistry()
     reg.register(_EchoTool())
     reg.register(_SleepTool())
+    for tool in extra_tools:
+        reg.register(tool)
     return reg
 
 
@@ -1194,4 +1247,307 @@ class TestLengthTruncationRecovery:
 
         terminals = [e for e in events if isinstance(e, Terminal)]
         assert turn_idx["n"] == 2
+        assert terminals[-1].reason == TerminalReason.COMPLETED
+
+
+class TestCanvasLengthSalvage:
+    def test_prepare_canvas_length_salvage_closes_html(self) -> None:
+        body = "<!DOCTYPE html><html><body>" + ("x" * 600)
+        tool_calls = [
+            {
+                "id": "c1",
+                "name": "canvas_publish",
+                "arguments": {
+                    "title": "Page",
+                    "mode": "html",
+                    "html": body,
+                },
+            }
+        ]
+        salvage = _prepare_canvas_length_salvage(tool_calls)
+        assert salvage is not None
+        assert salvage.incomplete is True
+        assert salvage.html_closed_by_runtime is True
+        html = tool_calls[0]["arguments"]["html"]
+        assert "</html>" in html.lower()
+
+    def test_canvas_intent_bumps_max_output_tokens(self) -> None:
+        assert resolve_canvas_intent_max_output_tokens(
+            "make a landing page",
+            base=8192,
+        ) == CANVAS_INTENT_MAX_OUTPUT_TOKENS
+        assert resolve_canvas_intent_max_output_tokens(
+            "summarize this PDF",
+            base=8192,
+        ) == 8192
+
+    def test_recovery_hint_for_canvas_without_raw_args(self) -> None:
+        registry = _make_registry()
+        ctx = _make_ctx(registry)
+        state = QueryState(
+            messages=[{"role": "user", "content": "webpage"}],
+            tool_use_context=ctx,
+            auto_compact_tracking=AutoCompactTrackingState(),
+        )
+        params = QueryParams(
+            messages=state.messages,
+            system_prompt="test",
+            tool_use_context=ctx,
+            deps=_make_deps([[]]),
+            max_output_tokens=4096,
+        )
+        recovered = _build_length_recovery_state(
+            state,
+            params,
+            [
+                {
+                    "id": "c1",
+                    "name": "canvas_publish",
+                    "arguments": {"title": "t", "mode": "html"},
+                }
+            ],
+        )
+        hint_msgs = [
+            m
+            for m in recovered.messages
+            if m.get("role") == "user" and "html_files" in str(m.get("content", ""))
+        ]
+        assert hint_msgs
+        assert recovered.max_output_tokens_recovery_count == 1
+
+    def test_second_recovery_sets_force_sharded_html(self) -> None:
+        registry = _make_registry()
+        ctx = _make_ctx(registry)
+        state = QueryState(
+            messages=[{"role": "user", "content": "webpage"}],
+            tool_use_context=ctx,
+            auto_compact_tracking=AutoCompactTrackingState(),
+            max_output_tokens_recovery_count=1,
+        )
+        params = QueryParams(
+            messages=state.messages,
+            system_prompt="test",
+            tool_use_context=ctx,
+            deps=_make_deps([[]]),
+            max_output_tokens=4096,
+        )
+        _build_length_recovery_state(
+            state,
+            params,
+            [
+                {
+                    "id": "c1",
+                    "name": "canvas_publish",
+                    "arguments": {"title": "t", "mode": "html"},
+                }
+            ],
+        )
+        assert ctx.extra.get("force_sharded_html") is True
+
+    @pytest.mark.asyncio
+    async def test_length_with_salvaged_canvas_publish_executes_tool(self) -> None:
+        """Salvageable canvas_publish on length must dispatch, not regenerate."""
+        stub = _CanvasPublishStub()
+        html = (
+            "<!DOCTYPE html><html><head><title>Hi</title></head>"
+            "<body>" + ("section " * 80) + "</body></html>"
+        )
+        turn_idx = {"n": 0}
+        captured_max: list[int | None] = []
+
+        async def _call_model(
+            *,
+            messages,
+            system_prompt,
+            tools,
+            tool_use_context,
+            temperature=None,
+            max_output_tokens=None,
+        ):
+            captured_max.append(max_output_tokens)
+            idx = turn_idx["n"]
+            turn_idx["n"] += 1
+            if idx == 0:
+                yield ModelStreamEvent(
+                    tool_call={
+                        "id": "call_canvas",
+                        "name": "canvas_publish",
+                        "arguments": {
+                            "title": "Landing",
+                            "mode": "html",
+                            "html": html,
+                        },
+                    }
+                )
+                yield ModelStreamEvent(
+                    message_stop={
+                        "finish_reason": "length",
+                        "usage": {"total_tokens": 4000},
+                    }
+                )
+            else:
+                yield ModelStreamEvent(content_delta="Published.")
+                yield ModelStreamEvent(
+                    message_stop={"finish_reason": "stop", "usage": {}}
+                )
+
+        deps = QueryDeps(
+            call_model=_call_model,
+            microcompact=_identity_compact,
+            autocompact=_identity_compact,
+        )
+        registry = _make_registry(stub)
+        ctx = _make_ctx(registry)
+        params = QueryParams(
+            messages=[{"role": "user", "content": "make a landing page"}],
+            system_prompt="test",
+            tool_use_context=ctx,
+            deps=deps,
+            max_output_tokens=4096,
+        )
+
+        events: list[Any] = []
+        async for item in query(params):
+            events.append(item)
+
+        assert len(stub.calls) == 1, "salvaged canvas_publish should execute once"
+        assert stub.calls[0]["html"].endswith("</html>")
+        tool_results = [e for e in events if isinstance(e, ToolResultMessage)]
+        assert tool_results
+        assert tool_results[0].success is True
+        terminals = [e for e in events if isinstance(e, Terminal)]
+        assert terminals[-1].reason == TerminalReason.COMPLETED
+        # First call used base tokens; no regenerate bump before tool exec.
+        assert captured_max[0] == 4096
+
+    @pytest.mark.asyncio
+    async def test_length_canvas_without_html_injects_hint_on_regenerate(self) -> None:
+        captured_messages: list[list[dict[str, Any]]] = []
+
+        async def _call_model(
+            *,
+            messages,
+            system_prompt,
+            tools,
+            tool_use_context,
+            temperature=None,
+            max_output_tokens=None,
+        ):
+            captured_messages.append(list(messages))
+            if len(captured_messages) == 1:
+                yield ModelStreamEvent(
+                    tool_call={
+                        "id": "call_canvas",
+                        "name": "canvas_publish",
+                        "arguments": {"title": "Landing", "mode": "html"},
+                    }
+                )
+                yield ModelStreamEvent(
+                    message_stop={
+                        "finish_reason": "length",
+                        "usage": {"total_tokens": 4000},
+                    }
+                )
+            else:
+                yield ModelStreamEvent(content_delta="ok")
+                yield ModelStreamEvent(
+                    message_stop={"finish_reason": "stop", "usage": {}}
+                )
+
+        deps = QueryDeps(
+            call_model=_call_model,
+            microcompact=_identity_compact,
+            autocompact=_identity_compact,
+        )
+        registry = _make_registry(_CanvasPublishStub())
+        ctx = _make_ctx(registry)
+        params = QueryParams(
+            messages=[{"role": "user", "content": "publish html"}],
+            system_prompt="test",
+            tool_use_context=ctx,
+            deps=deps,
+            max_output_tokens=4096,
+        )
+
+        events: list[Any] = []
+        async for item in query(params):
+            events.append(item)
+
+        assert len(captured_messages) >= 2
+        retry_msgs = captured_messages[1]
+        hint_msgs = [
+            m
+            for m in retry_msgs
+            if m.get("role") == "user"
+            and "html_files" in str(m.get("content", ""))
+            and "tool_argument_blob" in str(m.get("content", ""))
+        ]
+        assert hint_msgs, "expected canvas routing hint on regenerate"
+
+    @pytest.mark.asyncio
+    async def test_force_sharded_blocks_inline_after_recovery(self) -> None:
+        stub = _CanvasPublishStub()
+        html = (
+            "<!DOCTYPE html><html><body>" + ("y" * 600) + "</body></html>"
+        )
+        turn_idx = {"n": 0}
+
+        async def _call_model(
+            *,
+            messages,
+            system_prompt,
+            tools,
+            tool_use_context,
+            temperature=None,
+            max_output_tokens=None,
+        ):
+            idx = turn_idx["n"]
+            turn_idx["n"] += 1
+            if idx == 0:
+                yield ModelStreamEvent(
+                    tool_call={
+                        "id": "call_canvas",
+                        "name": "canvas_publish",
+                        "arguments": {
+                            "title": "Landing",
+                            "mode": "html",
+                            "html": html,
+                        },
+                    }
+                )
+                yield ModelStreamEvent(
+                    message_stop={"finish_reason": "tool_calls", "usage": {}}
+                )
+            else:
+                yield ModelStreamEvent(content_delta="switched to html_files")
+                yield ModelStreamEvent(
+                    message_stop={"finish_reason": "stop", "usage": {}}
+                )
+
+        deps = QueryDeps(
+            call_model=_call_model,
+            microcompact=_identity_compact,
+            autocompact=_identity_compact,
+        )
+        registry = _make_registry(stub)
+        ctx = _make_ctx(registry)
+        ctx.extra["force_sharded_html"] = True
+        params = QueryParams(
+            messages=[{"role": "user", "content": "webpage"}],
+            system_prompt="test",
+            tool_use_context=ctx,
+            deps=deps,
+            max_output_tokens=4096,
+        )
+
+        events: list[Any] = []
+        async for item in query(params):
+            events.append(item)
+
+        assert stub.calls == []
+        tool_results = [e for e in events if isinstance(e, ToolResultMessage)]
+        assert tool_results
+        assert tool_results[0].success is False
+        assert "blocked" in (tool_results[0].content or "").lower()
+        terminals = [e for e in events if isinstance(e, Terminal)]
         assert terminals[-1].reason == TerminalReason.COMPLETED

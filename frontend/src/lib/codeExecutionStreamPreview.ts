@@ -1,3 +1,5 @@
+import { STREAM_PREVIEW_FALLBACK_CHARS } from '@/lib/streamPreviewLimits';
+
 /**
  * Best-effort Python `source` extraction from a growing code_execution JSON argument string.
  */
@@ -17,14 +19,16 @@ export function pickCodeExecutionSourcePreview(
   }
   const keyIdx = raw.indexOf('"source"');
   if (keyIdx === -1) {
-    return raw.length > 12000 ? `${raw.slice(0, 12000)}\n…` : raw;
+    return raw.length > STREAM_PREVIEW_FALLBACK_CHARS
+      ? `${raw.slice(0, STREAM_PREVIEW_FALLBACK_CHARS)}\n…`
+      : raw;
   }
   const slice = raw.slice(keyIdx);
   const colon = slice.indexOf(':');
-  if (colon === -1) return raw.slice(0, 8000);
+  if (colon === -1) return raw.slice(0, STREAM_PREVIEW_FALLBACK_CHARS);
   let rest = slice.slice(colon + 1).trimStart();
   if (!rest.startsWith('"')) {
-    return raw.slice(0, 8000);
+    return raw.slice(0, STREAM_PREVIEW_FALLBACK_CHARS);
   }
   rest = rest.slice(1);
   let out = '';
@@ -43,5 +47,5 @@ export function pickCodeExecutionSourcePreview(
     if (c === '"') break;
     out += c ?? '';
   }
-  return out || raw.slice(0, 8000);
+  return out || raw.slice(0, STREAM_PREVIEW_FALLBACK_CHARS);
 }

@@ -41,11 +41,12 @@ class CanvasPublishTool(BaseTool):
         "`emit_ui_tree`, which renders inline in the chat without opening the workspace. "
         "session_id: real chat UUID, or omit / pass 'current' to use the active "
         "session from context. "
-        "mode=html: **inline the HTML directly in `html`** — the runtime "
-        "auto-recovers malformed JSON and auto-stages large bodies when needed. "
+        "mode=html: prefer compact inline `html` when the full document stays "
+        "under ~20KB; the runtime auto-recovers malformed JSON and auto-stages "
+        "large bodies when needed. "
         "Escape double quotes as \\\" and newlines as \\n. Keep image src URLs "
         "short: `/api/v1/files/{file_id}/preview` (omit JWT tokens). "
-        "For multi-asset pages (HTML + CSS + JS) use "
+        "For multi-asset pages (HTML + CSS + JS) or documents over ~20KB use "
         "`html_files` (map path → source) with `html_bundle_entry`; "
         "local <link>/<script> refs are inlined server-side. "
         "Inline `<script>` and `on*` handlers are stored but **off by default** "
@@ -80,9 +81,10 @@ class CanvasPublishTool(BaseTool):
                 "html": {
                     "type": "string",
                     "description": (
-                        "Full HTML document for mode=html. Inline directly — the "
-                        "runtime auto-recovers if JSON escaping breaks. Preferred "
-                        "over `html_blob_id` for single-page documents."
+                        "Full HTML document for mode=html. Prefer when the document "
+                        "is under ~20KB. Inline directly — the runtime auto-recovers "
+                        "if JSON escaping breaks. For larger or multi-file pages use "
+                        "`html_files` instead of `html_blob_id` when possible."
                     ),
                 },
                 "html_blob_id": {
@@ -169,6 +171,22 @@ class CanvasPublishTool(BaseTool):
                 raise ValueError(
                     "For mode=html, pass exactly one of: `html`, `html_blob_id`, "
                     "`html_files`, or `html_files_blob_id`."
+                )
+            # After repeated output-length recovery, refuse another giant inline
+            # body so the model must shard via html_files / blob.
+            if (
+                has_inline
+                and not has_files
+                and not has_blob
+                and not has_files_blob
+                and bool((context.extra or {}).get("force_sharded_html"))
+            ):
+                raise ValueError(
+                    "Inline `html` is blocked after repeated output-length "
+                    "truncation. Retry with `html_files` (path → source) + "
+                    "`html_bundle_entry`, or stage via `html_blob_id` / "
+                    "`html_files_blob_id`. Keep any single inline document "
+                    "under ~20480 bytes."
                 )
             if has_blob:
                 from leagent.tools.util.tool_argument_blob import resolve_blob_text

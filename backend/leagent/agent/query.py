@@ -40,13 +40,21 @@ if TYPE_CHECKING:
 logger = get_logger(__name__)
 
 ASK_USER_TOOL_NAME = "ask_user"
+_CANVAS_PUBLISH_TOOL = "canvas_publish"
+_COMPACT_INLINE_HTML_BYTES = 20_480
+_MIN_SALVAGE_HTML_CHARS = 100
+_HTML_COMPLETE_MIN_CHARS = 500
+_HTML_BODY_COMPLETE_MIN_CHARS = 2048
 
 _TRUNCATION_RECOVERY_HINT = (
     "[System: your previous output was truncated because "
     "the tool call arguments exceeded the output token "
     "limit. Do NOT retry the same oversized inline call. "
-    "For HTML pages: retry `canvas_publish(mode=html, html=...)` with a "
-    "**compact** document — use short image URLs like "
+    "For HTML pages: do **not** emit another giant inline `html` string. "
+    "Prefer `canvas_publish` with `html_files` (path → source) + "
+    "`html_bundle_entry`, or `project_write` shards then `html_files`. "
+    "Compact inline `html` is only OK when the full document stays under "
+    f"~{_COMPACT_INLINE_HTML_BYTES} bytes. Use short image URLs like "
     "`/api/v1/files/{file_id}/preview` (no JWT tokens in src). "
     "The runtime auto-recovers malformed inline HTML and auto-stages it "
     "as `html_blob_id` when needed — you do **not** need `tool_argument_blob` "
@@ -57,6 +65,24 @@ _TRUNCATION_RECOVERY_HINT = (
     "(`create_and_finalize` with `chunk`).]"
 )
 
+_CANVAS_TRUNCATION_INCOMPLETE_HINT = (
+    "[System: a truncated `canvas_publish` HTML payload was salvaged and "
+    "published so the user can preview partial content. Do **not** regenerate "
+    "the whole page from scratch. Continue with `html_files` / `project_write` "
+    "shards or a compact patch under "
+    f"~{_COMPACT_INLINE_HTML_BYTES} bytes. Prefer short preview URLs.]"
+)
+
+
+@dataclass
+class _CanvasLengthSalvage:
+    """Result of preparing salvaged ``canvas_publish`` args on length truncation."""
+
+    incomplete: bool
+    salvaged_html_bytes: int
+    tool_name: str = _CANVAS_PUBLISH_TOOL
+    html_closed_by_runtime: bool = False
+
 
 def _has_truncated_tool_args(tool_calls: list[dict[str, Any]]) -> bool:
     return any(
@@ -66,33 +92,160 @@ def _has_truncated_tool_args(tool_calls: list[dict[str, Any]]) -> bool:
     )
 
 
+def _has_canvas_publish_tool(tool_calls: list[dict[str, Any]]) -> bool:
+    return any(tc.get("name") == _CANVAS_PUBLISH_TOOL for tc in tool_calls)
+
+
+def _should_inject_recovery_hint(tool_calls: list[dict[str, Any]]) -> bool:
+    """Inject routing hint for raw args or any canvas_publish length truncation."""
+    return _has_truncated_tool_args(tool_calls) or _has_canvas_publish_tool(tool_calls)
+
+
+def _ensure_html_document_closed(html: str) -> tuple[str, bool]:
+    """Append missing ``</body></html>`` so truncated salvage still previews."""
+    lower = html.lower()
+    if "</html>" in lower:
+        return html, False
+    closed = html.rstrip()
+    if "</body>" not in lower:
+        closed = f"{closed}\n</body>"
+    closed = f"{closed}\n</html>"
+    return closed, True
+
+
+def _is_html_complete_enough(html: str) -> bool:
+    body = html.strip()
+    if len(body) < _HTML_COMPLETE_MIN_CHARS:
+        return False
+    lower = body.lower()
+    if "</html>" in lower:
+        return True
+    return len(body) >= _HTML_BODY_COMPLETE_MIN_CHARS and "<body" in lower
+
+
+def _canvas_args_have_content(args: dict[str, Any]) -> bool:
+    html = args.get("html")
+    if isinstance(html, str) and html.strip():
+        return True
+    for key in ("html_blob_id", "html_files_blob_id"):
+        val = args.get(key)
+        if isinstance(val, str) and val.strip():
+            return True
+    files = args.get("html_files")
+    return isinstance(files, dict) and bool(files)
+
+
+def _prepare_canvas_length_salvage(
+    tool_calls: list[dict[str, Any]],
+) -> _CanvasLengthSalvage | None:
+    """Mutate salvageable ``canvas_publish`` args in place; return meta or None."""
+    from leagent.tools.executor import _recover_canvas_publish_args
+
+    any_salvaged = False
+    incomplete = False
+    salvaged_bytes = 0
+    closed_by_runtime = False
+
+    for tc in tool_calls:
+        if tc.get("name") != _CANVAS_PUBLISH_TOOL:
+            continue
+        args = tc.get("arguments")
+        if not isinstance(args, dict):
+            continue
+
+        recovered: dict[str, Any] | None = None
+        if _canvas_args_have_content(args) and "__raw__" not in args:
+            recovered = dict(args)
+        elif isinstance(args.get("__raw__"), str):
+            recovered = _recover_canvas_publish_args(str(args["__raw__"]))
+        if recovered is None or not _canvas_args_have_content(recovered):
+            continue
+
+        html = recovered.get("html")
+        if isinstance(html, str) and html.strip():
+            if len(html.strip()) < _MIN_SALVAGE_HTML_CHARS:
+                continue
+            was_complete = _is_html_complete_enough(html)
+            closed_html, was_closed = _ensure_html_document_closed(html)
+            recovered["html"] = closed_html
+            salvaged_bytes = max(salvaged_bytes, len(closed_html.encode("utf-8")))
+            if was_closed:
+                closed_by_runtime = True
+            if was_closed or not was_complete:
+                incomplete = True
+        else:
+            # Blob / html_files path — treat as executable without completeness probe.
+            salvaged_bytes = max(salvaged_bytes, 0)
+
+        tc["arguments"] = {
+            k: v for k, v in recovered.items() if not str(k).startswith("_")
+        }
+        any_salvaged = True
+
+    if not any_salvaged:
+        return None
+    return _CanvasLengthSalvage(
+        incomplete=incomplete,
+        salvaged_html_bytes=salvaged_bytes,
+        html_closed_by_runtime=closed_by_runtime,
+    )
+
+
+def _length_recovery_token_override(params: "QueryParams") -> int:
+    return min(
+        65_536,
+        max(16_384, (params.max_output_tokens or 4096) * 4),
+    )
+
+
 def _build_length_recovery_state(
     state: "QueryState",
     params: "QueryParams",
     tool_calls: list[dict[str, Any]],
 ) -> "QueryState":
     """Build a recovery ``QueryState`` after output-length truncation."""
-    had_truncated = _has_truncated_tool_args(tool_calls)
     recovery_attempt = state.max_output_tokens_recovery_count + 1
     recovery_messages = list(state.messages)
-    if had_truncated:
+    if _should_inject_recovery_hint(tool_calls):
         recovery_messages.append({
             "role": "user",
             "content": _TRUNCATION_RECOVERY_HINT,
         })
+    if recovery_attempt >= 2:
+        state.tool_use_context.extra["force_sharded_html"] = True
     return QueryState(
         messages=recovery_messages,
         tool_use_context=state.tool_use_context,
         auto_compact_tracking=state.auto_compact_tracking,
         max_output_tokens_recovery_count=recovery_attempt,
         has_attempted_reactive_compact=state.has_attempted_reactive_compact,
-        max_output_tokens_override=min(
-            65_536,
-            max(16_384, (params.max_output_tokens or 4096) * 4),
-        ),
+        max_output_tokens_override=_length_recovery_token_override(params),
         turn_count=state.turn_count,
         transition=Continue(reason=ContinueReason.MAX_OUTPUT_TOKENS_RECOVERY),
     )
+
+
+def _length_recovery_log_extra(
+    *,
+    state: "QueryState",
+    tool_calls: list[dict[str, Any]],
+    assistant_text: str,
+    executed_vs_regenerated: str,
+    salvaged_html_bytes: int = 0,
+) -> dict[str, Any]:
+    tool_name = next(
+        (str(tc.get("name") or "") for tc in tool_calls if tc.get("name")),
+        "",
+    )
+    return {
+        "recovery_attempt": state.max_output_tokens_recovery_count + 1,
+        "had_tool_calls": bool(tool_calls),
+        "had_truncated_tool_args": _has_truncated_tool_args(tool_calls),
+        "text_len": len(assistant_text),
+        "tool_name": tool_name,
+        "salvaged_html_bytes": salvaged_html_bytes,
+        "executed_vs_regenerated": executed_vs_regenerated,
+    }
 # Placeholder tool body so OpenAI-shaped history always has a tool row after ask_user tool_calls.
 ASK_USER_PENDING_TOOL_JSON = '{"_wa_pending": true}'
 
@@ -724,18 +877,56 @@ async def _query_loop(params: QueryParams) -> AsyncIterator[Any]:
                 )
                 return
 
+        canvas_length_salvage: _CanvasLengthSalvage | None = None
+
+        def _try_length_regenerate() -> bool:
+            """Return True if the loop should ``continue`` with a regenerate recovery.
+
+            When ``canvas_publish`` args are salvageable, mutate them in place and
+            fall through to tool dispatch instead of discarding the generation.
+            """
+            nonlocal canvas_length_salvage, state
+            salvage = _prepare_canvas_length_salvage(effective_tool_calls)
+            if salvage is not None:
+                canvas_length_salvage = salvage
+                # Keep assistant_msg tool_calls in sync (same list refs when possible).
+                assistant_msg.tool_calls = effective_tool_calls
+                logger.info(
+                    "query_loop_length_truncation_recovery",
+                    extra=_length_recovery_log_extra(
+                        state=state,
+                        tool_calls=effective_tool_calls,
+                        assistant_text=assistant_text,
+                        executed_vs_regenerated="executed",
+                        salvaged_html_bytes=salvage.salvaged_html_bytes,
+                    ),
+                )
+                return False
+            logger.info(
+                "query_loop_length_truncation_recovery",
+                extra=_length_recovery_log_extra(
+                    state=state,
+                    tool_calls=tool_calls,
+                    assistant_text=assistant_text,
+                    executed_vs_regenerated="regenerated",
+                ),
+            )
+            state = _build_length_recovery_state(state, params, tool_calls)
+            return True
+
         if stream_error is not None:
             err_kind = str(stream_error.get("error", "")).lower()
             if (
                 "max_output" in err_kind or finish_reason == "length"
             ) and state.max_output_tokens_recovery_count < 2:
-                state = _build_length_recovery_state(state, params, tool_calls)
-                continue
-            yield Terminal(
-                reason=TerminalReason.MODEL_ERROR,
-                meta={"error": str(stream_error)},
-            )
-            return
+                if _try_length_regenerate():
+                    continue
+            else:
+                yield Terminal(
+                    reason=TerminalReason.MODEL_ERROR,
+                    meta={"error": str(stream_error)},
+                )
+                return
 
         # Recover from output-length truncation even when the provider
         # does not surface an explicit error (e.g. DeepSeek returns
@@ -743,21 +934,17 @@ async def _query_loop(params: QueryParams) -> AsyncIterator[Any]:
         # check the truncated response — which usually has no complete
         # tool calls — falls through to the "no tool calls → completed"
         # branch and silently terminates the agent mid-answer.
+        # Salvageable canvas_publish falls through to tool dispatch above.
         if (
-            finish_reason == "length"
+            canvas_length_salvage is None
+            and finish_reason == "length"
             and state.max_output_tokens_recovery_count < 2
         ):
-            logger.info(
-                "query_loop_length_truncation_recovery",
-                extra={
-                    "recovery_attempt": state.max_output_tokens_recovery_count + 1,
-                    "had_tool_calls": bool(assistant_msg.tool_calls),
-                    "had_truncated_tool_args": _has_truncated_tool_args(tool_calls),
-                    "text_len": len(assistant_text),
-                },
-            )
-            state = _build_length_recovery_state(state, params, tool_calls)
-            continue
+            if _try_length_regenerate():
+                continue
+
+        if state.max_output_tokens_recovery_count >= 2:
+            state.tool_use_context.extra["force_sharded_html"] = True
 
         # ------------------------------------------------------------------
         # 3b) Exhausted output-length recovery: emit a user-visible error
@@ -873,16 +1060,34 @@ async def _query_loop(params: QueryParams) -> AsyncIterator[Any]:
         # ------------------------------------------------------------------
         # 6) Next turn
         # ------------------------------------------------------------------
-        state = QueryState(
-            messages=new_messages,
-            tool_use_context=state.tool_use_context,
-            auto_compact_tracking=state.auto_compact_tracking,
-            max_output_tokens_recovery_count=0,
-            has_attempted_reactive_compact=False,
-            max_output_tokens_override=None,
-            turn_count=state.turn_count + 1,
-            transition=Continue(reason=ContinueReason.NEXT_TURN),
-        )
+        if canvas_length_salvage is not None and canvas_length_salvage.incomplete:
+            new_messages.append({
+                "role": "user",
+                "content": _CANVAS_TRUNCATION_INCOMPLETE_HINT,
+            })
+            state = QueryState(
+                messages=new_messages,
+                tool_use_context=state.tool_use_context,
+                auto_compact_tracking=state.auto_compact_tracking,
+                max_output_tokens_recovery_count=max(
+                    1, state.max_output_tokens_recovery_count
+                ),
+                has_attempted_reactive_compact=False,
+                max_output_tokens_override=_length_recovery_token_override(params),
+                turn_count=state.turn_count + 1,
+                transition=Continue(reason=ContinueReason.NEXT_TURN),
+            )
+        else:
+            state = QueryState(
+                messages=new_messages,
+                tool_use_context=state.tool_use_context,
+                auto_compact_tracking=state.auto_compact_tracking,
+                max_output_tokens_recovery_count=0,
+                has_attempted_reactive_compact=False,
+                max_output_tokens_override=None,
+                turn_count=state.turn_count + 1,
+                transition=Continue(reason=ContinueReason.NEXT_TURN),
+            )
 
 
 # ---------------------------------------------------------------------------

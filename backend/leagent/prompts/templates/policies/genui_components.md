@@ -42,7 +42,9 @@ For **posters, PPT-style slide previews, business cards, and themed layouts**, c
 
 - **Syntax + envelope** (`schemaVersion`, node keys, `emit_ui_patch` paths)? Call `get_genui_guide`.
 - Need exact component `kind` names and prop hints? Call `list_ui_components`.
-- About to author HTML? Call `get_html_canvas_guide` first.
+- Authoring HTML and need `wa-*` class names or the full reference template? Call
+  `get_html_canvas_guide`. Simple single-page HTML does **not** need the guide first —
+  Tailwind/Inter are already injected by the canvas host.
 
 - Generating a PDF/DOCX/PPTX/Excel or CJK chart from a visual turn? The
   `document_fonts` block loads automatically alongside this one (pan-Unicode

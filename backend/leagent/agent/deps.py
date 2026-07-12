@@ -312,7 +312,7 @@ def _try_salvage_truncated_ui_tree(
     return recovered
 
 
-_TOOL_CALL_DELTA_REDACT_BYTES = 8_192
+_TOOL_CALL_DELTA_REDACT_BYTES = 20_480
 _BLOB_PAYLOAD_KEYS = frozenset({
     "html", "chunk", "chunk_base64", "content", "source", "diff",
     "old_string", "new_string",

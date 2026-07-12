@@ -21,9 +21,9 @@ What is the deliverable?
 │   → emit_ui_tree   (and emit_ui_patch for incremental updates)
 │
 ├── Hosted webpage / landing page / printable report / page-scale layout
-│   → canvas_publish(mode=html, html="…")
-│        ├── single page → inline `html` directly (runtime auto-recovers JSON)
-│        └── multi-asset (HTML + CSS + JS) → `html_files` + `html_bundle_entry`
+│   → canvas_publish(mode=html)
+│        ├── compact single page ≲ ~20KB → inline `html` (runtime auto-recovers JSON)
+│        └── larger / multi-asset (HTML + CSS + JS) → `html_files` + `html_bundle_entry`
 │
 └── Allowlisted embed (Maps · YouTube · Vimeo · OpenStreetMap)
     → canvas_publish(mode=embed_url)
@@ -61,7 +61,8 @@ If unsure, **answer in markdown first**. Offer GenUI in one sentence — **do no
 ### Decision rule (after the gate above)
 
 - **Simple webpages / landing pages / resumes:** write a complete HTML document directly with
-  `canvas_publish(mode=html, html="…")`. Do not route through `code_execution`, Python string
+  `canvas_publish(mode=html, html="…")` when the document stays under ~20KB. Larger pages should
+  use `html_files` + `html_bundle_entry`. Do not route through `code_execution`, Python string
   generation, or `tool_argument_blob` unless the direct call fails.
 - **Design / branded UI tasks:** load relevant skills via `load_skill` only when the user asks for
   a polished design system, brand treatment, or a complex visual artifact. A simple page request
