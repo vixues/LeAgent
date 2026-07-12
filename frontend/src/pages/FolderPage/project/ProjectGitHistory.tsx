@@ -1,5 +1,5 @@
 /**
- * Slide-over history panel for a single file (or the whole project).
+ * Slide-over or inline history panel for a single file (or the whole project).
  *
  * Lists commits via :func:`useProjectGitLog`. When the user clicks a
  * row we load the file blob at that commit and the unified diff for
@@ -20,23 +20,27 @@ import {
 interface ProjectGitHistoryProps {
   folderId: string;
   filePath: string | null;
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
+  /** Sheet slide-over (default) vs embedded Git-tab body. */
+  variant?: 'sheet' | 'inline';
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
 }
 
 export default function ProjectGitHistory({
   folderId,
   filePath,
-  open,
+  variant = 'sheet',
+  open = false,
   onOpenChange,
 }: ProjectGitHistoryProps) {
   const { t } = useTranslation();
   const [activeCommit, setActiveCommit] = useState<string | null>(null);
+  const enabled = variant === 'inline' || open;
 
   const { data: commits, isLoading, isError, error } = useProjectGitLog(folderId, {
     path: filePath ?? undefined,
     limit: 80,
-    enabled: open,
+    enabled,
   });
 
   const { data: blob } = useProjectGitShow(
@@ -52,110 +56,118 @@ export default function ProjectGitHistory({
     enabled: Boolean(activeCommit),
   });
 
+  const body = (
+    <div className="flex h-full min-h-0 flex-col">
+      <div className="flex items-center gap-2 border-b border-border px-4 py-3">
+        <GitCommitIcon className="h-4 w-4 text-muted-foreground" />
+        <h3 className="text-sm font-medium">
+          {filePath
+            ? t('folders.project.history.titleFile', {
+                defaultValue: 'History · {{path}}',
+                path: filePath,
+              })
+            : t('folders.project.history.title', { defaultValue: 'History' })}
+        </h3>
+        {variant === 'sheet' ? (
+          <Button
+            variant="ghost"
+            size="icon"
+            className="ml-auto"
+            onClick={() => onOpenChange?.(false)}
+            aria-label={t('common.close')}
+          >
+            <X className="h-4 w-4" />
+          </Button>
+        ) : null}
+      </div>
+
+      <div className="grid min-h-0 flex-1 grid-cols-1 grid-rows-[auto_1fr] lg:grid-cols-[260px_1fr]">
+        <div className="max-h-[40vh] overflow-auto border-b border-border lg:max-h-none lg:border-b-0 lg:border-r">
+          {isLoading && (
+            <div className="p-3 text-xs text-muted-foreground">{t('common.loading')}</div>
+          )}
+          {isError && (
+            <div className="whitespace-pre-wrap p-3 text-xs text-destructive">
+              {(error as Error)?.message ?? 'Failed to load history'}
+            </div>
+          )}
+          {commits && commits.length === 0 && (
+            <div className="p-3 text-xs text-muted-foreground">
+              {t('folders.project.history.empty', {
+                defaultValue: 'No commits found for this path.',
+              })}
+            </div>
+          )}
+          {commits?.map((c) => (
+            <button
+              key={c.commit}
+              type="button"
+              onClick={() => setActiveCommit(c.commit)}
+              className={cn(
+                'w-full border-b border-border/60 px-3 py-2 text-left text-xs transition-colors hover:bg-surface-sunken/60',
+                activeCommit === c.commit && 'bg-primary/5',
+              )}
+            >
+              <div className="flex items-center gap-2">
+                <span className="font-mono text-[10px] text-muted-foreground">
+                  {c.short}
+                </span>
+                <span className="ml-auto text-[10px] text-muted-foreground">
+                  {c.date_iso.slice(0, 10)}
+                </span>
+              </div>
+              <div className="mt-1 line-clamp-2">{c.summary}</div>
+              <div className="mt-1 truncate text-[10px] text-muted-foreground">
+                {c.author_name}
+              </div>
+            </button>
+          ))}
+        </div>
+
+        <div className="overflow-auto p-3">
+          {!activeCommit && (
+            <div className="text-xs text-muted-foreground">
+              {t('folders.project.history.pickCommit', {
+                defaultValue: 'Select a commit to view its diff and contents.',
+              })}
+            </div>
+          )}
+          {activeCommit && (
+            <div className="space-y-4">
+              <section>
+                <h4 className="mb-1 text-xs font-medium text-muted-foreground">
+                  {t('folders.project.history.diff', { defaultValue: 'Diff' })}
+                </h4>
+                <DiffPane raw={diff?.diff ?? ''} />
+              </section>
+              {filePath && blob && (
+                <section>
+                  <h4 className="mb-1 text-xs font-medium text-muted-foreground">
+                    {t('folders.project.history.atCommit', {
+                      defaultValue: 'File at {{commit}}',
+                      commit: activeCommit.slice(0, 7),
+                    })}
+                  </h4>
+                  <pre className="max-h-[40vh] overflow-auto whitespace-pre rounded bg-surface-sunken/50 p-2 font-mono text-[11px]">
+                    {blob.content}
+                  </pre>
+                </section>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+
+  if (variant === 'inline') {
+    return <div className="flex h-full min-h-0 flex-col">{body}</div>;
+  }
+
   return (
     <Sheet open={open} onOpenChange={onOpenChange} side="right">
-      <SheetContent className="p-0 sm:max-w-2xl w-full">
-        <div className="flex flex-col h-full">
-          <div className="flex items-center gap-2 px-4 py-3 border-b border-border">
-            <GitCommitIcon className="w-4 h-4 text-muted-foreground" />
-            <h3 className="text-sm font-medium">
-              {filePath
-                ? t('folders.project.history.titleFile', {
-                    defaultValue: 'History · {{path}}',
-                    path: filePath,
-                  })
-                : t('folders.project.history.title', { defaultValue: 'History' })}
-            </h3>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="ml-auto"
-              onClick={() => onOpenChange(false)}
-              aria-label={t('common.close')}
-            >
-              <X className="w-4 h-4" />
-            </Button>
-          </div>
-
-          <div className="grid grid-rows-[auto_1fr] grid-cols-1 lg:grid-cols-[260px_1fr] flex-1 min-h-0">
-            {/* Commits list */}
-            <div className="border-b lg:border-b-0 lg:border-r border-border overflow-auto max-h-[40vh] lg:max-h-none">
-              {isLoading && (
-                <div className="p-3 text-xs text-muted-foreground">{t('common.loading')}</div>
-              )}
-              {isError && (
-                <div className="p-3 text-xs text-destructive whitespace-pre-wrap">
-                  {(error as Error)?.message ?? 'Failed to load history'}
-                </div>
-              )}
-              {commits && commits.length === 0 && (
-                <div className="p-3 text-xs text-muted-foreground">
-                  {t('folders.project.history.empty', {
-                    defaultValue: 'No commits found for this path.',
-                  })}
-                </div>
-              )}
-              {commits?.map((c) => (
-                <button
-                  key={c.commit}
-                  type="button"
-                  onClick={() => setActiveCommit(c.commit)}
-                  className={cn(
-                    'w-full text-left px-3 py-2 text-xs border-b border-border/60 hover:bg-surface-sunken/60 transition-colors',
-                    activeCommit === c.commit && 'bg-primary/5',
-                  )}
-                >
-                  <div className="flex items-center gap-2">
-                    <span className="font-mono text-[10px] text-muted-foreground">
-                      {c.short}
-                    </span>
-                    <span className="text-[10px] text-muted-foreground ml-auto">
-                      {c.date_iso.slice(0, 10)}
-                    </span>
-                  </div>
-                  <div className="mt-1 line-clamp-2">{c.summary}</div>
-                  <div className="mt-1 text-[10px] text-muted-foreground truncate">
-                    {c.author_name}
-                  </div>
-                </button>
-              ))}
-            </div>
-
-            {/* Detail panel */}
-            <div className="overflow-auto p-3">
-              {!activeCommit && (
-                <div className="text-xs text-muted-foreground">
-                  {t('folders.project.history.pickCommit', {
-                    defaultValue: 'Select a commit to view its diff and contents.',
-                  })}
-                </div>
-              )}
-              {activeCommit && (
-                <div className="space-y-4">
-                  <section>
-                    <h4 className="text-xs font-medium mb-1 text-muted-foreground">
-                      {t('folders.project.history.diff', { defaultValue: 'Diff' })}
-                    </h4>
-                    <DiffPane raw={diff?.diff ?? ''} />
-                  </section>
-                  {filePath && blob && (
-                    <section>
-                      <h4 className="text-xs font-medium mb-1 text-muted-foreground">
-                        {t('folders.project.history.atCommit', {
-                          defaultValue: 'File at {{commit}}',
-                          commit: activeCommit.slice(0, 7),
-                        })}
-                      </h4>
-                      <pre className="text-[11px] font-mono whitespace-pre overflow-auto bg-surface-sunken/50 p-2 rounded max-h-[40vh]">
-                        {blob.content}
-                      </pre>
-                    </section>
-                  )}
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
+      <SheetContent className="w-full p-0 sm:max-w-2xl" showCloseButton={false}>
+        {body}
       </SheetContent>
     </Sheet>
   );
@@ -174,14 +186,14 @@ interface DiffPaneProps {
 function DiffPane({ raw }: DiffPaneProps) {
   if (!raw.trim()) {
     return (
-      <div className="text-xs text-muted-foreground italic">
+      <div className="text-xs italic text-muted-foreground">
         (no diff)
       </div>
     );
   }
   const lines = raw.split('\n');
   return (
-    <pre className="text-[11px] font-mono leading-snug rounded bg-surface-sunken/40 p-2 overflow-auto max-h-[60vh]">
+    <pre className="max-h-[60vh] overflow-auto rounded bg-surface-sunken/40 p-2 font-mono text-[11px] leading-snug">
       {lines.map((line, idx) => {
         let cls = '';
         if (line.startsWith('+++') || line.startsWith('---')) {

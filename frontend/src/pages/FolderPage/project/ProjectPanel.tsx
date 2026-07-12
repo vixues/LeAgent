@@ -75,12 +75,11 @@ export default function ProjectPanel({
       )}
       {mode !== 'code' && <ProjectGitStatusStrip folderId={folderId} />}
       {mode === 'git' ? (
-        <div className="min-h-0 flex-1 p-3">
+        <div className="min-h-0 flex-1 overflow-hidden">
           <ProjectGitHistory
             folderId={folderId}
             filePath={selectedPath}
-            open
-            onOpenChange={() => {}}
+            variant="inline"
           />
         </div>
       ) : (
@@ -104,10 +103,11 @@ export default function ProjectPanel({
         </div>
       )}
 
-      {mode === 'full' && (
+      {mode !== 'git' && (
         <ProjectGitHistory
           folderId={folderId}
           filePath={selectedPath}
+          variant="sheet"
           open={historyOpen}
           onOpenChange={setHistoryOpen}
         />

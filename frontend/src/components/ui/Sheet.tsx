@@ -126,10 +126,13 @@ const SheetOverlay = forwardRef<HTMLDivElement, SheetOverlayProps>(({ className,
 
 SheetOverlay.displayName = 'SheetOverlay';
 
-interface SheetContentProps extends HTMLAttributes<HTMLDivElement> {}
+interface SheetContentProps extends HTMLAttributes<HTMLDivElement> {
+  /** When false, omit the built-in corner close control (use a custom header close instead). */
+  showCloseButton?: boolean;
+}
 
 const SheetContent = forwardRef<HTMLDivElement, SheetContentProps>(
-  ({ className, children, ...props }, ref) => {
+  ({ className, children, showCloseButton = true, ...props }, ref) => {
     const { onOpenChange, side } = useSheetContext();
 
     useEffect(() => {
@@ -164,17 +167,20 @@ const SheetContent = forwardRef<HTMLDivElement, SheetContentProps>(
           {...props}
         >
           {children}
-          <button
-            type="button"
-            onClick={() => onOpenChange(false)}
-            className={cn(
-              'absolute right-4 top-4 p-1 rounded-lg',
-              'text-gray-400 hover:text-gray-600 dark:hover:text-gray-300',
-              'hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors'
-            )}
-          >
-            <X className="w-5 h-5" />
-          </button>
+          {showCloseButton ? (
+            <button
+              type="button"
+              onClick={() => onOpenChange(false)}
+              className={cn(
+                'absolute right-4 top-4 p-1 rounded-lg',
+                'text-gray-400 hover:text-gray-600 dark:hover:text-gray-300',
+                'hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors'
+              )}
+              aria-label="Close"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          ) : null}
         </div>
       </SheetPortal>
     );
