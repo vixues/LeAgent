@@ -284,13 +284,31 @@ class WebSearchSettings(BaseSettings):
 
     model_config = SettingsConfigDict(env_prefix="WEB_SEARCH_")
 
-    provider: Literal["duckduckgo_lite", "searxng", "bing"] = "duckduckgo_lite"
+    provider: Literal[
+        "auto",
+        "bing_playwright",
+        "duckduckgo_lite",
+        "searxng",
+        "bing",
+        "brave",
+        "tavily",
+        "exa",
+        "firecrawl",
+        "serper",
+    ] = "auto"
     searxng_base_url: str = ""
     bing_api_key: str = ""
     bing_endpoint: str = "https://api.bing.microsoft.com/v7.0/search"
+    brave_api_key: str = ""
+    tavily_api_key: str = ""
+    exa_api_key: str = ""
+    firecrawl_api_key: str = ""
+    firecrawl_api_url: str = ""
+    serper_api_key: str = ""
     user_agent: str = "LeAgent/1.0 web_search (+https://github.com)"
     timeout_sec: float = 25.0
     max_results_default: int = 8
+    cache_ttl_minutes: float = 15.0
     allowlist_config_path: str = ""
 
 
@@ -298,6 +316,7 @@ class WebFetchSettings(BaseSettings):
     """Polite outbound HTTP defaults for single-machine installs (spacing, retries, robots).
 
     Designed to reduce accidental rate-limit / soft-block triggers—not to defeat protections.
+    Also drives the lightweight ``web_fetch`` tool (cache + size-gated summarization).
     """
 
     model_config = SettingsConfigDict(env_prefix="WEB_FETCH_")
@@ -311,6 +330,12 @@ class WebFetchSettings(BaseSettings):
     pre_navigation_delay_ms: float = 350.0
     robots_cache_ttl_sec: float = 3600.0
     user_agent: str = ""
+    cache_ttl_minutes: float = 15.0
+    max_content_chars: int = 200_000
+    summarize_threshold_chars: int = 5_000
+    summarize_output_chars: int = 5_000
+    refuse_over_chars: int = 2_000_000
+    timeout_sec: float = 30.0
 
 
 class RtspStreamSettings(BaseSettings):

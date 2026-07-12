@@ -70,12 +70,15 @@ dependencies = [
     "mdit-py-plugins>=0.4.0",
     "linkify-it-py>=2.1.0",
     "latex2mathml>=3.81.0",
+    # Default web search (bing_playwright) + scraper tools need Playwright.
+    "playwright>=1.49.0",
 ]
 
 [project.optional-dependencies]
 mysql = [
     "pymysql>=1.1.0",
 ]
+# Kept for extension-pack / docs compatibility; Playwright is now a core dependency.
 browser = [
     "playwright>=1.49.0",
 ]

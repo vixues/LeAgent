@@ -172,12 +172,19 @@ const TOKEN_ENV_ROWS: { key: string; labelKey: string }[] = [
   { key: 'WEB_SEARCH_PROVIDER', labelKey: 'settings.tokensWebSearchProvider' },
   { key: 'WEB_SEARCH_BING_API_KEY', labelKey: 'settings.tokensWebSearchBing' },
   { key: 'WEB_SEARCH_SEARXNG_BASE_URL', labelKey: 'settings.tokensWebSearchSearxng' },
+  { key: 'WEB_SEARCH_BRAVE_API_KEY', labelKey: 'settings.tokensWebSearchBrave' },
+  { key: 'WEB_SEARCH_TAVILY_API_KEY', labelKey: 'settings.tokensWebSearchTavily' },
+  { key: 'WEB_SEARCH_EXA_API_KEY', labelKey: 'settings.tokensWebSearchExa' },
+  { key: 'WEB_SEARCH_FIRECRAWL_API_KEY', labelKey: 'settings.tokensWebSearchFirecrawl' },
+  { key: 'WEB_SEARCH_FIRECRAWL_API_URL', labelKey: 'settings.tokensWebSearchFirecrawlUrl' },
+  { key: 'WEB_SEARCH_SERPER_API_KEY', labelKey: 'settings.tokensWebSearchSerper' },
   { key: 'IMAGE_SEARCH_API_KEY', labelKey: 'settings.tokensImageSearchApiKey' },
   { key: 'IMAGE_SEARCH_CX', labelKey: 'settings.tokensImageSearchCx' },
   { key: 'WEB_FETCH_ENABLED', labelKey: 'settings.tokensWebFetchEnabled' },
   { key: 'WEB_FETCH_CHECK_ROBOTS', labelKey: 'settings.tokensWebFetchRobots' },
   { key: 'WEB_FETCH_MIN_INTERVAL_MS', labelKey: 'settings.tokensWebFetchInterval' },
   { key: 'WEB_FETCH_USER_AGENT', labelKey: 'settings.tokensWebFetchUa' },
+  { key: 'WEB_FETCH_CACHE_TTL_MINUTES', labelKey: 'settings.tokensWebFetchCacheTtl' },
 ];
 
 interface Tool {

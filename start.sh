@@ -494,7 +494,8 @@ ensure_backend_sync() {
 # ── Playwright browser binaries (Chromium) ─────────────────────
 ensure_playwright_browsers() {
     [ "${LEAGENT_SKIP_PLAYWRIGHT_INSTALL:-0}" = "1" ] && return 0
-    echo " $UV_SYNC_EXTRAS " | grep -q ' browser ' || return 0
+    # Playwright is a core dependency (zero-config Bing search + browser tools).
+    # Still honor UV_SYNC_EXTRAS containing browser for backwards-compatible markers.
     if [ -z "${PLAYWRIGHT_DOWNLOAD_HOST:-}" ] && [ "${LEAGENT_PLAYWRIGHT_MIRROR:-0}" = "1" ]; then
         export PLAYWRIGHT_DOWNLOAD_HOST="https://npmmirror.com/mirrors/playwright/"
     fi
@@ -509,10 +510,10 @@ ensure_playwright_browsers() {
         return 0
     fi
     if ! uv run --directory "$BACKEND_DIR" python -c "import playwright" 2>/dev/null; then
-        warn "Playwright Python package missing — run uv sync with 'browser' extra or ./start.sh --sync-python"
+        warn "Playwright Python package missing — run ./start.sh --sync-python (playwright is a core dep)"
         return 0
     fi
-    step "Ensuring Playwright Chromium is installed"
+    step "Ensuring Playwright Chromium is installed (required for default Bing web search)"
     local t; t="$(date +%s)"
     if uv run --directory "$BACKEND_DIR" playwright install chromium; then
         _write_marker "$pw_marker" "$lock_hash"

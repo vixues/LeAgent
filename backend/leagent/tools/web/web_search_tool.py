@@ -1,4 +1,4 @@
-"""General web search: API-first for academic sources; lite HTML or SearXNG/Bing otherwise."""
+"""General web search: academic APIs + pluggable general providers."""
 
 from __future__ import annotations
 
@@ -9,6 +9,7 @@ import structlog
 from leagent.config.settings import get_settings
 from leagent.tools.base import BaseTool, ToolCapability, ToolCategory, ToolContext
 from leagent.tools.web.web_search.core import run_web_search
+from leagent.tools.web.web_search.protocol import WEB_SEARCH_PROVIDER_IDS
 
 logger = structlog.get_logger(__name__)
 
@@ -17,25 +18,29 @@ class WebSearchTool(BaseTool):
     """Search the web and return titles, URLs, and short snippets.
 
     For ``arxiv``, ``wikipedia``, ``crossref``, and ``pubmed`` this tool uses official
-    HTTP APIs (no headless browser), which is more reliable behind strict networks.
-    For ``general`` it uses ``WEB_SEARCH_PROVIDER`` (DuckDuckGo lite HTML, self-hosted
-    SearxNG, or Bing Web Search API). Proxies from the environment are honored.
+    HTTP APIs (no headless browser). For ``general``, ``WEB_SEARCH_PROVIDER=auto``
+    (default) picks a *configured* API provider, otherwise Playwright Bing
+    (``bing_playwright``). Unconfigured API backends are never used silently.
     """
 
     name = "web_search"
     description = (
         "Search the web for pages and papers; returns ranked results with URLs and snippets. "
-        "Works without Bing/Google keys: use focus='arxiv'|'wikipedia'|'crossref'|'pubmed' (public APIs) or "
-        "focus='general' (tries DuckDuckGo lite; Bing/SearXNG are optional upgrades). "
-        "If results are empty, read degraded_reasons and next_step, then continue from context, user URLs, or web_scraper."
+        "Default (no API keys): Playwright Bing (bing_playwright). Academic focus works without "
+        "keys (arxiv|wikipedia|crossref|pubmed). Optional configured providers: searxng, bing, "
+        "brave, tavily, exa, firecrawl, serper. After search, use web_fetch for static page text "
+        "or web_scraper for JS-heavy pages. If empty, read degraded_reasons and next_step."
     )
     category = ToolCategory.WEB
-    version = "1.0.0"
-    timeout_sec = 50
+    version = "1.2.0"
+    timeout_sec = 90
     is_read_only = True
     is_concurrency_safe = True
     capabilities = (ToolCapability.NETWORK,)
-    search_hint = "web search google bing find papers arxiv pubmed wikipedia crossref literature links"
+    search_hint = (
+        "web search google bing brave tavily exa firecrawl serper searxng find papers "
+        "arxiv pubmed wikipedia crossref literature links"
+    )
 
     @property
     def parameters(self) -> dict[str, Any]:
@@ -57,7 +62,8 @@ class WebSearchTool(BaseTool):
                     "default": "auto",
                     "description": (
                         "auto: infer arxiv id vs general; arxiv/wikipedia/crossref/pubmed: official APIs; "
-                        "general: configured provider (DDG lite / SearxNG / Bing)."
+                        "general: configured WEB_SEARCH_PROVIDER "
+                        f"({ '|'.join(WEB_SEARCH_PROVIDER_IDS) })."
                     ),
                 },
             },
@@ -97,6 +103,7 @@ class WebSearchTool(BaseTool):
                 "degraded_reasons": [str(e)],
                 "next_step": (
                     "Search raised an unexpected error. Continue from session context and attachments; "
-                    "ask the user for a direct https URL and use web_scraper if page content is required."
+                    "ask the user for a direct https URL and use web_fetch or web_scraper if page "
+                    "content is required."
                 ),
             }

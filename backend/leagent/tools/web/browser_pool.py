@@ -146,6 +146,12 @@ class BrowserPool:
                 "(or pip install 'leagent[browser]' then playwright install chromium)"
             ) from e
 
+        # Prefer full Chromium over chromium-headless-shell — the latter is easy to
+        # partially install and breaks zero-config bing_playwright / scraper tools.
+        import os
+
+        os.environ.setdefault("PLAYWRIGHT_CHROMIUM_USE_HEADLESS_SHELL", "0")
+
         _, _, _, _, async_playwright = self._pw_types
 
         logger.info("Initializing browser pool")

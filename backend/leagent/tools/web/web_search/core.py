@@ -1,3 +1,5 @@
+"""Web search orchestration: academic focus APIs + general provider service."""
+
 from __future__ import annotations
 
 import json
@@ -7,12 +9,12 @@ from typing import Any, Literal
 from urllib.parse import quote, urlencode
 
 import httpx
-
 import structlog
 
 from leagent.config.settings import WebSearchSettings
 from leagent.tools.web.polite_http import polite_get
 from leagent.tools.web.web_search.http import search_http_client
+from leagent.tools.web.web_search.service import get_web_search_service
 
 logger = structlog.get_logger(__name__)
 
@@ -128,81 +130,21 @@ async def _pubmed_esearch(client: httpx.AsyncClient, query: str, max_results: in
     return out
 
 
-async def _duckduckgo_lite(client: httpx.AsyncClient, query: str, max_results: int) -> list[dict[str, Any]]:
-    url = f"https://lite.duckduckgo.com/lite/?{urlencode({'q': query})}"
-    r = await polite_get(client, url)
-    r.raise_for_status()
-    text = r.text
-    out: list[dict[str, Any]] = []
-    for m in re.finditer(
-        r'<a[^>]*class="[^"]*result-link[^"]*"[^>]*href="([^"]+)"[^>]*>([^<]*)</a>',
-        text,
-        re.IGNORECASE,
-    ):
-        href, title = m.group(1), (m.group(2) or "").strip()
-        if href.startswith("//"):
-            href = "https:" + href
-        if not href.startswith("http"):
-            continue
-        out.append({"title": title or href, "url": href, "snippet": "", "source": "duckduckgo_lite"})
-        if len(out) >= max_results:
-            break
-    return out
-
-
-async def _searxng(client: httpx.AsyncClient, base: str, query: str, max_results: int) -> list[dict[str, Any]]:
-    base = base.rstrip("/")
-    url = f"{base}/search?{urlencode({'q': query, 'format': 'json'})}"
-    r = await polite_get(client, url)
-    r.raise_for_status()
-    data = r.json()
-    results = data.get("results") or []
-    out: list[dict[str, Any]] = []
-    for row in results[:max_results]:
-        out.append(
-            {
-                "title": str(row.get("title") or ""),
-                "url": str(row.get("url") or ""),
-                "snippet": str(row.get("content") or ""),
-                "source": "searxng",
-            }
-        )
-    return out
-
-
-async def _bing_web(client: httpx.AsyncClient, cfg: WebSearchSettings, query: str, max_results: int) -> list[dict[str, Any]]:
-    key = (cfg.bing_api_key or "").strip()
-    if not key:
-        return []
-    url = f"{cfg.bing_endpoint.rstrip('/')}?{urlencode({'q': query, 'count': max_results})}"
-    r = await polite_get(client, url, headers={"Ocp-Apim-Subscription-Key": key})
-    r.raise_for_status()
-    data = r.json()
-    web_pages = ((data.get("webPages") or {}).get("value")) or []
-    out: list[dict[str, Any]] = []
-    for row in web_pages[:max_results]:
-        out.append(
-            {
-                "title": str(row.get("name") or ""),
-                "url": str(row.get("url") or ""),
-                "snippet": str(row.get("snippet") or ""),
-                "source": "bing",
-            }
-        )
-    return out
-
-
-def _empty_result_guidance(*, focus_resolved: str, had_general_fallback: bool) -> str:
+def _empty_result_guidance(*, focus_resolved: str, had_general_fallback: bool, provider: str) -> str:
     base = (
         "No hits returned. You can still help: answer from prior context or attachments; ask the user for a "
-        "direct https URL and use web_scraper if page text is needed; or narrow the query."
+        "direct https URL and use web_fetch (static HTML) or web_scraper (JS-heavy) if page text is needed; "
+        "or narrow the query."
     )
     if focus_resolved in ("arxiv", "wikipedia", "crossref", "pubmed"):
         return base + " Academic APIs are free and need no API key—retry with a shorter query or different focus."
     if had_general_fallback:
         return (
-            base + " Broad web search may be blocked or empty without Bing/SearXNG keys; set WEB_SEARCH_BING_API_KEY "
-            "or WEB_SEARCH_SEARXNG_BASE_URL in Settings, or rely on user-provided links + web_scraper."
+            base
+            + f" Broad web search may be blocked or empty for provider={provider!r}. "
+            "Default zero-config path is bing_playwright (Playwright + Bing). Ensure Chromium is "
+            "installed (`uv run playwright install chromium`), or set a configured API provider "
+            "(WEB_SEARCH_*_API_KEY / SearXNG URL) in Settings."
         )
     return base
 
@@ -218,10 +160,10 @@ async def run_web_search(
     max_results = max(1, min(max_results, 25))
     degraded_reasons: list[str] = []
     had_general_fallback = False
+    strategy = ""
+    results: list[dict[str, Any]] = []
 
     async with search_http_client(user_agent=cfg.user_agent, timeout_sec=cfg.timeout_sec) as client:
-        results: list[dict[str, Any]] = []
-        strategy = ""
 
         async def _try_focused(name: str, coro: Any) -> bool:
             nonlocal results, strategy
@@ -246,49 +188,15 @@ async def run_web_search(
             elif resolved == "pubmed":
                 await _try_focused("pubmed_esearch", _pubmed_esearch(client, query, max_results))
             else:
-                prov = cfg.provider
-                bing_key = (cfg.bing_api_key or "").strip()
-                searx_base = (cfg.searxng_base_url or "").strip()
-
-                if prov == "bing" and not bing_key:
-                    degraded_reasons.append("WEB_SEARCH_BING_API_KEY unset; using duckduckgo_lite.")
-                    prov = "duckduckgo_lite"
-                    had_general_fallback = True
-                if prov == "searxng" and not searx_base:
-                    degraded_reasons.append("WEB_SEARCH_SEARXNG_BASE_URL unset; using duckduckgo_lite.")
-                    prov = "duckduckgo_lite"
-                    had_general_fallback = True
-
-                async def _run_general(primary: str) -> None:
-                    nonlocal results, strategy
-                    if primary == "searxng":
-                        results = await _searxng(client, searx_base, query, max_results)
-                        strategy = "searxng"
-                    elif primary == "bing":
-                        results = await _bing_web(client, cfg, query, max_results)
-                        strategy = "bing_api"
-                    else:
-                        results = await _duckduckgo_lite(client, query, max_results)
-                        strategy = "duckduckgo_lite"
-
-                try:
-                    await _run_general(prov)
-                except (httpx.HTTPError, ValueError, KeyError, TypeError) as e:
-                    logger.warning("web_search_general_failed", provider=prov, error=str(e))
-                    degraded_reasons.append(f"{prov}:{e!s}")
-                    if prov != "duckduckgo_lite":
-                        had_general_fallback = True
-                        try:
-                            results = await _duckduckgo_lite(client, query, max_results)
-                            strategy = "duckduckgo_lite"
-                            degraded_reasons.append("Fell back to duckduckgo_lite after primary failure.")
-                        except (httpx.HTTPError, ValueError) as e2:
-                            results = []
-                            strategy = "duckduckgo_lite_failed"
-                            degraded_reasons.append(f"duckduckgo_lite:{e2!s}")
-                    else:
-                        results = []
-                        strategy = "duckduckgo_lite_failed"
+                svc = get_web_search_service()
+                results, strategy, reasons, had_general_fallback = await svc.search(
+                    query,
+                    max_results=max_results,
+                    client=client,
+                    cfg=cfg,
+                    preferred=cfg.provider,
+                )
+                degraded_reasons.extend(reasons)
         except Exception as e:
             logger.warning("web_search_unexpected", error=str(e))
             degraded_reasons.append(f"unexpected:{e!s}")
@@ -297,11 +205,15 @@ async def run_web_search(
 
     degraded = len(results) == 0
     next_step = (
-        "For full page text, call web_scraper on a chosen https URL when JS rendering is required; "
-        "for arxiv PDFs prefer the abs page URL then scrape or download PDF if policy allows."
+        "For full page text on a chosen https URL, prefer web_fetch (lightweight HTTP extract). "
+        "Use web_scraper only when the page needs JavaScript rendering or login."
     )
     if not results:
-        next_step = _empty_result_guidance(focus_resolved=resolved, had_general_fallback=had_general_fallback)
+        next_step = _empty_result_guidance(
+            focus_resolved=resolved,
+            had_general_fallback=had_general_fallback,
+            provider=cfg.provider,
+        )
 
     return {
         "query": query,
