@@ -95,14 +95,9 @@ export default function ProjectModeBadge({
       >
         <FolderGit2 className="w-4 h-4" />
         {isProject ? (
-          <>
-            <Badge variant="default" className="text-[10px]">
-              {t('folders.project.modeBadge', { defaultValue: 'Project' })}
-            </Badge>
-            <span className="truncate max-w-[200px]" title={projectPath ?? ''}>
-              {projectPath ?? ''}
-            </span>
-          </>
+          <Badge variant="default" className="text-[10px]">
+            {t('folders.project.modeBadge', { defaultValue: 'Project' })}
+          </Badge>
         ) : (
           t('folders.project.enable', { defaultValue: 'Set up project' })
         )}

@@ -273,75 +273,68 @@ export default function FolderPage() {
             <FolderBreadcrumb items={breadcrumb} onNavigate={handleSelectFolder} />
           </div>
 
-          {/* Optional folder-detail strip */}
-          {folderDetail && (
-            <div className="flex flex-wrap items-center gap-3 px-4 sm:px-5 py-2 border-b border-border bg-surface-sunken/40 text-xs text-muted-foreground">
-              <span className="flex items-center gap-1.5">
-                <span aria-hidden>{folderDetail.icon ?? '📁'}</span>
-                <strong className="font-medium text-foreground">
-                  {folderDetail.name}
-                </strong>
-              </span>
-              {folderDetail.description && (
-                <span className="truncate">{folderDetail.description}</span>
-              )}
-              <div className="ml-auto flex items-center gap-3">
-                <span>
-                  {folderDetail.file_count}{' '}
-                  {folderDetail.file_count === 1 ? 'file' : 'files'}
-                </span>
-                <span>
-                  {folderDetail.flow_count}{' '}
-                  {folderDetail.flow_count === 1 ? 'flow' : 'flows'}
-                </span>
-                {selectedFolderId && (
-                  <ProjectModeBadge
-                    folderId={selectedFolderId}
-                    isProject={Boolean(folderDetail.is_project)}
-                    projectPath={folderDetail.project_path ?? null}
-                  />
-                )}
-                {selectedFolderId && folderDetail.file_count > 0 && (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="text-xs"
-                    onClick={() => {
-                      setFolderContext(selectedFolderId, folderDetail.name);
-                      navigate('/');
-                    }}
-                    leftIcon={<Sparkles className="w-3 h-3" />}
-                  >
-                    {t('folders.analyzeInChat', { defaultValue: 'Analyze in chat' })}
-                  </Button>
-                )}
-              </div>
-            </div>
-          )}
-
           {/*
-            Body: when project mode is on, expose Files / Project tabs
-            so the existing DB-backed view stays one click away while
-            the on-disk project tree, viewer, and history take focus.
-            Otherwise render the original full-width file list.
+            Body: when project mode is on, expose Files / Code / Git / Run
+            tabs in the folder-detail strip (same row as name/stats).
+            Otherwise render the detail strip + full-width file list.
           */}
           {selectedFolderId && folderDetail?.is_project ? (
             <Tabs defaultValue="code" className="flex min-h-0 flex-1 flex-col">
-              <TabsList className="mx-4 mt-3 self-start sm:mx-5">
-                <TabsTrigger value="files">
-                  {t('folders.project.filesTab', { defaultValue: 'Files' })}
-                </TabsTrigger>
-                <TabsTrigger value="code">
-                  {t('folders.project.codeTab', { defaultValue: 'Code' })}
-                </TabsTrigger>
-                <TabsTrigger value="git">
-                  {t('folders.project.gitTab', { defaultValue: 'Git' })}
-                </TabsTrigger>
-                <TabsTrigger value="run">
-                  {t('folders.project.runTab', { defaultValue: 'Run' })}
-                </TabsTrigger>
-              </TabsList>
-              <TabsContent value="files" className="mt-3 flex min-h-0 flex-1 flex-col">
+              <div className="flex flex-wrap items-center gap-3 px-4 sm:px-5 py-2 border-b border-border bg-surface-sunken/40 text-xs text-muted-foreground">
+                <span className="flex items-center gap-1.5">
+                  <span aria-hidden>{folderDetail.icon ?? '📁'}</span>
+                  <strong className="font-medium text-foreground">
+                    {folderDetail.name}
+                  </strong>
+                </span>
+                {folderDetail.description && (
+                  <span className="min-w-0 truncate">{folderDetail.description}</span>
+                )}
+                <TabsList className="shrink-0 p-0.5">
+                  <TabsTrigger value="files" className="px-2.5 py-1 text-xs">
+                    {t('folders.project.filesTab', { defaultValue: 'Files' })}
+                  </TabsTrigger>
+                  <TabsTrigger value="code" className="px-2.5 py-1 text-xs">
+                    {t('folders.project.codeTab', { defaultValue: 'Code' })}
+                  </TabsTrigger>
+                  <TabsTrigger value="git" className="px-2.5 py-1 text-xs">
+                    {t('folders.project.gitTab', { defaultValue: 'Git' })}
+                  </TabsTrigger>
+                  <TabsTrigger value="run" className="px-2.5 py-1 text-xs">
+                    {t('folders.project.runTab', { defaultValue: 'Run' })}
+                  </TabsTrigger>
+                </TabsList>
+                <div className="ml-auto flex flex-wrap items-center gap-3">
+                  <span>
+                    {folderDetail.file_count}{' '}
+                    {folderDetail.file_count === 1 ? 'file' : 'files'}
+                  </span>
+                  <span>
+                    {folderDetail.flow_count}{' '}
+                    {folderDetail.flow_count === 1 ? 'flow' : 'flows'}
+                  </span>
+                  <ProjectModeBadge
+                    folderId={selectedFolderId}
+                    isProject
+                    projectPath={folderDetail.project_path ?? null}
+                  />
+                  {folderDetail.file_count > 0 && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="text-xs"
+                      onClick={() => {
+                        setFolderContext(selectedFolderId, folderDetail.name);
+                        navigate('/');
+                      }}
+                      leftIcon={<Sparkles className="w-3 h-3" />}
+                    >
+                      {t('folders.analyzeInChat', { defaultValue: 'Analyze in chat' })}
+                    </Button>
+                  )}
+                </div>
+              </div>
+              <TabsContent value="files" className="flex min-h-0 flex-1 flex-col">
                 <FileListView
                   files={fileList}
                   isLoading={itemsLoading}
@@ -350,7 +343,7 @@ export default function FolderPage() {
                   onUpload={handleUpload}
                 />
               </TabsContent>
-              <TabsContent value="code" className="mt-3 flex min-h-0 flex-1 flex-col">
+              <TabsContent value="code" className="flex min-h-0 flex-1 flex-col">
                 <ProjectPanel
                   folderId={selectedFolderId}
                   folderName={folderDetail.name}
@@ -358,7 +351,7 @@ export default function FolderPage() {
                   mode="code"
                 />
               </TabsContent>
-              <TabsContent value="git" className="mt-3 flex min-h-0 flex-1 flex-col">
+              <TabsContent value="git" className="flex min-h-0 flex-1 flex-col">
                 <ProjectPanel
                   folderId={selectedFolderId}
                   folderName={folderDetail.name}
@@ -366,7 +359,7 @@ export default function FolderPage() {
                   mode="git"
                 />
               </TabsContent>
-              <TabsContent value="run" className="mt-3 flex min-h-0 flex-1 flex-col">
+              <TabsContent value="run" className="flex min-h-0 flex-1 flex-col">
                 <FolderProjectRunPanel
                   folderId={selectedFolderId}
                   folderName={folderDetail.name}
@@ -374,13 +367,59 @@ export default function FolderPage() {
               </TabsContent>
             </Tabs>
           ) : (
-            <FileListView
-              files={fileList}
-              isLoading={itemsLoading}
-              onPreview={setPreviewFile}
-              onRemove={handleRemoveFile}
-              onUpload={handleUpload}
-            />
+            <>
+              {folderDetail && (
+                <div className="flex flex-wrap items-center gap-3 px-4 sm:px-5 py-2 border-b border-border bg-surface-sunken/40 text-xs text-muted-foreground">
+                  <span className="flex items-center gap-1.5">
+                    <span aria-hidden>{folderDetail.icon ?? '📁'}</span>
+                    <strong className="font-medium text-foreground">
+                      {folderDetail.name}
+                    </strong>
+                  </span>
+                  {folderDetail.description && (
+                    <span className="min-w-0 truncate">{folderDetail.description}</span>
+                  )}
+                  <div className="ml-auto flex flex-wrap items-center gap-3">
+                    <span>
+                      {folderDetail.file_count}{' '}
+                      {folderDetail.file_count === 1 ? 'file' : 'files'}
+                    </span>
+                    <span>
+                      {folderDetail.flow_count}{' '}
+                      {folderDetail.flow_count === 1 ? 'flow' : 'flows'}
+                    </span>
+                    {selectedFolderId && (
+                      <ProjectModeBadge
+                        folderId={selectedFolderId}
+                        isProject={Boolean(folderDetail.is_project)}
+                        projectPath={folderDetail.project_path ?? null}
+                      />
+                    )}
+                    {selectedFolderId && folderDetail.file_count > 0 && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="text-xs"
+                        onClick={() => {
+                          setFolderContext(selectedFolderId, folderDetail.name);
+                          navigate('/');
+                        }}
+                        leftIcon={<Sparkles className="w-3 h-3" />}
+                      >
+                        {t('folders.analyzeInChat', { defaultValue: 'Analyze in chat' })}
+                      </Button>
+                    )}
+                  </div>
+                </div>
+              )}
+              <FileListView
+                files={fileList}
+                isLoading={itemsLoading}
+                onPreview={setPreviewFile}
+                onRemove={handleRemoveFile}
+                onUpload={handleUpload}
+              />
+            </>
           )}
         </Card>
       </div>
