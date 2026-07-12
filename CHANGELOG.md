@@ -7,6 +7,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Web search provider registry** — Pluggable `WebSearchProvider` backends (auto, bing_playwright, DuckDuckGo lite, SearXNG, Bing API, Brave, Tavily, Exa, Firecrawl, Serper). Default `auto` uses only *configured* APIs, else Playwright Bing (with Bing RSS fallback when headless hits a challenge); never silently hits unconfigured keys. TTL result cache.
+- **`web_fetch` tool** — Lightweight HTTP extract (no Playwright) with SSRF guards, robots checks, TTL cache, and size-gated summarization/truncation; use before `web_scraper` for static pages.
+- **Playwright as core dependency** — Chromium install runs from `start.sh` by default (required for zero-config Bing search).
+
+### Changed
+
+- **Canvas length recovery** — On `finish_reason=length`, salvageable `canvas_publish` HTML is executed instead of discarded; canvas turns always get a routing recovery hint; canvas-intent queries bump first-turn `max_output_tokens` to at least 16 384; compact inline HTML guidance raised to ~20KB with stream-preview / SSE redaction aligned to 20 480 bytes; repeated recovery forces `html_files` over giant inline `html`.
+- **Web tool ladder** — Agent guidance is now `web_search` → `web_fetch` → `web_scraper` (JS/login only).
+
+## [1.2.1] - 2026-07-11
+
+Patch release: **in-chat runnable workflow DAG embeds** on the shared workflow engine, a **GenUI operation panel** for workflow inputs, and chat/website polish.
+
+### Added
+
+- **Chat workflow DAG embed runner** — Whole-graph `chat_workflow_embed_emit` cards run in-chat via `WorkflowService.start_compiled_document` (`trigger_type=chat_embed`); live per-node status on the chat mini-graph through the execution overlay WebSocket bridge.
+- **Workflow operation panel** — Shared `WorkflowOperationPanel` generates a GenUI run form from declared workflow `inputs` (editor + chat surfaces); replaces the dedicated chat input panel for embed cards.
+- **Embed run API** — `POST /chat/sessions/{id}/workflow-embeds/{message_id}/run` with digest verification, `workflow_embed_run` persistence, and quality-gate-aware terminal status.
+- **Coexistent workflow cards** — `_accumulate_workflow_extensions` lets a single assistant turn persist both a DAG embed and a linear step card without the second emit wiping the first.
+
+### Changed
+
+- **GenUI run routing** — `run_workflow` actions accept `target: chat_embed | chat_step | flow`; `GenUiActionBridge` dispatches chat surfaces to verified digest-checked endpoints.
+- **Website home previews** — Locale-specific hero screenshot (`home-preview-en.png` for en-US); refreshed zh home and pet preview assets.
+- **Website tsconfig** — Migrated path aliases for TypeScript 6/7 (project-root-relative `paths`, no deprecated `baseUrl`).
+
+### Fixed
+
+- **Chat generated images** — `code_execution` and chart outputs route through managed file preview URLs instead of inline base64; assistant markdown is rewritten before persist; legacy base64 embeds still render via frontend fallbacks.
+- **Canvas HTML preview** — Conditional Three.js load and iframe viewport sync for embedded previews.
+- **WorkflowOperationPanel** — Align `GenUiTreeView` props with main renderer (no unsupported compact/attribution flags).
+
 ## [1.2.0] - 2026-07-10
 
 Minor release: human-in-the-loop approvals and change reviews, coding-project worktrees, knowledge library layer, and chat/workspace UX hardening.
@@ -1267,7 +1301,8 @@ _Subsections below keep `— YYYY-MM-DD` on each heading for maintainers (commit
 - **Minor (0.X.0)**: New features, backward compatible
 - **Patch (0.0.X)**: Bug fixes, security patches
 
-[Unreleased]: https://github.com/vixues/LeAgent/compare/v1.2.0...HEAD
+[Unreleased]: https://github.com/vixues/LeAgent/compare/v1.2.1...HEAD
+[1.2.1]: https://github.com/vixues/LeAgent/compare/v1.2.0...v1.2.1
 [1.2.0]: https://github.com/vixues/LeAgent/compare/v1.1.3...v1.2.0
 [1.1.3]: https://github.com/vixues/LeAgent/releases/tag/v1.1.3
 [1.1.2]: https://github.com/vixues/LeAgent/releases/tag/v1.1.2

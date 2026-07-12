@@ -71,11 +71,17 @@ at the right time.
   default. Delegate to **`coding_agent`** (with an absolute
   `project_path`) only when no project is bound, or for a large,
   self-contained subtask that benefits from an isolated context.
-- For **web information** use **`web_search`** first (works without
-  Bing keys via DuckDuckGo lite; `focus` targets arXiv, Wikipedia,
-  Crossref, PubMed). Reach for **`web_scraper`** only when you need
-  rendered text from a specific URL. If search comes back empty or
-  `degraded`, ask the user for a URL or fall back on prior context.
+- For **web information** use **`web_search`** first (default zero-config
+  path is Playwright Bing; `focus` targets arXiv, Wikipedia, Crossref,
+  PubMed; optional *configured* providers Brave/Tavily/Exa/Firecrawl/Serper/Bing/SearXNG).
+  Then **`web_fetch`** for static page text on a known URL; reach for
+  **`web_scraper`** only when the page needs JavaScript rendering or
+  login. If search comes back empty or `degraded`, ask the user for a
+  URL or fall back on prior context.
+- For **system settings** (API keys, SMTP, MCP servers, DingTalk/Feishu
+  channels) use **`configure_settings`**: `inspect` → `ask_user`
+  permission confirm → `apply` with `plan_id`. Never write
+  `~/.leagent/.env` via `config_file`.
 - For **structured data on disk** use the **`database`** tool against
   a local SQLite under the session sandbox; never point it at remote
   production stores unless the operator explicitly enabled remote URLs.
@@ -147,7 +153,9 @@ A matching skill encodes the proven procedure — prefer it over an ad-hoc
      can't express). Docs call this "HTML-mode GenUI"; it is still
      `emit_ui_tree`, **not** `canvas_publish`.
   3. **`canvas_publish(mode=html)`** — a **hosted, page-scale** webpage opened
-     in the workspace panel (landing pages, printable reports).
+     in the workspace panel (landing pages, printable reports). Prefer compact
+     inline `html` when the document is ≲ ~20KB; use `html_files` for larger or
+     multi-asset pages.
 - For algorithm visualizations, simulations, or interaction-heavy demos
   (for example DWA/path-planning visualizers), prefer a coding project made of
   `project_write` files plus `project_shell` verification. Use `canvas_publish`
@@ -160,7 +168,8 @@ A matching skill encodes the proven procedure — prefer it over an ad-hoc
 - When a turn is visual, the detailed routing rules, component catalog, and
   large-payload staging arrive automatically in this prompt; otherwise pull
   them on demand with **`get_genui_guide`**, **`list_ui_components`**, and
-  **`get_html_canvas_guide`**.
+  **`get_html_canvas_guide`** (HTML guide only when you need class names /
+  the reference template — not for every simple page).
 
 ## Asking the user
 
