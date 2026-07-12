@@ -67,6 +67,11 @@ from leagent.tools.integration.oa_import import (
     OAImportTool,
 )
 
+try:
+    from leagent.tools.integration.configure_settings import ConfigureSettingsTool
+except ImportError:
+    ConfigureSettingsTool = None  # type: ignore[assignment,misc]
+
 __all__ = [
     # OA API
     "OAApiTool",
@@ -99,4 +104,6 @@ __all__ = [
     "ExternalApiTool",
     "AuthType",
     "ContentType",
+    # Settings
+    "ConfigureSettingsTool",
 ]

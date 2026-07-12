@@ -109,7 +109,12 @@ class MCPClientManager:
             health_check_interval: Seconds between health checks.
             max_reconnect_attempts: Maximum reconnection attempts.
         """
-        self._config_path = Path(config_path) if config_path else None
+        if config_path is not None:
+            self._config_path = Path(config_path)
+        else:
+            from leagent.config.constants import LEAGENT_HOME
+
+            self._config_path = LEAGENT_HOME / "mcp_servers.yaml"
         self._health_check_interval = health_check_interval
         self._max_reconnect_attempts = max_reconnect_attempts
 
@@ -124,6 +129,10 @@ class MCPClientManager:
         self._on_disconnect_callbacks: list[Callable[[str], None]] = []
         self._on_error_callbacks: list[Callable[[str, Exception], None]] = []
 
+    @property
+    def config_path(self) -> Path:
+        """Path used for MCP server YAML persistence."""
+        return self._config_path
     @property
     def server_names(self) -> list[str]:
         """Get list of configured server names."""
@@ -228,20 +237,73 @@ class MCPClientManager:
             or old.description != new.description
         )
 
-    def add_server(self, config: MCPServer) -> None:
+    def save_config(self, config_path: str | Path | None = None) -> Path:
+        """Persist configured servers to YAML (``mcpServers`` dict format).
+
+        Args:
+            config_path: Optional override path; defaults to instance path.
+
+        Returns:
+            Path written.
+        """
+        path = Path(config_path) if config_path else self._config_path
+        path.parent.mkdir(parents=True, exist_ok=True)
+        servers: dict[str, Any] = {}
+        for name, managed in self._clients.items():
+            data = managed.config.to_dict()
+            # Name is the dict key; omit redundant field for cleaner YAML.
+            data.pop("name", None)
+            # Drop empty optional blobs to keep files readable.
+            for empty_key in ("api_key", "oauth_token", "oauth_client_id", "oauth_client_secret", "oauth_token_url"):
+                if not data.get(empty_key):
+                    data.pop(empty_key, None)
+            if not data.get("oauth_scopes"):
+                data.pop("oauth_scopes", None)
+            if not data.get("env"):
+                data.pop("env", None)
+            if not data.get("metadata"):
+                data.pop("metadata", None)
+            if not data.get("description"):
+                data.pop("description", None)
+            if data.get("transport") == "stdio":
+                data.pop("url", None)
+            elif data.get("transport") in ("http", "sse"):
+                data.pop("command", None)
+                if not data.get("args"):
+                    data.pop("args", None)
+            servers[name] = data
+
+        payload = {"mcpServers": servers}
+        content = yaml.safe_dump(
+            payload,
+            default_flow_style=False,
+            allow_unicode=True,
+            sort_keys=False,
+        )
+        path.write_text(content, encoding="utf-8")
+        self._config_hash = hashlib.md5(content.encode()).hexdigest()
+        self._config_path = path
+        logger.info("MCP configuration saved", path=str(path), total=len(servers))
+        return path
+
+    def add_server(self, config: MCPServer, *, persist: bool = False) -> None:
         """Add a server configuration programmatically.
 
         Args:
             config: Server configuration to add.
+            persist: When True, write ``mcp_servers.yaml`` after add.
         """
         self._clients[config.name] = ManagedClient(config=config)
         logger.info("MCP server added", server=config.name)
+        if persist:
+            self.save_config()
 
-    def remove_server(self, name: str) -> bool:
+    def remove_server(self, name: str, *, persist: bool = False) -> bool:
         """Remove a server configuration.
 
         Args:
             name: Server name to remove.
+            persist: When True, write ``mcp_servers.yaml`` after remove.
 
         Returns:
             True if server was removed.
@@ -249,11 +311,17 @@ class MCPClientManager:
         if name not in self._clients:
             return False
 
-        asyncio.create_task(self._disconnect_server(name))
+        try:
+            loop = asyncio.get_running_loop()
+            loop.create_task(self._disconnect_server(name))
+        except RuntimeError:
+            # No running loop (e.g. sync test / CLI) — drop client only.
+            pass
         del self._clients[name]
         logger.info("MCP server removed", server=name)
+        if persist:
+            self.save_config()
         return True
-
     async def connect_server(self, name: str) -> bool:
         """Connect to a specific server.
 

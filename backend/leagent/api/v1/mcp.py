@@ -144,7 +144,7 @@ async def add_server(
         description=data.description,
     )
 
-    manager.add_server(config)
+    manager.add_server(config, persist=True)
 
     return MCPServerInfo(
         name=data.name,
@@ -203,7 +203,7 @@ async def remove_server(
     manager: Annotated[MCPClientManager, Depends(get_manager)],
 ) -> None:
     """Remove an MCP server configuration."""
-    if not manager.remove_server(server_name):
+    if not manager.remove_server(server_name, persist=True):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Server '{server_name}' not found",

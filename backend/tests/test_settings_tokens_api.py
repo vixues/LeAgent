@@ -39,10 +39,9 @@ def test_put_rejects_invalid_smtp_use_tls(client: TestClient) -> None:
 
 def test_put_token_masked_reload_env(client: TestClient, monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
     monkeypatch.setenv("LEAGENT_HOME", str(tmp_path))
-    # Re-import constants path — LEAGENT_HOME already used by worker; patch module path used by endpoint
-    from leagent.api.v1 import settings_tokens as st
+    from leagent.services import settings_configure as sc
 
-    monkeypatch.setattr(st, "_env_path", lambda: tmp_path / ".env")
+    monkeypatch.setattr(sc, "env_path", lambda: tmp_path / ".env")
 
     r = client.put(
         "/api/v1/settings/tokens",
@@ -95,9 +94,9 @@ def test_put_rejects_invalid_web_fetch_enabled(client: TestClient) -> None:
 def test_put_accepts_web_search_provider_and_clears_cache(
     client: TestClient, monkeypatch: pytest.MonkeyPatch, tmp_path
 ) -> None:
-    from leagent.api.v1 import settings_tokens as st
+    from leagent.services import settings_configure as sc
 
-    monkeypatch.setattr(st, "_env_path", lambda: tmp_path / ".env")
+    monkeypatch.setattr(sc, "env_path", lambda: tmp_path / ".env")
     cleared: list[bool] = []
 
     def fake_clear() -> None:
@@ -110,3 +109,16 @@ def test_put_accepts_web_search_provider_and_clears_cache(
     )
     assert r.status_code == 200
     assert cleared == [True]
+
+
+def test_put_accepts_brave_provider(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch, tmp_path
+) -> None:
+    from leagent.services import settings_configure as sc
+
+    monkeypatch.setattr(sc, "env_path", lambda: tmp_path / ".env")
+    r = client.put(
+        "/api/v1/settings/tokens",
+        json={"values": {"WEB_SEARCH_PROVIDER": "brave", "WEB_SEARCH_BRAVE_API_KEY": "test-key"}},
+    )
+    assert r.status_code == 200

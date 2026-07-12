@@ -174,6 +174,26 @@ class CanvasGuideSource(GatedPolicySource):
     )
 
 
+CANVAS_INTENT_MAX_OUTPUT_TOKENS = 16_384
+
+
+def resolve_canvas_intent_max_output_tokens(
+    query: str | None,
+    *,
+    base: int | None,
+) -> int | None:
+    """Bump ``max_output_tokens`` when the turn matches canvas/GenUI intent.
+
+    Reuses :class:`CanvasGuideSource`'s ``RelevanceGate`` keyword list so the
+    first ``canvas_publish`` is less likely to hit output-length truncation.
+    """
+    if not CanvasGuideSource.gate.matches(query or ""):
+        return base
+    if base is None:
+        return CANVAS_INTENT_MAX_OUTPUT_TOKENS
+    return max(base, CANVAS_INTENT_MAX_OUTPUT_TOKENS)
+
+
 class ChartGuideSource(GatedPolicySource):
     """Professional chart mode guide, loaded only for chart/visualization turns."""
 
@@ -335,8 +355,60 @@ class EmailToolSource(GatedPolicySource):
     )
 
 
+class SettingsSetupSource(GatedPolicySource):
+    """Env secrets / MCP / channels setup via configure_settings."""
+
+    id = "settings_setup"
+    priority = 1100
+    policy_names = ("settings_setup",)
+    gate = RelevanceGate(
+        name="settings_setup",
+        hints=(
+            "configure",
+            "configuration",
+            "settings",
+            "api key",
+            "api_key",
+            "secret",
+            "token",
+            "mcp",
+            "mcp server",
+            "dingtalk",
+            "feishu",
+            "lark",
+            "wechat work",
+            "wecom",
+            "webhook",
+            "smtp",
+            "web search",
+            "bing",
+            "searxng",
+            "deepseek",
+            "openai key",
+            "anthropic",
+            "dashscope",
+            "configure_settings",
+            "环境密钥",
+            "环境变量",
+            "配置",
+            "设置",
+            "密钥",
+            "api密钥",
+            "飞书",
+            "钉钉",
+            "企微",
+            "企业微信",
+            "联网搜索",
+            "网页搜索",
+            "mcp服务器",
+        ),
+        opt_in_keys=("settings_setup", "enable_settings_setup"),
+    )
+
+
 SOURCE_REGISTRY[CanvasGuideSource.id] = CanvasGuideSource
 SOURCE_REGISTRY[ChartGuideSource.id] = ChartGuideSource
 SOURCE_REGISTRY[DocumentFontsSource.id] = DocumentFontsSource
 SOURCE_REGISTRY[DocumentGenerationSource.id] = DocumentGenerationSource
 SOURCE_REGISTRY[EmailToolSource.id] = EmailToolSource
+SOURCE_REGISTRY[SettingsSetupSource.id] = SettingsSetupSource
