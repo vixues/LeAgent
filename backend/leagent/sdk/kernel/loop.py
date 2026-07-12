@@ -28,8 +28,8 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 from leagent.sdk.events import AgentEvent, AgentEventType, AgentResult
-from leagent.utils.logging import get_logger
 from leagent.sdk.kernel.state import RunState
+from leagent.utils.logging import get_logger
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator
@@ -40,6 +40,22 @@ if TYPE_CHECKING:
     from leagent.sdk.protocols import CheckpointStore, RunContext
 
 logger = get_logger(__name__)
+
+# Terminal reasons that should persist a durable checkpoint so the client
+# can Continue / resume without replaying the whole turn from scratch.
+# Normal ``completed`` turns are excluded unless ``checkpoint_on_complete``.
+RESUMABLE_CHECKPOINT_REASONS: frozenset[str] = frozenset(
+    {
+        "awaiting_user_input",
+        "max_turns",
+        "token_budget_exceeded",
+        "prompt_too_long",
+        "aborted_streaming",
+        "aborted",
+        "blocking_limit",
+        "model_error",
+    }
+)
 
 
 def _run_context_from_engine(engine: QueryEngine) -> RunContext:
@@ -166,7 +182,7 @@ async def run_loop(
             state.messages = _snapshot_messages(engine)
 
             should_checkpoint = checkpoint_store is not None and (
-                state.reason == "awaiting_user_input"
+                state.reason in RESUMABLE_CHECKPOINT_REASONS
                 or (checkpoint_on_complete and state.reason == "completed")
             )
             if should_checkpoint:
@@ -200,6 +216,13 @@ async def run_loop(
                         session_id=state.session_id,
                         exc_info=True,
                     )
+
+        try:
+            from leagent.telemetry.trace import get_trace_recorder
+
+            get_trace_recorder().on_event(event)
+        except Exception:
+            logger.debug("agent_trace_on_event_failed", exc_info=True)
 
         yield event
 
@@ -259,4 +282,4 @@ async def run_to_result(
     return result
 
 
-__all__ = ["run_loop", "run_to_result"]
+__all__ = ["RESUMABLE_CHECKPOINT_REASONS", "run_loop", "run_to_result"]

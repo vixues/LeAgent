@@ -100,7 +100,7 @@ concrete phase in the layering plan.
 | Declarative drop-in plugin registration | ComfyUI `NODE_CLASS_MAPPINGS` | `Agent.<name>` / `Tool.<name>` lifting, `provider_plugin`, `context.plugin` | Align: entry-point loading |
 | Unified multi-provider LLM API | Pi `pi-ai`, Claude/Codex providers | `LLMService` + `provider_plugin` + `HttpTransport` | Align: finish transport/plugin consolidation |
 | Steering / follow-up queues | Pi dual loop | `awaiting_user_input` + abort handling | Diverge: keep controller-mediated ask-user; checkpoint on pause |
-| Structured telemetry / per-turn token accounting | Codex telemetry; Claude's gap | structlog + OTel skeletons | Align and exceed: consolidate logging pipeline |
+| Structured telemetry / per-turn token accounting | Codex telemetry; Claude's gap | Durable `TraceStore` + `llm_request_logs.run_id` + optional OTel GenAI/OpenInference attrs | Done: see [`agent-trace.md`](./agent-trace.md) |
 
 ### Deliberate divergences
 

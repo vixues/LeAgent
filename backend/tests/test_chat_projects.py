@@ -112,3 +112,152 @@ async def test_chat_session_can_be_created_and_listed_for_project() -> None:
         assert sessions[0].project_id == project.id
     finally:
         await db.dispose()
+
+
+@pytest.mark.asyncio
+async def test_create_project_creates_shared_folder_and_disk_root(tmp_path, monkeypatch) -> None:
+    from pathlib import Path
+
+    from sqlmodel import select
+
+    from leagent.db.models.folder import Folder
+    from leagent.services.chat import project_files as project_files_mod
+    from leagent.services.chat.project_files import (
+        CHAT_PROJECTS_ROOT_SENTINEL,
+        chat_project_files_root,
+    )
+
+    monkeypatch.setattr(project_files_mod, "WORKING_DIR", Path(tmp_path) / "working")
+
+    db = _InMemoryDatabase()
+    await db.start()
+    try:
+        user_id = uuid4()
+        service = ChatProjectService(db)  # type: ignore[arg-type]
+        project = await service.create_project(user_id=user_id, name="Shared pack")
+
+        assert project.folder_id is not None
+        root = chat_project_files_root(project.id)
+        assert root.is_dir()
+
+        async with db.session() as session:
+            folder = (
+                await session.exec(select(Folder).where(Folder.id == project.folder_id))
+            ).first()
+            assert folder is not None
+            assert folder.name == "Shared pack"
+            assert folder.is_deleted is False
+
+            parent = (
+                await session.exec(select(Folder).where(Folder.id == folder.parent_id))
+            ).first()
+            assert parent is not None
+            assert parent.description == CHAT_PROJECTS_ROOT_SENTINEL
+            assert parent.name == "项目"
+
+        read = await service.get_project_read(project.id, user_id=user_id)
+        assert read is not None
+        assert read.folder_id == project.folder_id
+    finally:
+        await db.dispose()
+
+
+@pytest.mark.asyncio
+async def test_rename_and_delete_project_sync_folder(tmp_path, monkeypatch) -> None:
+    from pathlib import Path
+
+    from sqlmodel import select
+
+    from leagent.db.models.folder import Folder
+    from leagent.services.chat import project_files as project_files_mod
+
+    monkeypatch.setattr(project_files_mod, "WORKING_DIR", Path(tmp_path) / "working")
+
+    db = _InMemoryDatabase()
+    await db.start()
+    try:
+        user_id = uuid4()
+        service = ChatProjectService(db)  # type: ignore[arg-type]
+        project = await service.create_project(user_id=user_id, name="Old name")
+        folder_id = project.folder_id
+        assert folder_id is not None
+
+        updated = await service.update_project(
+            project.id, user_id=user_id, name="New name"
+        )
+        assert updated is not None
+        async with db.session() as session:
+            folder = (
+                await session.exec(select(Folder).where(Folder.id == folder_id))
+            ).first()
+            assert folder is not None
+            assert folder.name == "New name"
+
+        assert await service.delete_project(project.id, user_id=user_id)
+        async with db.session() as session:
+            folder = (
+                await session.exec(select(Folder).where(Folder.id == folder_id))
+            ).first()
+            assert folder is not None
+            assert folder.is_deleted is True
+    finally:
+        await db.dispose()
+
+
+@pytest.mark.asyncio
+async def test_two_sessions_share_same_project_file_space(tmp_path, monkeypatch) -> None:
+    from pathlib import Path
+
+    from leagent.services.chat import project_files as project_files_mod
+    from leagent.services.chat.project_files import resolve_session_project_file_space
+
+    monkeypatch.setattr(project_files_mod, "WORKING_DIR", Path(tmp_path) / "working")
+
+    db = _InMemoryDatabase()
+    await db.start()
+    try:
+        user_id = uuid4()
+        settings = get_settings()
+        project_service = ChatProjectService(db)  # type: ignore[arg-type]
+        chat_service = ChatService(settings, db_service=db, cache_service=None)  # type: ignore[arg-type]
+        project = await project_service.create_project(user_id=user_id, name="Campaign")
+        s1 = await chat_service.create_session(user_id, name="A", project_id=project.id)
+        s2 = await chat_service.create_session(user_id, name="B", project_id=project.id)
+
+        space1 = await resolve_session_project_file_space(
+            db, session_id=s1.id, user_id=user_id  # type: ignore[arg-type]
+        )
+        space2 = await resolve_session_project_file_space(
+            db, session_id=s2.id, user_id=user_id  # type: ignore[arg-type]
+        )
+        assert space1 is not None and space2 is not None
+        assert space1.folder_id == space2.folder_id == project.folder_id
+        assert space1.files_root == space2.files_root
+    finally:
+        await db.dispose()
+
+
+@pytest.mark.asyncio
+async def test_free_session_has_no_shared_project_file_space(tmp_path, monkeypatch) -> None:
+    from pathlib import Path
+
+    from leagent.services.chat import project_files as project_files_mod
+    from leagent.services.chat.project_files import resolve_session_project_file_space
+
+    monkeypatch.setattr(project_files_mod, "WORKING_DIR", Path(tmp_path) / "working")
+
+    db = _InMemoryDatabase()
+    await db.start()
+    try:
+        user_id = uuid4()
+        settings = get_settings()
+        chat_service = ChatService(settings, db_service=db, cache_service=None)  # type: ignore[arg-type]
+        free = await chat_service.create_session(user_id, name="Free chat")
+        assert free.project_id is None
+        space = await resolve_session_project_file_space(
+            db, session_id=free.id, user_id=user_id  # type: ignore[arg-type]
+        )
+        assert space is None
+    finally:
+        await db.dispose()
+

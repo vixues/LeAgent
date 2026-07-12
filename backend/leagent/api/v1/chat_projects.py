@@ -38,6 +38,7 @@ class ChatProjectRead(BaseModel):
     id: UUID
     user_id: UUID
     workspace_id: UUID | None
+    folder_id: UUID | None = None
     name: str
     description: str | None
     design_context: str | None = None
@@ -84,6 +85,7 @@ def _read(
         id=model.id,
         user_id=model.user_id,
         workspace_id=model.workspace_id,
+        folder_id=model.folder_id,
         name=model.name,
         description=model.description,
         design_context=model.design_context if include_protected_detail or not is_locked else None,

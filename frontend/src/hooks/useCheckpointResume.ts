@@ -10,12 +10,12 @@ const API_BASE = import.meta.env.VITE_API_BASE_URL || '/api/v1';
 
 /**
  * Resume from a durable checkpoint after a turn that stopped with
- * `max_turns`, `token_budget_exceeded`, or any other non-completed
- * terminal reason where a `checkpoint_id` was stamped on the result.
+ * `max_turns`, `token_budget_exceeded`, user abort, or any other
+ * non-completed terminal reason where a `checkpoint_id` was stamped.
  *
  * The flow:
  * 1. Validate the checkpoint exists (POST /resume-checkpoint).
- * 2. Stream a new turn (POST /stream with checkpoint context).
+ * 2. Stream a new turn (POST /stream with checkpoint_id).
  */
 export async function resumeChatCheckpoint(
   sessionId: string,
@@ -57,6 +57,7 @@ export async function resumeChatCheckpoint(
       userMessageId: assistantMsgId,
       assistantMsgId,
       content: prompt || 'Continue',
+      checkpointId,
       modelMode: getComposerModelMode(),
       signal: controller.signal,
       t,

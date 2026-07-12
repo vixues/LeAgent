@@ -151,6 +151,24 @@ async def resolve_folder_context_note(
     return "\n".join(lines)
 
 
+def chat_project_workspace_note(
+    *,
+    folder_id: UUID | str,
+    files_root: str,
+    attached_file_count: int = 0,
+) -> str:
+    """Prompt note for a chat-project shared file space (all sessions share it)."""
+    lines = [
+        "\n\nShared project workspace:",
+        f"- Catalog folder ID: {folder_id}",
+        f"- On-disk files root: {files_root}",
+        f"- Attached files from this project folder: {attached_file_count}",
+        "All conversations in this chat project share this workspace.",
+        "Prefer reading and writing under the project files root; do not invent a per-session silo.",
+    ]
+    return "\n".join(lines)
+
+
 async def resolve_project_folder_path(
     user_id: UUID,
     db: DatabaseService,

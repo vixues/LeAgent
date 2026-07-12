@@ -17,6 +17,13 @@ class ChatProject(BaseModel, SoftDeleteMixin, table=True):
 
     user_id: UUID = Field(foreign_key="users.id", index=True)
     workspace_id: Optional[UUID] = Field(default=None, foreign_key="workspaces.id", index=True)
+    #: Linked catalog Folder under 「文件」— shared by all sessions in this project.
+    folder_id: Optional[UUID] = Field(
+        default=None,
+        foreign_key="folders.id",
+        index=True,
+        unique=True,
+    )
     name: str = Field(max_length=200)
     description: Optional[str] = Field(default=None, sa_column=Column(Text))
     design_context: Optional[str] = Field(default=None, sa_column=Column(Text))

@@ -11,6 +11,7 @@ import {
   Clock,
   ChevronsLeft,
   Folder,
+  FolderOpen,
   FolderPlus,
   Lock,
   MoreHorizontal,
@@ -373,14 +374,14 @@ export function ChatHistoryPanel({
             aria-label={t('chat.projects.toggleProjects')}
             title={t('chat.projects.toggleProjects')}
             className={cn(
-              'flex items-center gap-1.5 min-w-0 text-xs font-semibold uppercase tracking-wider transition-colors',
+              'inline-flex items-center gap-1.5 min-w-0 text-xs font-semibold uppercase tracking-wider leading-none transition-colors',
               currentProjectId
                 ? 'text-muted-foreground hover:text-foreground'
                 : 'text-primary-600 dark:text-primary-400',
             )}
           >
-            <FoldingFanIcon open={projectsExpanded} className="w-4 h-4 flex-shrink-0" />
-            <span className="truncate">{t('chat.projects.allChats')}</span>
+            <FoldingFanIcon open={projectsExpanded} className="block h-4 w-4 shrink-0" />
+            <span className="truncate leading-none">{t('chat.projects.allChats')}</span>
           </button>
         </div>
 
@@ -580,6 +581,7 @@ function ProjectRowItem({
   onDelete,
 }: ProjectRowItemProps) {
   const { t } = useTranslation();
+  const navigate = useNavigate();
 
   if (isRenaming) {
     return (
@@ -661,6 +663,15 @@ function ProjectRowItem({
             {project.name}
           </DropdownMenuLabel>
           <DropdownMenuSeparator />
+          {project.folderId ? (
+            <DropdownMenuItem
+              className="gap-2 text-xs"
+              onClick={() => navigate(`/folders?folder=${project.folderId}`)}
+            >
+              <FolderOpen className="h-3.5 w-3.5" />
+              {t('chat.projects.openInFiles')}
+            </DropdownMenuItem>
+          ) : null}
           <DropdownMenuItem
             className="gap-2 text-xs"
             onClick={() => onRenameStart(project)}
@@ -682,10 +693,10 @@ function ProjectRowItem({
 }
 
 /* ── Chinese folding fan icon (折扇) ──
- * The canopy (an annular sector with ribs) is scaled on the X axis around the
- * bottom rivet. Open → a full spread fan; folded → it collapses into a long
- * trapezoid sliver with the round rivet hole sitting at the bottom. The rivet
- * lives outside the scaled group so it stays a perfect circle in both states. */
+ * Classic hand-fan silhouette: pivot rivet at the heel, guard sticks + ribs
+ * radiating into a paper canopy arc. Open spreads ~108°; folded collapses into
+ * a slim stick with the rivet at the bottom. Geometry is optically centered in
+ * the 24×24 box so it lines up with adjacent label text. */
 function FoldingFanIcon({
   open,
   className,
@@ -693,70 +704,88 @@ function FoldingFanIcon({
   open: boolean;
   className?: string;
 }) {
-  const pivot = '12px 20px';
-  const ease = 'cubic-bezier(0.34, 1.56, 0.64, 1)';
-  // Spread angles (deg) for the ribs when the fan is open; all collapse to 0 when folded.
-  const ribAngles = [-52, -26, 0, 26, 52];
+  const pivot = '12px 18.5px';
+  const ease = 'cubic-bezier(0.34, 1.45, 0.64, 1)';
+  // Degrees from vertical (up). Outer pair are the thicker 大骨 / guard sticks.
+  const ribAngles = [-54, -32, -11, 11, 32, 54];
 
   return (
     <svg
       viewBox="0 0 24 24"
       fill="none"
       stroke="currentColor"
-      strokeWidth={1.6}
+      strokeWidth={1.5}
       strokeLinecap="round"
       strokeLinejoin="round"
       className={className}
       aria-hidden="true"
     >
-      {/* Folded body — a clean rounded rectangle (the closed fan) */}
-      <rect
-        x="9.6"
-        y="5"
-        width="4.8"
-        height="15"
-        rx="2"
-        style={{
-          transition: 'opacity 200ms ease',
-          opacity: open ? 0 : 1,
-        }}
-      />
-
-      {/* Open fan — sector arc + ribs spreading from the rivet */}
+      {/* Folded — stacked sticks (合扇) */}
       <g
         style={{
-          transition: 'opacity 220ms ease',
-          opacity: open ? 1 : 0,
+          transition: 'opacity 180ms ease',
+          opacity: open ? 0 : 1,
+          pointerEvents: open ? 'none' : undefined,
         }}
       >
+        <rect x="10.25" y="3.2" width="3.5" height="15.4" rx="1.75" />
+        <line x1="12" y1="4.4" x2="12" y2="16" />
+        <line x1="11.15" y1="5.2" x2="11.15" y2="15.4" opacity={0.5} />
+        <line x1="12.85" y1="5.2" x2="12.85" y2="15.4" opacity={0.5} />
+      </g>
+
+      {/* Open — canopy arc + ribs (开扇) */}
+      <g
+        style={{
+          transition: 'opacity 200ms ease',
+          opacity: open ? 1 : 0,
+          pointerEvents: open ? undefined : 'none',
+        }}
+      >
+        {/* Outer paper edge (扇面), r=13.2 around pivot — tips at ±54° */}
         <path
-          d="M1.76 12 A 13 13 0 0 1 22.24 12"
+          d="M1.32 10.74 A 13.2 13.2 0 0 1 22.68 10.74"
           style={{
             transformBox: 'view-box',
             transformOrigin: pivot,
-            transform: open ? 'scaleX(1)' : 'scaleX(0.06)',
-            transition: `transform 360ms ${ease}`,
+            transform: open ? 'scaleX(1)' : 'scaleX(0.05)',
+            transition: `transform 340ms ${ease}`,
           }}
         />
-        {ribAngles.map((angle, i) => (
-          <line
-            key={i}
-            x1="12"
-            y1="20"
-            x2="12"
-            y2="7"
-            style={{
-              transformBox: 'view-box',
-              transformOrigin: pivot,
-              transform: `rotate(${open ? angle : 0}deg)`,
-              transition: `transform 360ms ${ease}`,
-            }}
-          />
-        ))}
+        {/* Soft inner fold hint, r=10.4 */}
+        <path
+          d="M3.59 12.39 A 10.4 10.4 0 0 1 20.41 12.39"
+          opacity={0.4}
+          style={{
+            transformBox: 'view-box',
+            transformOrigin: pivot,
+            transform: open ? 'scaleX(1)' : 'scaleX(0.05)',
+            transition: `transform 340ms ${ease}`,
+          }}
+        />
+        {ribAngles.map((angle, i) => {
+          const isGuard = i === 0 || i === ribAngles.length - 1;
+          return (
+            <line
+              key={i}
+              x1="12"
+              y1="18.5"
+              x2="12"
+              y2={isGuard ? 5.3 : 6.1}
+              strokeWidth={isGuard ? 1.85 : 1.35}
+              style={{
+                transformBox: 'view-box',
+                transformOrigin: pivot,
+                transform: `rotate(${open ? angle : 0}deg)`,
+                transition: `transform 340ms ${ease}`,
+              }}
+            />
+          );
+        })}
       </g>
 
-      {/* Rivet pin at the base */}
-      <circle cx="12" cy="20" r="1.3" />
+      {/* Rivet / 轴钉 — stays circular in both states */}
+      <circle cx="12" cy="18.5" r="1.5" fill="currentColor" stroke="none" />
     </svg>
   );
 }

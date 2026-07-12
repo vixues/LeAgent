@@ -112,7 +112,16 @@ _SCRIPT_SRC_ALLOWLIST: tuple[str, ...] = (
 _THREE_JS_GLOBAL_CDN = "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"
 _THREE_JS_BOOTSTRAP = f'<script src="{_THREE_JS_GLOBAL_CDN}"></script>\n'
 
-_THREE_SCRIPT_HINT_RE = re.compile(r"(?i)three(?:\.min)?\.js|/npm/three@|from ['\"]three['\"]")
+# Match real Three.js loads only — not prose like "Three.js 未加载" in UI copy.
+_THREE_SCRIPT_HINT_RE = re.compile(
+    r"""(?ix)
+    (?:
+        <script\b[^>]*\bsrc\s*=\s*['\"][^'\"]*three(?:\.min)?\.js
+      | /npm/three@
+      | from\s+['\"]three['\"]
+    )
+    """
+)
 
 
 def _html_already_loads_three(html: str) -> bool:

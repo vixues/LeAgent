@@ -41,7 +41,7 @@ Never echo full secrets in chat. Summaries already mask them (`****` + last 4).
 
 - LLM: `DEEPSEEK_API_KEY` (`sk-…`), `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `DASHSCOPE_API_KEY`
 - DeepSeek tuning: `DEEPSEEK_BASE_URL`, `DEEPSEEK_MODEL`, `DEEPSEEK_THINKING_TYPE` (`enabled`\|`disabled`), `DEEPSEEK_REASONING_EFFORT` (`high`\|`max`)
-- Web search: `WEB_SEARCH_PROVIDER` (`auto`\|`bing_playwright`\|`duckduckgo_lite`\|`searxng`\|`bing`\|`brave`\|`tavily`\|`exa`\|`firecrawl`\|`serper`; default `auto` → configured API else Playwright Bing), `WEB_SEARCH_BING_API_KEY`, `WEB_SEARCH_SEARXNG_BASE_URL`, `WEB_SEARCH_BRAVE_API_KEY`, `WEB_SEARCH_TAVILY_API_KEY`, `WEB_SEARCH_EXA_API_KEY`, `WEB_SEARCH_FIRECRAWL_API_KEY`, `WEB_SEARCH_FIRECRAWL_API_URL`, `WEB_SEARCH_SERPER_API_KEY`
+- Web search: preferred default is **Tavily** — `WEB_SEARCH_TAVILY_API_KEY` (from app.tavily.com); `WEB_SEARCH_PROVIDER` defaults to `tavily` (`auto`\|`bing_playwright`\|`duckduckgo_lite`\|`searxng`\|`bing`\|`brave`\|`tavily`\|`exa`\|`firecrawl`\|`serper`; `auto` prefers Tavily then other configured APIs, else Playwright Bing). Also: `WEB_SEARCH_BING_API_KEY`, `WEB_SEARCH_SEARXNG_BASE_URL`, `WEB_SEARCH_BRAVE_API_KEY`, `WEB_SEARCH_EXA_API_KEY`, `WEB_SEARCH_FIRECRAWL_API_KEY`, `WEB_SEARCH_FIRECRAWL_API_URL`, `WEB_SEARCH_SERPER_API_KEY`. When the user wants better web search and no Tavily key is set, offer to configure `WEB_SEARCH_TAVILY_API_KEY`.
 - Image search: `IMAGE_SEARCH_API_KEY`, `IMAGE_SEARCH_CX`
 - Fetch: `WEB_FETCH_ENABLED`, `WEB_FETCH_CHECK_ROBOTS`, `WEB_FETCH_MIN_INTERVAL_MS`, `WEB_FETCH_USER_AGENT`, `WEB_FETCH_CACHE_TTL_MINUTES`
 - SMTP: `LEAGENT_SMTP_HOST`, `LEAGENT_SMTP_PORT`, `LEAGENT_SMTP_USERNAME`, `LEAGENT_SMTP_PASSWORD`, `LEAGENT_SMTP_USE_TLS`, `LEAGENT_SMTP_USE_SSL`, `LEAGENT_SMTP_FROM_EMAIL`, `LEAGENT_SMTP_FROM_NAME`
@@ -50,6 +50,7 @@ Never echo full secrets in chat. Summaries already mask them (`****` + last 4).
 ### Paste heuristics
 
 - `sk-` + alphanumeric → likely `DEEPSEEK_API_KEY`
+- `tvly-` prefix → `WEB_SEARCH_TAVILY_API_KEY` (keep / set `WEB_SEARCH_PROVIDER=tavily`)
 - Host like `smtp.*` / port 465/587 → SMTP keys
 - JSON with `mcpServers` / `command`+`args` → `kind: mcp`
 - DingTalk / Feishu / WeCom webhook URLs → `kind: channel` (`dingtalk` / `feishu` / `wechat_work`)

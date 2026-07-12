@@ -311,6 +311,18 @@ async def persist_uploaded_file(
         await session.flush()
         await session.refresh(db_file)
 
+        if folder_id is not None:
+            from leagent.db.models.folder import Folder
+            from leagent.db.sqlite_compat import load_entity_by_id
+
+            folder = await load_entity_by_id(
+                session, Folder, folder_id, parent_table="folders"
+            )
+            if folder is not None and not folder.is_deleted:
+                folder.file_count = int(folder.file_count or 0) + 1
+                session.add(folder)
+                await session.flush()
+
     await enqueue_file_processing(
         db,
         file_id=str(file_id),
@@ -503,12 +515,23 @@ async def upload_file(
             )
 
     try:
+        effective_folder_id = folder_id
+        if effective_folder_id is None and session_id is not None:
+            with contextlib.suppress(Exception):
+                from leagent.services.chat.project_files import resolve_session_project_file_space
+
+                space = await resolve_session_project_file_space(
+                    db, session_id=session_id, user_id=user_id
+                )
+                if space is not None:
+                    effective_folder_id = space.folder_id
+
         db_file = await persist_uploaded_file(
             file,
             user_id,
             db,
             session_id=session_id,
-            folder_id=folder_id,
+            folder_id=effective_folder_id,
             library_scope=scope,
         )
     except ValueError as exc:

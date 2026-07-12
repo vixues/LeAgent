@@ -29,6 +29,7 @@ class LLMRequestLog(BaseModel, table=True):
     session_id: Optional[str] = Field(default=None, index=True, max_length=100)
     user_id: Optional[str] = Field(default=None, index=True, max_length=100)
     user_message_id: Optional[str] = Field(default=None, index=True, max_length=100)
+    run_id: Optional[str] = Field(default=None, index=True, max_length=100)
     call_index: int = Field(default=0)
     call_kind: str = Field(default="chat", index=True, max_length=32)
     is_streaming: bool = Field(default=False)

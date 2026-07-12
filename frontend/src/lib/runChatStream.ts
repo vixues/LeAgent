@@ -36,6 +36,8 @@ export interface RunChatStreamParams {
   projectFolderId?: string | null;
   /** Resume after ``ask_user``: POST as ``tool_replies`` JSON to ``/chat/stream``. */
   toolReplies?: Array<{ tool_call_id: string; content: string }>;
+  /** Durable checkpoint id — resume a paused/aborted turn via AgentRuntime.resume. */
+  checkpointId?: string | null;
   /** Model selection from the composer. Usually "provider/model"; legacy modes are still accepted. */
   modelMode?: string;
   /** When true, the backend folds the deep-research persona into the system prompt. */
@@ -62,6 +64,7 @@ export async function runChatStream({
   fileIds,
   projectFolderId,
   toolReplies,
+  checkpointId,
   modelMode,
   researchMode,
   researchDoc,
@@ -83,6 +86,10 @@ export async function runChatStream({
 
   if (toolReplies?.length) {
     formData.append('tool_replies', JSON.stringify(toolReplies));
+  }
+
+  if (checkpointId) {
+    formData.append('checkpoint_id', checkpointId);
   }
 
   if (attachments) {

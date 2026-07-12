@@ -640,6 +640,17 @@ class LLMService:
             user_message_id = user_message_id_var.get()
             call_index = next_llm_call_index()
             call_kind = current_llm_call_kind()
+            run_id: str | None = None
+            try:
+                from leagent.telemetry.trace import current_run_id
+
+                run_id = current_run_id()
+            except Exception:
+                run_id = None
+
+            cache_read = int(getattr(usage, "prompt_cache_hit_tokens", 0) or 0)
+            cache_miss = int(getattr(usage, "prompt_cache_miss_tokens", 0) or 0)
+            latency_ms = duration * 1000
 
             async def _insert() -> None:
                 try:
@@ -655,14 +666,10 @@ class LLMService:
                                 request_model=request_model or model or "unknown",
                                 input_tokens=input_tokens,
                                 output_tokens=output_tokens,
-                                cache_read_tokens=int(
-                                    getattr(usage, "prompt_cache_hit_tokens", 0) or 0
-                                ),
-                                cache_miss_tokens=int(
-                                    getattr(usage, "prompt_cache_miss_tokens", 0) or 0
-                                ),
+                                cache_read_tokens=cache_read,
+                                cache_miss_tokens=cache_miss,
                                 total_cost_usd=total_cost,
-                                latency_ms=duration * 1000,
+                                latency_ms=latency_ms,
                                 ttfb_ms=ttfb_ms,
                                 status_code=status_code,
                                 error=error,
@@ -670,6 +677,7 @@ class LLMService:
                                 session_id=session_id,
                                 user_id=user_id,
                                 user_message_id=user_message_id,
+                                run_id=run_id,
                                 call_index=call_index,
                                 call_kind=call_kind,
                             )
@@ -678,6 +686,29 @@ class LLMService:
                     logger.debug("llm_request_log_insert_failed")
 
             asyncio.create_task(_insert())
+            try:
+                from leagent.telemetry.trace import get_trace_recorder
+
+                get_trace_recorder().record_llm(
+                    provider=provider or "unknown",
+                    model=model or "unknown",
+                    request_model=request_model or model or "unknown",
+                    input_tokens=input_tokens,
+                    output_tokens=output_tokens,
+                    cache_read_tokens=cache_read,
+                    cache_miss_tokens=cache_miss,
+                    total_cost_usd=total_cost,
+                    latency_ms=latency_ms,
+                    ttfb_ms=ttfb_ms,
+                    status_code=status_code,
+                    error=error,
+                    is_streaming=is_streaming,
+                    call_index=call_index,
+                    call_kind=call_kind,
+                    run_id=run_id,
+                )
+            except Exception:
+                logger.debug("llm_trace_span_failed")
         except Exception:
             logger.debug("llm_request_log_schedule_failed")
 

@@ -130,6 +130,18 @@ async def _pubmed_esearch(client: httpx.AsyncClient, query: str, max_results: in
     return out
 
 
+_TAVILY_SETUP_HINT = (
+    "Preferred general search is Tavily (`WEB_SEARCH_TAVILY_API_KEY`). It is not configured — "
+    "proactively recommend the user add a key from https://app.tavily.com via Settings → "
+    "Environment secrets or `configure_settings` (env key `WEB_SEARCH_TAVILY_API_KEY`; "
+    "default provider is already `tavily`)."
+)
+
+
+def _tavily_unconfigured(cfg: WebSearchSettings) -> bool:
+    return not (cfg.tavily_api_key or "").strip()
+
+
 def _empty_result_guidance(*, focus_resolved: str, had_general_fallback: bool, provider: str) -> str:
     base = (
         "No hits returned. You can still help: answer from prior context or attachments; ask the user for a "
@@ -142,9 +154,9 @@ def _empty_result_guidance(*, focus_resolved: str, had_general_fallback: bool, p
         return (
             base
             + f" Broad web search may be blocked or empty for provider={provider!r}. "
-            "Default zero-config path is bing_playwright (Playwright + Bing). Ensure Chromium is "
-            "installed (`uv run playwright install chromium`), or set a configured API provider "
-            "(WEB_SEARCH_*_API_KEY / SearXNG URL) in Settings."
+            "Floor fallback is bing_playwright (Playwright + Bing). Ensure Chromium is "
+            "installed (`uv run playwright install chromium`), or configure Tavily "
+            "(`WEB_SEARCH_TAVILY_API_KEY`) in Settings."
         )
     return base
 
@@ -214,6 +226,16 @@ async def run_web_search(
             had_general_fallback=had_general_fallback,
             provider=cfg.provider,
         )
+    # General search without Tavily: surface a setup hint even when the Playwright floor worked.
+    if (
+        resolved == "general"
+        and _tavily_unconfigured(cfg)
+        and not str(strategy).startswith("tavily")
+    ):
+        if _TAVILY_SETUP_HINT not in next_step:
+            next_step = f"{next_step} {_TAVILY_SETUP_HINT}".strip()
+        if not any("WEB_SEARCH_TAVILY_API_KEY" in r for r in degraded_reasons):
+            degraded_reasons.append(_TAVILY_SETUP_HINT)
 
     return {
         "query": query,

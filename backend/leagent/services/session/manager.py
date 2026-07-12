@@ -742,6 +742,29 @@ class SessionManager:
             logger.warning("register_artifact_bytes_failed: %s", exc)
             return None
 
+        # Link tool artifacts into the chat-project shared folder when applicable.
+        if user_id is not None:
+            try:
+                from leagent.db.service import get_database_service
+                from leagent.services.chat.project_files import (
+                    link_file_ids_to_folder,
+                    resolve_session_project_file_space,
+                )
+
+                db = get_database_service()
+                space = await resolve_session_project_file_space(
+                    db, session_id=session_id, user_id=user_id
+                )
+                if space is not None:
+                    await link_file_ids_to_folder(
+                        db,
+                        file_ids=[ref.id],
+                        folder_id=space.folder_id,
+                        user_id=user_id,
+                    )
+            except Exception:  # noqa: BLE001
+                logger.debug("register_artifact_project_folder_link_skipped", exc_info=True)
+
         return await self._attach_ref(ref, session_id, user_id, label=label)
 
     async def _attach_ref(

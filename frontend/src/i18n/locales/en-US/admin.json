@@ -25,6 +25,7 @@
     "tabs": {
       "providers": "Model Providers",
       "modelSettings": "Model Settings",
+      "agentTraces": "Agent Traces",
       "imageGen": "Media Generation",
       "tools": "Tool Management",
       "rules": "Rule Configuration",
@@ -515,6 +516,32 @@
         "failed": "Failed",
         "cancelled": "Cancelled"
       }
+    },
+    "traces": {
+      "title": "Agent Traces",
+      "subtitle": "Inspect durable agent runs, compare models, and locate failures.",
+      "empty": "No traces yet",
+      "selectRun": "Select a run to inspect its span waterfall",
+      "filterModel": "Filter model…",
+      "filterStatus": "Filter status…",
+      "colModel": "Model",
+      "colStatus": "Status",
+      "colLatency": "Latency",
+      "colTokens": "Tokens",
+      "colTools": "Tools",
+      "colSession": "Session",
+      "colRuns": "Runs",
+      "colSuccess": "Success",
+      "colCost": "Avg cost",
+      "tabs": {
+        "runs": "Runs",
+        "byModel": "By model",
+        "compare": "Compare"
+      },
+      "comparePrompt": "Shared prompt",
+      "comparePromptPlaceholder": "Enter the same prompt to run across selected models…",
+      "compareModels": "Models",
+      "runCompare": "Run comparison"
     }
   }
 }

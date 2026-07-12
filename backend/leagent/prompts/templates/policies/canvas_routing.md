@@ -22,8 +22,10 @@ What is the deliverable?
 │
 ├── Hosted webpage / landing page / printable report / page-scale layout
 │   → canvas_publish(mode=html)
-│        ├── compact single page ≲ ~20KB → inline `html` (runtime auto-recovers JSON)
-│        └── larger / multi-asset (HTML + CSS + JS) → `html_files` + `html_bundle_entry`
+│        ├── compact single page ≲ ~20KB → inline `html`
+│        ├── larger / multi-asset → write files then `html_paths` + `html_bundle_entry`
+│        │                         (or `html_files_blob_id` via tool_argument_blob)
+│        └── tiny multi-file map ≲ ~20KB total → inline `html_files`
 │
 └── Allowlisted embed (Maps · YouTube · Vimeo · OpenStreetMap)
     → canvas_publish(mode=embed_url)
@@ -61,9 +63,10 @@ If unsure, **answer in markdown first**. Offer GenUI in one sentence — **do no
 ### Decision rule (after the gate above)
 
 - **Simple webpages / landing pages / resumes:** write a complete HTML document directly with
-  `canvas_publish(mode=html, html="…")` when the document stays under ~20KB. Larger pages should
-  use `html_files` + `html_bundle_entry`. Do not route through `code_execution`, Python string
-  generation, or `tool_argument_blob` unless the direct call fails.
+  `canvas_publish(mode=html, html="…")` when the document stays under ~20KB. Larger pages must
+  **not** re-emit bodies in one tool call — write files (`project_write` / session tools) then
+  `canvas_publish(html_paths=[…], html_bundle_entry=…)` or stage via
+  `tool_argument_blob` → `html_files_blob_id` / `html_blob_id`.
 - **Design / branded UI tasks:** load relevant skills via `load_skill` only when the user asks for
   a polished design system, brand treatment, or a complex visual artifact. A simple page request
   does not require skill loading.

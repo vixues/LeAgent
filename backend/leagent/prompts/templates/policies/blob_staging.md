@@ -8,29 +8,28 @@ requires_tools:
 
 ## Large argument staging (`tool_argument_blob`)
 
-### Default: inline content directly
+### Default for compact content: inline
 
-For most content — especially HTML pages, Python scripts, diffs, code files — **inline
-the content directly** in the tool call (`html`, `content`, `source`, `diff`).
-The runtime auto-recovers malformed JSON when double quotes or newlines break
-the outer JSON envelope. This is faster than blob staging because it takes
-**one tool call** instead of three or more.
+For small payloads (scripts, diffs, compact HTML ≲ ~20KB) **inline** the content
+in the tool call (`html`, `content`, `source`, `diff`). The runtime auto-recovers
+malformed JSON when double quotes or newlines break the outer envelope.
 
-For webpages, the default is always:
+### Large HTML / multi-file pages (preferred ladder)
 
-`canvas_publish(mode=html, html="<!DOCTYPE html>...")`
+When the page (or `html_files` map) would exceed ~20KB **do not** put bodies in
+one `canvas_publish` tool-call JSON. Use:
 
-Do not generate HTML through Python or stage it with `tool_argument_blob` as the first attempt.
+1. **Disk then thin publish (best):** write shards with `project_write` (or
+   session file tools), each body under the output-token budget / via
+   `content_blob_id`, then:
+   `canvas_publish(mode=html, html_paths=["index.html", …], html_bundle_entry="index.html")`
+2. **Blob staging:** `tool_argument_blob(action=create_and_finalize, chunk=…)` then
+   `canvas_publish(html_blob_id=…)` or `html_files_blob_id=…` (JSON
+   `{"entry","files"}`).
+3. **Last resort:** inline `html` / `html_files` only if the **total** payload
+   stays under ~20KB.
 
-### When to fall back to blob staging
-
-Use `tool_argument_blob` only when:
-
-- A **prior direct call failed** and the runtime could not recover it.
-- The content exceeds **~1 MB** per append (output token limit risk — keep HTML compact).
-- You need to stage **binary data** (base64-encoded files).
-
-### Staging flow (fallback only)
+### Staging flow
 
 **Prefer one blob tool call** when the full body fits in a single append (under
 ~1 MB UTF-8 characters):
@@ -38,7 +37,7 @@ Use `tool_argument_blob` only when:
 1. `tool_argument_blob(action=create_and_finalize, chunk=…)` — plain `chunk`
    is preferred; use `chunk_base64` only when quotes would break JSON.
 2. Pass the returned `blob_id` via the matching `*_blob_id` parameter, then call
-   the consumer tool (e.g. `canvas_publish(html_blob_id=…)`).
+   the consumer tool.
 
 **Multi-step staging** (`create` → `append` → `finalize`) is only when a prior
 output was **truncated mid-payload** or the body exceeds one append limit. Use
@@ -46,8 +45,9 @@ the largest practical append per turn (up to ~1 MB decoded chars), not many tiny
 chunks. Avoid `chunk_base64` unless plain `chunk` breaks JSON.
 
 `*_blob_id` targets: `content_blob_id` (project_write), `source_blob_id`
-(code_execution), `html_blob_id` (canvas_publish), `diff_blob_id`
-(project_apply_patch), `old_string_blob_id` / `new_string_blob_id` (project_edit).
+(code_execution), `html_blob_id` / `html_files_blob_id` (canvas_publish),
+`diff_blob_id` (project_apply_patch), `old_string_blob_id` / `new_string_blob_id`
+(project_edit).
 
 ### JSON argument safety
 

@@ -27,7 +27,8 @@ _SERVICE: WebSearchService | None = None
 class WebSearchService:
     """Strategy registry for general web search.
 
-    Default / ``auto`` never silently uses unconfigured API backends. The
+    Default provider is ``tavily`` (needs a key). ``auto`` never silently uses
+    unconfigured API backends and prefers Tavily first when configured. The
     zero-config floor is Playwright Bing (``bing_playwright``).
     """
 
@@ -62,12 +63,14 @@ class WebSearchService:
                         reasons.append(f"auto selected configured provider={name}.")
                     else:
                         reasons.append(
-                            "No configured web search API provider; using bing_playwright "
-                            "(Playwright + Bing)."
+                            "No WEB_SEARCH_TAVILY_API_KEY (preferred default); using "
+                            "bing_playwright (Playwright + Bing). Recommend configuring "
+                            "Tavily in Settings (app.tavily.com)."
                         )
                     return name, reasons
             reasons.append(
-                "No configured web search API provider; using bing_playwright (Playwright + Bing)."
+                "No WEB_SEARCH_TAVILY_API_KEY (preferred default); using bing_playwright "
+                "(Playwright + Bing). Recommend configuring Tavily in Settings (app.tavily.com)."
             )
             return DEFAULT_SEARCH_FLOOR, reasons
 

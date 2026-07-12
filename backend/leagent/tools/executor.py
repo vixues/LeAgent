@@ -454,11 +454,17 @@ def _recover_project_apply_patch_args(raw: str) -> dict[str, Any] | None:
 
 
 def _recover_canvas_publish_args(raw: str) -> dict[str, Any] | None:
-    """Recover ``canvas_publish`` args when ``html`` breaks outer JSON."""
+    """Recover ``canvas_publish`` args when ``html`` / ``html_files`` breaks outer JSON."""
     text = _strip_json_code_fence(raw)
     if '"title"' not in text or '"mode"' not in text:
         return None
-    if '"html"' not in text and '"html_blob_id"' not in text:
+    if (
+        '"html"' not in text
+        and '"html_blob_id"' not in text
+        and '"html_files"' not in text
+        and '"html_files_blob_id"' not in text
+        and '"html_paths"' not in text
+    ):
         return None
     title_info = _extract_json_string_value(text, "title")
     if title_info is None:
@@ -483,20 +489,68 @@ def _recover_canvas_publish_args(raw: str) -> dict[str, Any] | None:
             "message_id",
             "open_in_panel",
             "html_blob_id",
+            "html_files",
+            "html_files_blob_id",
+            "html_paths",
+            "html_bundle_entry",
         ),
     )
-    end_pos: int
+    end_pos: int | None = None
     if html_info is not None:
         html_body, _, html_end = html_info
         recovered["html"] = html_body
         end_pos = html_end
     else:
-        blob_info = _extract_json_string_value(text, "html_blob_id")
-        if blob_info is None:
-            return None
-        bid, _, bid_end = blob_info
-        recovered["html_blob_id"] = bid
-        end_pos = bid_end
+        files_obj = _extract_json_object_value(text, "html_files")
+        if files_obj is not None:
+            recovered["html_files"] = {
+                str(k): str(v) for k, v in files_obj.items() if isinstance(v, str)
+            }
+            # Approximate end for suffix parse — after the object key region.
+            match = re.search(r'"html_files"\s*:\s*', text)
+            if match is not None:
+                try:
+                    _, obj_end = json.JSONDecoder().raw_decode(
+                        text[match.end() :].lstrip()
+                    )
+                    end_pos = match.end() + len(text[match.end() :]) - len(
+                        text[match.end() :].lstrip()
+                    ) + obj_end - 1
+                except json.JSONDecodeError:
+                    end_pos = match.end()
+        else:
+            for key in ("html_blob_id", "html_files_blob_id"):
+                blob_info = _extract_json_string_value(text, key)
+                if blob_info is not None:
+                    bid, _, bid_end = blob_info
+                    recovered[key] = bid
+                    end_pos = bid_end
+                    break
+            if end_pos is None:
+                # Thin path: html_paths array
+                paths_match = re.search(r'"html_paths"\s*:\s*', text)
+                if paths_match is not None:
+                    try:
+                        parsed_paths, paths_end = json.JSONDecoder().raw_decode(
+                            text[paths_match.end() :].lstrip()
+                        )
+                        if isinstance(parsed_paths, list) and parsed_paths:
+                            recovered["html_paths"] = [str(p) for p in parsed_paths]
+                            pad = len(text[paths_match.end() :]) - len(
+                                text[paths_match.end() :].lstrip()
+                            )
+                            end_pos = paths_match.end() + pad + paths_end - 1
+                    except json.JSONDecodeError:
+                        return None
+                else:
+                    return None
+
+    if end_pos is None:
+        return None
+
+    entry_info = _extract_json_string_value(text, "html_bundle_entry")
+    if entry_info is not None:
+        recovered["html_bundle_entry"] = entry_info[0]
 
     suffix = text[end_pos + 1 :].strip()
     if suffix.startswith(","):
@@ -511,6 +565,10 @@ def _recover_canvas_publish_args(raw: str) -> dict[str, Any] | None:
                 "open_in_panel",
                 "html_blob_id",
                 "html",
+                "html_files",
+                "html_files_blob_id",
+                "html_paths",
+                "html_bundle_entry",
             ):
                 if key in parsed_suffix and key not in recovered:
                     recovered[key] = parsed_suffix[key]

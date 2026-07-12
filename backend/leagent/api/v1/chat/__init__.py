@@ -203,6 +203,7 @@ from leagent.api.v1.chat.attachments import (  # noqa: E402,F401
 )
 from leagent.api.v1.chat.context_sources import (  # noqa: E402,F401
     authorized_root_paths_for_session as _authorized_root_paths_for_session,
+    chat_project_workspace_note as _chat_project_workspace_note,
     context_item_paths as _context_item_paths,
     parse_knowledge_line_payload as _parse_knowledge_line_payload,
     resolve_folder_context as _resolve_folder_context,
@@ -254,17 +255,21 @@ async def chat_stream_endpoint(
     model_name: str | None = Form(default=None),
     research_mode: str | None = Form(default=None),
     research_doc: str | None = Form(default=None),
+    checkpoint_id: str | None = Form(default=None),
 ):
     """Frontend-compatible streaming endpoint.
 
     Accepts FormData (message, session_id, files, history, folder_id,
-    file_ids, project_folder_id) and produces SSE events in the format
-    expected by the frontend ``useChat`` hook.
+    file_ids, project_folder_id, checkpoint_id) and produces SSE events in the
+    format expected by the frontend ``useChat`` hook.
 
     ``project_folder_id`` binds this turn to a ``Folder`` that has
     ``is_project=True`` so the resolved ``project_path`` is folded
     into ``tool_extra['project_roots']`` for every tool call. The
     coding agent and ``project_*`` tools use this transparently.
+
+    ``checkpoint_id`` resumes a paused/aborted agent turn from a durable
+    CheckpointStore snapshot (Continue after Stop / max_turns / etc.).
     """
     # Captured at endpoint entry so time-to-first-token includes pre-stream work
     # (file ingest, context resolution, user-row persist) — not just the LLM.
@@ -319,6 +324,21 @@ async def chat_stream_endpoint(
             unlock_token=project_unlock_token,
         )
 
+    # Shared file space for chat projects (catalog folder + disk root).
+    # Bound only when the session itself has project_id — free chats stay
+    # session-scoped and never inherit a shared workspace from Form project_id.
+    chat_project_space = None
+    with suppress(Exception):
+        from leagent.services.chat.project_files import resolve_session_project_file_space
+
+        chat_project_space = await resolve_session_project_file_space(
+            db, session_id=parsed_session_id, user_id=user_id
+        )
+
+    effective_folder_id = (folder_id or "").strip() or None
+    if chat_project_space is not None and not effective_folder_id:
+        effective_folder_id = str(chat_project_space.folder_id)
+
     # ---- Ingest uploaded files via SessionManager ----
     attachment_paths: list[str] = []
     persisted_file_ids: list[str] = []
@@ -342,6 +362,24 @@ async def chat_stream_endpoint(
             return await _attach_chat_files(user_id, parsed_session_id, incoming_file_parts)
         return [], [], []
 
+    async def _resolve_effective_folder_context() -> list[tuple[str, str, str | None]]:
+        items = await _resolve_folder_context(user_id, db, effective_folder_id, file_ids)
+        # Also include the chat-project folder when the client selected a different folder.
+        if (
+            chat_project_space is not None
+            and effective_folder_id
+            and str(chat_project_space.folder_id) != str(effective_folder_id)
+        ):
+            extra = await _resolve_folder_context(
+                user_id, db, str(chat_project_space.folder_id), None
+            )
+            seen = {path for path, _n, _p in items}
+            for row in extra:
+                if row[0] not in seen:
+                    items.append(row)
+                    seen.add(row[0])
+        return items
+
     (
         (session_attachment_payloads, uploaded_paths, ingest_errors),
         context_items,
@@ -349,12 +387,23 @@ async def chat_stream_endpoint(
         project_path_for_turn,
     ) = await asyncio.gather(
         _ingest_uploaded_files(),
-        _resolve_folder_context(user_id, db, folder_id, file_ids),
+        _resolve_effective_folder_context(),
         _resolve_knowledge_message_paths(user_id, db, message),
         _resolve_project_folder_path(user_id, db, project_folder_id),
     )
 
     persisted_file_ids = [a["id"] for a in session_attachment_payloads]
+    if chat_project_space is not None and persisted_file_ids:
+        with suppress(Exception):
+            from leagent.services.chat.project_files import link_file_ids_to_folder
+
+            await link_file_ids_to_folder(
+                db,
+                file_ids=[UUID(fid) for fid in persisted_file_ids],
+                folder_id=chat_project_space.folder_id,
+                user_id=user_id,
+            )
+
     attachment_paths.extend(uploaded_paths)
     attachment_paths.extend(_context_item_paths(context_items))
     attachment_paths.extend(knowledge_paths)
@@ -362,9 +411,27 @@ async def chat_stream_endpoint(
     selected_folder_context_note = await _resolve_folder_context_note(
         user_id,
         db,
-        folder_id,
+        effective_folder_id,
         attached_file_count=len(context_items),
     )
+    if chat_project_space is not None:
+        project_note = _chat_project_workspace_note(
+            folder_id=chat_project_space.folder_id,
+            files_root=chat_project_space.files_root,
+            attached_file_count=len(context_items),
+        )
+        selected_folder_context_note = (
+            f"{selected_folder_context_note or ''}{project_note}"
+        )
+        with suppress(Exception):
+            await chat_svc.merge_session_metadata(
+                parsed_session_id,
+                user_id=user_id,
+                patch={
+                    "chat_project_folder_id": str(chat_project_space.folder_id),
+                    "chat_project_files_root": chat_project_space.files_root,
+                },
+            )
     if project_path_for_turn:
         # Persist on the session so reloads / resume keep the binding
         # without the client re-sending it on every request.
@@ -394,35 +461,52 @@ async def chat_stream_endpoint(
                         user_id, db, fallback_id,
                     )
 
-    # -- "continue" command: resume an interrupted conversation --
+    # -- "continue" / checkpoint resume --
     _continue_keywords = {"continue", "继续", "続ける", "fortsetzen", "continuar"}
     _is_continue = (message or "").strip().lower() in _continue_keywords
     _resumable_state: dict[str, Any] | None = None
-    if _is_continue and parsed_session_id:
+    # Prefer an explicit Form checkpoint_id; fall back to session metadata.
+    resume_checkpoint_id = (checkpoint_id or "").strip() or None
+    if _is_continue and parsed_session_id and not resume_checkpoint_id:
         try:
             existing_sess = await chat_svc.get_session(parsed_session_id, user_id=user_id)
             if existing_sess and existing_sess.session_metadata:
                 _meta = json.loads(existing_sess.session_metadata)
                 if isinstance(_meta, dict) and isinstance(_meta.get("resumable_state"), dict):
                     _resumable_state = _meta["resumable_state"]
-                    original_msg = _resumable_state.get("user_message", "")
-                    partial = _resumable_state.get("partial_response", "")
-                    if original_msg:
-                        message = original_msg
-                        if partial:
-                            message = (
-                                f"{original_msg}\n\n"
-                                f"[System: The previous response was interrupted. "
-                                f"Partial response so far: {partial[:500]}... "
-                                f"Please continue from where you left off.]"
-                            )
-                    # Clear resumable state
+                    stashed_cp = _resumable_state.get("checkpoint_id")
+                    if isinstance(stashed_cp, str) and stashed_cp.strip():
+                        resume_checkpoint_id = stashed_cp.strip()
+                    else:
+                        # Legacy fallback: rewrite the prompt with partial text
+                        # when no durable checkpoint is available.
+                        original_msg = _resumable_state.get("user_message", "")
+                        partial = _resumable_state.get("partial_response", "")
+                        if original_msg:
+                            message = original_msg
+                            if partial:
+                                message = (
+                                    f"{original_msg}\n\n"
+                                    f"[System: The previous response was interrupted. "
+                                    f"Partial response so far: {partial[:500]}... "
+                                    f"Please continue from where you left off.]"
+                                )
                     _meta.pop("resumable_state", None)
                     await chat_svc.merge_session_metadata(
                         parsed_session_id, user_id=user_id, patch={"resumable_state": None},
                     )
         except Exception:  # noqa: BLE001
             logger.debug("continue_resume_lookup_failed", exc_info=True)
+    elif resume_checkpoint_id and parsed_session_id:
+        try:
+            await chat_svc.merge_session_metadata(
+                parsed_session_id, user_id=user_id, patch={"resumable_state": None},
+            )
+        except Exception:  # noqa: BLE001
+            logger.debug("resume_checkpoint_meta_clear_failed", exc_info=True)
+
+    if resume_checkpoint_id and not (message or "").strip():
+        message = "Continue"
 
     message_for_agent = (
         f"{message}{selected_folder_context_note}"
@@ -683,6 +767,17 @@ async def chat_stream_endpoint(
                 session_auth_roots = await _authorized_root_paths_for_session(
                     chat_svc, parsed_session_id, user_id,
                 )
+                turn_project_roots: list[str] = []
+                if project_path_for_turn:
+                    turn_project_roots.append(project_path_for_turn)
+                if chat_project_space is not None and chat_project_space.files_root:
+                    root = chat_project_space.files_root
+                    if root not in turn_project_roots:
+                        turn_project_roots.append(root)
+                    if session_auth_roots is None:
+                        session_auth_roots = [root]
+                    elif root not in session_auth_roots:
+                        session_auth_roots = [*session_auth_roots, root]
                 _conv_timeout = 600
                 try:
                     from leagent.agent.runtime_profile import (
@@ -691,7 +786,9 @@ async def chat_stream_endpoint(
                     from leagent.config.settings import get_settings as _gs
 
                     _conv_timeout = resolve_chat_conversation_timeout_sec(
-                        project_path=project_path_for_turn,
+                        project_path=project_path_for_turn or (
+                            chat_project_space.files_root if chat_project_space else None
+                        ),
                         runtime_profile=runtime_profile,
                         settings=_gs(),
                     )
@@ -708,13 +805,14 @@ async def chat_stream_endpoint(
                     parsed_session_id,
                     user_id,
                     attachments=agent_attachments,
-                    project_roots=[project_path_for_turn] if project_path_for_turn else None,
+                    project_roots=turn_project_roots or None,
                     authorized_roots=session_auth_roots,
                     skip_append_user=has_tool_replies,
                     persisted_user_message_id=stream_user_message_id,
                     conversation_timeout_sec=_conv_timeout,
                     agent_task_id=agent_task_id,
                     runtime_profile=runtime_profile,
+                    checkpoint_id=resume_checkpoint_id,
                 ):
                     response_content = acc_text
                     if etype == "token":
@@ -1870,6 +1968,28 @@ async def cancel_session(
     except Exception:  # noqa: BLE001
         pass
 
+    checkpoint_id: str | None = None
+    if cancelled:
+        # Abort path persists a durable checkpoint asynchronously; wait briefly
+        # so the client can Continue even though the SSE stream was closed.
+        checkpoint_id = await AgentController.wait_session_checkpoint(
+            session_id, timeout=2.0,
+        )
+        if not checkpoint_id:
+            # Fall back to session metadata written by _save_resumable_state.
+            try:
+                sess = await chat_svc.get_session(session_id, user_id=user_id)
+                if sess and sess.session_metadata:
+                    meta = json.loads(sess.session_metadata)
+                    if isinstance(meta, dict):
+                        rs = meta.get("resumable_state")
+                        if isinstance(rs, dict):
+                            cpid = rs.get("checkpoint_id")
+                            if isinstance(cpid, str) and cpid.strip():
+                                checkpoint_id = cpid.strip()
+            except Exception:  # noqa: BLE001
+                logger.debug("cancel_checkpoint_meta_lookup_failed", exc_info=True)
+
     if cancelled:
         msg = "Session cancelled"
         if procs_killed:
@@ -1884,6 +2004,7 @@ async def cancel_session(
         cancelled=cancelled,
         processes_killed=procs_killed,
         message=msg,
+        checkpoint_id=checkpoint_id,
     )
 
 
@@ -2834,6 +2955,35 @@ async def list_session_executions(
         )
         for r in runs
     ]
+
+
+@router.get("/sessions/{session_id}/traces")
+async def list_session_traces(
+    session_id: UUID,
+    user_id: CurrentUserId,
+    chat_svc: ChatSvc,
+    db: Annotated[DatabaseService, Depends(get_database_service)],
+    limit: int = Query(default=20, ge=1, le=100),
+    x_chat_project_token: str | None = Header(default=None, alias="X-Chat-Project-Token"),
+) -> list[dict[str, Any]]:
+    """Return durable agent running-traces for a chat session."""
+    session = await chat_svc.get_session(session_id, user_id=user_id)
+    if not session:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
+    await _require_session_project_access(
+        db,
+        session=session,
+        user_id=user_id,
+        unlock_token=x_chat_project_token,
+    )
+    from leagent.api.v1.traces import _summary
+    from leagent.telemetry.trace.store import get_trace_store
+
+    rows = await get_trace_store().list_traces(
+        session_id=str(session_id),
+        limit=limit,
+    )
+    return [_summary(r).model_dump(mode="json") for r in rows]
 
 
 @router.get("/workflow-templates", response_model=list[ChatWorkflowTemplateRead])

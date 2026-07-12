@@ -18,18 +18,21 @@ class WebSearchTool(BaseTool):
     """Search the web and return titles, URLs, and short snippets.
 
     For ``arxiv``, ``wikipedia``, ``crossref``, and ``pubmed`` this tool uses official
-    HTTP APIs (no headless browser). For ``general``, ``WEB_SEARCH_PROVIDER=auto``
-    (default) picks a *configured* API provider, otherwise Playwright Bing
-    (``bing_playwright``). Unconfigured API backends are never used silently.
+    HTTP APIs (no headless browser). For ``general``, default ``WEB_SEARCH_PROVIDER`` is
+    ``tavily`` (needs ``WEB_SEARCH_TAVILY_API_KEY``); without it the tool falls back to
+    Playwright Bing (``bing_playwright``) and surfaces a Tavily setup hint. Unconfigured
+    API backends are never used silently.
     """
 
     name = "web_search"
     description = (
         "Search the web for pages and papers; returns ranked results with URLs and snippets. "
-        "Default (no API keys): Playwright Bing (bing_playwright). Academic focus works without "
-        "keys (arxiv|wikipedia|crossref|pubmed). Optional configured providers: searxng, bing, "
-        "brave, tavily, exa, firecrawl, serper. After search, use web_fetch for static page text "
-        "or web_scraper for JS-heavy pages. If empty, read degraded_reasons and next_step."
+        "Preferred default: Tavily (WEB_SEARCH_TAVILY_API_KEY). Without that key, falls back to "
+        "Playwright Bing and next_step recommends configuring Tavily. Academic focus works "
+        "without keys (arxiv|wikipedia|crossref|pubmed). Other optional providers: searxng, "
+        "bing, brave, exa, firecrawl, serper. After search, use web_fetch for static page text "
+        "or web_scraper for JS-heavy pages. If empty or missing Tavily, read degraded_reasons "
+        "and next_step."
     )
     category = ToolCategory.WEB
     version = "1.2.0"

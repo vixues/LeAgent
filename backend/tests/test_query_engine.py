@@ -1276,6 +1276,7 @@ class TestCanvasLengthSalvage:
             "make a landing page",
             base=8192,
         ) == CANVAS_INTENT_MAX_OUTPUT_TOKENS
+        assert CANVAS_INTENT_MAX_OUTPUT_TOKENS >= 32_768
         assert resolve_canvas_intent_max_output_tokens(
             "summarize this PDF",
             base=8192,
@@ -1310,7 +1311,7 @@ class TestCanvasLengthSalvage:
         hint_msgs = [
             m
             for m in recovered.messages
-            if m.get("role") == "user" and "html_files" in str(m.get("content", ""))
+            if m.get("role") == "user" and "html_paths" in str(m.get("content", ""))
         ]
         assert hint_msgs
         assert recovered.max_output_tokens_recovery_count == 1
@@ -1479,7 +1480,7 @@ class TestCanvasLengthSalvage:
             m
             for m in retry_msgs
             if m.get("role") == "user"
-            and "html_files" in str(m.get("content", ""))
+            and "html_paths" in str(m.get("content", ""))
             and "tool_argument_blob" in str(m.get("content", ""))
         ]
         assert hint_msgs, "expected canvas routing hint on regenerate"

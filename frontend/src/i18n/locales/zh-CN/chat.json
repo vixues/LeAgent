@@ -25,7 +25,8 @@
       "unlock": "解锁",
       "unlockFailed": "无法解锁项目",
       "toggleProjects": "展开或折叠项目",
-      "settings": "项目设置"
+      "settings": "项目设置",
+      "openInFiles": "在文件中打开"
     },
     "greeting": "你好呀——今天主线是摸鱼还是改变世界？我两种档期都有。",
     "petBubble": {
@@ -77,7 +78,10 @@
         "resumePrompt": "提供输入以继续",
         "resumePlaceholder": "你的回答…",
         "resume": "继续",
-        "resumeFailed": "继续执行失败"
+        "resumeFailed": "继续执行失败",
+        "trace": "运行 Trace",
+        "traceExport": "导出 JSONL",
+        "traceEmpty": "暂无持久化的 agent trace"
       }
     },
     "contextUsageButtonAria": "上下文占用",
@@ -394,7 +398,8 @@
       "promptTooLong": "对话内容超出模型上下文窗口限制，请尝试新建对话或压缩上下文。",
       "modelError": "模型返回错误，请重试。",
       "maxTurns": "智能体已达到最大轮次限制，任务未完成。",
-      "tokenBudgetExceeded": "Token 预算已用尽，对话消耗的 Token 超出限额。"
+      "tokenBudgetExceeded": "Token 预算已用尽，对话消耗的 Token 超出限额。",
+      "blockingLimit": "智能体因阻断限制提前结束。"
     },
     "workflow": {
       "run": "运行",
@@ -625,6 +630,7 @@
         "folderLabel": "来源文件夹",
         "pickFolder": "选择文件夹…",
         "sessionWorkspace": "会话工作区",
+        "sharedProjectFiles": "项目共享文件",
         "docStreamTitle": "正在生成文档（实时）",
         "systemKnowledgeBase": "系统知识库",
         "searchPlaceholder": "在该文件夹中搜索文件",

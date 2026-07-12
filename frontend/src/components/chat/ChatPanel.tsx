@@ -10,6 +10,7 @@ import { ChatHeader } from './ChatHeader';
 import { ChatExecutionPanel } from './ChatExecutionPanel';
 import { ChatMessages } from './ChatMessages';
 import { ChatInput } from './ChatInput';
+import { ChatTerminalReasonBanner } from './ChatTerminalReasonBanner';
 import { ChatComposerUserInputGate } from '@/components/chat/ChatComposerUserInputGate';
 import type { Message, SendMessageParams } from '@/types/chat';
 import { handleChatStreamFailure, runChatStream } from '@/lib/runChatStream';
@@ -43,9 +44,18 @@ export function ChatPanel({ className }: ChatPanelProps) {
     async ({ content, attachments, folderId, fileIds, projectFolderId, modelMode }: SendMessageParams) => {
       const store = useChatStore.getState();
       let sessionId: string = store.currentSessionId ?? await store.createSession();
+      // Free chats (no session.projectId) must not inherit sidebar currentProjectId —
+      // shared folder/workspace is project-membership only. createSession() already
+      // stamps projectId when the user is under a project filter.
       const sessionProjectId =
-        store.sessions.find((s) => s.id === sessionId)?.projectId ??
-        useChatProjectStore.getState().currentProjectId;
+        store.sessions.find((s) => s.id === sessionId)?.projectId ?? null;
+      const projectFolderIdFromProject = sessionProjectId
+        ? folderId ||
+          useChatProjectStore
+            .getState()
+            .projects.find((p) => p.id === sessionProjectId)?.folderId ||
+          null
+        : folderId || null;
 
       const userMessageId = generateId();
       const userMessage: Message = {
@@ -92,7 +102,7 @@ export function ChatPanel({ className }: ChatPanelProps) {
           attachments,
           projectId: sessionProjectId,
           projectUnlockToken: getChatProjectUnlockToken(sessionProjectId),
-          folderId,
+          folderId: projectFolderIdFromProject,
           fileIds,
           projectFolderId,
           modelMode,
@@ -118,8 +128,7 @@ export function ChatPanel({ className }: ChatPanelProps) {
       const sessionId = store.currentSessionId;
       if (!sessionId || isChatStreamBusyForSession(sessionId, store)) return;
       const sessionProjectId =
-        store.sessions.find((s) => s.id === sessionId)?.projectId ??
-        useChatProjectStore.getState().currentProjectId;
+        store.sessions.find((s) => s.id === sessionId)?.projectId ?? null;
 
       if (!store.truncateAfterMessageId(sessionId, userMessageId)) return;
 
@@ -161,6 +170,11 @@ export function ChatPanel({ className }: ChatPanelProps) {
           content: trimmed,
           projectId: sessionProjectId,
           projectUnlockToken: getChatProjectUnlockToken(sessionProjectId),
+          folderId: sessionProjectId
+            ? useChatProjectStore
+                .getState()
+                .projects.find((p) => p.id === sessionProjectId)?.folderId || null
+            : null,
           modelMode: getComposerModelMode(),
           signal: controller.signal,
           t,
@@ -244,6 +258,7 @@ export function ChatPanel({ className }: ChatPanelProps) {
       </div>
 
       <ChatComposerUserInputGate onSubmitAnswers={onAskUserResume} />
+      <ChatTerminalReasonBanner />
       <ChatInput onSend={handleSend} onStop={stopStreaming} />
     </div>
   );

@@ -15,6 +15,7 @@ interface ChatProjectResponse {
   id: string;
   user_id: string;
   workspace_id?: string | null;
+  folder_id?: string | null;
   name: string;
   description?: string | null;
   design_context?: string | null;
@@ -73,6 +74,7 @@ function mapProject(p: ChatProjectResponse): ChatProject {
     id: p.id,
     userId: p.user_id,
     workspaceId: p.workspace_id,
+    folderId: p.folder_id ?? null,
     name: p.name,
     description: p.description,
     designContext: p.design_context,

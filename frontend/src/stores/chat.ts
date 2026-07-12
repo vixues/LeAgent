@@ -1313,13 +1313,35 @@ export const useChatStore = create<ChatStore>()(
 
       cancelBackendSession: async (sessionId: string) => {
         try {
-          await apiClient.post(
+          const res = await apiClient.post<{
+            session_id: string;
+            cancelled: boolean;
+            checkpoint_id?: string | null;
+            message?: string;
+          }>(
             `/chat/sessions/${sessionId}/cancel`,
             undefined,
             { headers: getChatProjectHeaders(projectIdForSession(sessionId)) },
           );
+          const checkpointId =
+            typeof res?.checkpoint_id === 'string' && res.checkpoint_id.trim()
+              ? res.checkpoint_id.trim()
+              : null;
+          if (checkpointId) {
+            set({
+              lastCheckpointId: checkpointId,
+              lastTerminalReason: 'aborted_streaming',
+            });
+          } else if (get().lastStopWasUserInitiated) {
+            // Still surface the Stop banner even if the checkpoint is late;
+            // Continue stays disabled until a checkpoint id arrives via SSE.
+            set({ lastTerminalReason: 'aborted_streaming' });
+          }
         } catch {
           // Best-effort; the SSE abort already closed the client connection
+          if (get().lastStopWasUserInitiated) {
+            set({ lastTerminalReason: 'aborted_streaming' });
+          }
         }
       },
 

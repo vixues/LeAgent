@@ -13,6 +13,10 @@ function reasonLabel(reason: TerminalReason, t: (k: string, opts?: { defaultValu
       return t('chat.errors.promptTooLong', { defaultValue: 'Conversation too long for context window.' });
     case 'model_error':
       return t('chat.errors.modelError', { defaultValue: 'The model returned an error.' });
+    case 'aborted_streaming':
+      return t('chat.errors.stoppedByUser', { defaultValue: 'Stopped by user' });
+    case 'blocking_limit':
+      return t('chat.errors.blockingLimit', { defaultValue: 'The agent hit a blocking limit.' });
     default:
       return null;
   }
@@ -54,7 +58,7 @@ export function ChatTerminalReasonBanner() {
       )}
       <button
         type="button"
-        onClick={() => useChatStore.setState({ lastTerminalReason: null })}
+        onClick={() => useChatStore.setState({ lastTerminalReason: null, lastCheckpointId: null })}
         className="shrink-0 text-amber-500 hover:text-amber-700 dark:text-amber-400 dark:hover:text-amber-200"
         aria-label="Dismiss"
       >

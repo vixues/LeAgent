@@ -295,7 +295,7 @@ class WebSearchSettings(BaseSettings):
         "exa",
         "firecrawl",
         "serper",
-    ] = "auto"
+    ] = "tavily"
     searxng_base_url: str = ""
     bing_api_key: str = ""
     bing_endpoint: str = "https://api.bing.microsoft.com/v7.0/search"
@@ -437,6 +437,21 @@ class WorkflowEngineSettings(BaseSettings):
     event_bus_prefix: str = "workflow:events"
 
 
+class TraceSettings(BaseSettings):
+    """Durable agent running-trace (debug/eval) plane.
+
+    Separate from ``CheckpointStore`` (resume) and chat transcript SSOT.
+    Env prefix: ``LEAGENT_TRACE_*``.
+    """
+
+    model_config = SettingsConfigDict(env_prefix="LEAGENT_TRACE_")
+
+    enabled: bool = True
+    capture_payloads: bool = False
+    preview_chars: int = Field(default=4096, ge=256, le=64_000)
+    retention_days: int = Field(default=30, ge=1, le=3650)
+
+
 class SecuritySettings(BaseSettings):
     """HTTP security hardening knobs.
 
@@ -516,6 +531,7 @@ class Settings(BaseSettings):
     context: "ContextSettings" = Field(default_factory=ContextSettings)
     workflow: WorkflowEngineSettings = Field(default_factory=WorkflowEngineSettings)
     security: SecuritySettings = Field(default_factory=SecuritySettings)
+    trace: TraceSettings = Field(default_factory=TraceSettings)
 
     rules_directory: str = ""
     workflows_directory: str = ""

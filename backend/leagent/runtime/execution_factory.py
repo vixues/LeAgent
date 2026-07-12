@@ -44,6 +44,25 @@ def begin_execution(
         prompt_id=prompt_id,
         task_id=task_id,
     )
+    try:
+        from leagent.telemetry.trace import get_trace_recorder
+
+        meta = dict(registered.metadata or {})
+        get_trace_recorder().start_trace(
+            run_id=registered.run_id,
+            scope=scope.value,
+            session_id=session_id,
+            user_id=user_id,
+            parent_run_id=parent_run_id,
+            agent_name=str(meta.get("agent_name") or meta.get("agent_id") or ""),
+            model=str(meta.get("model") or ""),
+            experiment_id=meta.get("experiment_id"),
+            prompt=meta.get("prompt") if isinstance(meta.get("prompt"), str) else None,
+            tags=meta.get("tags") if isinstance(meta.get("tags"), dict) else None,
+            metadata=meta,
+        )
+    except Exception:
+        logger.debug("agent_trace_start_failed", exc_info=True)
     return registered
 
 
@@ -59,6 +78,17 @@ def end_execution(run_id: str) -> None:
         session_id=run.session_id if run is not None else None,
         had_pause_token=run.is_blocked if run is not None else False,
     )
+    try:
+        from leagent.telemetry.trace import get_trace_recorder
+
+        status = "paused" if run is not None and run.is_blocked else "completed"
+        reason = None
+        if run is not None and run.pause_token is not None:
+            reason = run.pause_token.reason
+            status = "paused"
+        get_trace_recorder().end_trace(run_id, status=status, terminal_reason=reason)
+    except Exception:
+        logger.debug("agent_trace_end_failed", exc_info=True)
 
 
 def end_execution_unless_blocked(run_id: str) -> bool:
@@ -76,6 +106,18 @@ def end_execution_unless_blocked(run_id: str) -> bool:
             session_id=run.session_id,
             reason=run.pause_token.reason if run.pause_token else None,
         )
+        try:
+            from leagent.telemetry.trace import get_trace_recorder
+
+            get_trace_recorder().end_trace(
+                run_id,
+                status="paused",
+                terminal_reason=(
+                    run.pause_token.reason if run.pause_token else "awaiting_user_input"
+                ),
+            )
+        except Exception:
+            logger.debug("agent_trace_pause_failed", exc_info=True)
         return False
     end_execution(run_id)
     return True

@@ -174,7 +174,7 @@ class CanvasGuideSource(GatedPolicySource):
     )
 
 
-CANVAS_INTENT_MAX_OUTPUT_TOKENS = 16_384
+CANVAS_INTENT_MAX_OUTPUT_TOKENS = 32_768
 
 
 def resolve_canvas_intent_max_output_tokens(

@@ -25,6 +25,7 @@
     "tabs": {
       "providers": "模型提供商",
       "modelSettings": "模型设置",
+      "agentTraces": "Agent Trace",
       "imageGen": "媒体生成",
       "tools": "工具管理",
       "rules": "规则配置",
@@ -515,6 +516,32 @@
         "failed": "失败",
         "cancelled": "已取消"
       }
+    },
+    "traces": {
+      "title": "Agent Trace",
+      "subtitle": "查看持久化的 agent 运行轨迹，对比模型效果，定位失败原因。",
+      "empty": "暂无 trace",
+      "selectRun": "选择一条 run 查看 span 瀑布",
+      "filterModel": "筛选模型…",
+      "filterStatus": "筛选状态…",
+      "colModel": "模型",
+      "colStatus": "状态",
+      "colLatency": "延迟",
+      "colTokens": "Token",
+      "colTools": "工具",
+      "colSession": "会话",
+      "colRuns": "次数",
+      "colSuccess": "成功率",
+      "colCost": "平均成本",
+      "tabs": {
+        "runs": "运行列表",
+        "byModel": "按模型",
+        "compare": "对比"
+      },
+      "comparePrompt": "共享 prompt",
+      "comparePromptPlaceholder": "输入同一 prompt，在多个模型上平行跑…",
+      "compareModels": "模型",
+      "runCompare": "开始对比"
     }
   }
 }

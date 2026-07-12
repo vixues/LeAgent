@@ -274,56 +274,91 @@ class AgentRuntime:
                     span.set_attribute("agent.runtime_profile", definition.runtime_profile)
                 if session_id is not None:
                     span.set_attribute("agent.session_id", str(session_id))
+
+            from leagent.runtime.execution_factory import (
+                begin_execution,
+                end_execution_unless_blocked,
+            )
+            from leagent.runtime.execution_run import ExecutionScope
+            from leagent.sdk.kernel.loop import run_loop
+            from leagent.sdk.kernel.state import RunState
+
+            extra = dict(tool_extra or {})
+            # Callers historically pass the parent run via tool_extra["run_id"].
+            parent_run_id = extra.get("parent_run_id") or extra.get("run_id")
+            experiment_id = extra.get("experiment_id")
+            prompt_preview = prompt if isinstance(prompt, str) else None
+
+            meta: dict[str, Any] = {
+                "agent_name": definition.name if definition else "",
+                "model": (
+                    (definition.model.model or "")
+                    if definition is not None
+                    else ""
+                ),
+            }
+            if experiment_id:
+                meta["experiment_id"] = experiment_id
+            if prompt_preview:
+                meta["prompt"] = prompt_preview[:2000]
+            if isinstance(extra.get("tags"), dict):
+                meta["tags"] = extra["tags"]
+            if overrides:
+                ov_model = overrides.get("model")
+                if ov_model is not None and getattr(ov_model, "model", None):
+                    meta["model"] = str(ov_model.model)
+                elif overrides.get("model_name"):
+                    meta["model"] = str(overrides["model_name"])
+
+            exec_run = begin_execution(
+                scope=ExecutionScope.CHAT_TURN,
+                session_id=str(session_id or "") or None,
+                user_id=str(user_id or "") if user_id else None,
+                parent_run_id=str(parent_run_id) if parent_run_id else None,
+                metadata=meta,
+            )
+            extra["run_id"] = exec_run.run_id
+
             run_engine = engine or self.build_engine(
                 definition,
                 session_id=session_id,
                 user_id=user_id,
                 cwd=cwd,
-                tool_extra=tool_extra,
+                tool_extra=extra,
                 abort_event=abort_event,
                 initial_messages=initial_messages,
                 append_system_prompt=append_system_prompt,
                 nested_sdk_consumer=nested_sdk_consumer,
                 overrides=overrides,
             )
-
-            # Single execution path: every turn flows through the SDK kernel
-            # run loop, which maintains a RunState and checkpoints on a
-            # turn pause (``awaiting_user_input``) via the pluggable store.
-            from leagent.runtime.execution_registry import get_execution_run_registry
-            from leagent.runtime.execution_run import ExecutionRun, ExecutionScope
-            from leagent.sdk.kernel.loop import run_loop
-            from leagent.sdk.kernel.state import RunState
-
-            parent_run_id = None
-            if tool_extra and isinstance(tool_extra, dict):
-                parent_run_id = tool_extra.get("run_id")
-
-            exec_run = get_execution_run_registry().register(
-                ExecutionRun(
-                    scope=ExecutionScope.CHAT_TURN,
-                    session_id=str(session_id or ""),
-                    user_id=str(user_id or "") if user_id else None,
-                    parent_run_id=str(parent_run_id) if parent_run_id else None,
-                )
-            )
+            if engine is not None:
+                try:
+                    cfg_extra = getattr(run_engine.config, "tool_extra", None)
+                    if isinstance(cfg_extra, dict):
+                        cfg_extra["run_id"] = exec_run.run_id
+                    else:
+                        run_engine.config.tool_extra = dict(extra)
+                except Exception:
+                    logger.debug("tool_extra_run_id_patch_failed", exc_info=True)
 
             state = RunState(
                 session_id=str(session_id or ""),
                 agent_name=(definition.name if definition else getattr(run_engine.config, "agent_id", "") or ""),
             )
-            async for event in run_loop(
-                run_engine,
-                prompt,
-                run_state=state,
-                checkpoint_store=self.checkpoint_store,
-            ):
-                if hasattr(span, "set_attribute"):
-                    span.set_attribute("agent.run_id", exec_run.run_id)
-                    if exec_run.parent_run_id:
-                        span.set_attribute("agent.parent_run_id", exec_run.parent_run_id)
-                yield event
-
+            try:
+                async for event in run_loop(
+                    run_engine,
+                    prompt,
+                    run_state=state,
+                    checkpoint_store=self.checkpoint_store,
+                ):
+                    if hasattr(span, "set_attribute"):
+                        span.set_attribute("agent.run_id", exec_run.run_id)
+                        if exec_run.parent_run_id:
+                            span.set_attribute("agent.parent_run_id", exec_run.parent_run_id)
+                    yield event
+            finally:
+                end_execution_unless_blocked(exec_run.run_id)
     async def run(
         self,
         agent: Any,

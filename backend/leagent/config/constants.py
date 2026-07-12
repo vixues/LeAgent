@@ -26,8 +26,12 @@ WORKFLOWS_DIR = LEAGENT_HOME / "workflows"
 CACHE_DIR = WORKING_DIR / "cache"
 # Subprocess ``code_execution`` sandboxes (per-session dirs under this root).
 CODE_EXEC_ROOT = WORKING_DIR / "code-exec"
+# Shared on-disk roots for chat projects (``working/projects/<project_id>/``).
+CHAT_PROJECTS_FILES_ROOT = WORKING_DIR / "projects"
 # Indexed knowledge / document blobs (default; override via ``FilesSettings.knowledge_storage_dir``).
 KNOWLEDGE_DIR = LEAGENT_HOME / "knowledge"
+# Out-of-line agent trace payloads (opt-in via LEAGENT_TRACE_CAPTURE_PAYLOADS).
+TRACES_DIR = LEAGENT_HOME / "traces"
 
 ALL_DIRS = [
     LEAGENT_HOME,
@@ -43,7 +47,9 @@ ALL_DIRS = [
     JOBS_PATH,
     CACHE_DIR,
     CODE_EXEC_ROOT,
+    CHAT_PROJECTS_FILES_ROOT,
     KNOWLEDGE_DIR,
+    TRACES_DIR,
 ]
 
 # ---------------------------------------------------------------------------

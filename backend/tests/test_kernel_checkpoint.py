@@ -168,6 +168,32 @@ async def test_run_loop_completed_turn_does_not_checkpoint_by_default() -> None:
     assert len(store) == 0
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "reason",
+    ["max_turns", "token_budget_exceeded", "prompt_too_long", "aborted_streaming"],
+)
+async def test_run_loop_checkpoints_resumable_terminal_reasons(reason: str) -> None:
+    script = [
+        SDKMessage(type="assistant", data={"content": "partial"}),
+        SDKMessage(type="result", data={"reason": reason, "session_id": "s", "usage": {}}),
+    ]
+    engine = _FakeEngine(script)
+    store = InMemoryCheckpointStore()
+    state = RunState(session_id="s", agent_name="test_agent")
+
+    checkpoint_id = None
+    async for ev in run_loop(engine, "hi", run_state=state, checkpoint_store=store):
+        if ev.type == "result":
+            checkpoint_id = ev.data.get("checkpoint_id")
+
+    assert checkpoint_id is not None
+    saved = await store.load(checkpoint_id)
+    assert saved is not None
+    assert saved.reason == reason
+    assert saved.messages == state.messages
+
+
 # ---------------------------------------------------------------------------
 # SQLCheckpointStore round-trip
 # ---------------------------------------------------------------------------

@@ -289,6 +289,7 @@ class SessionCancelResponse(BaseModel):
     cancelled: bool
     processes_killed: int = 0
     message: str
+    checkpoint_id: str | None = None
 
 
 class ResumeCheckpointRequest(BaseModel):

@@ -67,6 +67,7 @@ Chat step cards compile to linear `WorkflowDocument` instances via
 |-------|-------|---------|
 | Chat transcript SSOT | `TieredSessionStore` (`session_state_v1`) | Yes |
 | Agent turn pause | `CheckpointStore` (`agent_checkpoints`) | Yes (SQL) |
+| Agent running trace | `TraceStore` (`agent_traces` / spans) | Yes (SQL) |
 | Workflow run | `WorkflowStateStore` | Yes (SQL) |
 | Chat step results | `Message.extensions.chat_workflow_step_runs` | Yes |
 | Background task log | `TaskManager` output file | Yes |

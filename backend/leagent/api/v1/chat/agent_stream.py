@@ -46,6 +46,7 @@ async def run_agent_stream(
     conversation_timeout_sec: int = 600,
     agent_task_id: UUID | None = None,
     runtime_profile: str | None = None,
+    checkpoint_id: str | None = None,
 ) -> AsyncIterator[tuple[str, dict[str, Any], str]]:
     """Iterate agent events. Yields ``(event_type, event_data, accumulated_text)``."""
     response_content = ""
@@ -161,6 +162,7 @@ async def run_agent_stream(
             agent_task_id=agent_task_id,
             execution_run_id=exec_run.run_id,
             runtime_profile=runtime_profile,
+            checkpoint_id=checkpoint_id,
         ):
             elapsed = time.monotonic() - _stream_start
             if elapsed > conversation_timeout_sec:

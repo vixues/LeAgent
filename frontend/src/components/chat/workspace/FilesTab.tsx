@@ -17,6 +17,7 @@ import { useDocuments, usePromoteToKnowledge } from '@/hooks/useKnowledge';
 import { getOrCreateKnowledgeSessionId } from '@/lib/knowledgeSession';
 import { useChatDraftStore } from '@/stores/chatDraft';
 import { useChatStore } from '@/stores/chat';
+import { useChatProjectStore } from '@/stores/chatProjects';
 import { useArtifactStore } from '@/stores/artifact';
 import { useRealtimeFileSync } from '@/hooks/useRealtimeFileSync';
 import { cn, isUuid } from '@/lib/utils';
@@ -28,6 +29,7 @@ import { normalizeAttachmentList } from '@/types/chat';
 import { collectSessionEditPaths } from '@/lib/sessionProjectEdits';
 import { DocGenerationLivePreview } from './DocGenerationLivePreview';
 import { canvasIframeSandbox, withCanvasPreviewJs } from '@/lib/canvasPreviewJs';
+import type { FolderFileItem } from '@/hooks/useFolders';
 
 const EMPTY_SESSION_MESSAGES: Message[] = [];
 
@@ -115,6 +117,17 @@ export function FilesTab() {
     const sid = s.currentSessionId;
     if (!sid) return false;
     return s.sessions.find((x) => x.id === sid)?.isPending === true;
+  });
+  const sessionProjectId = useChatStore((s) => {
+    const sid = s.currentSessionId;
+    if (!sid) return null;
+    return s.sessions.find((x) => x.id === sid)?.projectId ?? null;
+  });
+  // Shared project files only when this session belongs to a chat project —
+  // never fall back to sidebar currentProjectId (free chats stay session-local).
+  const projectFolderId = useChatProjectStore((s) => {
+    if (!sessionProjectId) return null;
+    return s.projects.find((p) => p.id === sessionProjectId)?.folderId ?? null;
   });
   const messagesBySession = useChatStore((s) => s.messages);
   const sessionMessages = useMemo(
@@ -212,6 +225,31 @@ export function FilesTab() {
       !currentSessionIsPending,
     staleTime: 15_000,
   });
+
+  const { data: projectFolderItems } = useQuery({
+    queryKey: ['folders', 'items', projectFolderId, 'chat-project'],
+    queryFn: () =>
+      apiClient.get<FolderFileItem[]>('/folder-items', {
+        folder_id: projectFolderId!,
+      } as Record<string, string | number | boolean | undefined>),
+    enabled: isUuid(projectFolderId),
+    staleTime: 15_000,
+  });
+
+  const sharedProjectItems = useMemo(() => {
+    const rows = projectFolderItems ?? [];
+    const q = query.trim().toLowerCase();
+    const mapped: SessionWorkspaceItem[] = rows.map((row) => ({
+      file_id: row.file_id,
+      file_name: row.file_name,
+      size: row.size,
+      mime_type: row.mime_type ?? undefined,
+      source: 'upload' as const,
+      is_ai: false,
+    }));
+    if (!q) return mapped;
+    return mapped.filter((d) => d.file_name.toLowerCase().includes(q));
+  }, [projectFolderItems, query]);
 
   const sessionAttRowsById = useMemo(() => {
     const m = new Map<string, Record<string, unknown>>();
@@ -401,7 +439,9 @@ export function FilesTab() {
   /** Do not gate the whole panel on `/documents` loading — session files must stay visible. */
   const showGlobalEmpty = useMemo(() => {
     const workspaceListEmpty =
-      filteredWorkspace.length === 0 && sessionEditPaths.length === 0;
+      filteredWorkspace.length === 0 &&
+      sessionEditPaths.length === 0 &&
+      sharedProjectItems.length === 0;
     if (!workspaceListEmpty) return false;
     if (filteredKnowledge.length > 0) return false;
     const q = query.trim();
@@ -410,6 +450,7 @@ export function FilesTab() {
   }, [
     filteredWorkspace.length,
     sessionEditPaths.length,
+    sharedProjectItems.length,
     filteredKnowledge.length,
     query,
     knowledgeLoading,
@@ -539,6 +580,57 @@ export function FilesTab() {
               />
             ) : (
               <ul className="flex flex-col gap-0.5">
+                {sharedProjectItems.length > 0 ? (
+                  <>
+                    <li>
+                      <p className="px-2 text-[10px] uppercase tracking-wide text-muted-foreground-tertiary">
+                        {t('chat.workspace.files.sharedProjectFiles')}
+                      </p>
+                    </li>
+                    {sharedProjectItems.map((item) => {
+                      const isActive =
+                        selectedFile?.source === 'workspace' &&
+                        selectedFile.item.file_id === item.file_id;
+                      return (
+                        <li key={`project-${item.file_id}`} className="flex items-stretch gap-0.5">
+                          <ZipCircleCheckbox
+                            id={`project-zip-${item.file_id}`}
+                            checked={zipIds.has(item.file_id)}
+                            disabled={item.excludeFromZip}
+                            onChange={() => toggleZipId(item.file_id)}
+                            ariaLabel={t('chat.workspace.files.zipToggleAria', {
+                              defaultValue: 'Include in ZIP download',
+                            })}
+                          />
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setSelectedFile({ source: 'workspace', item })
+                            }
+                            onDoubleClick={() => openAsArtifact(item)}
+                            className={cn(
+                              'min-w-0 flex-1 flex items-center gap-2 px-2 py-1.5 rounded-lg text-xs text-left transition-colors',
+                              isActive
+                                ? 'bg-surface text-foreground shadow-sm'
+                                : 'text-muted-foreground hover:bg-surface-sunken hover:text-foreground',
+                            )}
+                            title={item.file_name}
+                          >
+                            <span className="flex-shrink-0">
+                              {getFileExtensionIcon(item.file_name)}
+                            </span>
+                            <span className="flex-1 min-w-0 truncate">
+                              {item.file_name}
+                            </span>
+                            <span className="text-[10px] text-muted-foreground-tertiary tabular-nums shrink-0">
+                              {formatSize(item.size)}
+                            </span>
+                          </button>
+                        </li>
+                      );
+                    })}
+                  </>
+                ) : null}
                 <li>
                   <p className="px-2 text-[10px] uppercase tracking-wide text-muted-foreground-tertiary">
                     {t('chat.workspace.files.sessionWorkspace', {

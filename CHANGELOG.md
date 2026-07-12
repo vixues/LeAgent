@@ -9,14 +9,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **Web search provider registry** — Pluggable `WebSearchProvider` backends (auto, bing_playwright, DuckDuckGo lite, SearXNG, Bing API, Brave, Tavily, Exa, Firecrawl, Serper). Default `auto` uses only *configured* APIs, else Playwright Bing (with Bing RSS fallback when headless hits a challenge); never silently hits unconfigured keys. TTL result cache.
-- **`web_fetch` tool** — Lightweight HTTP extract (no Playwright) with SSRF guards, robots checks, TTL cache, and size-gated summarization/truncation; use before `web_scraper` for static pages.
-- **Playwright as core dependency** — Chromium install runs from `start.sh` by default (required for zero-config Bing search).
+- **Agent running trace** — Durable debug/eval plane (`agent_traces` / spans / experiments) separate from checkpoints and chat SSOT. Captures LLM/tool/compact/subagent spans via `run_loop` + `TraceHook`; joins `llm_request_logs.run_id`. APIs for list/detail/JSONL export, by-model stats, and same-prompt multi-model experiments. Chat execution panel waterfall + Admin **Agent Traces** tab. See `docs/technical/agent-trace.md`.
+- **Chat project shared file space** — Creating a chat project also creates a catalog Folder under 「项目」 on the Files page and a disk root at `$LEAGENT_HOME/working/projects/<id>/`. All sessions in the project share that folder and sandbox root; uploads/artifacts attach to the project folder. Disk trees are kept on project delete (folder is soft-deleted).
 
 ### Changed
 
-- **Canvas length recovery** — On `finish_reason=length`, salvageable `canvas_publish` HTML is executed instead of discarded; canvas turns always get a routing recovery hint; canvas-intent queries bump first-turn `max_output_tokens` to at least 16 384; compact inline HTML guidance raised to ~20KB with stream-preview / SSE redaction aligned to 20 480 bytes; repeated recovery forces `html_files` over giant inline `html`.
+- **Tavily as default web search** — `WEB_SEARCH_PROVIDER` defaults to `tavily`; `auto` prefers Tavily first among configured APIs. Without `WEB_SEARCH_TAVILY_API_KEY`, search falls back to Playwright Bing and tool `next_step` / agent prompts proactively recommend configuring Tavily.
+
+## [1.2.2] - 2026-07-12
+
+Patch release: **zero-config web search** with a provider registry and `web_fetch`, **agent-driven settings setup**, native **workflow input panels**, and **canvas length salvage**.
+
+### Added
+
+- **Web search provider registry** — Pluggable `WebSearchProvider` backends (auto, bing_playwright, DuckDuckGo lite, SearXNG, Bing API, Brave, Tavily, Exa, Firecrawl, Serper). Default `auto` uses only *configured* APIs, else Playwright Bing (with Bing RSS fallback when headless hits a challenge); never silently hits unconfigured keys. TTL result cache.
+- **`web_fetch` tool** — Lightweight HTTP extract (no Playwright) with SSRF guards, robots checks, TTL cache, and size-gated summarization/truncation; use before `web_scraper` for static pages.
+- **Playwright as core dependency** — Chromium install runs from `start.sh` by default (required for zero-config Bing search).
+- **`configure_settings` tool** — Inspect → `ask_user` confirm → apply allowlisted env secrets, MCP servers, and outbound channels; Settings UI and agent share one write path. Gated `settings_setup` policy.
+- **MCP YAML persistence** — `MCPClientManager` saves servers to `LEAGENT_HOME/mcp_servers.yaml` so runtime adds survive restart.
+- **Workflow native input panel** — Typed `WorkflowInputPanel` (including file attachments) for editor and chat embed run forms, replacing GenUI-only operation inputs.
+
+### Changed
+
 - **Web tool ladder** — Agent guidance is now `web_search` → `web_fetch` → `web_scraper` (JS/login only).
+- **Canvas length recovery** — On `finish_reason=length`, salvageable `canvas_publish` HTML is executed instead of discarded; canvas turns always get a routing recovery hint; canvas-intent queries bump first-turn `max_output_tokens` to at least 32 768; compact inline HTML guidance raised to ~20KB with stream-preview / SSE redaction aligned to 20 480 bytes; repeated recovery forces disk/`html_files_blob_id` over giant inline payloads.
+- **Large HTML publish** — `canvas_publish(html_paths=…)` reads bodies from the coding project or session uploads (thin tool call); truncated `html_files` maps auto-stage to `html_files_blob_id`; prompts prefer write-then-`html_paths` / blob over one giant JSON tool call.
 
 ## [1.2.1] - 2026-07-11
 
@@ -1301,7 +1318,8 @@ _Subsections below keep `— YYYY-MM-DD` on each heading for maintainers (commit
 - **Minor (0.X.0)**: New features, backward compatible
 - **Patch (0.0.X)**: Bug fixes, security patches
 
-[Unreleased]: https://github.com/vixues/LeAgent/compare/v1.2.1...HEAD
+[Unreleased]: https://github.com/vixues/LeAgent/compare/v1.2.2...HEAD
+[1.2.2]: https://github.com/vixues/LeAgent/compare/v1.2.1...v1.2.2
 [1.2.1]: https://github.com/vixues/LeAgent/compare/v1.2.0...v1.2.1
 [1.2.0]: https://github.com/vixues/LeAgent/compare/v1.1.3...v1.2.0
 [1.1.3]: https://github.com/vixues/LeAgent/releases/tag/v1.1.3

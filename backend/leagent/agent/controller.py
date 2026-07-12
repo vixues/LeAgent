@@ -99,6 +99,10 @@ class AgentController:
 
     _session_tasks: dict[UUID, dict[UUID, asyncio.Event]] = {}
     _session_task_records: dict[UUID, dict[UUID, AgentRunTaskRecord]] = {}
+    # Durable checkpoint id written on abort / resumable terminal — readable by
+    # POST /cancel before the SSE complete frame reaches a disconnected client.
+    _session_last_checkpoint: dict[UUID, str] = {}
+    _session_checkpoint_events: dict[UUID, asyncio.Event] = {}
 
     @classmethod
     def _register_session_task(
@@ -120,6 +124,45 @@ class AgentController:
             tool_name=None,
             status="running",
         )
+        # Fresh wait handle for this turn's checkpoint (cancel may await it).
+        cls._session_last_checkpoint.pop(session_id, None)
+        cls._session_checkpoint_events[session_id] = asyncio.Event()
+
+    @classmethod
+    def stash_session_checkpoint(cls, session_id: UUID, checkpoint_id: str | None) -> None:
+        """Record a durable checkpoint id for a session (abort / pause)."""
+        if not checkpoint_id or not session_id:
+            return
+        cls._session_last_checkpoint[session_id] = checkpoint_id
+        ev = cls._session_checkpoint_events.get(session_id)
+        if ev is None:
+            ev = asyncio.Event()
+            cls._session_checkpoint_events[session_id] = ev
+        ev.set()
+
+    @classmethod
+    def peek_session_checkpoint(cls, session_id: UUID) -> str | None:
+        return cls._session_last_checkpoint.get(session_id)
+
+    @classmethod
+    async def wait_session_checkpoint(
+        cls,
+        session_id: UUID,
+        *,
+        timeout: float = 2.0,
+    ) -> str | None:
+        """Wait briefly for an in-flight abort path to persist a checkpoint."""
+        existing = cls._session_last_checkpoint.get(session_id)
+        if existing:
+            return existing
+        ev = cls._session_checkpoint_events.get(session_id)
+        if ev is None:
+            return None
+        try:
+            await asyncio.wait_for(ev.wait(), timeout=max(0.0, timeout))
+        except TimeoutError:
+            pass
+        return cls._session_last_checkpoint.get(session_id)
 
     @classmethod
     def _unregister_session_task(cls, session_id: UUID, task_id: UUID) -> None:
@@ -286,6 +329,7 @@ class AgentController:
         agent_task_id: UUID | None = None,
         execution_run_id: str | None = None,
         runtime_profile: str | None = None,
+        checkpoint_id: str | None = None,
     ) -> AgentResponse:
         """Execute the agent for a user request.
 
@@ -303,10 +347,15 @@ class AgentController:
         ``project_roots`` is set, ``coding_long`` is applied.
 
         ``agent_task_id`` optional stable id for this run (SSE ``agent_task`` / cancel).
+
+        ``checkpoint_id`` resumes a paused/aborted turn from a durable
+        :class:`~leagent.sdk.protocols.Checkpoint` (seeds the engine with
+        the checkpoint transcript).
         """
         handler = stream_handler or NoOpStreamHandler()
         self._abort_event.clear()
         self._ingested_produced_paths.clear()
+        self._last_checkpoint_id = None
         context = await self._create_context(session_id, user_id, task_id=agent_task_id)
         AgentController._register_session_task(
             session_id, context.task_id, self._abort_event, user_id,
@@ -351,6 +400,7 @@ class AgentController:
                     skip_user_append=skip_append_user,
                     execution_run_id=execution_run_id,
                     runtime_profile=runtime_profile,
+                    checkpoint_id=checkpoint_id,
                 )
 
                 if self._hooks:
@@ -407,6 +457,7 @@ class AgentController:
         agent_task_id: UUID | None = None,
         execution_run_id: str | None = None,
         runtime_profile: str | None = None,
+        checkpoint_id: str | None = None,
     ) -> AsyncIterator[StreamEvent]:
         """Execute agent with streaming events."""
         queue_maxsize = 512
@@ -447,6 +498,7 @@ class AgentController:
                     agent_task_id=agent_task_id,
                     execution_run_id=execution_run_id,
                     runtime_profile=runtime_profile,
+                    checkpoint_id=checkpoint_id,
                 )
             except Exception as exc:
                 logger.exception(
@@ -834,6 +886,7 @@ class AgentController:
         skip_user_append: bool = False,
         execution_run_id: str | None = None,
         runtime_profile: str | None = None,
+        checkpoint_id: str | None = None,
     ) -> AgentResponse:
         """Delegate the think-act loop to the new ``QueryEngine``.
 
@@ -842,6 +895,10 @@ class AgentController:
         persistence around the engine so every existing consumer
         (API/WebSocket/CLI) observes the same ``StreamHandler`` events
         and ``AgentResponse`` shape it did before.
+
+        When ``checkpoint_id`` is set, the engine is seeded from the
+        durable checkpoint transcript (Codex-style resume) instead of
+        the session conversation seed.
         """
         append_extra = getattr(self.config, "extra_system_prompt", "") or ""
 
@@ -956,6 +1013,26 @@ class AgentController:
         # Materialise the engine from a declarative AgentDefinition via the
         # unified runtime. The controller no longer hand-builds QueryEngine.
         definition = self._per_turn_definition(tools_deny_patterns)
+
+        resume_checkpoint_id = (checkpoint_id or "").strip() or None
+        seed_messages: list[dict[str, Any]] | None = None
+        if resume_checkpoint_id:
+            store = self._runtime.checkpoint_store
+            cp = await store.load(resume_checkpoint_id) if store is not None else None
+            if cp is None:
+                raise ValueError(f"checkpoint {resume_checkpoint_id!r} not found")
+            seed_messages = list(cp.messages or [])
+            logger.info(
+                "agent_resume_from_checkpoint",
+                checkpoint_id=resume_checkpoint_id,
+                message_count=len(seed_messages),
+            )
+        else:
+            seed_messages = self._openai_seed_messages_from_conversation(
+                conversation,
+                skip_user_trim=skip_user_append,
+            )
+
         engine = self._runtime.build_engine(
             definition,
             session_id=context.session_id,
@@ -963,10 +1040,7 @@ class AgentController:
             cwd=engine_cwd,
             tool_extra=tool_extra,
             abort_event=self._abort_event,
-            initial_messages=self._openai_seed_messages_from_conversation(
-                conversation,
-                skip_user_trim=skip_user_append,
-            ),
+            initial_messages=seed_messages,
             append_system_prompt=append_extra,
         )
 
@@ -1013,14 +1087,21 @@ class AgentController:
             session_id=str(context.session_id or ""),
             agent_name=definition.name,
         )
+        # When resuming from a durable checkpoint, always append the
+        # continue prompt as a fresh user turn on top of the checkpoint
+        # transcript (even if the HTTP path used skip_append for ask_user).
+        append_user_turn = not skip_user_append or bool(resume_checkpoint_id)
+        loop_prompt = (
+            resume_hint if (skip_user_append and not resume_checkpoint_id) else query_input
+        )
         async for event in run_loop(
             engine,
-            resume_hint if skip_user_append else query_input,
+            loop_prompt,
             run_state=run_state,
             checkpoint_store=self._runtime.checkpoint_store,
             hooks=self._hooks,
             hook_context=context,
-            append_user_turn=not skip_user_append,
+            append_user_turn=append_user_turn,
         ):
             if context.is_cancelled or self._abort_event.is_set():
                 engine.abort()
@@ -1111,13 +1192,17 @@ class AgentController:
                     conversation.append_user_message(steer_text)
             elif mtype == "result":
                 reason = str(data.get("reason", "completed"))
-                checkpoint_id = data.get("checkpoint_id")
+                result_checkpoint_id = data.get("checkpoint_id")
+                if isinstance(result_checkpoint_id, str) and result_checkpoint_id:
+                    self._last_checkpoint_id = result_checkpoint_id
+                    AgentController.stash_session_checkpoint(
+                        context.session_id, result_checkpoint_id,
+                    )
                 usage = data.get("usage", {}) or {}
                 if reason == TerminalReason.AWAITING_USER_INPUT.value:
                     meta = data.get("meta") or {}
                     tool_call = meta.get("tool_call") or {}
                     questions = meta.get("questions") or []
-                    self._last_checkpoint_id = checkpoint_id
                     last_tcs: list[dict[str, Any]] | None = None
                     if conversation.messages:
                         last = conversation.messages[-1]
@@ -1128,7 +1213,7 @@ class AgentController:
                             "tool_call": tool_call,
                             "questions": questions,
                             "assistant_tool_calls": last_tcs,
-                            "checkpoint_id": checkpoint_id,
+                            "checkpoint_id": result_checkpoint_id,
                         },
                     )
                     _tid = str(tool_call.get("id") or "").strip()
@@ -1144,14 +1229,14 @@ class AgentController:
                         conversation=conversation,
                         turn_message_start=turn_message_start,
                         usage=usage,
-                        checkpoint_id=checkpoint_id,
+                        checkpoint_id=result_checkpoint_id,
                         partial=True,
                         metadata={
                             "awaiting_user_input": True,
                             "tool_call": tool_call,
                             "questions": questions,
                             "assistant_tool_calls": last_tcs,
-                            "checkpoint_id": checkpoint_id,
+                            "checkpoint_id": result_checkpoint_id,
                         },
                     )
                     await handler.on_complete(response)
@@ -1164,10 +1249,31 @@ class AgentController:
                     turn_message_start=turn_message_start,
                     error=data.get("error"),
                     usage=usage,
-                    checkpoint_id=checkpoint_id,
+                    checkpoint_id=result_checkpoint_id,
+                    partial=reason != TerminalReason.COMPLETED.value,
                 )
                 await handler.on_complete(response)
                 return response
+
+        # Loop exited without a result frame — typically a user abort.
+        if self._abort_event.is_set() or context.is_cancelled:
+            abort_checkpoint_id = await self._checkpoint_aborted_turn(
+                session_id=context.session_id,
+                engine=engine,
+                run_state=run_state,
+                agent_name=definition.name,
+            )
+            response = context.finalize_turn(
+                text=response_text,
+                reason=TerminalReason.ABORTED_STREAMING.value,
+                conversation=conversation,
+                turn_message_start=turn_message_start,
+                error="Execution cancelled",
+                checkpoint_id=abort_checkpoint_id,
+                partial=True,
+            )
+            await handler.on_complete(response)
+            return response
 
         response = context.finalize_turn(
             text=response_text,
@@ -1177,6 +1283,41 @@ class AgentController:
         )
         await handler.on_complete(response)
         return response
+
+    async def _checkpoint_aborted_turn(
+        self,
+        *,
+        session_id: UUID,
+        engine: Any,
+        run_state: Any,
+        agent_name: str,
+    ) -> str | None:
+        """Persist a durable checkpoint when the user aborts mid-turn."""
+        store = self._runtime.checkpoint_store
+        if store is None:
+            return None
+        try:
+            from leagent.sdk.kernel.checkpoint import create_checkpoint
+            from leagent.sdk.kernel.loop import _snapshot_messages
+
+            messages = _snapshot_messages(engine) or list(
+                getattr(run_state, "messages", None) or []
+            )
+            cp = create_checkpoint(
+                session_id=str(session_id or ""),
+                agent_name=agent_name,
+                turn=int(getattr(run_state, "turn", 0) or 0),
+                messages=messages,
+                reason=TerminalReason.ABORTED_STREAMING.value,
+                usage=dict(getattr(run_state, "usage", None) or {}),
+            )
+            await store.save(cp)
+            self._last_checkpoint_id = cp.checkpoint_id
+            AgentController.stash_session_checkpoint(session_id, cp.checkpoint_id)
+            return cp.checkpoint_id
+        except Exception:  # noqa: BLE001
+            logger.warning("abort_checkpoint_save_failed", exc_info=True)
+            return None
 
     def _tool_result_from_query_sdk(self, data: dict[str, Any]) -> ToolResult:
         """Reconstruct a :class:`ToolResult` from :class:`QueryEngine` tool_result data."""

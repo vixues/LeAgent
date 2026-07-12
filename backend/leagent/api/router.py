@@ -125,6 +125,7 @@ _include(v1_router, "leagent.api.v1.cron", prefix="/cron", tags=["v1-cron"])
 _include(v1_router, "leagent.api.v1.webhooks", prefix="/webhooks", tags=["v1-webhooks"])
 _include(v1_router, "leagent.api.v1.metrics", prefix="/metrics", tags=["v1-metrics"])
 _include(v1_router, "leagent.api.v1.stats", prefix="/stats", tags=["v1-stats"])
+_include(v1_router, "leagent.api.v1.traces", prefix="/traces", tags=["v1-traces"])
 _include(v1_router, "leagent.api.v1.activities", prefix="/activities", tags=["v1-activities"])
 
 # ---------------------------------------------------------------------------

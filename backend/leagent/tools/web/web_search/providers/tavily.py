@@ -17,7 +17,10 @@ class TavilyWebSearchProvider:
         return bool((get_settings().web_search.tavily_api_key or "").strip())
 
     def missing_credential_hint(self) -> str:
-        return "Set WEB_SEARCH_TAVILY_API_KEY in Settings (app.tavily.com)."
+        return (
+            "Set WEB_SEARCH_TAVILY_API_KEY in Settings (app.tavily.com) — "
+            "Tavily is the preferred default web search provider."
+        )
 
     async def search(
         self,

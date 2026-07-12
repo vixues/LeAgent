@@ -656,6 +656,52 @@ class RateLimitError(Exception):
     pass
 
 
+class TraceHook(AgentHook):
+    """Observer-only hook that augments the durable agent running-trace.
+
+    Tool open/close is primarily recorded from ``run_loop`` events; this hook
+    covers compact / subagent boundaries that are not always mirrored as
+    ``AgentEvent`` frames.
+    """
+
+    priority = 15
+
+    async def on_pre_compact(self, context: AgentContext, reason: str) -> None:
+        try:
+            from leagent.telemetry.trace import get_trace_recorder
+
+            get_trace_recorder().record_compact(reason)
+        except Exception:
+            logger.debug("trace_hook_compact_failed", exc_info=True)
+
+    async def on_subagent_start(
+        self, context: AgentContext, agent_name: str, prompt: str
+    ) -> None:
+        try:
+            from leagent.telemetry.trace import get_trace_recorder
+
+            get_trace_recorder().record_subagent(
+                agent_name=agent_name, phase="start", prompt=prompt
+            )
+        except Exception:
+            logger.debug("trace_hook_subagent_start_failed", exc_info=True)
+
+    async def on_subagent_stop(
+        self, context: AgentContext, agent_name: str, result: dict[str, Any]
+    ) -> None:
+        try:
+            from leagent.telemetry.trace import get_trace_recorder
+
+            preview = None
+            if isinstance(result, dict):
+                preview = str(result.get("text") or result.get("summary") or "")[:2000]
+            get_trace_recorder().record_subagent(
+                agent_name=agent_name, phase="stop", result_preview=preview
+            )
+        except Exception:
+            logger.debug("trace_hook_subagent_stop_failed", exc_info=True)
+
+
 def create_default_hooks(
     agent_memory: "AgentMemory | None" = None,
 ) -> list[AgentHook]:
@@ -669,6 +715,7 @@ def create_default_hooks(
     hooks: list[AgentHook] = [
         LoggingHook(log_level="info"),
         MetricsHook(),
+        TraceHook(),
     ]
 
     if agent_memory is not None:

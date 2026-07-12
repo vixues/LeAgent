@@ -311,8 +311,44 @@ def test_auto_resolves_to_bing_playwright_without_api_keys() -> None:
     cfg = WebSearchSettings(provider="auto")
     name, reasons = svc.resolve_provider_name("auto", cfg)
     assert name == "bing_playwright"
-    # Floor selection via auto may omit reasons when bing_playwright is simply available.
-    assert reasons == [] or any("bing_playwright" in r or "No configured" in r for r in reasons)
+    assert reasons == [] or any(
+        "bing_playwright" in r or "TAVILY" in r or "No configured" in r for r in reasons
+    )
+
+
+def test_default_provider_is_tavily() -> None:
+    assert WebSearchSettings().provider == "tavily"
+
+
+def test_tavily_default_falls_back_without_key(monkeypatch: pytest.MonkeyPatch) -> None:
+    from leagent.tools.web.web_search.providers import build_default_providers
+
+    cfg = WebSearchSettings(provider="tavily")
+    monkeypatch.setattr(
+        "leagent.config.settings.get_settings",
+        lambda: MagicMock(web_search=cfg, web_fetch=MagicMock(cache_ttl_minutes=0)),
+    )
+    svc = WebSearchService()
+    for p in build_default_providers():
+        svc.register(p)
+    name, reasons = svc.resolve_provider_name("tavily", cfg)
+    assert name == "bing_playwright"
+    assert any("TAVILY" in r or "tavily" in r.lower() for r in reasons)
+
+
+def test_auto_prefers_configured_tavily_over_brave(monkeypatch: pytest.MonkeyPatch) -> None:
+    from leagent.tools.web.web_search.providers import build_default_providers
+
+    cfg = WebSearchSettings(provider="auto", tavily_api_key="tk", brave_api_key="bk")
+    monkeypatch.setattr(
+        "leagent.config.settings.get_settings",
+        lambda: MagicMock(web_search=cfg, web_fetch=MagicMock(cache_ttl_minutes=0)),
+    )
+    svc = WebSearchService()
+    for p in build_default_providers():
+        svc.register(p)
+    name, _ = svc.resolve_provider_name("auto", cfg)
+    assert name == "tavily"
 
 
 def test_auto_prefers_configured_brave(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -328,6 +364,43 @@ def test_auto_prefers_configured_brave(monkeypatch: pytest.MonkeyPatch) -> None:
         svc.register(p)
     name, _ = svc.resolve_provider_name("auto", cfg)
     assert name == "brave"
+
+
+@pytest.mark.asyncio
+async def test_run_web_search_recommends_tavily_when_unconfigured(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class _Svc:
+        async def search(self, *a: Any, **k: Any) -> tuple[list[dict[str, Any]], str, list[str], bool]:
+            return (
+                [{"title": "x", "url": "https://example.com", "snippet": "", "source": "bing_playwright"}],
+                "bing_playwright",
+                ["Set WEB_SEARCH_TAVILY_API_KEY...; falling back"],
+                True,
+            )
+
+    class _CM:
+        async def __aenter__(self) -> AsyncMock:
+            return AsyncMock()
+
+        async def __aexit__(self, *a: Any) -> None:
+            return None
+
+    monkeypatch.setattr(
+        "leagent.tools.web.web_search.core.get_web_search_service",
+        lambda: _Svc(),
+    )
+    monkeypatch.setattr(
+        "leagent.tools.web.web_search.core.search_http_client",
+        lambda **kwargs: _CM(),
+    )
+
+    cfg = WebSearchSettings(provider="tavily", cache_ttl_minutes=0)
+    out = await run_web_search(query="hello world", focus="general", max_results=3, cfg=cfg)
+    assert out["strategy"] == "bing_playwright"
+    assert out["count"] == 1
+    assert "WEB_SEARCH_TAVILY_API_KEY" in out["next_step"]
+    assert any("WEB_SEARCH_TAVILY_API_KEY" in r for r in out["degraded_reasons"])
 
 
 @pytest.mark.asyncio

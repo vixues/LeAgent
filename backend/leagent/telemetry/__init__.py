@@ -17,6 +17,11 @@ from leagent.telemetry.propagation import (
     inject_traceparent,
     run_with_traceparent,
 )
+from leagent.telemetry.trace import (
+    current_run_id,
+    get_trace_recorder,
+    get_trace_store,
+)
 from leagent.utils.logging import (
     bind_log_context,
     bind_turn_log_context,
@@ -39,8 +44,11 @@ __all__ = [
     "bind_turn_log_context",
     "clear_log_context",
     "current_llm_call_kind",
+    "current_run_id",
     "current_traceparent",
     "get_logger",
+    "get_trace_recorder",
+    "get_trace_store",
     "get_tracer",
     "inject_traceparent",
     "instrument_all",

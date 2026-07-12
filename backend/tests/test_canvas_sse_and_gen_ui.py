@@ -924,6 +924,36 @@ def test_build_preview_html_skips_duplicate_three_bootstrap():
     assert html.count("three.min.js") == 1
 
 
+def test_build_preview_html_injects_three_despite_prose_mention():
+    """UI copy saying 'Three.js' must not suppress the host CDN bootstrap."""
+    s = _minimal_settings()
+    raw = """<!DOCTYPE html><html><head></head><body>
+<div id="loading">加载中...</div>
+<script>
+(function () {
+  const THREE = window.THREE;
+  if (!THREE) {
+    document.getElementById('loading').textContent = 'Three.js 未加载，请刷新页面';
+    return;
+  }
+})();
+</script>
+</body></html>"""
+    doc = CanvasDocument(
+        id=uuid4(),
+        canvas_id=uuid4(),
+        revision=1,
+        session_id=uuid4(),
+        user_id=uuid4(),
+        title="Rocket",
+        content_type=CanvasContentType.HTML.value,
+        html_body=raw,
+    )
+    html, _mime = build_preview_html(doc, s, allow_js=True)
+    assert "three.min.js" in html
+    assert html.count("three.min.js") == 1
+
+
 def test_build_preview_html_uses_sanitized_body_classes():
     """Publish stores raw HTML; preview sanitises unless allow_js."""
     s = _minimal_settings()

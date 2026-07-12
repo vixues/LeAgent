@@ -1,6 +1,6 @@
 import { useState, useCallback, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   RefreshCw,
   FolderPlus,
@@ -93,6 +93,7 @@ export default function FolderPage() {
   const [scaffoldTemplate, setScaffoldTemplate] = useState('');
 
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const setFolderContext = useChatDraftStore((s) => s.setFolderContext);
 
   const [previewFile, setPreviewFile] = useState<FolderFileItem | null>(null);
@@ -107,6 +108,13 @@ export default function FolderPage() {
   useEffect(() => {
     fetchFolders();
   }, [fetchFolders]);
+
+  useEffect(() => {
+    const folderFromUrl = searchParams.get('folder');
+    if (folderFromUrl && folderFromUrl !== selectedFolderId) {
+      selectFolder(folderFromUrl);
+    }
+  }, [searchParams, selectFolder, selectedFolderId]);
 
   const tree: FolderTreeNode[] = treeData ?? [];
   const fileList = items ?? [];

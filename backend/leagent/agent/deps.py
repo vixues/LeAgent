@@ -231,6 +231,20 @@ def _get_direct_ingest_recover_fn(tool_name: str) -> Any:
     return _DIRECT_INGEST_RECOVER_FNS.get(tool_name)
 
 
+async def _stage_text_blob(session_id: str | None, content: str) -> str | None:
+    """Create + append + finalize a blob; return blob_id or None on failure."""
+    from leagent.tools.util.tool_argument_blob import ToolArgumentBlobStore
+
+    ingest_sid = _ingest_session_id(session_id)
+    blob_id = await ToolArgumentBlobStore.create(ingest_sid)
+    append_result = await ToolArgumentBlobStore.append(ingest_sid, blob_id, content)
+    if not append_result.get("ok"):
+        await ToolArgumentBlobStore.discard(ingest_sid, blob_id)
+        return None
+    await ToolArgumentBlobStore.finalize(ingest_sid, blob_id)
+    return blob_id
+
+
 async def _try_direct_content_ingest(
     tool_name: str,
     raw_args: str,
@@ -246,33 +260,59 @@ async def _try_direct_content_ingest(
     ``*_blob_id`` so the tool consumes the content without the LLM needing
     to go through the multi-step ``tool_argument_blob`` flow.
 
+    For ``canvas_publish``, also stages recovered ``html_files`` maps as
+    ``html_files_blob_id``.
+
     Supported tools: ``project_write``, ``project_edit``, ``code_execution``,
     ``canvas_publish``.
     """
-    spec = _DIRECT_INGEST_TOOLS.get(tool_name)
-    if spec is None:
-        return None
-    content_key, blob_key = spec
-
     recover_fn = _get_direct_ingest_recover_fn(tool_name)
     if recover_fn is None:
         return None
     recovered = recover_fn(raw_args)
     if recovered is None:
         return None
+
+    # Large multi-file maps: stage as html_files_blob_id (not html_blob_id).
+    if tool_name == "canvas_publish":
+        files = recovered.get("html_files")
+        if isinstance(files, dict) and files and not recovered.get("html"):
+            import json as _json
+
+            entry = recovered.get("html_bundle_entry") or "index.html"
+            payload = _json.dumps(
+                {"entry": str(entry), "files": files},
+                ensure_ascii=False,
+            )
+            blob_id = await _stage_text_blob(session_id, payload)
+            if blob_id is None:
+                return None
+            logger.info(
+                "direct_content_ingest",
+                tool=tool_name,
+                blob_id=blob_id,
+                bytes=len(payload.encode("utf-8")),
+                kind="html_files",
+            )
+            result = {
+                k: v
+                for k, v in recovered.items()
+                if k not in ("html", "html_files", "html_files_blob_id")
+            }
+            result["html_files_blob_id"] = blob_id
+            return result
+
+    spec = _DIRECT_INGEST_TOOLS.get(tool_name)
+    if spec is None:
+        return None
+    content_key, blob_key = spec
     content = recovered.get(content_key)
     if not isinstance(content, str) or not content.strip():
         return None
 
-    from leagent.tools.util.tool_argument_blob import ToolArgumentBlobStore
-
-    ingest_sid = _ingest_session_id(session_id)
-    blob_id = await ToolArgumentBlobStore.create(ingest_sid)
-    append_result = await ToolArgumentBlobStore.append(ingest_sid, blob_id, content)
-    if not append_result.get("ok"):
-        await ToolArgumentBlobStore.discard(ingest_sid, blob_id)
+    blob_id = await _stage_text_blob(session_id, content)
+    if blob_id is None:
         return None
-    await ToolArgumentBlobStore.finalize(ingest_sid, blob_id)
 
     n_bytes = len(content.encode("utf-8"))
     logger.info(

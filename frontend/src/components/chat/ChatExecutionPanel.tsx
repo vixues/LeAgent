@@ -27,6 +27,7 @@ import {
 import { useExecutionSessionStore } from '@/stores/executionSession';
 import type { TaskProgressStep } from '@/types/chat';
 import { TodoListBlock } from './TodoListBlock';
+import { ChatTraceInspector } from './ChatTraceInspector';
 
 interface ChatExecutionPanelProps {
   sessionId: string | null | undefined;
@@ -165,6 +166,9 @@ export function ChatExecutionPanel({ sessionId, className }: ChatExecutionPanelP
 
   const showForTodos = hasTodos && ui?.pinned === true && !ui?.dismissed;
 
+  const runId = execution?.runId ?? null;
+  const showForTrace = Boolean(sessionId && (runId || isStreaming || execution?.status));
+
   const hasExecutionPanelContent =
     isStreaming ||
     execution?.status === 'blocked' ||
@@ -237,7 +241,7 @@ export function ChatExecutionPanel({ sessionId, className }: ChatExecutionPanelP
   }, [execution?.status, showForTodos, showResumeWorkflow, isStreaming, t]);
 
   const shouldShowPanel =
-    showForTodos || (SHOW_EXECUTION_EXTRAS_IN_PANEL && showForExecution);
+    showForTodos || showForTrace || (SHOW_EXECUTION_EXTRAS_IN_PANEL && showForExecution);
 
   useLayoutEffect(() => {
     const row = panelRowRef.current;
@@ -266,7 +270,7 @@ export function ChatExecutionPanel({ sessionId, className }: ChatExecutionPanelP
     return null;
   }
 
-  if (showForTodos && !showForExecution) {
+  if (showForTodos && !showForExecution && !showForTrace) {
     return (
       <div ref={panelRowRef} className={cn('chat-todo-panel-row', className)}>
         <div className="chat-composer-inner min-w-0">
@@ -347,6 +351,10 @@ export function ChatExecutionPanel({ sessionId, className }: ChatExecutionPanelP
                   onStatusChange={handleStatusChange}
                   className="border-0 bg-transparent shadow-none ring-0"
                 />
+              ) : null}
+
+              {showForTrace ? (
+                <ChatTraceInspector sessionId={sessionId} runId={runId} />
               ) : null}
 
               {SHOW_EXECUTION_EXTRAS_IN_PANEL && capabilityLog.length > 0 ? (

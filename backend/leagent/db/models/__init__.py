@@ -87,6 +87,11 @@ from leagent.db.models.message import (
     SessionRead,
 )
 from leagent.db.models.llm_request_log import LLMRequestLog
+from leagent.db.models.agent_trace import (
+    AgentTrace,
+    AgentTraceExperiment,
+    AgentTraceSpan,
+)
 from leagent.db.models.task import (
     Task,
     TaskContext,
@@ -153,6 +158,10 @@ __all__ = [
     "SessionCreate",
     "SessionRead",
     "LLMRequestLog",
+    # Agent traces (debug/eval)
+    "AgentTrace",
+    "AgentTraceSpan",
+    "AgentTraceExperiment",
     # Task
     "Task",
     "TaskContext",

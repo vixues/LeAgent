@@ -7,11 +7,12 @@ not part of the stable public API — SDK consumers use
 """
 
 from leagent.sdk.kernel.checkpoint import InMemoryCheckpointStore, create_checkpoint
-from leagent.sdk.kernel.loop import run_loop, run_to_result
+from leagent.sdk.kernel.loop import RESUMABLE_CHECKPOINT_REASONS, run_loop, run_to_result
 from leagent.sdk.kernel.state import RunState
 
 __all__ = [
     "InMemoryCheckpointStore",
+    "RESUMABLE_CHECKPOINT_REASONS",
     "RunState",
     "create_checkpoint",
     "run_loop",

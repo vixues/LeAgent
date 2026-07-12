@@ -20,9 +20,10 @@ WEB_SEARCH_PROVIDER_IDS: tuple[str, ...] = (
 )
 
 # Preference order when WEB_SEARCH_PROVIDER=auto (only available/configured backends).
+# Tavily is first: preferred API for general web search when its key is set.
 AUTO_PROVIDER_PREFERENCE: tuple[str, ...] = (
-    "brave",
     "tavily",
+    "brave",
     "exa",
     "firecrawl",
     "serper",

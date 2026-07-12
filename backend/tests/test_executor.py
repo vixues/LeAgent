@@ -438,6 +438,18 @@ def test_recover_canvas_publish_args_html_blob_id_only() -> None:
     }
 
 
+def test_recover_canvas_publish_args_html_files_map() -> None:
+    raw = (
+        '{"title":"Page","mode":"html","html_files":{"index.html":"<html></html>"},'
+        '"html_bundle_entry":"index.html"}'
+    )
+    recovered = _recover_canvas_publish_args(raw)
+    assert recovered is not None
+    assert recovered["title"] == "Page"
+    assert recovered["html_files"]["index.html"] == "<html></html>"
+    assert recovered["html_bundle_entry"] == "index.html"
+
+
 def test_recover_project_edit_args_basic() -> None:
     raw = (
         '{"path":"src/index.html","old_string":"<div>old</div>",'

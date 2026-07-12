@@ -50,17 +50,16 @@ _TRUNCATION_RECOVERY_HINT = (
     "[System: your previous output was truncated because "
     "the tool call arguments exceeded the output token "
     "limit. Do NOT retry the same oversized inline call. "
-    "For HTML pages: do **not** emit another giant inline `html` string. "
-    "Prefer `canvas_publish` with `html_files` (path → source) + "
-    "`html_bundle_entry`, or `project_write` shards then `html_files`. "
-    "Compact inline `html` is only OK when the full document stays under "
-    f"~{_COMPACT_INLINE_HTML_BYTES} bytes. Use short image URLs like "
-    "`/api/v1/files/{file_id}/preview` (no JWT tokens in src). "
-    "The runtime auto-recovers malformed inline HTML and auto-stages it "
-    "as `html_blob_id` when needed — you do **not** need `tool_argument_blob` "
-    "for normal webpages. Only use `tool_argument_blob` when a second direct "
-    "`canvas_publish` attempt also fails. Prefer plain `chunk` over "
-    "`chunk_base64` if blob staging is unavoidable. "
+    "For HTML pages: do **not** put the full document into one tool-call JSON. "
+    "Preferred ladder: "
+    "(1) `project_write` / write each file (use `content_blob_id` if large) → "
+    "`canvas_publish(mode=html, html_paths=[...], html_bundle_entry=index.html)`; "
+    "(2) `tool_argument_blob(create_and_finalize)` → "
+    "`html_files_blob_id` or `html_blob_id`; "
+    "(3) compact inline `html` / `html_files` only if TOTAL payload stays under "
+    f"~{_COMPACT_INLINE_HTML_BYTES} bytes. "
+    "Use short image URLs like `/api/v1/files/{file_id}/preview` (no JWT). "
+    "Prefer plain `chunk` over `chunk_base64` if blob staging is used. "
     "For code/project edits: pass `*_blob_id` from `tool_argument_blob` "
     "(`create_and_finalize` with `chunk`).]"
 )
@@ -68,9 +67,9 @@ _TRUNCATION_RECOVERY_HINT = (
 _CANVAS_TRUNCATION_INCOMPLETE_HINT = (
     "[System: a truncated `canvas_publish` HTML payload was salvaged and "
     "published so the user can preview partial content. Do **not** regenerate "
-    "the whole page from scratch. Continue with `html_files` / `project_write` "
-    "shards or a compact patch under "
-    f"~{_COMPACT_INLINE_HTML_BYTES} bytes. Prefer short preview URLs.]"
+    "the whole page from scratch. Continue by writing remaining shards to disk "
+    "then `canvas_publish(html_paths=...)`, or patch via `html_files_blob_id`. "
+    f"Keep any single tool-call payload under ~{_COMPACT_INLINE_HTML_BYTES} bytes.]"
 )
 
 
@@ -132,7 +131,10 @@ def _canvas_args_have_content(args: dict[str, Any]) -> bool:
         if isinstance(val, str) and val.strip():
             return True
     files = args.get("html_files")
-    return isinstance(files, dict) and bool(files)
+    if isinstance(files, dict) and bool(files):
+        return True
+    paths = args.get("html_paths")
+    return isinstance(paths, list) and bool(paths)
 
 
 def _prepare_canvas_length_salvage(

@@ -308,6 +308,8 @@ export interface ChatProject {
   id: string;
   userId: string;
   workspaceId?: string | null;
+  /** Catalog folder under /folders — shared by all sessions in this project. */
+  folderId?: string | null;
   name: string;
   description?: string | null;
   designContext?: string | null;
