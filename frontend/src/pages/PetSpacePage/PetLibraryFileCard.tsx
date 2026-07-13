@@ -14,7 +14,7 @@ type PetLibraryFileCardBase = {
 };
 
 export type PetLibraryFileCardProps =
-  | (PetLibraryFileCardBase & { mode?: 'library'; downloadHref: string })
+  | (PetLibraryFileCardBase & { mode?: 'library'; onDownload: () => void })
   | (PetLibraryFileCardBase & {
       mode: 'appearance';
       canPickAppearance: boolean;
@@ -203,15 +203,18 @@ export function PetLibraryFileCard(props: PetLibraryFileCardProps) {
           >
             {formatPetFileSize(props.row.size)}
           </span>
-          <a
+          <button
+            type="button"
             className="inline-flex shrink-0 rounded-md p-1 text-primary-600 hover:bg-surface-sunken dark:text-primary-400"
-            href={props.downloadHref}
-            target="_blank"
-            rel="noreferrer"
-            onClick={(e) => e.stopPropagation()}
+            onClick={(e) => {
+              e.stopPropagation();
+              if ('onDownload' in props) {
+                props.onDownload();
+              }
+            }}
           >
             <ExternalLink className={compact ? 'h-3 w-3' : 'h-3.5 w-3.5'} aria-hidden />
-          </a>
+          </button>
         </footer>
       )}
     </li>

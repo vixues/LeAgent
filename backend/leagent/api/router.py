@@ -54,6 +54,13 @@ def _include(
 
 _include(v1_router, "leagent.api.v1.meta", prefix="/meta", tags=["v1-meta"])
 _include(v1_router, "leagent.api.v1.health", prefix="/health", tags=["v1-health"])
+_include(v1_router, "leagent.api.v1.auth", prefix="/auth", tags=["v1-auth"])
+_include(
+    v1_router,
+    "leagent.api.v1.admin.users",
+    prefix="/admin/users",
+    tags=["v1-admin-users"],
+)
 _include(v1_router, "leagent.api.v1.chat", prefix="/chat", tags=["v1-chat"])
 _include(
     v1_router,

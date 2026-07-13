@@ -33,6 +33,8 @@ import {
   TasksPage,
   PetSpacePage,
 } from './routes/lazyPages';
+import { AuthGatePage } from './pages/AuthGatePage';
+import { ProtectedRoute } from './components/authorization/ProtectedRoute';
 
 function NotFound() {
   const { t } = useTranslation();
@@ -86,10 +88,19 @@ export default function App() {
         <Suspense fallback={<AppSuspenseFallback />}>
           <Routes>
             <Route path="/about" element={<Navigate to="/home" replace />} />
+            <Route path="/login" element={<AuthGatePage />} />
+            <Route path="/setup" element={<AuthGatePage />} />
 
             <Route path="/chat/:sessionId" element={<ChatSessionRoute />} />
 
-            <Route path="/" element={<AppShell />}>
+            <Route
+              path="/"
+              element={
+                <ProtectedRoute>
+                  <AppShell />
+                </ProtectedRoute>
+              }
+            >
               <Route index element={<Navigate to="/home" replace />} />
 
               <Route path="home" element={<ChatView />} />

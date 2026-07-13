@@ -101,6 +101,10 @@ def test_settings() -> Settings:
     settings.debug = True
     settings.environment = "development"
     settings.database.driver = "sqlite+aiosqlite"
+    # Keep the historical permissive test profile (loopback + auth off).
+    settings.host = "127.0.0.1"
+    settings.security.enforce_auth = False
+    settings.security.rate_limit_enabled = False
     return settings
 
 

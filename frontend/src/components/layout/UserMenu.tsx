@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import {
   HelpCircle,
+  LogOut,
   Monitor,
   Moon,
   Settings as SettingsIcon,
@@ -34,7 +35,7 @@ export function UserMenu({ collapsed = false }: UserMenuProps) {
   const { t, i18n } = useTranslation();
   const navigate = useNavigate();
   const [aboutOpen, setAboutOpen] = useState(false);
-  const { user } = useAuthStore();
+  const { user, logout, authStatus } = useAuthStore();
   const { theme, setTheme } = useThemeStore();
 
   const navigateWithTransition = useCallback(
@@ -200,6 +201,17 @@ export function UserMenu({ collapsed = false }: UserMenuProps) {
             <InfoIcon className="w-4 h-4 mr-2" />
             {t('about.title')}
           </DropdownMenuItem>
+          {authStatus?.enforce_auth ? (
+            <DropdownMenuItem
+              onClick={() => {
+                logout();
+                navigateWithTransition('/login');
+              }}
+            >
+              <LogOut className="w-4 h-4 mr-2" />
+              {t('auth.logout')}
+            </DropdownMenuItem>
+          ) : null}
         </DropdownMenuContent>
       </DropdownMenu>
       <AboutDialog open={aboutOpen} onOpenChange={setAboutOpen} />

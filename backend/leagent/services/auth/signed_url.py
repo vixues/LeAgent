@@ -63,8 +63,21 @@ class SignedUrlError(ValueError):
 
 
 def _secret(settings: Settings) -> bytes:
-    raw = (settings.files.signed_url_secret or "leagent-local-secret").encode()
-    return raw
+    from leagent.services.auth.policy import effective_enforce_auth
+    from leagent.services.auth.secrets import is_weak_secret, resolve_signing_secret
+
+    raw = (settings.files.signed_url_secret or "").strip()
+    if raw and not is_weak_secret(raw):
+        return raw.encode()
+    resolved = resolve_signing_secret(settings)
+    if effective_enforce_auth(settings) and is_weak_secret(resolved):
+        raise SignedUrlError(
+            "Signed URL secret is missing or weak while authentication is enforced"
+        )
+    if not resolved:
+        # Local passthrough only — never used when auth is enforced.
+        return b"leagent-local-secret"
+    return resolved.encode()
 
 
 def _b64encode(data: bytes) -> str:

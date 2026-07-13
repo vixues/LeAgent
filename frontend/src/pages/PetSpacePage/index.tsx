@@ -11,6 +11,7 @@ import { cn } from '@/lib/utils';
 import { petSpaceApi, type PetProject, type PetProjectFileRow } from '@/api/petSpace';
 import { usePetSpaceUiStore } from '@/stores/petSpaceUiStore';
 import { fetchAuthedFilePreviewBlob, useAuthedFileBlobUrl } from '@/hooks/useAuthedFileBlobUrl';
+import { downloadAuthenticatedFile } from '@/lib/downloadAuthenticatedFile';
 import { usePetClipResolver } from '@/hooks/usePetClipResolver';
 import { BrandMascot } from '@/components/brand/BrandMascot';
 import { usePrefersReducedMotion } from '@/hooks/useMobile';
@@ -460,6 +461,7 @@ function SpriteSheetGifTool({
 
 export default function PetSpacePage() {
   const { t } = useTranslation();
+  const { toast } = useToast();
   const qc = useQueryClient();
   const reduceMotion = usePrefersReducedMotion();
   const [tab, setTab] = useState<TabId>('customize');
@@ -1881,7 +1883,14 @@ export default function PetSpacePage() {
                       <PetLibraryFileCard
                         key={row.id}
                         row={row}
-                        downloadHref={`${import.meta.env.VITE_API_BASE_URL || '/api/v1'}/files/${row.file_id}/download`}
+                        onDownload={() => {
+                          void downloadAuthenticatedFile(row.file_id, row.original_name).catch(() => {
+                            toast({
+                              title: t('knowledge.downloadFailed'),
+                              variant: 'error',
+                            });
+                          });
+                        }}
                         deleteDisabled={deleteFileMut.isPending || uploadMut.isPending}
                         onDelete={() => {
                           if (!window.confirm(t('petSpace.deleteFileConfirm', { name: row.original_name }))) return;

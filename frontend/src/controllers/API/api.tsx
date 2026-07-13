@@ -33,7 +33,14 @@ const createAxiosInstance = (): AxiosInstance => {
   });
 
   instance.interceptors.request.use(
-    (config: InternalAxiosRequestConfig) => config,
+    (config: InternalAxiosRequestConfig) => {
+      const token = getAccessToken();
+      if (token) {
+        config.headers = config.headers ?? {};
+        config.headers.Authorization = `Bearer ${token}`;
+      }
+      return config;
+    },
     (error: AxiosError) => Promise.reject(error)
   );
 
@@ -55,10 +62,21 @@ const createAxiosInstance = (): AxiosInstance => {
 
 export const api = createAxiosInstance();
 
-export function setAuthTokens(_accessToken: string, _refreshToken?: string) {}
-export function clearAuthTokens() {}
+export function setAuthTokens(accessToken: string, refreshToken?: string) {
+  // Delegate to the canonical token store used by apiClient.
+  void import('@/api/client').then((m) => m.setAuthTokens(accessToken, refreshToken));
+}
+export function clearAuthTokens() {
+  void import('@/api/client').then((m) => m.clearAuthTokens());
+}
 export function getAccessToken(): string | null {
-  return null;
+  try {
+    // Sync path — prefer in-memory/localStorage via the shared client module.
+    // Dynamic import is async; use localStorage mirror for interceptors.
+    return localStorage.getItem('leagent_access_token');
+  } catch {
+    return null;
+  }
 }
 
 export interface StreamingRequestOptions {

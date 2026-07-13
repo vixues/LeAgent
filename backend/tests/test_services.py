@@ -96,16 +96,47 @@ class TestInMemoryCache:
 class TestAuthService:
     def test_passthrough_auth(self) -> None:
         from leagent.services.auth.service import AuthService, LOCAL_USER_ID
-        svc = AuthService()
+
+        class _S:
+            host = "127.0.0.1"
+            desktop_mode = False
+            security = type("Sec", (), {"enforce_auth": False})()
+
+        svc = AuthService(_S())
         assert svc.verify_access_token("any") == LOCAL_USER_ID
-        assert svc.verify_password("any", "any") is True
+        assert svc.verify_password("any", "") is True
 
     def test_create_token_pair(self) -> None:
         from leagent.services.auth.service import AuthService
-        svc = AuthService()
+
+        class _S:
+            host = "127.0.0.1"
+            desktop_mode = False
+            secret_key = "test-secret-key-32chars-minimum!!"
+            security = type("Sec", (), {"enforce_auth": False})()
+            files = type("Files", (), {"signed_url_secret": "test-secret-key-32chars-minimum!!"})()
+
+        svc = AuthService(_S())
         pair = svc.create_token_pair(uuid4())
-        assert pair.access_token == "local-token"
         assert pair.token_type == "bearer"
+        assert pair.access_token
+        assert "." in pair.access_token
+
+    def test_enforced_rejects_garbage(self) -> None:
+        from leagent.services.auth.service import AuthService
+
+        class _S:
+            host = "0.0.0.0"
+            desktop_mode = False
+            secret_key = "test-secret-key-32chars-minimum!!"
+            security = type("Sec", (), {"enforce_auth": True})()
+            files = type("Files", (), {"signed_url_secret": ""})()
+
+        svc = AuthService(_S())
+        assert svc.verify_access_token("not-a-token") is None
+        uid = uuid4()
+        token = svc.create_access_token(uid, role="user", username="alice")
+        assert svc.verify_access_token(token) == uid
 
 
 # ===========================================================================

@@ -34,7 +34,8 @@ function useAssetImageSrc(previewUrl?: string, fileId?: string): string | undefi
   const managedId = invalid ? null : extractApiFilePreviewId(raw);
   const { blobUrl } = useChatFileBlobUrl(managedId);
   if (invalid) return undefined;
-  if (blobUrl) return blobUrl;
+  // Never fall back to a bare managed preview URL — browsers cannot attach Bearer.
+  if (managedId) return blobUrl || undefined;
   return raw || undefined;
 }
 

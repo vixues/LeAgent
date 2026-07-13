@@ -160,7 +160,7 @@ def _custom_info(provider: CustomProvider) -> CustomProviderInfo:
 
 
 @router.get("/presets", response_model=list[PresetModel])
-async def list_presets() -> list[PresetModel]:
+async def list_presets(_user: CurrentUserId) -> list[PresetModel]:
     store = get_image_gen_config()
     return [PresetModel(**p.to_dict()) for p in store.presets()]
 
@@ -199,7 +199,7 @@ async def delete_preset(preset_id: str, _user: CurrentUserId) -> None:
 
 
 @router.get("/default", response_model=DefaultPresetModel)
-async def get_default_preset() -> DefaultPresetModel:
+async def get_default_preset(_user: CurrentUserId) -> DefaultPresetModel:
     return DefaultPresetModel(preset_id=get_image_gen_config().default_preset_id())
 
 
@@ -220,7 +220,7 @@ async def set_default_preset(body: DefaultPresetModel, _user: CurrentUserId) -> 
 
 
 @router.get("/backends", response_model=list[BackendInfo])
-async def list_backends() -> list[BackendInfo]:
+async def list_backends(_user: CurrentUserId) -> list[BackendInfo]:
     """List every generation backend with availability + credential type.
 
     Enumerated dynamically from the freshly-built generation service (covering
@@ -270,7 +270,7 @@ async def list_backends() -> list[BackendInfo]:
 
 
 @router.get("/models", response_model=list[str])
-async def list_models(backend: str = Query(...)) -> list[str]:
+async def list_models(_user: CurrentUserId, backend: str = Query(...)) -> list[str]:
     """List selectable model ids for a backend (catalog, local, or custom)."""
     if backend == "local":
         return local_models()
@@ -286,7 +286,7 @@ async def list_models(backend: str = Query(...)) -> list[str]:
 
 
 @router.get("/credentials", response_model=list[CredentialStatus])
-async def list_credentials() -> list[CredentialStatus]:
+async def list_credentials(_user: CurrentUserId) -> list[CredentialStatus]:
     """Credential *status* (never the secret) for each configurable backend."""
     store = get_image_gen_config()
     out: list[CredentialStatus] = []
@@ -339,7 +339,7 @@ async def set_credentials(
 
 
 @router.get("/providers", response_model=list[CustomProviderInfo])
-async def list_custom_providers() -> list[CustomProviderInfo]:
+async def list_custom_providers(_user: CurrentUserId) -> list[CustomProviderInfo]:
     """List admin-registered generic providers (secrets never returned)."""
     return [_custom_info(p) for p in get_image_gen_config().custom_providers()]
 
@@ -395,7 +395,7 @@ async def delete_custom_provider(name: str, _user: CurrentUserId) -> None:
 
 
 @router.get("/local", response_model=LocalConfigResponse)
-async def get_local_config() -> LocalConfigResponse:
+async def get_local_config(_user: CurrentUserId) -> LocalConfigResponse:
     cfg = get_image_gen_config().local_config()
     return LocalConfigResponse(**cfg, discovered_models=local_models())
 

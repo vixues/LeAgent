@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { getAccessToken } from '@/api/client';
 import { injectCanvasPreviewBase } from '@/lib/canvasPreviewDoc';
 
 export type CanvasPreviewDocState = {
@@ -36,7 +37,11 @@ export function useCanvasPreviewDoc(
 
     void (async () => {
       try {
-        const res = await fetch(previewUrl, { credentials: 'include' });
+        const token = getAccessToken();
+        const res = await fetch(previewUrl, {
+          credentials: 'include',
+          headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+        });
         if (!res.ok) throw new Error(`preview ${res.status}`);
         const html = await res.text();
         if (cancelled) return;
@@ -48,9 +53,7 @@ export function useCanvasPreviewDoc(
           isError: false,
         });
       } catch {
-        if (!cancelled) {
-          setState({ srcDoc: null, isLoading: false, isError: true });
-        }
+        if (!cancelled) setState({ srcDoc: null, isLoading: false, isError: true });
       }
     })();
 

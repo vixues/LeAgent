@@ -378,6 +378,9 @@ async def get_execution(
     record = await service.get_execution(execution_id)
     if not record:
         raise HTTPException(status_code=404, detail="Execution not found")
+    owner = record.get("user_id")
+    if owner is not None and str(owner) != str(user_id):
+        raise HTTPException(status_code=403, detail="Access denied to this execution")
 
     return WorkflowExecutionDetail(
         id=record["id"],
@@ -403,6 +406,12 @@ async def cancel_execution(
     user_id: CurrentUserId,
 ) -> dict[str, Any]:
     service = _get_workflow_service()
+    record = await service.get_execution(execution_id)
+    if not record:
+        raise HTTPException(status_code=404, detail="Execution not found")
+    owner = record.get("user_id")
+    if owner is not None and str(owner) != str(user_id):
+        raise HTTPException(status_code=403, detail="Access denied to this execution")
     ok = await service.cancel_execution(execution_id)
     if not ok:
         raise HTTPException(status_code=400, detail="Execution not cancellable")
@@ -415,6 +424,12 @@ async def pause_execution(
     user_id: CurrentUserId,
 ) -> dict[str, Any]:
     service = _get_workflow_service()
+    record = await service.get_execution(execution_id)
+    if not record:
+        raise HTTPException(status_code=404, detail="Execution not found")
+    owner = record.get("user_id")
+    if owner is not None and str(owner) != str(user_id):
+        raise HTTPException(status_code=403, detail="Access denied to this execution")
     ok = await service.pause_execution(execution_id)
     if not ok:
         raise HTTPException(status_code=400, detail="Execution not pausable")
@@ -429,6 +444,12 @@ async def resume_execution(
     resume_data: Optional[dict[str, Any]] = None,
 ) -> dict[str, Any]:
     service = _get_workflow_service()
+    record = await service.get_execution(execution_id)
+    if not record:
+        raise HTTPException(status_code=404, detail="Execution not found")
+    owner = record.get("user_id")
+    if owner is not None and str(owner) != str(user_id):
+        raise HTTPException(status_code=403, detail="Access denied to this execution")
     result = await service.resume_execution(execution_id, flow_id, resume_data)
     if not result:
         raise HTTPException(status_code=400, detail="Execution not resumable")

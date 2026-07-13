@@ -13,6 +13,7 @@ import {
   FileText,
 } from 'lucide-react';
 import { apiClient } from '@/api/client';
+import { downloadAuthenticatedFile } from '@/lib/downloadAuthenticatedFile';
 import { useDocuments, usePromoteToKnowledge } from '@/hooks/useKnowledge';
 import { getOrCreateKnowledgeSessionId } from '@/lib/knowledgeSession';
 import { useChatDraftStore } from '@/stores/chatDraft';
@@ -974,20 +975,16 @@ function FilePreview({
             })}
           </button>
         )}
-        <a
-          href={`/api/v1/files/${fileId}/download`}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="flex-1"
+        <button
+          type="button"
+          onClick={() => {
+            void downloadAuthenticatedFile(fileId, fileName);
+          }}
+          className="flex-1 text-[11px] font-medium px-2 py-1.5 rounded-lg bg-surface text-muted-foreground hover:text-foreground hover:bg-surface-sunken transition-colors flex items-center justify-center gap-1"
         >
-          <button
-            type="button"
-            className="w-full text-[11px] font-medium px-2 py-1.5 rounded-lg bg-surface text-muted-foreground hover:text-foreground hover:bg-surface-sunken transition-colors flex items-center justify-center gap-1"
-          >
-            <Download className="w-3 h-3" />
-            {t('knowledge.download', { defaultValue: 'Download' })}
-          </button>
-        </a>
+          <Download className="w-3 h-3" />
+          {t('knowledge.download', { defaultValue: 'Download' })}
+        </button>
         <button
           type="button"
           onClick={onInsert}

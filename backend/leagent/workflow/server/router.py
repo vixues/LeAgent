@@ -168,12 +168,17 @@ async def get_prompt(prompt_id: str, user_id: CurrentUserId) -> WorkflowExecutio
     record = await workflow_service.get_by_prompt_id(prompt_id)
     if not record:
         raise HTTPException(status_code=404, detail="Prompt not found")
+    _assert_execution_owner(record, user_id)
     return _to_detail(record)
 
 
 @router.post("/prompts/{prompt_id}/cancel")
 async def cancel_prompt(prompt_id: str, user_id: CurrentUserId) -> dict[str, Any]:
     workflow_service = _require_workflow_service()
+    record = await workflow_service.get_by_prompt_id(prompt_id)
+    if not record:
+        raise HTTPException(status_code=404, detail="Prompt not found")
+    _assert_execution_owner(record, user_id)
     ok = await workflow_service.cancel(prompt_id)
     if not ok:
         raise HTTPException(status_code=400, detail="Prompt not running or already finished")
@@ -183,6 +188,10 @@ async def cancel_prompt(prompt_id: str, user_id: CurrentUserId) -> dict[str, Any
 @router.post("/prompts/{prompt_id}/pause")
 async def pause_prompt(prompt_id: str, user_id: CurrentUserId) -> dict[str, Any]:
     workflow_service = _require_workflow_service()
+    record = await workflow_service.get_by_prompt_id(prompt_id)
+    if not record:
+        raise HTTPException(status_code=404, detail="Prompt not found")
+    _assert_execution_owner(record, user_id)
     ok = await workflow_service.pause(prompt_id)
     if not ok:
         raise HTTPException(status_code=400, detail="Prompt not pausable")
@@ -196,6 +205,10 @@ async def resume_prompt(
     resume_data: Optional[dict[str, Any]] = None,
 ) -> dict[str, Any]:
     workflow_service = _require_workflow_service()
+    record = await workflow_service.get_by_prompt_id(prompt_id)
+    if not record:
+        raise HTTPException(status_code=404, detail="Prompt not found")
+    _assert_execution_owner(record, user_id)
     result = await workflow_service.resume(prompt_id, resume_data=resume_data)
     if result is None:
         raise HTTPException(status_code=400, detail="Prompt not resumable")
@@ -389,7 +402,18 @@ async def ws_execution(
     prompt_id: str,
     bus: ExecutionEventBus = Depends(get_bus),
 ) -> None:
-    await stream_execution(websocket, prompt_id, bus)
+    auth = await _authenticate_websocket(websocket)
+    if auth is None:
+        return
+    user_id, subprotocol = auth
+    workflow_service = _require_workflow_service()
+    record = await workflow_service.get_by_prompt_id(prompt_id)
+    if record is not None:
+        owner = record.get("user_id")
+        if owner is not None and str(owner) != str(user_id):
+            await websocket.close(code=4003, reason="Access denied")
+            return
+    await stream_execution(websocket, prompt_id, bus, subprotocol=subprotocol)
 
 
 @router.websocket("/ws/executions")
@@ -397,12 +421,77 @@ async def ws_monitor(
     websocket: WebSocket,
     bus: ExecutionEventBus = Depends(get_bus),
 ) -> None:
-    await stream_all(websocket, bus)
+    auth = await _authenticate_websocket(websocket, require_admin=True)
+    if auth is None:
+        return
+    _user_id, subprotocol = auth
+    await stream_all(websocket, bus, subprotocol=subprotocol)
 
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+
+def _assert_execution_owner(record: dict[str, Any], user_id: UUID) -> None:
+    owner = record.get("user_id")
+    if owner is None:
+        return
+    if str(owner) != str(user_id):
+        raise HTTPException(status_code=403, detail="Access denied to this execution")
+
+
+async def _authenticate_websocket(
+    websocket: WebSocket,
+    *,
+    require_admin: bool = False,
+) -> tuple[UUID, str | None] | None:
+    """Validate WS credentials.
+
+    Returns ``(user_id, accept_subprotocol)`` or closes the socket and returns
+    ``None``. When the client offers ``bearer,<jwt>`` via
+    ``Sec-WebSocket-Protocol``, the accept subprotocol is ``bearer``.
+    """
+    from leagent.services.auth.policy import effective_enforce_auth
+    from leagent.services.auth.service import LOCAL_USER_ID, get_auth_service
+    from leagent.config.settings import get_settings
+
+    token: str | None = None
+    accept_subprotocol: str | None = None
+    auth = websocket.headers.get("authorization") or ""
+    if auth.lower().startswith("bearer "):
+        token = auth[7:].strip() or None
+    if not token:
+        proto = websocket.headers.get("sec-websocket-protocol") or ""
+        parts = [p.strip() for p in proto.split(",") if p.strip()]
+        if len(parts) >= 2 and parts[0].lower() == "bearer":
+            token = parts[1]
+            accept_subprotocol = "bearer"
+        elif len(parts) == 1 and parts[0].lower() != "bearer":
+            # Some clients send the raw JWT as the sole subprotocol.
+            token = parts[0]
+            accept_subprotocol = parts[0]
+    if not token:
+        token = websocket.query_params.get("token")
+
+    settings = get_settings()
+    enforced = effective_enforce_auth(settings)
+    if not token:
+        if enforced:
+            await websocket.close(code=4001, reason="Authentication required")
+            return None
+        return LOCAL_USER_ID, None
+
+    svc = get_auth_service()
+    payload = svc.decode_access_token(token)
+    if payload is None:
+        await websocket.close(code=4001, reason="Invalid token")
+        return None
+    uid = UUID(payload.sub)
+    if require_admin and payload.role != "admin" and uid != LOCAL_USER_ID:
+        await websocket.close(code=4003, reason="Admin required")
+        return None
+    return uid, accept_subprotocol
 
 
 def _to_summary(record: dict[str, Any]) -> WorkflowExecutionSummary:

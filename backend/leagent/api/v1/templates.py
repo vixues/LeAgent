@@ -90,6 +90,7 @@ class ApplyTemplateResponse(BaseModel):
 
 @router.get("", response_model=TemplateListResponse)
 async def list_templates(
+    _user: CurrentUserId,
     category: Optional[str] = Query(None, description="Filter by category"),
     search: Optional[str] = Query(None, description="Search by name or description"),
     svc: TemplateService = Depends(get_template_service),
@@ -112,6 +113,7 @@ async def list_templates(
 
 @router.get("/categories", response_model=CategoriesResponse)
 async def list_categories(
+    _user: CurrentUserId,
     svc: TemplateService = Depends(get_template_service),
 ):
     """List all template categories with counts."""
@@ -121,6 +123,7 @@ async def list_categories(
 @router.get("/{template_id}", response_model=TemplateDetail)
 async def get_template(
     template_id: str,
+    _user: CurrentUserId,
     svc: TemplateService = Depends(get_template_service),
 ):
     """Get full template detail including its workflow definition."""

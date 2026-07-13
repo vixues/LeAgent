@@ -5,6 +5,7 @@ import {
   patchAssetTreeFileRef,
 } from '@/components/canvas/genUi/genUiMedia';
 import type { GenUiTreeV1 } from '@/types/genUi';
+import { openAuthedWebSocket } from '@/lib/authedTransport';
 
 import {
   useExecutionOverlay,
@@ -163,7 +164,7 @@ function handleWsMessage(promptId: string, raw: string): void {
 
 function connectPromptStream(promptId: string): void {
   let closed = false;
-  const socket = new WebSocket(wsUrl(promptId));
+  const socket = openAuthedWebSocket(wsUrl(promptId));
   sockets.set(promptId, socket);
 
   socket.onmessage = (event) => {

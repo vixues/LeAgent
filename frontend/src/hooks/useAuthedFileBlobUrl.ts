@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { getAccessToken } from '@/api/client';
 import { effectivePetImageMime } from '@/lib/petAppearanceMime';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || '/api/v1';
@@ -15,7 +16,7 @@ export async function fetchAuthedFilePreviewBlob(
   if (!effective) {
     throw new Error('Unsupported or unknown image type for preview');
   }
-  const token = typeof localStorage !== 'undefined' ? localStorage.getItem('leagent-token') : null;
+  const token = getAccessToken();
   const res = await fetch(`${API_BASE}/files/${fileId}/preview`, {
     headers: token ? { Authorization: `Bearer ${token}` } : {},
     credentials: 'include',
@@ -52,8 +53,7 @@ export function useAuthedFileBlobUrl(
     }
     setUrl(null);
     setIsPending(true);
-    const token =
-      typeof localStorage !== 'undefined' ? localStorage.getItem('leagent-token') : null;
+    const token = getAccessToken();
     let revoked: string | null = null;
     let cancelled = false;
     void (async () => {

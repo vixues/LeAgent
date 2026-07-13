@@ -19,11 +19,14 @@ from leagent.services.auth.deps import (
 from leagent.services.auth.service import (
     LOCAL_USER_ID,
     AuthService,
+    AuthUserInfo,
     TokenPair,
     TokenPayload,
     get_auth_service,
     init_auth_service,
 )
+from leagent.services.auth.policy import effective_enforce_auth, security_status_payload
+from leagent.services.auth.store import get_security_store
 from leagent.services.auth.signed_url import (
     SignedToken,
     SignedUrlError,
@@ -38,10 +41,14 @@ from leagent.services.auth.tokens import TokenError, decode_token, mint_token
 __all__ = [
     "LOCAL_USER_ID",
     "AuthService",
+    "AuthUserInfo",
     "TokenPair",
     "TokenPayload",
     "get_auth_service",
     "init_auth_service",
+    "effective_enforce_auth",
+    "security_status_payload",
+    "get_security_store",
     "get_current_user_id",
     "get_current_user_id_optional",
     "get_current_principal",

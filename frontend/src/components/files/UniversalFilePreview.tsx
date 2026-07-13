@@ -103,7 +103,7 @@ export function UniversalFilePreview({
     officeRoute === 'xlsx' ||
     officeRoute === 'pptx';
 
-  const { previewUrl, downloadBusy, handleDownloadClick } =
+  const { previewUrl, downloadBusy, openBusy, handleDownloadClick, handleOpenClick } =
     useFilePreviewActions(fileId, fileName);
 
   const [textContent, setTextContent] = useState<string>('');
@@ -556,14 +556,15 @@ export function UniversalFilePreview({
     >
       {showActions && showToolbar && (
         <div className="mb-3 flex flex-shrink-0 items-center gap-2">
-          <a href={previewUrl} target="_blank" rel="noopener noreferrer">
-            <Button
-              variant="outline"
-              leftIcon={<ExternalLink className="w-4 h-4" />}
-            >
-              {t('common.open')}
-            </Button>
-          </a>
+          <Button
+            type="button"
+            variant="outline"
+            disabled={openBusy}
+            onClick={handleOpenClick}
+            leftIcon={<ExternalLink className="w-4 h-4" />}
+          >
+            {t('common.open')}
+          </Button>
           <Button
             type="button"
             disabled={downloadBusy}

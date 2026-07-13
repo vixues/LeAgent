@@ -140,6 +140,7 @@ class ApiClient {
     };
 
     appendFingerprint(headers);
+    applyAuthHeader(headers, skipAuth);
 
     const response = await fetch(url, {
       ...fetchOptions,
@@ -220,6 +221,7 @@ class ApiClient {
     };
 
     appendFingerprint(headers);
+    applyAuthHeader(headers);
 
     const response = await fetch(url, {
       method: 'POST',
@@ -246,6 +248,7 @@ class ApiClient {
     const url = this.buildUrl(endpoint);
     const headers: Record<string, string> = {};
     appendFingerprint(headers);
+    applyAuthHeader(headers);
 
     const response = await fetch(url, {
       method: 'POST',
@@ -275,6 +278,7 @@ class ApiClient {
       'Content-Type': 'application/json',
       Accept: 'text/event-stream',
     };
+    applyAuthHeader(headers);
 
     try {
       const response = await fetch(fullUrl, {
@@ -331,8 +335,48 @@ class ApiClient {
 
 export const apiClient = new ApiClient(API_BASE_URL);
 
-export function setAuthTokens(_accessToken: string, _refreshToken?: string) {}
-export function clearAuthTokens() {}
+let _accessToken: string | null = null;
+
+export function setAuthTokens(accessToken: string, refreshToken?: string) {
+  _accessToken = accessToken;
+  if (refreshToken) {
+    try {
+      localStorage.setItem('leagent_refresh_token', refreshToken);
+    } catch {
+      /* ignore */
+    }
+  }
+  try {
+    if (accessToken) localStorage.setItem('leagent_access_token', accessToken);
+  } catch {
+    /* ignore */
+  }
+}
+
+export function clearAuthTokens() {
+  _accessToken = null;
+  try {
+    localStorage.removeItem('leagent_access_token');
+    localStorage.removeItem('leagent_refresh_token');
+  } catch {
+    /* ignore */
+  }
+}
+
 export function getAccessToken(): string | null {
-  return null;
+  if (_accessToken) return _accessToken;
+  try {
+    _accessToken = localStorage.getItem('leagent_access_token');
+  } catch {
+    _accessToken = null;
+  }
+  return _accessToken;
+}
+
+function applyAuthHeader(headers: Record<string, string>, skipAuth?: boolean) {
+  if (skipAuth) return;
+  const token = getAccessToken();
+  if (token) {
+    headers.Authorization = `Bearer ${token}`;
+  }
 }

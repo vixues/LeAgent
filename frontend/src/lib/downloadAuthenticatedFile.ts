@@ -51,3 +51,25 @@ export async function downloadAuthenticatedFile(
   document.body.removeChild(a);
   URL.revokeObjectURL(objectUrl);
 }
+
+/** Open a managed file preview in a new tab via an authenticated blob URL. */
+export async function openAuthenticatedFilePreview(fileId: string): Promise<void> {
+  const token = getAccessToken();
+  const url = `${API_PREFIX.replace(/\/$/, '')}/files/${fileId}/preview`;
+  const res = await fetch(url, {
+    headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+    credentials: 'include',
+  });
+  if (!res.ok) {
+    throw new Error(`HTTP ${res.status}`);
+  }
+  const blob = await res.blob();
+  const objectUrl = URL.createObjectURL(blob);
+  const opened = window.open(objectUrl, '_blank', 'noopener,noreferrer');
+  if (!opened) {
+    URL.revokeObjectURL(objectUrl);
+    throw new Error('Popup blocked');
+  }
+  // Revoke after the tab has a chance to load the blob.
+  window.setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000);
+}

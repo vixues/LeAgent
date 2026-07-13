@@ -10,6 +10,7 @@ import { generateId } from '@/lib/utils';
 import { handleChatStreamFailure, runChatStream } from '@/lib/runChatStream';
 import { registerGenUiActionAdapters } from '@/lib/genUiActionBus';
 import { apiClient } from '@/api/client';
+import { openAuthenticatedFilePreview } from '@/lib/downloadAuthenticatedFile';
 import { resumeWorkflowExecution } from '@/hooks/useExecutionResume';
 import { useExecutionOverlay } from '@/features/workflow/store/executionOverlay';
 import { useExecutionSessionStore } from '@/stores/executionSession';
@@ -136,8 +137,9 @@ export function GenUiActionBridge() {
       },
       openFile(payload) {
         if (typeof window === 'undefined') return;
-        const url = `/api/v1/files/${encodeURIComponent(payload.fileId)}/preview`;
-        window.open(url, '_blank', 'noopener,noreferrer');
+        void openAuthenticatedFilePreview(payload.fileId).catch(() => {
+          /* ignore popup / network failures */
+        });
       },
       navigate(payload) {
         try {

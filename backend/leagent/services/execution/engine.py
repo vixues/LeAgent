@@ -235,13 +235,16 @@ class ExecutionEngine:
         default_policy: ExecutionPolicy | None = None,
         max_concurrent: int = 20,
         max_per_session: int = 5,
+        max_per_user: int = 5,
     ) -> None:
         self._default_policy = default_policy or AgentPolicy()
         self._semaphore = asyncio.Semaphore(max_concurrent)
         self._active_count = 0
         self._total_executions = 0
         self._max_per_session = max_per_session
+        self._max_per_user = max_per_user
         self._session_exec_counts: dict[str, int] = {}
+        self._user_exec_counts: dict[str, int] = {}
         self._active_procs: dict[str, list[asyncio.subprocess.Process]] = {}
 
     @property
@@ -271,15 +274,30 @@ class ExecutionEngine:
             return True
         return self._session_exec_counts.get(session_id, 0) < self._max_per_session
 
+    def _check_user_quota(self, user_id: str | None) -> bool:
+        if not user_id or self._max_per_user <= 0:
+            return True
+        return self._user_exec_counts.get(user_id, 0) < self._max_per_user
+
     def _inc_session_count(self, session_id: str | None) -> None:
         if session_id:
             self._session_exec_counts[session_id] = self._session_exec_counts.get(session_id, 0) + 1
+
+    def _inc_user_count(self, user_id: str | None) -> None:
+        if user_id:
+            self._user_exec_counts[user_id] = self._user_exec_counts.get(user_id, 0) + 1
 
     def _dec_session_count(self, session_id: str | None) -> None:
         if session_id and session_id in self._session_exec_counts:
             self._session_exec_counts[session_id] -= 1
             if self._session_exec_counts[session_id] <= 0:
                 self._session_exec_counts.pop(session_id, None)
+
+    def _dec_user_count(self, user_id: str | None) -> None:
+        if user_id and user_id in self._user_exec_counts:
+            self._user_exec_counts[user_id] -= 1
+            if self._user_exec_counts[user_id] <= 0:
+                self._user_exec_counts.pop(user_id, None)
 
     async def cancel_session(self, session_id: str) -> int:
         """Kill all active subprocesses for a session. Returns number of processes killed."""
@@ -315,6 +333,7 @@ class ExecutionEngine:
         extra_import_roots: tuple[str, ...] = (),
         isolation_mode: str = "auto",
         session_id: str | None = None,
+        user_id: str | None = None,
         extra_scan_roots: tuple[str, ...] = (),
     ) -> ExecutionResult:
         """Run Python source in a sandboxed subprocess."""
@@ -322,6 +341,12 @@ class ExecutionEngine:
             return ExecutionResult(
                 status="denied",
                 error=f"Session exceeded max concurrent executions ({self._max_per_session})",
+                mode=ExecutionMode.PYTHON_SANDBOX,
+            )
+        if not self._check_user_quota(user_id):
+            return ExecutionResult(
+                status="denied",
+                error=f"User exceeded max concurrent executions ({self._max_per_user})",
                 mode=ExecutionMode.PYTHON_SANDBOX,
             )
         pol = policy or self._default_policy
@@ -373,6 +398,7 @@ class ExecutionEngine:
             mode=ExecutionMode.PYTHON_SANDBOX,
             parse_json_envelope=True,
             session_id=session_id,
+            user_id=user_id,
         )
         result.metadata.update(sandbox_app.to_metadata())
         _record_sandbox_metric(
@@ -503,12 +529,14 @@ class ExecutionEngine:
         stdin_data: bytes | None = None,
         parse_json_envelope: bool = False,
         session_id: str | None = None,
+        user_id: str | None = None,
         output_meta: dict[str, Any] | None = None,
     ) -> ExecutionResult:
         async with self._semaphore:
             self._active_count += 1
             self._total_executions += 1
             self._inc_session_count(session_id)
+            self._inc_user_count(user_id)
             started = time.monotonic()
             proc: asyncio.subprocess.Process | None = None
             # Live streaming: publish incremental chunks to the ToolOutputBus
@@ -616,6 +644,7 @@ class ExecutionEngine:
                 if proc is not None:
                     self._unregister_proc(session_id, proc)
                 self._dec_session_count(session_id)
+                self._dec_user_count(user_id)
                 self._active_count -= 1
 
     async def _run_shell_script(
@@ -746,13 +775,19 @@ def get_execution_engine() -> ExecutionEngine:
     global _engine
     if _engine is None:
         max_per_session = 5
+        max_per_user = 5
         try:
             from leagent.config.settings import get_settings
 
-            max_per_session = get_settings().agent.max_executions_per_session
+            settings = get_settings()
+            max_per_session = settings.agent.max_executions_per_session
+            max_per_user = int(settings.security.max_concurrent_per_user or 5)
         except Exception:  # noqa: BLE001
             pass
-        _engine = ExecutionEngine(max_per_session=max_per_session)
+        _engine = ExecutionEngine(
+            max_per_session=max_per_session,
+            max_per_user=max_per_user,
+        )
     return _engine
 
 
@@ -761,11 +796,13 @@ def init_execution_engine(
     default_policy: ExecutionPolicy | None = None,
     max_concurrent: int = 20,
     max_per_session: int = 5,
+    max_per_user: int = 5,
 ) -> ExecutionEngine:
     global _engine
     _engine = ExecutionEngine(
         default_policy=default_policy,
         max_concurrent=max_concurrent,
         max_per_session=max_per_session,
+        max_per_user=max_per_user,
     )
     return _engine

@@ -11,28 +11,38 @@ export interface AuthUser {
   avatar?: string | null;
 }
 
-export function mapApiUser(_data: any): AuthUser {
+export function mapApiUser(data: Record<string, unknown> | null | undefined): AuthUser {
+  const d = data || {};
+  const role = String(d.role || 'user');
+  const isSuper = Boolean(d.is_superuser) || role === 'admin';
+  const username = String(d.username || d.display_name || 'user');
   return {
-    id: '00000000-0000-0000-0000-000000000001',
-    username: 'local',
-    email: 'local@localhost',
-    role: 'admin',
-    is_superuser: true,
-    permissions: [],
-    roles: ['admin'],
-    default_workspace_id: null,
-    displayName: 'local',
+    id: String(d.id || ''),
+    username,
+    email: String(d.email || `${username}@localhost`),
+    role: isSuper ? 'admin' : role,
+    is_superuser: isSuper,
+    permissions: Array.isArray(d.permissions) ? (d.permissions as string[]) : isSuper ? ['*'] : [],
+    roles: Array.isArray(d.roles) ? (d.roles as string[]) : [isSuper ? 'admin' : role],
+    default_workspace_id: (d.default_workspace_id as string | null) ?? null,
+    displayName: String(d.display_name || d.displayName || username),
+    avatar: (d.avatar as string | null) ?? null,
   };
 }
 
-export function isAdminUser(_user?: AuthUser | null): boolean {
-  return true;
+export function isAdminUser(user?: AuthUser | null): boolean {
+  if (!user) return false;
+  return Boolean(user.is_superuser) || user.role === 'admin' || user.roles.includes('admin');
 }
 
-export function userHasPermissions(_user: AuthUser | null | undefined, ..._keys: string[]): boolean {
-  return true;
+export function userHasPermissions(user: AuthUser | null | undefined, ...keys: string[]): boolean {
+  if (!user) return false;
+  if (user.permissions.includes('*') || user.is_superuser) return true;
+  return keys.every((k) => user.permissions.includes(k) || user.roles.includes(k));
 }
 
-export function userHasAnyPermission(_user: AuthUser | null | undefined, ..._keys: string[]): boolean {
-  return true;
+export function userHasAnyPermission(user: AuthUser | null | undefined, ...keys: string[]): boolean {
+  if (!user) return false;
+  if (user.permissions.includes('*') || user.is_superuser) return true;
+  return keys.some((k) => user.permissions.includes(k) || user.roles.includes(k));
 }

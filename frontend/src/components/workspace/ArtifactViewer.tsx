@@ -130,16 +130,16 @@ export function ArtifactViewer() {
                   <GraduationCap className="w-3.5 h-3.5" aria-hidden />
                 </button>
               )}
-              <a
-                href={filePreviewActions.previewUrl}
-                target="_blank"
-                rel="noopener noreferrer"
+              <button
+                type="button"
+                disabled={filePreviewActions.openBusy}
+                onClick={filePreviewActions.handleOpenClick}
                 className={artifactHeaderIconBtn}
                 aria-label={t('knowledge.openExternal')}
                 title={t('knowledge.openExternal')}
               >
                 <ExternalLink className="w-3.5 h-3.5" aria-hidden />
-              </a>
+              </button>
               <button
                 type="button"
                 disabled={filePreviewActions.downloadBusy}

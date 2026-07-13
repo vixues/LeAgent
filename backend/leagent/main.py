@@ -76,6 +76,17 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     logger.info("LeAgent starting up (standalone local mode)...")
 
+    try:
+        from leagent.services.auth.policy import bind_exposure_warnings
+        from leagent.services.auth.users import ensure_users_schema
+
+        for warning in bind_exposure_warnings(settings):
+            logger.warning("security_readiness: %s", warning)
+        with contextlib.suppress(Exception):
+            ensure_users_schema()
+    except Exception:
+        logger.debug("Security readiness checks skipped", exc_info=True)
+
     from leagent.services.service_manager import ServiceManager
 
     _service_manager = ServiceManager(settings)
@@ -308,14 +319,19 @@ def mount_frontend_spa_if_configured(app: FastAPI) -> None:
 def create_app() -> FastAPI:
     """Create and configure the FastAPI application."""
     settings = get_settings()
+    from leagent.services.auth.policy import effective_enforce_auth, effective_rate_limit_enabled
+
+    docs_enabled = bool(settings.debug)
+    if effective_enforce_auth(settings) and settings.security.gate_openapi:
+        docs_enabled = False
 
     app = FastAPI(
         title="LeAgent API",
         description="Intelligent Office Agent Platform (Local)",
         version=leagent_version,
         lifespan=lifespan,
-        docs_url="/docs" if settings.debug else None,
-        redoc_url="/redoc" if settings.debug else None,
+        docs_url="/docs" if docs_enabled else None,
+        redoc_url="/redoc" if docs_enabled else None,
     )
 
     from leagent.utils.metrics import MetricsMiddleware
@@ -339,7 +355,9 @@ def create_app() -> FastAPI:
     if sec.security_headers_enabled:
         app.add_middleware(SecurityHeadersMiddleware, hsts_enabled=sec.hsts_enabled)
 
-    if sec.rate_limit_enabled:
+    from leagent.services.auth.policy import effective_enforce_auth, effective_rate_limit_enabled
+
+    if effective_rate_limit_enabled(settings):
         app.add_middleware(
             RateLimitMiddleware,
             per_minute=sec.rate_limit_per_minute,
@@ -349,6 +367,12 @@ def create_app() -> FastAPI:
     # CORS: ``*`` origins are incompatible with credentials per the CORS spec —
     # browsers reject credentialed wildcard responses, so disable credentials then.
     cors_origins = sec.cors_origins_list()
+    # When auth is enforced on a LAN bind, discourage wildcard CORS.
+    if effective_enforce_auth(settings) and cors_origins == ["*"]:
+        logger.warning(
+            "Auth is enforced with CORS origins=*; prefer an explicit "
+            "LEAGENT_SECURITY_CORS_ALLOW_ORIGINS list for browser clients."
+        )
     allow_credentials = sec.cors_allow_credentials and cors_origins != ["*"]
     app.add_middleware(
         CORSMiddleware,

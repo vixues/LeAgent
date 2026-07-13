@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 
+import { getAccessToken } from '@/api/client';
 import { getMachineFingerprint } from '@/lib/machineFingerprint';
 
 type RealtimeFileEvent =
@@ -32,13 +33,19 @@ export function emitRealtimeFileEvent(type: RealtimeFileEvent = 'refresh') {
   );
 }
 
+/**
+ * File-sync subscription.
+ *
+ * Uses fetch-based SSE (not ``EventSource``) so the Authorization bearer can
+ * be sent when auth is enforced — same pattern as the terminal stream.
+ */
 export function useRealtimeFileSync(enabled = true) {
   const queryClient = useQueryClient();
 
   useEffect(() => {
     if (!enabled) return;
 
-    let eventSource: EventSource | null = null;
+    let abort: AbortController | null = null;
     let reconnectTimer: number | null = null;
     let reconnectDelayMs = 1500;
     let disposed = false;
@@ -50,52 +57,61 @@ export function useRealtimeFileSync(enabled = true) {
     };
 
     const onLocalEvent = () => invalidateFileQueries();
-    window.addEventListener(
-      LOCAL_EVENT_NAME,
-      onLocalEvent as EventListener,
-    );
+    window.addEventListener(LOCAL_EVENT_NAME, onLocalEvent as EventListener);
 
     const connect = () => {
       if (disposed) return;
-      try {
-        const fp = encodeURIComponent(getMachineFingerprint());
-        const sep = SSE_URL.includes('?') ? '&' : '?';
-        eventSource = new EventSource(`${SSE_URL}${sep}leagent_machine_fp=${fp}`, {
-          withCredentials: true,
-        });
-      } catch {
-        reconnectTimer = window.setTimeout(connect, reconnectDelayMs);
-        reconnectDelayMs = Math.min(reconnectDelayMs * 2, 15000);
-        return;
-      }
-
-      eventSource.onmessage = () => {
-        reconnectDelayMs = 1500;
-        invalidateFileQueries();
-      };
-
-      eventSource.onerror = () => {
-        eventSource?.close();
-        eventSource = null;
-        if (!disposed) {
+      abort?.abort();
+      abort = new AbortController();
+      const fp = encodeURIComponent(getMachineFingerprint());
+      const sep = SSE_URL.includes('?') ? '&' : '?';
+      const url = `${SSE_URL}${sep}leagent_machine_fp=${fp}`;
+      const token = getAccessToken();
+      void (async () => {
+        try {
+          const res = await fetch(url, {
+            headers: {
+              Accept: 'text/event-stream',
+              ...(token ? { Authorization: `Bearer ${token}` } : {}),
+            },
+            credentials: 'include',
+            signal: abort?.signal,
+          });
+          if (!res.ok || !res.body) {
+            throw new Error(`SSE HTTP ${res.status}`);
+          }
+          reconnectDelayMs = 1500;
+          const reader = res.body.getReader();
+          const decoder = new TextDecoder();
+          let buffer = '';
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            buffer += decoder.decode(value, { stream: true });
+            const chunks = buffer.split('\n\n');
+            buffer = chunks.pop() || '';
+            for (const chunk of chunks) {
+              if (chunk.trim()) invalidateFileQueries();
+            }
+          }
+        } catch (err) {
+          if (abort?.signal.aborted || disposed) return;
           reconnectTimer = window.setTimeout(connect, reconnectDelayMs);
           reconnectDelayMs = Math.min(reconnectDelayMs * 2, 15000);
+          void err;
         }
-      };
+      })();
     };
 
     connect();
 
     return () => {
       disposed = true;
+      abort?.abort();
       if (reconnectTimer !== null) {
         window.clearTimeout(reconnectTimer);
       }
-      eventSource?.close();
-      window.removeEventListener(
-        LOCAL_EVENT_NAME,
-        onLocalEvent as EventListener,
-      );
+      window.removeEventListener(LOCAL_EVENT_NAME, onLocalEvent as EventListener);
     };
   }, [enabled, queryClient]);
 }

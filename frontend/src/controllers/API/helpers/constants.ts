@@ -6,6 +6,8 @@ export const URL_KEYS = {
   AUTH_REFRESH: '/auth/refresh',
   AUTH_PROFILE: '/auth/me',
   AUTH_CHANGE_PASSWORD: '/auth/change-password',
+  AUTH_STATUS: '/auth/status',
+  AUTH_SETUP: '/auth/setup',
 
   // Flows (served by the workflow engine router)
   FLOWS: '/workflow/flows',

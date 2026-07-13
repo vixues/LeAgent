@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { getAccessToken } from '@/api/client';
 import { resolveEffectiveMime } from '@/lib/mimeForPreview';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || '/api/v1';
@@ -49,8 +50,7 @@ export function useChatFileBlobUrl(
       return;
     }
     setState({ blobUrl: null, isLoading: true, isError: false });
-    const token =
-      typeof localStorage !== 'undefined' ? localStorage.getItem('leagent-token') : null;
+    const token = getAccessToken();
     let revoked: string | null = null;
     let cancelled = false;
     void (async () => {

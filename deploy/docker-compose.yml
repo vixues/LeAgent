@@ -27,6 +27,8 @@ services:
       LEAGENT_DEBUG: "false"
       LEAGENT_LOG_LEVEL: ${LEAGENT_LOG_LEVEL:-INFO}
       LEAGENT_ENVIRONMENT: production
+      LEAGENT_SECURITY_ENFORCE_AUTH: ${LEAGENT_SECURITY_ENFORCE_AUTH:-true}
+      LEAGENT_SECURITY_RATE_LIMIT_ENABLED: ${LEAGENT_SECURITY_RATE_LIMIT_ENABLED:-true}
       FILES_UPLOAD_DIR: /app/uploads
       LEAGENT_SECRET_KEY: ${LEAGENT_SECRET_KEY:?Set LEAGENT_SECRET_KEY in .env (openssl rand -hex 32)}
       LEAGENT_FILES__SIGNED_URL_SECRET: ${LEAGENT_SECRET_KEY}
@@ -39,7 +41,8 @@ services:
       LEAGENT_LLM__VLLM_TIMEOUT: ${VLLM_TIMEOUT:-120}
       LEAGENT_LLM__VLLM_ENABLE_AUTO_TOOL_CHOICE: ${VLLM_ENABLE_AUTO_TOOL_CHOICE:-false}
     ports:
-      - "${LEAGENT_HOST_PORT:-8000}:8000"
+      # Localhost-only by default — use a reverse proxy for LAN exposure.
+      - "127.0.0.1:${LEAGENT_HOST_PORT:-8000}:8000"
     volumes:
       - leagent-data:/app/data
       - leagent-uploads:/app/uploads

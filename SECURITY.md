@@ -49,20 +49,24 @@ When deploying LeAgent, follow these guidelines:
 
 ### Authentication & Authorization
 
-```yaml
-# config/settings.yaml
-security:
-  # Use strong JWT secret (min 32 characters)
-  jwt_secret: "${JWT_SECRET}"  # Set via environment variable
-  jwt_algorithm: HS256
-  
-  # Short-lived access tokens
-  access_token_expire_minutes: 30
-  refresh_token_expire_days: 7
-  
-  # Enable RBAC
-  rbac_enabled: true
+Compulsory instance access password + JWT (see
+[`docs/technical/security-control-plane.md`](docs/technical/security-control-plane.md)):
+
+```bash
+# Strong signing secret (required for Docker / LAN)
+export LEAGENT_SECRET_KEY="$(openssl rand -hex 32)"
+
+# Auto-enforced when binding non-loopback; force on/off explicitly if needed:
+# export LEAGENT_SECURITY_ENFORCE_AUTH=true
+# export LEAGENT_SECURITY_ENFORCE_AUTH=false
+
+# First browser visit → /login setup screen, or:
+curl -X POST http://127.0.0.1:7860/api/v1/auth/setup \
+  -H 'Content-Type: application/json' \
+  -d '{"password":"choose-a-strong-password","confirm_password":"choose-a-strong-password"}'
 ```
+
+Named users (admin-only): `GET/POST /api/v1/admin/users`.
 
 ### Network Security
 
@@ -70,13 +74,17 @@ security:
 # docker-compose.yml
 services:
   leagent:
-    # Don't expose internal ports
+    # Prefer localhost-only publish; use a reverse proxy for LAN/WAN
     ports:
-      - "127.0.0.1:8000:8000"  # Bind to localhost only
-    
-    # Use internal network for services
-    networks:
-      - internal
+      - "127.0.0.1:8000:8000"
+```
+
+When intentionally exposing the API on a LAN, keep `LEAGENT_HOST=0.0.0.0`,
+complete `/auth/setup`, and set explicit CORS origins:
+
+```bash
+export LEAGENT_SECURITY_CORS_ALLOW_ORIGINS="http://192.168.1.10:5173"
+export LEAGENT_SECURITY_RATE_LIMIT_ENABLED=true
 ```
 
 ### Database Security

@@ -27,9 +27,15 @@ from .event_bus import ExecutionEventBus
 logger = structlog.get_logger(__name__)
 
 
-async def stream_execution(websocket: WebSocket, prompt_id: str, bus: ExecutionEventBus) -> None:
+async def stream_execution(
+    websocket: WebSocket,
+    prompt_id: str,
+    bus: ExecutionEventBus,
+    *,
+    subprotocol: str | None = None,
+) -> None:
     """Stream a single prompt's events to the client."""
-    await websocket.accept()
+    await websocket.accept(subprotocol=subprotocol)
     logger.info("ws_execution_connect", prompt_id=prompt_id)
     try:
         async for event in bus.subscribe(prompt_id):
@@ -49,9 +55,14 @@ async def stream_execution(websocket: WebSocket, prompt_id: str, bus: ExecutionE
         logger.info("ws_execution_disconnect", prompt_id=prompt_id)
 
 
-async def stream_all(websocket: WebSocket, bus: ExecutionEventBus) -> None:
+async def stream_all(
+    websocket: WebSocket,
+    bus: ExecutionEventBus,
+    *,
+    subprotocol: str | None = None,
+) -> None:
     """Monitor endpoint — relay every event on the bus."""
-    await websocket.accept()
+    await websocket.accept(subprotocol=subprotocol)
     try:
         async for event in bus.subscribe_all():
             await _send_event(websocket, event)

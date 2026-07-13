@@ -1,4 +1,8 @@
-"""Runtime product metadata for SPA (edition, build, version)."""
+"""Runtime product metadata for SPA (edition, build, version).
+
+Intentionally public so the login / setup screens can render product chrome
+without a session. Sensitive diagnostics live under ``/metrics`` (gated).
+"""
 
 from __future__ import annotations
 

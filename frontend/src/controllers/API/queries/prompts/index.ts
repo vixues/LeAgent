@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient, type UseQueryOptions } from '@tanstack/react-query';
 import { apiClient, type ApiError } from '@/api/client';
+import { openAuthedWebSocket } from '@/lib/authedTransport';
 import { URL_KEYS } from '../../helpers/constants';
 import type {
   WorkflowExecutionDetail,
@@ -167,7 +168,7 @@ export const useExecutionStream = (
   useEffect(() => {
     if (!promptId) return;
     const url = buildWsUrl(`/workflow/ws/executions/${promptId}`);
-    const ws = new WebSocket(url);
+    const ws = openAuthedWebSocket(url);
 
     ws.onopen = () => setState((s) => ({ ...s, isOpen: true, error: null }));
     ws.onerror = (e) => setState((s) => ({ ...s, error: e }));
@@ -218,7 +219,7 @@ export const useExecutionsMonitor = (
   useEffect(() => {
     if (!enabled) return;
     const url = buildWsUrl('/workflow/ws/executions');
-    const ws = new WebSocket(url);
+    const ws = openAuthedWebSocket(url);
 
     ws.onopen = () => setState((s) => ({ ...s, isOpen: true }));
     ws.onclose = () => setState((s) => ({ ...s, isOpen: false }));
