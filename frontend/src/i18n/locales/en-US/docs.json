@@ -5,6 +5,7 @@
     "viewOnGithub": "Repository and full documentation",
     "tocTitle": "On this page",
     "tocSystemIntro": "System introduction",
+    "tocSystemImpl": "System implementation",
     "tocOverview": "Overview",
     "tocFeatures": "Product areas",
     "tocQuickStart": "Quick start",
@@ -12,37 +13,93 @@
     "sections": {
       "systemIntro": {
         "title": "System introduction",
-        "lead": "LeAgent is a unified workspace for business and engineering teams. It links conversational AI, flow orchestration, and knowledge retrieval in one surface so you can ask questions, run flows, and look up source material in a single place—with traceable actions rather than ad-hoc copy-paste across tools. ",
+        "lead": "LeAgent is an open-source desktop AI agent stack that does more than chat: it plans, calls tools, and self-corrects in one streaming think-act loop. It unifies that runtime with agentic ReactFlow workflows and generative UI (KPI boards, decks, galleries) streamed into the conversation—so asking a question, running a flow, and viewing a live interface share one traceable surface.",
         "subPositioningTitle": "Positioning and value",
-        "subPositioningBody": "Unlike a chat-only tool or a loose script runner, LeAgent ties together versionable workflows, a managed knowledge base, and configurable model/tool layers. It fits scenarios where you need semi-automation, reproducible steps, and document-grounded decisions. In the workspace you can manage sessions, flow definitions, and knowledge assets together, and reduce context switching. ",
+        "subPositioningBody": "Unlike a chat-only tool or a loose script runner, LeAgent connects versionable workflow DAGs, a managed knowledge base, configurable model providers, and 100+ domain tools—plus a versioned Agent SDK, layered prompts, three-store cognitive memory, and a relevance-gated context pipeline. It fits semi-automation, reproducible paths, and promoting explorations into reusable flows.",
         "subArchitectureTitle": "Layers and how teams work",
-        "subArchitectureBody": "From a user’s perspective the stack includes: a UI for chat and flow design, knowledge management for documents and indexing, and a backend that exposes APIs, tasks, and execution history (concrete model, vector, and object storage choices depend on your environment). In multi-tenant use, workspaces and permissions isolate data; within a workspace, teams can share flow templates and libraries as ideas move from exploration to stable reuse. ",
+        "subArchitectureBody": "The product surface covers streaming chat with tools, ReactFlow authoring (every tool can become a typed node), knowledge plus Skills/MCP, and backend tasks, cron, and execution history. At runtime, chat SSE, the SDK, background tasks, sub-agents, and workflow agent nodes all converge on one think-act kernel; providers, vector stores, and blob storage depend on your deployment. Workspaces and permissions isolate multi-user data; within a workspace, teams share flow templates and corpora.",
         "subScenariosTitle": "Typical scenarios",
-        "subScenariosBody": "For example: prototype a task in chat with tool calls, then promote the reliable steps to a node graph for scheduled or triggered runs; keep manuals, policies, or FAQs in the knowledge base so answers stay grounded; integrate internal systems with HTTP or script-style nodes, executed in a controlled backend. ",
+        "subScenariosBody": "For example: prototype a task in chat with tool calls, then promote stable steps to a node graph for scheduled or triggered runs; keep manuals and FAQs in the knowledge base so answers stay grounded; integrate internal systems with HTTP or script-style nodes in a controlled backend; for game-art pipelines, use first-class art nodes with quality gates and refine loops.",
         "subExtensibilityTitle": "Deployment and extension",
-        "subExtensibilityBody": "When self-hosting you can change model providers, storage backends, and follow the repository README and docs for production hardening. This in-app page is not a substitute for the deployment guide; for versioning, security, and API contracts, read the repository. For a managed instance, follow the notes your administrator provides. "
+        "subExtensibilityBody": "Defaults are local and zero-dependency (SQLite, single process). Optional PostgreSQL and Milvus, plus DeepSeek, DashScope, OpenAI, Anthropic, Ollama, vLLM, and more. When self-hosting, swap providers and storage and follow the repository README and docs. This page is not a substitute for the deployment guide; versioning, security, and API contracts live in the repo."
+      },
+      "systemImpl": {
+        "title": "System implementation",
+        "lead": "LeAgent uses one kernel with many ingresses: chat SSE, the Agent SDK, background tasks, sub-agents, and workflow agent nodes all enter the same think-act loop (run_loop). The items below summarize subsystem contracts and ownership so you can see how work is orchestrated, persisted, and observed.",
+        "items": {
+          "executionTopology": {
+            "title": "Execution topology",
+            "body": "Requests enter via Ingress (HTTP/SSE, WebSocket, Cron, background tasks, GenUI). An ExecutionRun registry mints run_id / parent_run_id / scope / prompt_id, then Facades (ServiceManager.runtime_context, AgentRuntime, WorkflowService) reach the Kernel. Durable state and EventManager / OpenTelemetry close the path. Child scopes (workflow steps, sub-agents, tasks) link via parent_run_id; WebSocket and SSE are transports only.",
+            "codeHint": "leagent.runtime · docs/technical/execution-topology.md"
+          },
+          "agentRuntime": {
+            "title": "AgentRuntime and Agent SDK",
+            "body": "leagent.sdk is the versioned public surface for every caller (semver 0.1.0 today). AgentRuntime exposes run / stream / delegate / resume / session; multi-turn work uses AgentSession. Dependencies come from RuntimeContext—prefer ServiceManager.runtime_context to wire ToolRegistry, HookManager, CheckpointStore, SessionManager, AgentMemory, and LLMService once. Streaming events use a uniform {type, data} wire shape (AgentEvent).",
+            "codeHint": "leagent.sdk · AgentRuntime / RuntimeContext"
+          },
+          "queryEngine": {
+            "title": "QueryEngine and the think-act loop",
+            "body": "The canonical path is run_loop → QueryEngine → query → ToolExecutor. Chat’s AgentController.run_stream is a compatibility shim that remaps kernel SDKMessages onto legacy StreamEvents; background tasks and workflow agent nodes enter via AgentRuntime.stream into the same loop. Direct QueryEngine.submit_message is reserved for tests and kernel internals. Paused turns persist to CheckpointStore (SQLCheckpointStore when a database is present).",
+            "codeHint": "leagent.sdk.kernel.loop.run_loop"
+          },
+          "gatedPrompts": {
+            "title": "Gated prompts and RelevanceGate",
+            "body": "The system prompt is assembled by the context layer from an agent recipe. Light, always-relevant policies (file_access, database_tool, human_gate, …) ship via the always-on policies source. Heavy domain manuals load through GatedPolicySource only when a RelevanceGate opens—on query or workflow_hint keyword match, or when a template_vars opt_in_key is truthy. Typical gated sources include canvas_guide, chart_guide, document_generation, document_fonts, email_tool, and art_playbook, so long manuals do not crowd every turn.",
+            "codeHint": "leagent.context.relevance · GatedPolicySource"
+          },
+          "workflows": {
+            "title": "Three workflow orchestration shapes",
+            "body": "One engine kernel serves three models: the DAG engine runs WorkflowDocument via WorkflowExecutor (saved flows, cron, agent workflow_run, agent nodes); chat step cards use ChatWorkflowSpec compiled by chat_workflow.compile into a linear WorkflowDocument; chat embeds validate Flow JSON for preview via the Flow API. Step cards and editor runs share the executor so semantics stay unified.",
+            "codeHint": "leagent.workflow · leagent.chat_workflow.compile"
+          },
+          "memory": {
+            "title": "Agent Memory (three stores)",
+            "body": "AgentMemory provides episodic, semantic, and procedural stores plus recall handles. Without Milvus, vector writes are no-ops and recall falls back to a lexical backend so local zero-dependency setups still work; with a vector store, cross-session retrieval and procedural experience improve.",
+            "codeHint": "leagent.memory.agent_memory"
+          },
+          "tools": {
+            "title": "Tools and auto-generated nodes",
+            "body": "Tools span roughly 13 categories (documents, web, data, DB, generation, canvas, charts, image, media, skills, workflow, integration, utilities)—100+ in total. Registry tools can be factory-promoted to Workflow node types Tool.<name> without hand-authored nodes. Agent Skills v1.0, MCP, and a declarative YAML rule engine extend the same surface.",
+            "codeHint": "leagent.tools · ToolRegistry"
+          },
+          "fileCodeProject": {
+            "title": "File → Code → Project layers",
+            "body": "The backend enforces a strict downward dependency: File owns managed blobs (FileService.register is the single ingress for managed writes); Code owns sandbox execution and artifact registration; Project owns coding workspaces and must never import FileService / FileRef (enforced by invariant tests). Tools that produce files should return FileRef or use register_tool_artifact rather than bypassing the file layer.",
+            "codeHint": "leagent.file · leagent.code · leagent.project"
+          },
+          "pauseResume": {
+            "title": "Pause and resume (PauseToken)",
+            "body": "A unified PauseToken carries either a checkpoint_id (agent scope) or workflow_execution_id + workflow_state_id (DAG scope), plus a scope of chat_turn / workflow / task / tool_only. Chat turns resume via the session resume-checkpoint API; workflows resume via the prompts resume endpoint. Ownership is explicit: transcripts live in TieredSessionStore, pauses in CheckpointStore, workflow runs in WorkflowStateStore.",
+            "codeHint": "leagent.runtime.execution_run.PauseToken"
+          },
+          "genUiArt": {
+            "title": "Generative UI and the art asset pipeline",
+            "body": "Generative UI streams interactive surfaces (KPI boards, decks, galleries) into chat. The art path is a first-class node pack (image, upscale, video, 3D, VFX, …) that passes assets as MediaRef references rather than base64. QualityCritic, quality gates, and bounded refine back-edges provide engine-side self-correction; on the agent side, workflow_run can fail a quality bar in the same turn and inject a regeneration directive.",
+            "codeHint": "leagent.llm.generation · workflow/nodes/art"
+          }
+        }
       },
       "overview": {
         "title": "Overview",
-        "p1": "The introduction above sets context; in short, this web app is where you chat with the assistant, author workflows, curate the knowledge base, and adjust user-facing settings. ",
-        "p2": "How this page relates to the repo: the in-app docs focus on navigation and product orientation; environment variables, migrations, multi-instance operation, and REST/WebSocket field-level details are documented in the repository (docs, OpenAPI, examples as shipped). ",
-        "p3": "Before you rely on the UI, make sure the frontend can reach a healthy backend; if requests fail, check service URLs, CORS, and auth against your deployment notes. "
+        "p1": "The introduction and system implementation sections set product shape and runtime contracts; in short, this web app is where you chat with the assistant, author workflows, curate the knowledge base, and adjust user-facing settings.",
+        "p2": "How this page relates to the repo: the in-app docs focus on navigation, product orientation, and architecture highlights; environment variables, migrations, multi-instance operation, and REST/WebSocket field-level details are documented in the repository (docs, OpenAPI, examples as shipped).",
+        "p3": "Before you rely on the UI, make sure the frontend can reach a healthy backend; if requests fail, check service URLs, CORS, and auth against your deployment notes."
       },
       "features": {
         "title": "Product areas"
       },
       "quickStart": {
         "title": "Quick start",
-        "intro": "Once the app loads in the browser and you can sign in or use the instance, walk through the areas below in order. For integration or operations issues, use the repository troubleshooting and API sections first. ",
-        "item1": "In Chat, send messages, inspect tool calls, and browse history to learn what the assistant can and cannot do. ",
-        "item2": "In Workflows, open the list or a template, then try dragging nodes, wiring edges, and a single test run. ",
-        "item3": "In Knowledge, upload a small set of sample documents and ask a question that depends on retrieval. ",
-        "item4": "In Settings, select UI language and theme, and verify account or environment-specific items for your setup. "
+        "intro": "Once the app loads in the browser and you can sign in or use the instance, walk through the areas below in order. For integration or operations issues, use the repository troubleshooting and API sections first.",
+        "item1": "In Chat, send messages, inspect tool calls, and browse history to learn what the assistant can and cannot do.",
+        "item2": "In Workflows, open the list or a template, then try dragging nodes, wiring edges, and a single test run.",
+        "item3": "In Knowledge, upload a small set of sample documents and ask a question that depends on retrieval.",
+        "item4": "In Settings, select UI language and theme, and verify account or environment-specific items for your setup."
       },
       "petDesk": {
         "title": "Desk pet & sprite sheets",
-        "lead": "Pet Space lets you upload sticker-style or line-art images, pick a sidebar appearance, and optionally turn a uniform sprite sheet into an animated GIF in the browser. The chat toolbar shows a small status dot that links to the same settings. ",
-        "spec": "Typical grid: for example 4×4 cells with a fixed inner size per cell (such as 128×128 px). Frames are read in row-major order: left to right, then top to bottom. You can also use separate files named in sequence (e.g. frame_00.png). Use your own art; do not redistribute third-party mascot IP as built-in assets. ",
+        "lead": "Pet Space lets you upload sticker-style or line-art images, pick a sidebar appearance, and optionally turn a uniform sprite sheet into an animated GIF in the browser. The chat toolbar shows a small status dot that links to the same settings.",
+        "spec": "Typical grid: for example 4×4 cells with a fixed inner size per cell (such as 128×128 px). Frames are read in row-major order: left to right, then top to bottom. You can also use separate files named in sequence (e.g. frame_00.png). Use your own art; do not redistribute third-party mascot IP as built-in assets.",
         "cta": "Open Pet Space",
         "ctaHint": "Customize tab includes nest theme, behavior, and the sprite sheet → GIF tool."
       }
@@ -50,27 +107,27 @@
     "features": {
       "chat": {
         "title": "Chat",
-        "description": "Multi-turn assistant chat with tool/function calls, sessions, and attachments—ideal for task exploration. ",
+        "description": "Multi-turn assistant chat with tool/function calls, sessions, and attachments—ideal for task exploration.",
         "cta": "Open chat"
       },
       "workflows": {
         "title": "Workflows",
-        "description": "Author node graphs, save versions, and execute so the team reuses the same automation shape. ",
+        "description": "Author node graphs, save versions, and execute so the team reuses the same automation shape.",
         "cta": "Open workflows"
       },
       "knowledge": {
         "title": "Knowledge",
-        "description": "Curate documents for indexing so Q&A stays grounded and consistent with your corpus. ",
+        "description": "Curate documents for indexing so Q&A stays grounded and consistent with your corpus.",
         "cta": "Open knowledge base"
       },
       "settings": {
         "title": "Settings",
-        "description": "Language, theme, account and workspace preferences, and some connection options for this instance. ",
+        "description": "Language, theme, account and workspace preferences, and some connection options for this instance.",
         "cta": "Open settings"
       }
     },
     "links": {
-      "repoHint": "For more detail, see the README and docs directory in the GitHub repository. You can point the in-app link at your real repo or doc site via build-time environment configuration. "
+      "repoHint": "For more detail, see the README and docs directory in the GitHub repository. You can point the in-app link at your real repo or doc site via build-time environment configuration."
     }
   }
 }

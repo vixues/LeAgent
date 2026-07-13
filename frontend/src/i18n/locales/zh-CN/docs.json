@@ -5,6 +5,7 @@
     "viewOnGithub": "查看仓库与完整文档",
     "tocTitle": "本页目录",
     "tocSystemIntro": "系统介绍",
+    "tocSystemImpl": "系统实现",
     "tocOverview": "概览",
     "tocFeatures": "功能入口",
     "tocQuickStart": "快速上手",
@@ -12,20 +13,76 @@
     "sections": {
       "systemIntro": {
         "title": "系统介绍",
-        "lead": "LeAgent 是面向业务与工程团队的统一智能工作面：在单一界面中串联对话、流程编排与知识检索，让「问一句、跑一条流程、查一份材料」有连贯的入口与可追踪的行为记录。",
+        "lead": "LeAgent 是开源桌面级 AI Agent 栈：不只聊天，而是能规划、调用工具并自我纠错的执行系统。它把流式 think-act 循环、可视化 ReactFlow 工作流，以及可流式注入对话的 Generative UI（看板、幻灯、画廊等）收束在同一产品面，让「问一句、跑一条流程、看一份交互界面」有连贯入口与可追踪记录。",
         "subPositioningTitle": "产品定位与价值",
-        "subPositioningBody": "与传统「仅聊天」或「仅脚本」不同，LeAgent 将可编排的工作流、可加载的知识库与可配置的大模型/工具层打通，适合需要半自动化、可复现执行路径及文档辅助决策的场景。团队可在工作区内管理会话、流程版本与知识资产，降低在多个工具间切换与复制粘贴成本。",
+        "subPositioningBody": "与传统「仅聊天」或「仅脚本」不同，LeAgent 将可编排的工作流 DAG、可加载的知识库、可配置的大模型与 100+ 领域工具打通，并提供版本化 Agent SDK、分层 Prompt、三库认知记忆与相关性门控的上下文管线。适合需要半自动化、可复现执行路径、以及把探索结果沉淀为可复用流程的场景。",
         "subArchitectureTitle": "能力分层与协作方式",
-        "subArchitectureBody": "从使用视角看，系统大致分为：面向终端用户的对话与工作流设计界面；面向检索与语料的知识库管理；以及由后端统一暴露的 API、任务与执行记录（与具体部署的模型、向量库、对象存储等由环境决定）。多用户场景下，工作区与权限模型用于隔离数据与资源；同一工作区内可共享流程模板与知识库，便于在「探索 → 定稿 → 复用」之间迁移。",
+        "subArchitectureBody": "使用面包括：流式对话与工具调用、ReactFlow 可视化编排（每个工具可自动成为类型化节点）、知识库与技能/MCP 集成，以及后端统一的任务、定时与执行记录。运行时上，聊天 SSE、SDK、后台任务、子 Agent 与工作流 Agent 节点都收敛到同一 think-act 内核；具体模型供应商、向量库与存储由部署环境决定。多用户下工作区与权限隔离数据，区内可共享流程模板与知识资产。",
         "subScenariosTitle": "典型使用场景",
-        "subScenariosBody": "例如：在聊天中让助手按步骤调用工具完成查询与汇总，再将稳定下来的步骤落成为工作流节点图并定时/触发执行；在知识库中维护产品手册、制度或 FAQ，在问答时由检索结果约束回答来源；需要对接企业系统时，可在工作流中编排 HTTP/脚本类节点，由后端在受控环境执行。",
+        "subScenariosBody": "例如：在聊天中让助手按步骤调用工具完成查询与汇总，再将稳定步骤落成工作流节点图并定时/触发执行；在知识库中维护手册与 FAQ，由检索约束回答来源；需要对接企业系统时，可编排 HTTP/脚本类节点在受控环境执行；游戏美术等场景可走艺术资产节点与质量门控自纠错环路。",
         "subExtensibilityTitle": "部署与扩展",
-        "subExtensibilityBody": "自托管时，你可替换模型供应商、调整向量与存储后端，并参照仓库中 README 与 docs 做生产级配置。本页不替代部署手册；涉及版本、安全与 API 协定时，以仓库内文档为准。若仅使用托管实例，以管理员提供的环境说明为准。"
+        "subExtensibilityBody": "默认本地零外部依赖（SQLite、单进程）；可切换 PostgreSQL、可选 Milvus，并接入 DeepSeek、DashScope、OpenAI、Anthropic、Ollama、vLLM 等。自托管时可替换供应商与存储后端，参照仓库 README 与 docs。本页不替代部署手册；版本、安全与 API 协定以仓库文档为准。"
+      },
+      "systemImpl": {
+        "title": "系统实现",
+        "lead": "LeAgent 采用「一个内核、多种入口」的执行拓扑：聊天 SSE、Agent SDK、后台任务、子 Agent 与工作流 Agent 节点最终都进入同一 think-act 循环（run_loop）。下文按子系统说明关键契约与职责边界，便于理解行为如何被编排、持久化与观测。",
+        "items": {
+          "executionTopology": {
+            "title": "执行拓扑（Execution Topology）",
+            "body": "请求从 Ingress（HTTP/SSE、WebSocket、Cron、后台任务、GenUI）进入后，由 ExecutionRun 注册表铸造 run_id / parent_run_id / scope / prompt_id，再经 Facade（ServiceManager.runtime_context、AgentRuntime、WorkflowService）进入 Kernel，最后写入可持久状态并由 EventManager 与 OpenTelemetry 观测。子作用域（工作流步骤、子 Agent、任务）通过 parent_run_id 关联父轮次；WebSocket/SSE 仅为传输层。",
+            "codeHint": "leagent.runtime · docs/technical/execution-topology.md"
+          },
+          "agentRuntime": {
+            "title": "AgentRuntime 与 Agent SDK",
+            "body": "leagent.sdk 是面向所有调用方的版本化公共面（当前 semver 0.1.0）。AgentRuntime 提供 run / stream / delegate / resume / session；多轮会话由 AgentSession 持有。依赖通过 RuntimeContext 注入，推荐由 ServiceManager.runtime_context 一次性装配 ToolRegistry、HookManager、CheckpointStore、SessionManager、AgentMemory 与 LLMService，避免在各处手工拼装。流式事件统一为 {type, data} 线格式（AgentEvent）。",
+            "codeHint": "leagent.sdk · AgentRuntime / RuntimeContext"
+          },
+          "queryEngine": {
+            "title": "QueryEngine 与 think-act 循环",
+            "body": "规范路径为 run_loop → QueryEngine → query → ToolExecutor。聊天侧的 AgentController.run_stream 是兼容层，将内核 SDKMessage 映射为旧 StreamEvent；后台任务与工作流 Agent 节点经 AgentRuntime.stream 进入同一循环。直接调用 QueryEngine.submit_message 仅保留给测试与内核内部。轮次暂停时写入 CheckpointStore（有库时为 SQLCheckpointStore）。",
+            "codeHint": "leagent.sdk.kernel.loop.run_loop"
+          },
+          "gatedPrompts": {
+            "title": "Gated Prompts 与 RelevanceGate",
+            "body": "系统提示由 context 层按 Agent recipe 组装。轻量、普适策略（如 file_access、database_tool、human_gate）经 always-on 的 policies 源下发；重量级领域手册则由 GatedPolicySource 承载，仅在 RelevanceGate 打开时注入——门控可因查询关键词、workflow_hint 匹配，或运行时 template_vars 中的 opt_in_key 为真而开启。典型门控源包括 canvas_guide、chart_guide、document_generation、document_fonts、email_tool 与 art_playbook，避免无关长文挤占上下文窗口。",
+            "codeHint": "leagent.context.relevance · GatedPolicySource"
+          },
+          "workflows": {
+            "title": "工作流三种编排形态",
+            "body": "同一引擎内核支撑三种形态：DAG 引擎使用 WorkflowDocument，由 WorkflowExecutor 执行（已保存流程、Cron、agent 的 workflow_run、Agent 节点）；聊天步骤卡使用 ChatWorkflowSpec，经 chat_workflow.compile 编译为线性 WorkflowDocument 再跑；聊天内嵌预览则校验 Flow JSON 并通过 Flow API 展示。步骤卡与编辑器运行共享执行器，避免两套语义。",
+            "codeHint": "leagent.workflow · leagent.chat_workflow.compile"
+          },
+          "memory": {
+            "title": "Agent Memory（三库记忆）",
+            "body": "AgentMemory 提供情景（episodic）、语义（semantic）与程序（procedural）三层存储及召回句柄。未配置 Milvus 时向量写操作为空操作，召回回退到词法后端，保证本地零依赖仍可运行；有向量库时可增强跨会话检索与程序化经验沉淀。",
+            "codeHint": "leagent.memory.agent_memory"
+          },
+          "tools": {
+            "title": "工具系统与节点自动生成",
+            "body": "工具分布在文档、网页、数据、数据库、生成、画布、图表、图像、媒体、技能、工作流、集成与工具类等约 13 个类别（100+）。注册到 ToolRegistry 的工具可由工厂自动生成 Workflow 节点类型 Tool.<name>，无需为每个工具手写节点。另支持 Agent Skills v1.0、MCP，以及声明式 YAML 规则引擎。",
+            "codeHint": "leagent.tools · ToolRegistry"
+          },
+          "fileCodeProject": {
+            "title": "File → Code → Project 分层",
+            "body": "后端严格三层向下依赖：File 层统一托管 blob（FileService.register 为受管写入唯一入口）；Code 层负责沙箱执行与产物登记；Project 层管理编码项目工作区，且不得导入 FileService / FileRef（由不变量测试强制）。工具产出文件应经 FileRef / register_tool_artifact 回传，避免绕过文件层直写。",
+            "codeHint": "leagent.file · leagent.code · leagent.project"
+          },
+          "pauseResume": {
+            "title": "暂停与恢复（PauseToken）",
+            "body": "统一 PauseToken 携带 agent 作用域的 checkpoint_id，或 DAG 作用域的 workflow_execution_id + workflow_state_id，以及 scope（chat_turn / workflow / task / tool_only）。聊天轮次通过会话 resume-checkpoint API 恢复；工作流通过 prompts 的 resume 接口恢复。状态归属清晰：会话转录归 TieredSessionStore，暂停归 CheckpointStore，工作流运行归 WorkflowStateStore。",
+            "codeHint": "leagent.runtime.execution_run.PauseToken"
+          },
+          "genUiArt": {
+            "title": "Generative UI 与艺术资产管线",
+            "body": "Generative UI 可将 KPI 板、幻灯、画廊等交互界面流式注入对话。艺术资产路径是一等公民节点包（图像/超分/视频/3D/VFX 等），资产以 MediaRef 引用传递而非 base64；QualityCritic 与质量门控、有界回边 refine 构成引擎侧自纠错，Agent 侧亦可在同轮通过 workflow_run 低于质量阈值时重跑并注入再生指令。",
+            "codeHint": "leagent.llm.generation · workflow/nodes/art"
+          }
+        }
       },
       "overview": {
         "title": "概览",
-        "p1": "上文的系统介绍概括了产品形态；本节补充一句「在本应用里能做什么」：在浏览器中直接完成与智能体对话、新建与编辑工作流、管理知识库文档，并调整个人与连接相关设置。",
-        "p2": "与仓库文档的关系：本应用内文档侧重导航与产品认知；环境变量、数据库迁移、多实例部署、以及 REST/WebSocket 等 API 的字段说明，以仓库中 docs 与 OpenAPI/示例为准。",
+        "p1": "上文的系统介绍与系统实现概括了产品形态与运行时契约；本节补充「在本应用里能做什么」：在浏览器中直接完成与智能体对话、新建与编辑工作流、管理知识库文档，并调整个人与连接相关设置。",
+        "p2": "与仓库文档的关系：本应用内文档侧重导航、产品认知与架构要点；环境变量、数据库迁移、多实例部署、以及 REST/WebSocket 等 API 的字段说明，以仓库中 docs 与 OpenAPI/示例为准。",
         "p3": "开始体验前，请确认本前端已能访问健康后端；若请求失败，请根据部署文档检查服务地址、跨域与鉴权配置。"
       },
       "features": {

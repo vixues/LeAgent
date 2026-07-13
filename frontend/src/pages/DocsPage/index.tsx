@@ -21,8 +21,22 @@ const featureRoutes = [
   { key: 'settings' as const, to: '/settings', icon: Settings },
 ] as const;
 
+const SYSTEM_IMPL_KEYS = [
+  'executionTopology',
+  'agentRuntime',
+  'queryEngine',
+  'gatedPrompts',
+  'workflows',
+  'memory',
+  'tools',
+  'fileCodeProject',
+  'pauseResume',
+  'genUiArt',
+] as const;
+
 const sectionIds = {
   systemIntro: 'docs-system-intro',
+  systemImpl: 'docs-system-impl',
   overview: 'docs-overview',
   features: 'docs-features',
   quickStart: 'docs-quickstart',
@@ -31,7 +45,8 @@ const sectionIds = {
 
 function DocsToc() {
   const { t } = useTranslation();
-  const linkClass = 'block border-l-2 border-transparent py-0.5 pl-3 text-sm text-muted-foreground transition-colors hover:border-primary-500/50 hover:text-foreground';
+  const linkClass =
+    'block border-l-2 border-transparent py-0.5 pl-3 text-sm text-muted-foreground transition-colors hover:border-primary-500/50 hover:text-foreground';
   return (
     <nav aria-label={t('docs.tocTitle')} className="space-y-3">
       <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground-tertiary">
@@ -41,6 +56,11 @@ function DocsToc() {
         <li>
           <a href={`#${sectionIds.systemIntro}`} className={linkClass}>
             {t('docs.tocSystemIntro')}
+          </a>
+        </li>
+        <li>
+          <a href={`#${sectionIds.systemImpl}`} className={linkClass}>
+            {t('docs.tocSystemImpl')}
           </a>
         </li>
         <li>
@@ -145,6 +165,29 @@ export default function DocsPage() {
                     {t('docs.sections.systemIntro.subExtensibilityBody')}
                   </p>
                 </div>
+              </div>
+            </PageSection>
+          </div>
+
+          <div id={sectionIds.systemImpl} className="scroll-mt-20">
+            <PageSection title={t('docs.sections.systemImpl.title')}>
+              <div className="max-w-3xl space-y-6">
+                <p className="text-sm leading-relaxed text-muted-foreground">
+                  {t('docs.sections.systemImpl.lead')}
+                </p>
+                {SYSTEM_IMPL_KEYS.map((key) => (
+                  <div key={key}>
+                    <h3 className="text-base font-semibold text-foreground">
+                      {t(`docs.sections.systemImpl.items.${key}.title`)}
+                    </h3>
+                    <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
+                      {t(`docs.sections.systemImpl.items.${key}.body`)}
+                    </p>
+                    <p className="mt-1.5 font-mono text-xs text-muted-foreground-tertiary">
+                      {t(`docs.sections.systemImpl.items.${key}.codeHint`)}
+                    </p>
+                  </div>
+                ))}
               </div>
             </PageSection>
           </div>
