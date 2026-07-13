@@ -37,6 +37,161 @@ class TraceStore:
 
         return get_database_service()
 
+    def _build_trace_row(
+        self,
+        *,
+        trace_id: str,
+        parent_trace_id: str | None = None,
+        session_id: str | None = None,
+        user_id: str | None = None,
+        scope: str = "chat_turn",
+        agent_name: str = "",
+        model: str = "",
+        experiment_id: str | None = None,
+        prompt_hash: str | None = None,
+        tags: dict[str, Any] | list[Any] | None = None,
+        root_span_id: str | None = None,
+        started_at: datetime | None = None,
+    ) -> AgentTrace:
+        # Some SQLite installs (create_all before nullable Text columns) still
+        # have NOT NULL on tags/scores — never insert SQL NULL for those fields.
+        return AgentTrace(
+            trace_id=trace_id,
+            parent_trace_id=parent_trace_id,
+            session_id=session_id,
+            user_id=user_id,
+            scope=scope or "chat_turn",
+            agent_name=agent_name or "",
+            model=model or "",
+            status="running",
+            started_at=naive_utc_for_db_column(started_at) or _utcnow(),
+            experiment_id=experiment_id,
+            prompt_hash=prompt_hash,
+            tags=dumps_json(tags) or "{}",
+            scores="{}",
+            root_span_id=root_span_id,
+        )
+
+    def _build_span_row(
+        self,
+        *,
+        span_id: str,
+        trace_id: str,
+        seq: int,
+        kind: str,
+        name: str,
+        parent_span_id: str | None = None,
+        status: str = "ok",
+        started_at: datetime | None = None,
+        ended_at: datetime | None = None,
+        latency_ms: float = 0.0,
+        attrs: dict[str, Any] | None = None,
+        input_preview: str | None = None,
+        output_preview: str | None = None,
+        payload_ref: str | None = None,
+    ) -> AgentTraceSpan:
+        return AgentTraceSpan(
+            span_id=span_id,
+            parent_span_id=parent_span_id,
+            trace_id=trace_id,
+            seq=seq,
+            kind=kind,
+            name=name[:300],
+            status=status,
+            started_at=naive_utc_for_db_column(started_at) or _utcnow(),
+            ended_at=naive_utc_for_db_column(ended_at),
+            latency_ms=float(latency_ms or 0.0),
+            attrs=dumps_json(attrs),
+            input_preview=input_preview,
+            output_preview=output_preview,
+            payload_ref=payload_ref,
+        )
+
+    @staticmethod
+    def _apply_trace_update(row: AgentTrace, kwargs: dict[str, Any]) -> None:
+        status = kwargs.get("status")
+        terminal_reason = kwargs.get("terminal_reason")
+        ended_at = kwargs.get("ended_at")
+        latency_ms = kwargs.get("latency_ms")
+        model = kwargs.get("model")
+        agent_name = kwargs.get("agent_name")
+        error = kwargs.get("error")
+        input_tokens = kwargs.get("input_tokens")
+        output_tokens = kwargs.get("output_tokens")
+        cache_read_tokens = kwargs.get("cache_read_tokens")
+        cache_miss_tokens = kwargs.get("cache_miss_tokens")
+        total_cost_usd = kwargs.get("total_cost_usd")
+        tool_call_count = kwargs.get("tool_call_count")
+        llm_call_count = kwargs.get("llm_call_count")
+        scores = kwargs.get("scores")
+        if status is not None:
+            row.status = status
+        if terminal_reason is not None:
+            row.terminal_reason = terminal_reason
+        if ended_at is not None:
+            row.ended_at = naive_utc_for_db_column(ended_at)
+        if latency_ms is not None:
+            row.latency_ms = float(latency_ms)
+        if model is not None and model:
+            row.model = model
+        if agent_name is not None and agent_name:
+            row.agent_name = agent_name
+        if error is not None:
+            row.error = error[:4000] if error else None
+        if input_tokens is not None:
+            row.input_tokens = input_tokens
+        if output_tokens is not None:
+            row.output_tokens = output_tokens
+        if cache_read_tokens is not None:
+            row.cache_read_tokens = cache_read_tokens
+        if cache_miss_tokens is not None:
+            row.cache_miss_tokens = cache_miss_tokens
+        if total_cost_usd is not None:
+            row.total_cost_usd = total_cost_usd
+        if tool_call_count is not None:
+            row.tool_call_count = tool_call_count
+        if llm_call_count is not None:
+            row.llm_call_count = llm_call_count
+        if scores is not None:
+            row.scores = dumps_json(scores)
+        row.input_tokens += int(kwargs.get("incr_input_tokens") or 0)
+        row.output_tokens += int(kwargs.get("incr_output_tokens") or 0)
+        row.cache_read_tokens += int(kwargs.get("incr_cache_read_tokens") or 0)
+        row.cache_miss_tokens += int(kwargs.get("incr_cache_miss_tokens") or 0)
+        row.total_cost_usd += float(kwargs.get("incr_total_cost_usd") or 0.0)
+        row.tool_call_count += int(kwargs.get("incr_tool_call_count") or 0)
+        row.llm_call_count += int(kwargs.get("incr_llm_call_count") or 0)
+        row.updated_at = _utcnow()
+
+    @staticmethod
+    def _apply_span_close(row: AgentTraceSpan, kwargs: dict[str, Any]) -> None:
+        status = kwargs.get("status")
+        ended_at = kwargs.get("ended_at")
+        latency_ms = kwargs.get("latency_ms")
+        attrs = kwargs.get("attrs")
+        output_preview = kwargs.get("output_preview")
+        payload_ref = kwargs.get("payload_ref")
+        if status is not None:
+            row.status = status
+        end = naive_utc_for_db_column(ended_at) or _utcnow()
+        row.ended_at = end
+        if latency_ms is not None:
+            row.latency_ms = float(latency_ms)
+        elif row.started_at is not None:
+            row.latency_ms = max(0.0, (end - row.started_at).total_seconds() * 1000.0)
+        if attrs is not None:
+            existing = loads_json(row.attrs, default={}) or {}
+            if isinstance(existing, dict):
+                existing.update(attrs)
+                row.attrs = dumps_json(existing)
+            else:
+                row.attrs = dumps_json(attrs)
+        if output_preview is not None:
+            row.output_preview = output_preview
+        if payload_ref is not None:
+            row.payload_ref = payload_ref
+        row.updated_at = _utcnow()
+
     async def create_trace(
         self,
         *,
@@ -53,25 +208,70 @@ class TraceStore:
         root_span_id: str | None = None,
         started_at: datetime | None = None,
     ) -> AgentTrace:
-        row = AgentTrace(
+        row = self._build_trace_row(
             trace_id=trace_id,
             parent_trace_id=parent_trace_id,
             session_id=session_id,
             user_id=user_id,
-            scope=scope or "chat_turn",
-            agent_name=agent_name or "",
-            model=model or "",
-            status="running",
-            started_at=naive_utc_for_db_column(started_at) or _utcnow(),
+            scope=scope,
+            agent_name=agent_name,
+            model=model,
             experiment_id=experiment_id,
             prompt_hash=prompt_hash,
-            tags=dumps_json(tags),
+            tags=tags,
             root_span_id=root_span_id,
+            started_at=started_at,
         )
         db = self._resolve_db()
         async with db.session() as session:
             session.add(row)
         return row
+
+    async def write_batch(
+        self,
+        *,
+        create: dict[str, Any] | None = None,
+        spans: list[dict[str, Any]] | None = None,
+        closes: list[dict[str, Any]] | None = None,
+        update: dict[str, Any] | None = None,
+    ) -> None:
+        """Apply create + spans + closes + update in one DB session.
+
+        Used by :class:`~leagent.telemetry.trace.recorder.TraceRecorder` to keep
+        per-turn SQLite/PG round-trips bounded instead of 1 session per event.
+        """
+        if not create and not spans and not closes and not update:
+            return
+        db = self._resolve_db()
+        async with db.session() as session:
+            if create:
+                session.add(self._build_trace_row(**create))
+            for span_kwargs in spans or []:
+                session.add(self._build_span_row(**span_kwargs))
+            for close_kwargs in closes or []:
+                span_id = close_kwargs.get("span_id")
+                if not span_id:
+                    continue
+                result = await session.exec(
+                    select(AgentTraceSpan).where(AgentTraceSpan.span_id == span_id)
+                )
+                row = result.first()
+                if row is None:
+                    continue
+                patch = {k: v for k, v in close_kwargs.items() if k != "span_id"}
+                self._apply_span_close(row, patch)
+                session.add(row)
+            if update:
+                tid = update.get("trace_id")
+                if tid:
+                    result = await session.exec(
+                        select(AgentTrace).where(AgentTrace.trace_id == tid)
+                    )
+                    row = result.first()
+                    if row is not None:
+                        patch = {k: v for k, v in update.items() if k != "trace_id"}
+                        self._apply_trace_update(row, patch)
+                        session.add(row)
 
     async def update_trace(
         self,
@@ -108,44 +308,33 @@ class TraceStore:
             row = result.first()
             if row is None:
                 return
-            if status is not None:
-                row.status = status
-            if terminal_reason is not None:
-                row.terminal_reason = terminal_reason
-            if ended_at is not None:
-                row.ended_at = naive_utc_for_db_column(ended_at)
-            if latency_ms is not None:
-                row.latency_ms = float(latency_ms)
-            if model is not None and model:
-                row.model = model
-            if agent_name is not None and agent_name:
-                row.agent_name = agent_name
-            if error is not None:
-                row.error = error[:4000] if error else None
-            if input_tokens is not None:
-                row.input_tokens = input_tokens
-            if output_tokens is not None:
-                row.output_tokens = output_tokens
-            if cache_read_tokens is not None:
-                row.cache_read_tokens = cache_read_tokens
-            if cache_miss_tokens is not None:
-                row.cache_miss_tokens = cache_miss_tokens
-            if total_cost_usd is not None:
-                row.total_cost_usd = total_cost_usd
-            if tool_call_count is not None:
-                row.tool_call_count = tool_call_count
-            if llm_call_count is not None:
-                row.llm_call_count = llm_call_count
-            if scores is not None:
-                row.scores = dumps_json(scores)
-            row.input_tokens += incr_input_tokens
-            row.output_tokens += incr_output_tokens
-            row.cache_read_tokens += incr_cache_read_tokens
-            row.cache_miss_tokens += incr_cache_miss_tokens
-            row.total_cost_usd += incr_total_cost_usd
-            row.tool_call_count += incr_tool_call_count
-            row.llm_call_count += incr_llm_call_count
-            row.updated_at = _utcnow()
+            self._apply_trace_update(
+                row,
+                {
+                    "status": status,
+                    "terminal_reason": terminal_reason,
+                    "ended_at": ended_at,
+                    "latency_ms": latency_ms,
+                    "model": model,
+                    "agent_name": agent_name,
+                    "error": error,
+                    "input_tokens": input_tokens,
+                    "output_tokens": output_tokens,
+                    "cache_read_tokens": cache_read_tokens,
+                    "cache_miss_tokens": cache_miss_tokens,
+                    "total_cost_usd": total_cost_usd,
+                    "tool_call_count": tool_call_count,
+                    "llm_call_count": llm_call_count,
+                    "scores": scores,
+                    "incr_input_tokens": incr_input_tokens,
+                    "incr_output_tokens": incr_output_tokens,
+                    "incr_cache_read_tokens": incr_cache_read_tokens,
+                    "incr_cache_miss_tokens": incr_cache_miss_tokens,
+                    "incr_total_cost_usd": incr_total_cost_usd,
+                    "incr_tool_call_count": incr_tool_call_count,
+                    "incr_llm_call_count": incr_llm_call_count,
+                },
+            )
             session.add(row)
 
     async def append_span(
@@ -166,18 +355,18 @@ class TraceStore:
         output_preview: str | None = None,
         payload_ref: str | None = None,
     ) -> AgentTraceSpan:
-        row = AgentTraceSpan(
+        row = self._build_span_row(
             span_id=span_id,
             parent_span_id=parent_span_id,
             trace_id=trace_id,
             seq=seq,
             kind=kind,
-            name=name[:300],
+            name=name,
             status=status,
-            started_at=naive_utc_for_db_column(started_at) or _utcnow(),
-            ended_at=naive_utc_for_db_column(ended_at),
-            latency_ms=float(latency_ms or 0.0),
-            attrs=dumps_json(attrs),
+            started_at=started_at,
+            ended_at=ended_at,
+            latency_ms=latency_ms,
+            attrs=attrs,
             input_preview=input_preview,
             output_preview=output_preview,
             payload_ref=payload_ref,
@@ -206,28 +395,17 @@ class TraceStore:
             row = result.first()
             if row is None:
                 return
-            if status is not None:
-                row.status = status
-            end = naive_utc_for_db_column(ended_at) or _utcnow()
-            row.ended_at = end
-            if latency_ms is not None:
-                row.latency_ms = float(latency_ms)
-            elif row.started_at is not None:
-                row.latency_ms = max(
-                    0.0, (end - row.started_at).total_seconds() * 1000.0
-                )
-            if attrs is not None:
-                existing = loads_json(row.attrs, default={}) or {}
-                if isinstance(existing, dict):
-                    existing.update(attrs)
-                    row.attrs = dumps_json(existing)
-                else:
-                    row.attrs = dumps_json(attrs)
-            if output_preview is not None:
-                row.output_preview = output_preview
-            if payload_ref is not None:
-                row.payload_ref = payload_ref
-            row.updated_at = _utcnow()
+            self._apply_span_close(
+                row,
+                {
+                    "status": status,
+                    "ended_at": ended_at,
+                    "latency_ms": latency_ms,
+                    "attrs": attrs,
+                    "output_preview": output_preview,
+                    "payload_ref": payload_ref,
+                },
+            )
             session.add(row)
 
     async def get_trace(self, trace_id: str) -> AgentTrace | None:

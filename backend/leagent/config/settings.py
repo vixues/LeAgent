@@ -448,7 +448,12 @@ class TraceSettings(BaseSettings):
 
     enabled: bool = True
     capture_payloads: bool = False
-    preview_chars: int = Field(default=4096, ge=256, le=64_000)
+    #: Persist span input/output preview text. Off by default — metadata,
+    #: timings, token counts, and tool names are enough for session traces.
+    record_previews: bool = False
+    preview_chars: int = Field(default=512, ge=64, le=64_000)
+    #: Coalesce pending writes for this many ms (0 = flush immediately).
+    flush_interval_ms: int = Field(default=50, ge=0, le=5_000)
     retention_days: int = Field(default=30, ge=1, le=3650)
 
 

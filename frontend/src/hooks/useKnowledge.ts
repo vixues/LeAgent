@@ -16,6 +16,7 @@ export interface DocumentFile {
   page_count?: number;
   has_ocr: boolean;
   is_indexed: boolean;
+  summary?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -33,6 +34,8 @@ export function useDocuments(params: {
   search?: string;
   file_type?: string;
   folder_id?: string;
+  /** When true and folder_id is omitted, only docs with no folder. */
+  unfiled?: boolean;
   page?: number;
   page_size?: number;
   enabled?: boolean;
@@ -46,6 +49,7 @@ export function useDocuments(params: {
         search: params.search,
         file_type: params.file_type,
         folder_id: params.folder_id,
+        unfiled: params.unfiled ?? false,
         page: params.page,
         page_size: params.page_size,
         scopeKey: params.scopeKey ?? 'global',
@@ -58,6 +62,7 @@ export function useDocuments(params: {
         ...(params.search ? { search: params.search } : {}),
         ...(params.file_type ? { file_type: params.file_type } : {}),
         ...(params.folder_id ? { folder_id: params.folder_id } : {}),
+        ...(params.unfiled && !params.folder_id ? { unfiled: true } : {}),
       } as Record<string, string | number | boolean | undefined>);
       return {
         items: res.items,
@@ -84,6 +89,7 @@ export function useUploadDocument() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['documents'] });
+      queryClient.invalidateQueries({ queryKey: ['folders'] });
       emitRealtimeFileEvent('uploaded');
     },
   });

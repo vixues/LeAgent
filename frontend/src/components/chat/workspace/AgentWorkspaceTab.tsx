@@ -23,11 +23,13 @@ import { SessionTerminalDock } from './code/SessionTerminalDock';
 import { RunGroupsView } from './code/RunGroupsView';
 import { ReviewQueueView } from './code/ReviewQueueView';
 import { eventKindMeta } from './code/eventMeta';
+import { ChatTraceInspector } from '@/components/chat/ChatTraceInspector';
+import { useExecutionSessionStore } from '@/stores/executionSession';
 
 const EMPTY_CODE_ARTIFACT_IDS: string[] = [];
 const EMPTY_CODE_ARTIFACTS: CodeArtifactEntry[] = [];
 
-type CodeSubTab = 'activity' | 'runs' | 'review';
+type CodeSubTab = 'activity' | 'runs' | 'review' | 'trace';
 
 /** Canonical ordering for the filter chip strip. */
 const KIND_ORDER: AgentEventKind[] = [
@@ -109,6 +111,9 @@ export function AgentWorkspaceTab() {
   const [terminalCollapsed, setTerminalCollapsed] = useState(true);
   const [subTab, setSubTab] = useState<CodeSubTab>('activity');
   const autoExpandedRef = useRef<Set<string>>(new Set());
+  const runId = useExecutionSessionStore((s) =>
+    currentSessionId ? s.bySession[currentSessionId]?.runId || null : null,
+  );
 
   const pendingReviews = useChangeReviews(currentSessionId);
   const pendingReviewCount = useMemo(
@@ -187,19 +192,77 @@ export function AgentWorkspaceTab() {
     setTerminalCollapsed((v) => !v);
   }, []);
 
-  // --- Empty state ---
+  const subTabs = (
+    <div className="flex shrink-0 items-center gap-0.5">
+      {(
+        [
+          ['activity', t('chat.workspace.agent.subtabs.activity', { defaultValue: 'Activity' })],
+          ['runs', t('chat.workspace.agent.subtabs.runs', { defaultValue: 'Runs' })],
+          ['trace', t('chat.workspace.agent.subtabs.trace', { defaultValue: 'Trace' })],
+          ['review', t('chat.workspace.agent.subtabs.review', { defaultValue: 'Review' })],
+        ] as [CodeSubTab, string][]
+      ).map(([id, label]) => (
+        <button
+          key={id}
+          type="button"
+          onClick={() => setSubTab(id)}
+          className={cn(
+            'rounded-md px-2 py-1 text-[11px] font-medium transition-colors',
+            subTab === id
+              ? 'bg-surface-sunken text-foreground'
+              : 'text-muted-foreground hover:text-foreground',
+          )}
+          aria-pressed={subTab === id}
+        >
+          {label}
+          {id === 'review' && pendingReviewCount > 0 && (
+            <span className="ml-1 rounded-full bg-amber-500/20 px-1.5 py-0.5 text-[9px] font-semibold tabular-nums text-amber-600 dark:text-amber-400">
+              {pendingReviewCount}
+            </span>
+          )}
+        </button>
+      ))}
+    </div>
+  );
+
+  const tracePanel =
+    subTab === 'trace' && currentSessionId ? (
+      <div className="chat-sessions-scroll -mr-1 flex min-h-0 flex-1 flex-col gap-1.5 overflow-y-auto pr-1">
+        <p className="text-[11px] leading-relaxed text-muted-foreground-tertiary">
+          {t('chat.workspace.agent.trace.hint')}
+        </p>
+        <ChatTraceInspector sessionId={currentSessionId} runId={runId} />
+      </div>
+    ) : null;
+
+  // Trace is durable session metadata — always available even without code events.
+  if (subTab === 'trace') {
+    return (
+      <div className="flex min-h-0 flex-1 flex-col gap-1.5 p-2">
+        {subTabs}
+        {tracePanel ?? (
+          <p className="p-4 text-xs text-muted-foreground">
+            {t('chat.execution.panel.traceEmpty')}
+          </p>
+        )}
+      </div>
+    );
+  }
 
   if (events.length === 0) {
     return (
-      <div className="flex flex-1 flex-col items-center justify-center gap-3 p-8 text-center">
-        <div className="flex size-12 items-center justify-center rounded-xl border border-border-subtle/40 bg-surface-sunken/60">
-          <FileCode2 className="size-5 text-muted-foreground/50" />
+      <div className="flex min-h-0 flex-1 flex-col gap-1.5 p-2">
+        {subTabs}
+        <div className="flex flex-1 flex-col items-center justify-center gap-3 p-8 text-center">
+          <div className="flex size-12 items-center justify-center rounded-xl border border-border-subtle/40 bg-surface-sunken/60">
+            <FileCode2 className="size-5 text-muted-foreground/50" />
+          </div>
+          <p className="max-w-[220px] text-xs leading-relaxed text-muted-foreground">
+            {t('chat.workspace.agent.pickPath', {
+              defaultValue: 'Code activity will appear here once the agent starts working on files.',
+            })}
+          </p>
         </div>
-        <p className="max-w-[220px] text-xs leading-relaxed text-muted-foreground">
-          {t('chat.workspace.agent.pickPath', {
-            defaultValue: 'Code activity will appear here once the agent starts working on files.',
-          })}
-        </p>
       </div>
     );
   }
@@ -223,35 +286,7 @@ export function AgentWorkspaceTab() {
 
       <ArtifactsRail artifacts={artifacts} />
 
-      <div className="flex shrink-0 items-center gap-0.5">
-        {(
-          [
-            ['activity', t('chat.workspace.agent.subtabs.activity', { defaultValue: 'Activity' })],
-            ['runs', t('chat.workspace.agent.subtabs.runs', { defaultValue: 'Runs' })],
-            ['review', t('chat.workspace.agent.subtabs.review', { defaultValue: 'Review' })],
-          ] as [CodeSubTab, string][]
-        ).map(([id, label]) => (
-          <button
-            key={id}
-            type="button"
-            onClick={() => setSubTab(id)}
-            className={cn(
-              'rounded-md px-2 py-1 text-[11px] font-medium transition-colors',
-              subTab === id
-                ? 'bg-surface-sunken text-foreground'
-                : 'text-muted-foreground hover:text-foreground',
-            )}
-            aria-pressed={subTab === id}
-          >
-            {label}
-            {id === 'review' && pendingReviewCount > 0 && (
-              <span className="ml-1 rounded-full bg-amber-500/20 px-1.5 py-0.5 text-[9px] font-semibold tabular-nums text-amber-600 dark:text-amber-400">
-                {pendingReviewCount}
-              </span>
-            )}
-          </button>
-        ))}
-      </div>
+      {subTabs}
 
       {subTab === 'activity' && (
         <div className="chat-sessions-scroll -mr-1 min-h-0 flex-1 overflow-y-auto pr-1">

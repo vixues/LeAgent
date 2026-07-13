@@ -577,7 +577,11 @@
         "subtabs": {
           "activity": "活动",
           "runs": "执行记录",
+          "trace": "Trace",
           "review": "评审"
+        },
+        "trace": {
+          "hint": "本会话的 agent 运行 Trace（耗时、模型、工具调用）。默认仅记录元数据，不影响对话热路径。"
         },
         "runs": {
           "empty": "尚无执行记录。",

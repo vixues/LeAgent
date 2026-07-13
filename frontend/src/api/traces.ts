@@ -100,13 +100,8 @@ export const tracesApi = {
 
   exportUrl: (traceId: string) => `/api/v1/traces/${traceId}/export`,
 
-  exportJsonl: async (traceId: string): Promise<string> => {
-    const res = await fetch(`/api/v1/traces/${encodeURIComponent(traceId)}/export`, {
-      credentials: 'include',
-    });
-    if (!res.ok) throw new Error(`export failed: ${res.status}`);
-    return res.text();
-  },
+  exportJsonl: (traceId: string) =>
+    apiClient.getText(`/traces/${encodeURIComponent(traceId)}/export`),
 
   statsByModel: (days = 30) =>
     apiClient.get<ModelTraceStats[]>('/traces/stats/by-model', { days }),

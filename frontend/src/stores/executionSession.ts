@@ -108,11 +108,13 @@ export const useExecutionSessionStore = create<ExecutionSessionState>((set, get)
   setAgentTaskId: (sessionId, taskId) => {
     const prev = get().bySession[sessionId];
     if (!prev) {
+      // Do not treat agent_task id as ExecutionRun / trace id — that arrives via
+      // execution_started. Keep an empty runId until then.
       set((state) => ({
         bySession: {
           ...state.bySession,
           [sessionId]: mergeEntry(undefined, {
-            runId: taskId,
+            runId: '',
             scope: 'chat_turn',
             agentTaskId: taskId,
             status: 'running',

@@ -143,6 +143,11 @@ class DbDocumentChunkRepository:
         match_expr = escape_fts_query(query)
         if not match_expr:
             return []
+        # SQLite may persist UUIDs as dashed or hex-only text; compare both.
+        user_id_dashed = str(user_id) if user_id else None
+        user_id_hex = user_id_dashed.replace("-", "") if user_id_dashed else None
+        # SQLModel/SQLite may store Enum by name ("KNOWLEDGE") or value ("knowledge").
+        scope_value, scope_name = _scope_variants(library_scope)
         sql = sa.text(
             f"""
             SELECT dc.id AS chunk_id, dc.file_id AS file_id, dc.seq AS seq,
@@ -156,8 +161,16 @@ class DbDocumentChunkRepository:
             JOIN files f ON f.id = dc.file_id
             WHERE {FTS_TABLE} MATCH :match
               AND f.is_deleted = 0
-              AND (:user_id IS NULL OR dc.user_id = :user_id)
-              AND (:scope IS NULL OR f.library_scope = :scope)
+              AND (
+                    :user_id_dashed IS NULL
+                    OR lower(replace(CAST(dc.user_id AS TEXT), '-', ''))
+                       = lower(:user_id_hex)
+                  )
+              AND (
+                    :scope_value IS NULL
+                    OR f.library_scope = :scope_value
+                    OR f.library_scope = :scope_name
+                  )
             ORDER BY score
             LIMIT :limit
             """
@@ -167,8 +180,10 @@ class DbDocumentChunkRepository:
                 sql,
                 {
                     "match": match_expr,
-                    "user_id": str(user_id) if user_id else None,
-                    "scope": library_scope,
+                    "user_id_dashed": user_id_dashed,
+                    "user_id_hex": user_id_hex,
+                    "scope_value": scope_value,
+                    "scope_name": scope_name,
                     "limit": limit,
                 },
             )
@@ -195,7 +210,13 @@ class DbDocumentChunkRepository:
         if user_id is not None:
             stmt = stmt.where(DocumentChunk.user_id == user_id)
         if library_scope is not None:
-            stmt = stmt.where(File.library_scope == library_scope)
+            from leagent.db.models.file import LibraryScope as _LibraryScope
+
+            try:
+                scope_enum = _LibraryScope(str(library_scope).lower())
+            except ValueError:
+                scope_enum = _LibraryScope[str(library_scope).upper()]
+            stmt = stmt.where(File.library_scope == scope_enum)
         stmt = stmt.limit(limit)
         result = await session.exec(stmt)
         hits: list[ChunkHit] = []
@@ -234,6 +255,16 @@ def _as_uuid(value) -> UUID:
     if isinstance(value, UUID):
         return value
     return UUID(str(value))
+
+
+def _scope_variants(library_scope: str | None) -> tuple[str | None, str | None]:
+    """Return ``(value, NAME)`` forms for SQLite enum storage drift."""
+    if library_scope is None:
+        return None, None
+    raw = str(library_scope).strip()
+    if not raw:
+        return None, None
+    return raw.lower(), raw.upper()
 
 
 def _lexical_snippet(text: str, query: str, *, radius: int = 120) -> str:

@@ -418,6 +418,19 @@ class ToolRegistry:
         "get_genui_guide",
         "list_ui_components",
     )
+    _KNOWLEDGE_HINT_TERMS: frozenset[str] = frozenset({
+        "知识库",
+        "knowledge base",
+        "knowledgebase",
+        "kb",
+        "查阅资料",
+        "根据文档",
+        "参考文档",
+        "文档库",
+        "资料库",
+        "knowledge",
+    })
+    _KNOWLEDGE_TOOL_NAMES: tuple[str, ...] = ("knowledge_search",)
 
     def get_tools_for_llm(
         self,
@@ -578,9 +591,12 @@ class ToolRegistry:
         return selected
 
     def _forced_tool_names_for_hint(self, hint_lower: str) -> tuple[str, ...]:
+        forced: list[str] = []
         if any(term in hint_lower for term in self._GENUI_HINT_TERMS):
-            return self._GENUI_TOOL_NAMES
-        return ()
+            forced.extend(self._GENUI_TOOL_NAMES)
+        if any(term in hint_lower for term in self._KNOWLEDGE_HINT_TERMS):
+            forced.extend(self._KNOWLEDGE_TOOL_NAMES)
+        return tuple(forced)
 
     def search_tools(self, query: str) -> list[BaseTool]:
         """Keyword search across tool names, descriptions, and search_hints."""

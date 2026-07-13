@@ -109,6 +109,10 @@ _ALWAYS_VISIBLE_TOOL_DESCRIPTIONS: dict[str, str] = {
         "instantiate them with fresh values into PDF/DOCX/HTML/PPTX — for "
         "recurring, brand-consistent deliverables."
     ),
+    "knowledge_search": (
+        "User knowledge base: call action=catalog for summaries, then search/read; "
+        "do not invent document contents."
+    ),
 }
 
 

@@ -268,6 +268,7 @@ class FileProcessingService:
             from uuid import UUID
 
             from leagent.library.chunking import chunk_text
+            from leagent.library.summary import summarize_extracted_text
             from leagent.services.service_manager import get_service_manager
 
             sm = get_service_manager()
@@ -278,12 +279,15 @@ class FileProcessingService:
             user_id: UUID | None = None
             from leagent.db.models.file import File
 
+            summary = summarize_extracted_text(extracted)
+
             async with sm.db.session() as session:
                 row = await session.get(File, logical_id)
                 if row is None:
                     return
                 user_id = row.user_id
                 row.is_indexed = True
+                row.summary = summary
                 session.add(row)
 
             chunks = chunk_text(extracted)

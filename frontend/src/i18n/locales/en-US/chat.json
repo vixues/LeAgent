@@ -577,7 +577,11 @@
         "subtabs": {
           "activity": "Activity",
           "runs": "Runs",
+          "trace": "Trace",
           "review": "Review"
+        },
+        "trace": {
+          "hint": "Durable agent run traces for this session (latency, model, tools). Metadata-only by default — stays off the chat hot path."
         },
         "runs": {
           "empty": "No execution records yet.",

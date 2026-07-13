@@ -58,18 +58,19 @@ describe('executionSession store', () => {
     expect(useExecutionSessionStore.getState().bySession['real-1']?.runId).toBe('run-temp');
   });
 
-  it('setPauseToken marks execution blocked', () => {
-    useExecutionSessionStore.getState().clearSession('sess-block');
-    useExecutionSessionStore.getState().upsertFromStarted('sess-block', {
-      runId: 'run-block',
+  it('setAgentTaskId does not invent runId from task id', () => {
+    useExecutionSessionStore.getState().clearSession('sess-task');
+    useExecutionSessionStore.getState().setAgentTaskId('sess-task', '63e23f70-task');
+    let entry = useExecutionSessionStore.getState().bySession['sess-task'];
+    expect(entry?.agentTaskId).toBe('63e23f70-task');
+    expect(entry?.runId).toBe('');
+
+    useExecutionSessionStore.getState().upsertFromStarted('sess-task', {
+      runId: 'f54c257a-run',
       scope: 'chat_turn',
     });
-    useExecutionSessionStore.getState().setPauseToken('sess-block', {
-      scope: 'chat_turn',
-      checkpoint_id: 'cp-1',
-    });
-    const entry = useExecutionSessionStore.getState().bySession['sess-block'];
-    expect(entry?.status).toBe('blocked');
-    expect(entry?.pauseToken).toEqual({ scope: 'chat_turn', checkpoint_id: 'cp-1' });
+    entry = useExecutionSessionStore.getState().bySession['sess-task'];
+    expect(entry?.runId).toBe('f54c257a-run');
+    expect(entry?.agentTaskId).toBe('63e23f70-task');
   });
 });

@@ -21,6 +21,7 @@ from leagent.tools.doc.doc_classifier import DocClassifierTool
 from leagent.tools.doc.excel_reader import ExcelReaderTool
 from leagent.tools.doc.html_processor import HTMLProcessorTool
 from leagent.tools.doc.image_ocr import ImageOCRTool
+from leagent.tools.doc.knowledge_search import KnowledgeSearchTool
 from leagent.tools.doc.markdown_processor import MarkdownProcessorTool
 from leagent.tools.doc.pdf_reader import PDFReaderTool
 from leagent.tools.doc.pdf_research import (
@@ -48,4 +49,5 @@ __all__ = [
     "ConfigFileTool",
     "ArchiveManagerTool",
     "TextFileProcessorTool",
+    "KnowledgeSearchTool",
 ]

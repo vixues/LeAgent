@@ -7,9 +7,17 @@ import { useTranslation } from 'react-i18next';
 interface SearchInputProps extends Omit<InputHTMLAttributes<HTMLInputElement>, 'onChange' | 'size'> {
   value?: string;
   onChange?: (value: string) => void;
+  /** Debounced commit (typing settled). */
   onSearch?: (value: string) => void;
+  /** Immediate commit on Enter (optional; falls back to onSearch). */
+  onSubmit?: (value: string) => void;
   debounceMs?: number;
   loading?: boolean;
+  /**
+   * When true, disable the field while `loading`. Default false so typing
+   * is not blocked by in-flight searches.
+   */
+  disableOnLoading?: boolean;
   showClear?: boolean;
   size?: 'sm' | 'md' | 'lg';
 }
@@ -21,8 +29,10 @@ const SearchInput = forwardRef<HTMLInputElement, SearchInputProps>(
       value: controlledValue,
       onChange,
       onSearch,
+      onSubmit,
       debounceMs = 300,
       loading = false,
+      disableOnLoading = false,
       showClear = true,
       size = 'md',
       placeholder,
@@ -63,13 +73,14 @@ const SearchInput = forwardRef<HTMLInputElement, SearchInputProps>(
         setUncontrolledValue('');
       }
       onChange?.('');
+      onSubmit?.('');
       onSearch?.('');
     };
 
     const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-      if (e.key === 'Enter' && onSearch) {
+      if (e.key === 'Enter' && (onSubmit || onSearch)) {
         e.preventDefault();
-        onSearch(value);
+        (onSubmit ?? onSearch)?.(value);
       }
       if (e.key === 'Escape' && value) {
         handleClear();
@@ -98,6 +109,7 @@ const SearchInput = forwardRef<HTMLInputElement, SearchInputProps>(
     };
 
     const sizeConfig = sizes[size];
+    const inputDisabled = Boolean(disabled || (disableOnLoading && loading));
 
     return (
       <div className={cn('relative', className)}>
@@ -119,7 +131,7 @@ const SearchInput = forwardRef<HTMLInputElement, SearchInputProps>(
           value={value}
           onChange={handleChange}
           onKeyDown={handleKeyDown}
-          disabled={disabled || loading}
+          disabled={inputDisabled}
           placeholder={placeholder || t('common.search')}
           className={cn(
             'w-full rounded-lg border transition-colors',
@@ -138,7 +150,7 @@ const SearchInput = forwardRef<HTMLInputElement, SearchInputProps>(
           <button
             type="button"
             onClick={handleClear}
-            disabled={disabled}
+            disabled={inputDisabled}
             className={cn(
               'absolute top-1/2 -translate-y-1/2 rounded-md',
               'text-gray-400 hover:text-gray-600 dark:hover:text-gray-300',

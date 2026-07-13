@@ -83,6 +83,8 @@ class File(FileBase, BaseModel, SoftDeleteMixin, table=True):
     # Processing results
     extracted_text: Optional[str] = Field(default=None, sa_column=Column(Text))
     file_metadata: Optional[str] = Field(default=None, sa_column=Column(Text))  # JSON
+    # Extractive blurb for knowledge catalog (set after chunk indexing)
+    summary: Optional[str] = Field(default=None, sa_column=Column(Text))
 
     # OCR/extraction info
     page_count: Optional[int] = Field(default=None)
@@ -128,6 +130,7 @@ class FileUpdate(SQLModel):
     folder_id: Optional[UUID] = None
     extracted_text: Optional[str] = None
     file_metadata: Optional[str] = None
+    summary: Optional[str] = None
     is_indexed: Optional[bool] = None
     library_scope: Optional[LibraryScope] = None
     inbox_state: Optional[InboxState] = None
@@ -144,6 +147,7 @@ class FileRead(FileBase):
     page_count: Optional[int]
     has_ocr: bool
     is_indexed: bool
+    summary: Optional[str] = None
     library_scope: LibraryScope = LibraryScope.WORKSPACE
     inbox_state: InboxState = InboxState.TRIAGED
     origin_type: Optional[str] = None

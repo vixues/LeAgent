@@ -203,6 +203,48 @@ class ApiClient {
     return this.request<T>(endpoint, { method: 'DELETE', ...options });
   }
 
+  /** Authenticated GET that returns raw response text (JSONL, CSV, …). */
+  async getText(
+    endpoint: string,
+    params?: Record<string, string | number | boolean | undefined>,
+    requestOptions?: Omit<RequestOptions, 'params' | 'method' | 'body'>,
+  ): Promise<string> {
+    const { timeoutMs, skipAuth, ...fetchOptions } = requestOptions ?? {};
+    const url = this.buildUrl(endpoint, params);
+
+    const timeoutSignal = timeoutMs != null ? createTimeoutSignal(timeoutMs) : undefined;
+    const userSignal = fetchOptions.signal ?? undefined;
+    const signal = combineAbortSignals(userSignal, timeoutSignal);
+
+    const headers: Record<string, string> = {
+      ...(requestOptions?.headers as Record<string, string>),
+    };
+
+    appendFingerprint(headers);
+    applyAuthHeader(headers, skipAuth);
+
+    const response = await fetch(url, {
+      method: 'GET',
+      ...fetchOptions,
+      signal,
+      headers,
+      credentials:
+        skipAuth ? 'omit' : ((fetchOptions.credentials as RequestCredentials) ?? 'include'),
+    });
+
+    if (!response.ok) {
+      const body = await response.json().catch(() => ({}));
+      const message = formatHttpErrorDetail(
+        body.detail,
+        response.status,
+        typeof body.message === 'string' ? body.message : undefined,
+      );
+      throw new HttpError(message, response.status);
+    }
+
+    return response.text();
+  }
+
   async postBlob(
     endpoint: string,
     data?: unknown,

@@ -401,6 +401,10 @@ async def list_documents(
     file_type: Optional[FileType] = Query(default=None),
     status: Optional[FileStatus] = Query(default=None),
     folder_id: Optional[UUID] = Query(default=None),
+    unfiled: bool = Query(
+        default=False,
+        description="When true and folder_id is omitted, return only documents with folder_id IS NULL.",
+    ),
     search: Optional[str] = Query(default=None, max_length=100),
 ) -> PaginatedResponse[FileRead]:
     """List documents for the current user with pagination and filters."""
@@ -419,6 +423,8 @@ async def list_documents(
             query = query.where(FileModel.status == status)
         if folder_id is not None:
             query = query.where(FileModel.folder_id == folder_id)
+        elif unfiled:
+            query = query.where(FileModel.folder_id == None)  # noqa: E711
         if search:
             query = query.where(FileModel.original_name.ilike(f"%{search}%"))
 

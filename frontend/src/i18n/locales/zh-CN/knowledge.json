@@ -8,6 +8,7 @@
     "documents": "文档列表",
     "items": "个文件",
     "empty": "暂无文档",
+    "emptyFolder": "此文件夹为空",
     "dragOrClick": "拖拽文件到此处或点击上传",
     "selectFiles": "选择文件",
     "preview": "文档预览",
@@ -15,21 +16,48 @@
     "size": "文件大小",
     "created": "创建时间",
     "chunks": "分块数",
+    "summary": "摘要",
+    "noSummary": "暂无摘要",
+    "indexing": "正在索引…",
+    "indexStatus": "索引状态",
     "view": "查看",
     "download": "下载",
     "openExternal": "在新标签页打开",
     "downloadFailed": "下载失败，请重新登录或稍后再试。",
     "confirmDelete": "确定要删除此文档吗？",
+    "confirmDeleteFolder": "确定删除此文件夹及其内容吗？",
+    "newFolder": "新建文件夹",
+    "newFolderPrompt": "文件夹名称",
+    "newFolderPlaceholder": "输入文件夹名称",
+    "createFolderFailed": "创建文件夹失败",
+    "folderItems": "{{count}} 项",
     "types": {
       "image": "图片",
       "document": "文档",
       "spreadsheet": "表格",
       "text": "文本",
-      "other": "其他"
+      "other": "其他",
+      "folder": "文件夹"
     },
-    "deleteUnavailable": "Delete is not available yet",
-    "searchMatch": "Indexed match",
-    "searchEmpty": "No matching documents",
-    "searchEmptyHint": "Try different keywords"
+    "status": {
+      "indexed": "已索引",
+      "processing": "处理中",
+      "failed": "失败",
+      "pending": "未索引"
+    },
+    "folders": {
+      "root": "知识库",
+      "breadcrumbAria": "知识库路径",
+      "showTree": "文件夹",
+      "hideTree": "关闭文件夹",
+      "treeTitle": "文件夹",
+      "emptyTree": "暂无文件夹"
+    },
+    "deleteUnavailable": "暂时无法删除",
+    "searchMatch": "索引匹配",
+    "searchEmpty": "没有匹配的文档",
+    "searchEmptyHint": "试试其他关键词",
+    "searchAllHint": "正在搜索全部知识库文档",
+    "searchMinHint": "再输入至少 1 个字符，或按回车搜索"
   }
 }

@@ -37,9 +37,9 @@ class AgentTrace(BaseModel, table=True):
     llm_call_count: int = Field(default=0)
     experiment_id: Optional[str] = Field(default=None, index=True, max_length=64)
     prompt_hash: Optional[str] = Field(default=None, max_length=64)
-    tags: Optional[str] = Field(default=None, sa_column=Column(Text))
-    error: Optional[str] = Field(default=None, sa_column=Column(Text))
-    scores: Optional[str] = Field(default=None, sa_column=Column(Text))
+    tags: Optional[str] = Field(default=None, sa_column=Column(Text, nullable=True))
+    error: Optional[str] = Field(default=None, sa_column=Column(Text, nullable=True))
+    scores: Optional[str] = Field(default=None, sa_column=Column(Text, nullable=True))
     root_span_id: Optional[str] = Field(default=None, max_length=64)
 
 

@@ -1,12 +1,16 @@
 import { create } from 'zustand';
 
-interface Document {
+export interface KnowledgeDocument {
   id: string;
   name: string;
   type: string;
   size: number;
   url: string;
+  /** Extractive catalog blurb or search snippet shown in the list/preview. */
   preview?: string;
+  summary?: string | null;
+  status?: string;
+  isIndexed?: boolean;
   chunks?: number;
   createdAt: string;
 }
@@ -14,8 +18,8 @@ interface Document {
 interface KnowledgeStore {
   search: string;
   setSearch: (search: string) => void;
-  selectedDocument: Document | null;
-  setSelectedDocument: (doc: Document | null) => void;
+  selectedDocument: KnowledgeDocument | null;
+  setSelectedDocument: (doc: KnowledgeDocument | null) => void;
   isPreviewOpen: boolean;
   setPreviewOpen: (open: boolean) => void;
 }

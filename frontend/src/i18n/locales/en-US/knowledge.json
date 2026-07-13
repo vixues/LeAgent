@@ -8,6 +8,7 @@
     "documents": "Documents",
     "items": "files",
     "empty": "No documents yet",
+    "emptyFolder": "This folder is empty",
     "dragOrClick": "Drag files here or click to upload",
     "selectFiles": "Select Files",
     "preview": "Document Preview",
@@ -15,21 +16,48 @@
     "size": "File Size",
     "created": "Created",
     "chunks": "Chunks",
+    "summary": "Summary",
+    "noSummary": "No summary yet",
+    "indexing": "Indexing…",
+    "indexStatus": "Index status",
     "view": "View",
     "download": "Download",
     "openExternal": "Open in new tab",
     "downloadFailed": "Could not download the file. Sign in again or try later.",
     "confirmDelete": "Are you sure you want to delete this document?",
+    "confirmDeleteFolder": "Delete this folder and its contents?",
+    "newFolder": "New folder",
+    "newFolderPrompt": "Folder name",
+    "newFolderPlaceholder": "Enter folder name",
+    "createFolderFailed": "Failed to create folder",
+    "folderItems": "{{count}} items",
     "types": {
       "image": "Image",
       "document": "Document",
       "spreadsheet": "Spreadsheet",
       "text": "Text",
-      "other": "Other"
+      "other": "Other",
+      "folder": "Folder"
+    },
+    "status": {
+      "indexed": "Indexed",
+      "processing": "Processing",
+      "failed": "Failed",
+      "pending": "Not indexed"
+    },
+    "folders": {
+      "root": "Knowledge",
+      "breadcrumbAria": "Knowledge path",
+      "showTree": "Folders",
+      "hideTree": "Close folders",
+      "treeTitle": "Folders",
+      "emptyTree": "No folders yet"
     },
     "deleteUnavailable": "Delete is not available yet",
     "searchMatch": "Indexed match",
     "searchEmpty": "No matching documents",
-    "searchEmptyHint": "Try different keywords"
+    "searchEmptyHint": "Try different keywords",
+    "searchAllHint": "Searching across the whole knowledge base",
+    "searchMinHint": "Type one more character, or press Enter to search"
   }
 }

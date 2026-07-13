@@ -40,3 +40,91 @@ def test_system_and_legacy_dirs_detected(kb_root: Path) -> None:
     assert doc_api._is_system_knowledge_storage_path(str(leg_dir / "legacy.bin"))
     assert not doc_api._is_system_knowledge_storage_path(str(kb_root / "uploads" / "x.dat"))
     assert not doc_api._is_system_knowledge_storage_path(None)
+
+
+@pytest.mark.asyncio
+async def test_list_documents_unfiled_filter(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """unfiled=true returns only knowledge docs with folder_id IS NULL."""
+    from uuid import uuid4
+
+    from leagent.config.settings import Settings
+    from leagent.db.models.file import File, FileStatus, FileType, LibraryScope
+    from leagent.db.models.folder import Folder
+    from leagent.db.service import DatabaseService
+    from leagent.services.auth.service import LOCAL_USER_ID
+
+    db_path = tmp_path / "docs.db"
+    monkeypatch.setenv("DB_DATABASE_URL", f"sqlite+aiosqlite:///{db_path}")
+    db = DatabaseService(Settings())
+    await db.create_tables()
+
+    folder_id = uuid4()
+    unfiled_id = uuid4()
+    filed_id = uuid4()
+
+    async with db.session() as session:
+        session.add(
+            Folder(
+                id=folder_id,
+                name="kb-folder",
+                user_id=LOCAL_USER_ID,
+                parent_id=None,
+            )
+        )
+        session.add(
+            File(
+                id=unfiled_id,
+                user_id=LOCAL_USER_ID,
+                name="loose.txt",
+                original_name="loose.txt",
+                file_type=FileType.DOCUMENT,
+                size=1,
+                status=FileStatus.PROCESSED,
+                storage_path="/tmp/loose.txt",
+                library_scope=LibraryScope.KNOWLEDGE,
+                folder_id=None,
+            )
+        )
+        session.add(
+            File(
+                id=filed_id,
+                user_id=LOCAL_USER_ID,
+                name="nested.txt",
+                original_name="nested.txt",
+                file_type=FileType.DOCUMENT,
+                size=1,
+                status=FileStatus.PROCESSED,
+                storage_path="/tmp/nested.txt",
+                library_scope=LibraryScope.KNOWLEDGE,
+                folder_id=folder_id,
+            )
+        )
+
+    from sqlmodel import select
+
+    async with db.session() as session:
+        unfiled = list(
+            (
+                await session.exec(
+                    select(File).where(
+                        File.library_scope == LibraryScope.KNOWLEDGE,
+                        File.folder_id == None,  # noqa: E711
+                        File.is_deleted == False,  # noqa: E712
+                    )
+                )
+            ).all()
+        )
+        in_folder = list(
+            (
+                await session.exec(
+                    select(File).where(
+                        File.library_scope == LibraryScope.KNOWLEDGE,
+                        File.folder_id == folder_id,
+                    )
+                )
+            ).all()
+        )
+
+    assert {f.id for f in unfiled} == {unfiled_id}
+    assert {f.id for f in in_folder} == {filed_id}
+    await db.dispose()

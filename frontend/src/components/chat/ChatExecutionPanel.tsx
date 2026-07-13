@@ -27,7 +27,6 @@ import {
 import { useExecutionSessionStore } from '@/stores/executionSession';
 import type { TaskProgressStep } from '@/types/chat';
 import { TodoListBlock } from './TodoListBlock';
-import { ChatTraceInspector } from './ChatTraceInspector';
 
 interface ChatExecutionPanelProps {
   sessionId: string | null | undefined;
@@ -36,6 +35,9 @@ interface ChatExecutionPanelProps {
 
 /** Gate capability log, workflow status, and resume controls — tasks-only for now. */
 const SHOW_EXECUTION_EXTRAS_IN_PANEL = false;
+
+/** Traces stay durable in the backend / Admin; do not surface in the chat composer. */
+const SHOW_TRACE_IN_PANEL = false;
 
 const EMPTY_TODOS: TaskProgressStep[] = [];
 
@@ -167,7 +169,8 @@ export function ChatExecutionPanel({ sessionId, className }: ChatExecutionPanelP
   const showForTodos = hasTodos && ui?.pinned === true && !ui?.dismissed;
 
   const runId = execution?.runId ?? null;
-  const showForTrace = Boolean(sessionId && (runId || isStreaming || execution?.status));
+  const showForTrace =
+    SHOW_TRACE_IN_PANEL && Boolean(sessionId && (runId || isStreaming || execution?.status));
 
   const hasExecutionPanelContent =
     isStreaming ||
@@ -351,10 +354,6 @@ export function ChatExecutionPanel({ sessionId, className }: ChatExecutionPanelP
                   onStatusChange={handleStatusChange}
                   className="border-0 bg-transparent shadow-none ring-0"
                 />
-              ) : null}
-
-              {showForTrace ? (
-                <ChatTraceInspector sessionId={sessionId} runId={runId} />
               ) : null}
 
               {SHOW_EXECUTION_EXTRAS_IN_PANEL && capabilityLog.length > 0 ? (

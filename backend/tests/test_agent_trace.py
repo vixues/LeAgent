@@ -138,7 +138,7 @@ async def test_recorder_maps_tool_and_result_events() -> None:
         model="demo-model",
         prompt="hello",
     )
-    await asyncio.sleep(0.05)
+    await rec.flush()
     assert current_run_id() == "run-1"
     assert "run-1" in store.traces
 
@@ -172,7 +172,7 @@ async def test_recorder_maps_tool_and_result_events() -> None:
     rec.on_event(
         AgentEvent(type="result", data={"reason": "completed", "usage": {}})
     )
-    await asyncio.sleep(0.1)
+    await rec.flush()
 
     kinds = [s["kind"] for s in store.spans]
     assert "agent" in kinds
@@ -190,10 +190,10 @@ async def test_end_trace_is_idempotent() -> None:
     store = _MemStore()
     rec = TraceRecorder(store=store)  # type: ignore[arg-type]
     rec.start_trace(run_id="run-2", session_id="s")
-    await asyncio.sleep(0.02)
+    await rec.flush()
     rec.end_trace("run-2", status="completed", terminal_reason="completed")
     rec.end_trace("run-2", status="error", terminal_reason="should_not_overwrite")
-    await asyncio.sleep(0.05)
+    await rec.flush()
     assert store.traces["run-2"]["status"] == "completed"
     clear_trace_context()
 
@@ -203,7 +203,7 @@ async def test_run_loop_emits_trace_events_without_raising() -> None:
     store = _MemStore()
     rec = TraceRecorder(store=store)  # type: ignore[arg-type]
     rec.start_trace(run_id="run-loop-1", session_id="sess-1")
-    await asyncio.sleep(0.02)
+    await rec.flush()
 
     from leagent.telemetry import trace as trace_pkg
 
@@ -231,7 +231,7 @@ async def test_run_loop_emits_trace_events_without_raising() -> None:
         state = RunState(session_id="sess-1", agent_name="test_agent")
         events = [ev async for ev in run_loop(engine, "hi", run_state=state)]
         assert events[-1].type == "result"
-        await asyncio.sleep(0.1)
+        await rec.flush()
         assert any(s["kind"] == "tool" for s in store.spans)
     finally:
         trace_pkg.get_trace_recorder = original
@@ -242,6 +242,96 @@ def test_prompt_hash_and_json_helpers() -> None:
     assert prompt_hash("abc") == prompt_hash("abc")
     assert prompt_hash("abc") != prompt_hash("abd")
     assert loads_json(dumps_json({"a": 1})) == {"a": 1}
+
+
+@pytest.mark.asyncio
+async def test_create_trace_survives_not_null_json_columns(tmp_path) -> None:
+    """Regression: legacy SQLite tables had tags/scores as NOT NULL TEXT."""
+    from contextlib import asynccontextmanager
+
+    from sqlalchemy import text
+    from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+    from sqlalchemy.pool import NullPool
+    from sqlmodel.ext.asyncio.session import AsyncSession
+
+    from leagent.telemetry.trace.store import TraceStore
+
+    engine = create_async_engine(
+        f"sqlite+aiosqlite:///{tmp_path / 'legacy_trace.db'}",
+        poolclass=NullPool,
+    )
+    async with engine.begin() as conn:
+        await conn.execute(
+            text(
+                """
+                CREATE TABLE agent_traces (
+                    id CHAR(32) NOT NULL PRIMARY KEY,
+                    created_at DATETIME NOT NULL,
+                    updated_at DATETIME NOT NULL,
+                    trace_id VARCHAR(64) NOT NULL UNIQUE,
+                    parent_trace_id VARCHAR(64),
+                    session_id VARCHAR(100),
+                    user_id VARCHAR(100),
+                    scope VARCHAR(32) NOT NULL,
+                    agent_name VARCHAR(200) NOT NULL,
+                    model VARCHAR(200) NOT NULL,
+                    status VARCHAR(32) NOT NULL,
+                    terminal_reason VARCHAR(64),
+                    started_at DATETIME NOT NULL,
+                    ended_at DATETIME,
+                    latency_ms FLOAT NOT NULL,
+                    input_tokens INTEGER NOT NULL,
+                    output_tokens INTEGER NOT NULL,
+                    cache_read_tokens INTEGER NOT NULL,
+                    cache_miss_tokens INTEGER NOT NULL,
+                    total_cost_usd FLOAT NOT NULL,
+                    tool_call_count INTEGER NOT NULL,
+                    llm_call_count INTEGER NOT NULL,
+                    experiment_id VARCHAR(64),
+                    prompt_hash VARCHAR(64),
+                    tags TEXT NOT NULL,
+                    error TEXT,
+                    scores TEXT NOT NULL,
+                    root_span_id VARCHAR(64)
+                )
+                """
+            )
+        )
+
+    session_factory = async_sessionmaker(
+        engine, class_=AsyncSession, expire_on_commit=False
+    )
+
+    class _Db:
+        def session(self):
+            @asynccontextmanager
+            async def _cm():
+                async with session_factory() as s:
+                    try:
+                        yield s
+                        await s.commit()
+                    except Exception:
+                        await s.rollback()
+                        raise
+
+            return _cm()
+
+    store = TraceStore(db=_Db())
+    tid = f"t-{uuid4().hex[:16]}"
+    await store.create_trace(
+        trace_id=tid,
+        session_id="sess-json",
+        scope="chat_turn",
+        agent_name="default_agent",
+        model="",
+        tags=None,
+        root_span_id="root",
+    )
+    got = await store.get_trace(tid)
+    assert got is not None
+    assert got.tags == "{}"
+    assert got.scores == "{}"
+    await engine.dispose()
 
 
 def test_build_span_tree_nests_children() -> None:
