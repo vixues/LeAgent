@@ -186,6 +186,10 @@ const NavRail = ({
 
   const homeActive = isActive('/home');
   const petSpaceActive = isActive('/pet-space');
+  // Mobile drawer is always the expanded rail (labels + section headers visible).
+  // Do not inherit desktop/tablet `sidebarCollapsed` — tablet forces collapse, which
+  // would leave a w-64 drawer with opacity-0 labels.
+  const railCollapsed = isMobile ? false : collapsed;
 
   // On mobile, don't render sidebar at all when drawer is closed
   if (isMobile && !mobileOpen) return null;
@@ -211,7 +215,7 @@ const NavRail = ({
             : cn(
                 'fixed left-2 top-[calc(var(--titlebar-height,0px)_+_10px)] bottom-2 z-20 transition-[width] duration-200 ease-[cubic-bezier(0.4,0,0.2,1)] [contain:layout_paint] motion-reduce:transition-none',
                 'shadow-soft ring-1 ring-black/[0.06] dark:ring-white/[0.08]',
-                collapsed ? 'w-16' : 'w-64'
+                railCollapsed ? 'w-16' : 'w-64'
               )
         )}
       >
@@ -223,7 +227,7 @@ const NavRail = ({
         */}
         <div className="flex h-full min-h-0 w-full min-w-0 flex-col">
         <LogoStageRail
-          collapsed={collapsed}
+          collapsed={railCollapsed}
           isMobile={isMobile}
           onCollapsedChange={onCollapsedChange}
           onMobileClose={onMobileClose}
@@ -244,13 +248,13 @@ const NavRail = ({
                 onMouseEnter={() => prefetchRoute('/home')}
                 onFocus={() => prefetchRoute('/home')}
                 onClick={(e) => {
-                  if (!collapsed && homeActive) {
+                  if (!railCollapsed && homeActive) {
                     e.preventDefault();
                     setChatHistoryOpen(!chatHistoryOpen);
                   }
                 }}
-                aria-expanded={!collapsed && homeActive ? chatHistoryOpen : undefined}
-                aria-controls={!collapsed && homeActive && chatHistoryOpen ? 'nav-chat-history' : undefined}
+                aria-expanded={!railCollapsed && homeActive ? chatHistoryOpen : undefined}
+                aria-controls={!railCollapsed && homeActive && chatHistoryOpen ? 'nav-chat-history' : undefined}
                 className={cn(
                   'flex items-center gap-3 rounded-lg border border-transparent px-3 py-2.5 transition-colors duration-150',
                   homeActive
@@ -258,7 +262,7 @@ const NavRail = ({
                     : 'text-muted-foreground hover:bg-surface-sunken dark:hover:bg-surface-elevated hover:text-foreground',
                 )}
                 title={
-                  collapsed
+                  railCollapsed
                     ? homeNavItem.label
                     : homeActive
                       ? t('chat.toggleHistorySectionAria', {
@@ -271,17 +275,17 @@ const NavRail = ({
                   <MessageSquare className="h-5 w-5" />
                 </span>
                 <span
-                  aria-hidden={collapsed}
+                  aria-hidden={railCollapsed}
                   className={cn(
                     'min-w-0 flex-1 truncate whitespace-nowrap text-sm font-medium',
                     'transition-[opacity,transform] duration-200 ease-out',
-                    collapsed ? 'pointer-events-none -translate-x-1 opacity-0' : 'translate-x-0 opacity-100',
+                    railCollapsed ? 'pointer-events-none -translate-x-1 opacity-0' : 'translate-x-0 opacity-100',
                   )}
                 >
                   {homeNavItem.label}
                 </span>
               </Link>
-              {!collapsed && chatHistoryOpen && (
+              {!railCollapsed && chatHistoryOpen && (
                 <div
                   id="nav-chat-history"
                   role="region"
@@ -293,24 +297,24 @@ const NavRail = ({
               )}
             </div>
             {mainNavItems.map((item) => (
-              <NavLink key={item.id} item={item} collapsed={collapsed} active={isActive(item.href)} />
+              <NavLink key={item.id} item={item} collapsed={railCollapsed} active={isActive(item.href)} />
             ))}
           </div>
 
           <div className="mt-4 pt-4 border-t border-border">
             <p
-              aria-hidden={collapsed}
+              aria-hidden={railCollapsed}
               className={cn(
                 'overflow-hidden px-3 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground-tertiary',
                 'transition-[max-height,opacity,margin] duration-200 ease-out',
-                collapsed ? 'mb-0 max-h-0 opacity-0' : 'mb-1.5 max-h-5 opacity-100',
+                railCollapsed ? 'mb-0 max-h-0 opacity-0' : 'mb-1.5 max-h-5 opacity-100',
               )}
             >
               {t('nav.resources')}
             </p>
             <div className="space-y-0.5">
               {resourceNavItems.map((item) => (
-                <NavLink key={item.id} item={item} collapsed={collapsed} active={isActive(item.href)} />
+                <NavLink key={item.id} item={item} collapsed={railCollapsed} active={isActive(item.href)} />
               ))}
             </div>
           </div>
@@ -318,7 +322,7 @@ const NavRail = ({
           <div className="mt-4 pt-4 border-t border-border">
             <div className="space-y-0.5">
               {bottomNavItems.map((item) => (
-                <NavLink key={item.id} item={item} collapsed={collapsed} active={isActive(item.href)} />
+                <NavLink key={item.id} item={item} collapsed={railCollapsed} active={isActive(item.href)} />
               ))}
             </div>
           </div>
@@ -327,11 +331,11 @@ const NavRail = ({
         {/* Pet dock + user menu */}
         <div className="flex-shrink-0 space-y-2 overflow-visible p-2">
           <div onMouseEnter={() => prefetchRoute('/pet-space')} onFocus={() => prefetchRoute('/pet-space')}>
-            <PetNest active={petSpaceActive} compact={collapsed}>
-              <PetDockWidget collapsed={collapsed} active={petSpaceActive} />
+            <PetNest active={petSpaceActive} compact={railCollapsed}>
+              <PetDockWidget collapsed={railCollapsed} active={petSpaceActive} />
             </PetNest>
           </div>
-          <UserMenu collapsed={collapsed} />
+          <UserMenu collapsed={railCollapsed} />
         </div>
         </div>
 
