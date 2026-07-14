@@ -4,6 +4,45 @@ import type { CSSProperties } from 'react';
 /** Resolved app theme — drives Logo stage gradients for contrast with white mark + title. */
 export type LogoBackdropTheme = 'light' | 'dark';
 
+/** Shared blue gradient for minimal-mode mark + title — matches `favicon.svg` (`fileLogoPrimary`). */
+export const MINIMAL_BRAND_GRADIENT =
+  'linear-gradient(to top right, #7DD3FC 0%, #5CB8FA 42%, #3D94EB 100%)';
+
+/** Default mark for minimal mode — same asset / stops as the browser favicon. */
+export const MINIMAL_BRAND_MARK_SRC = '/favicon.svg';
+
+export function isMinimalBackdrop(preset: LogoBackdropPreset): boolean {
+  return preset === 'minimal';
+}
+
+/** Title / wordmark fill for minimal backdrop (CSS background-clip text). */
+export function getMinimalBrandTitleStyle(): CSSProperties {
+  return {
+    backgroundImage: MINIMAL_BRAND_GRADIENT,
+    WebkitBackgroundClip: 'text',
+    backgroundClip: 'text',
+    color: 'transparent',
+  };
+}
+
+/**
+ * Recolor the brand mark via CSS mask + the same blue gradient.
+ * Works for the default white SVG and most uploaded icons.
+ */
+export function getMinimalBrandMarkStyle(maskUrl: string): CSSProperties {
+  return {
+    backgroundImage: MINIMAL_BRAND_GRADIENT,
+    WebkitMaskImage: `url("${maskUrl}")`,
+    maskImage: `url("${maskUrl}")`,
+    WebkitMaskSize: 'contain',
+    maskSize: 'contain',
+    WebkitMaskRepeat: 'no-repeat',
+    maskRepeat: 'no-repeat',
+    WebkitMaskPosition: 'center',
+    maskPosition: 'center',
+  };
+}
+
 /** Hour-based mood when preset is `auto`. */
 function autoTimeBand(hour: number): 'night' | 'dawn' | 'day' | 'noon' | 'dusk' {
   if (hour >= 22 || hour < 5) return 'night';
@@ -115,7 +154,9 @@ function layersForBand(
   }
 }
 
-function presetLayers(preset: Exclude<LogoBackdropPreset, 'auto'>, theme: LogoBackdropTheme): string {
+type ScenicBackdropPreset = Exclude<LogoBackdropPreset, 'auto' | 'minimal'>;
+
+function presetLayers(preset: ScenicBackdropPreset, theme: LogoBackdropTheme): string {
   const read = logoZoneReadability(theme);
 
   if (theme === 'dark') {
@@ -198,8 +239,16 @@ export function getLogoBackdropStyle(
   preset: LogoBackdropPreset,
   theme: LogoBackdropTheme = 'light',
 ): Pick<CSSProperties, 'backgroundImage' | 'backgroundColor'> {
+  if (preset === 'minimal') {
+    return {
+      backgroundColor: 'transparent',
+      backgroundImage: 'none',
+    };
+  }
+
   const band = preset === 'auto' ? autoTimeBand(hour) : null;
-  const layers = preset === 'auto' ? layersForBand(band!, theme) : presetLayers(preset, theme);
+  const layers =
+    preset === 'auto' ? layersForBand(band!, theme) : presetLayers(preset, theme);
 
   return {
     backgroundColor: theme === 'dark' ? 'hsl(222 42% 38%)' : 'hsl(205 48% 84%)',

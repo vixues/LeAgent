@@ -1,7 +1,13 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 
-export type LogoBackdropPreset = 'auto' | 'aurora' | 'circuit' | 'ember' | 'void';
+export type LogoBackdropPreset =
+  | 'auto'
+  | 'aurora'
+  | 'circuit'
+  | 'ember'
+  | 'void'
+  | 'minimal';
 export type BrandFontPreset = 'modern' | 'rounded' | 'handwritten' | 'mono';
 
 export const LOGO_BACKDROP_PRESETS: LogoBackdropPreset[] = [
@@ -10,6 +16,7 @@ export const LOGO_BACKDROP_PRESETS: LogoBackdropPreset[] = [
   'circuit',
   'ember',
   'void',
+  'minimal',
 ];
 
 export const BRAND_FONT_PRESETS: BrandFontPreset[] = [

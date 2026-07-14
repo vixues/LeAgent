@@ -44,6 +44,7 @@ import {
   Sparkles,
   Flame,
   Star,
+  Minimize2,
   RefreshCw,
   Terminal,
   KeyRound,
@@ -70,7 +71,14 @@ import {
 } from '@/components/ui';
 import { useThemeStore } from '@/stores/theme';
 import { useTheme } from '@/hooks/useTheme';
-import { getLogoBackdropStyle } from '@/lib/brandingBackdrop';
+import {
+  getLogoBackdropStyle,
+  getMinimalBrandMarkStyle,
+  getMinimalBrandTitleStyle,
+  isMinimalBackdrop,
+  MINIMAL_BRAND_MARK_SRC,
+} from '@/lib/brandingBackdrop';
+import { AppLogo } from '@/components/brand/AppLogo';
 import {
   useBrandingStore,
   LOGO_BACKDROP_PRESETS,
@@ -79,7 +87,6 @@ import {
   type BrandFontPreset,
 } from '@/stores/branding';
 import { fileToBrandingIconDataUrl } from '@/lib/brandingIcon';
-import { AppLogo } from '@/components/brand/AppLogo';
 import {
   useProviders,
   useUpdateProvider,
@@ -260,6 +267,7 @@ const BRANDING_BACKDROP_META: Record<
   circuit: { labelKey: 'settings.brandingBackdropCircuit', icon: Cpu },
   ember: { labelKey: 'settings.brandingBackdropEmber', icon: Flame },
   void: { labelKey: 'settings.brandingBackdropVoid', icon: Star },
+  minimal: { labelKey: 'settings.brandingBackdropMinimal', icon: Minimize2 },
 };
 
 const BRAND_FONT_META: Record<
@@ -317,6 +325,7 @@ function AboutTabContent() {
   const { resolvedTheme } = useTheme();
   const customIcon = useBrandingStore((s) => s.customIconDataUrl);
   const preset = useBrandingStore((s) => s.logoBackdropPreset);
+  const minimal = isMinimalBackdrop(preset);
   const hour = new Date().getHours();
   const backdropStyle = useMemo(
     () => getLogoBackdropStyle(hour, preset, resolvedTheme),
@@ -372,45 +381,76 @@ function AboutTabContent() {
       <Card>
         <CardContent className="space-y-6">
           {/* Logo banner — mirrors sidebar LogoStage backdrop */}
-          <div className="relative overflow-hidden rounded-xl ring-1 ring-black/5 dark:ring-white/10">
-            <div className="absolute inset-0" style={backdropStyle} aria-hidden />
-            <div
-              className={cn(
-                'pointer-events-none absolute inset-0 mix-blend-soft-light',
-                resolvedTheme === 'dark' ? 'opacity-[0.055]' : 'opacity-[0.035]',
-              )}
-              style={{
-                backgroundImage: `url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E")`,
-              }}
-              aria-hidden
-            />
+          <div
+            className={cn(
+              'relative overflow-hidden rounded-xl',
+              !minimal && 'ring-1 ring-black/5 dark:ring-white/10',
+            )}
+          >
+            {!minimal ? (
+              <>
+                <div className="absolute inset-0" style={backdropStyle} aria-hidden />
+                <div
+                  className={cn(
+                    'pointer-events-none absolute inset-0 mix-blend-soft-light',
+                    resolvedTheme === 'dark' ? 'opacity-[0.055]' : 'opacity-[0.035]',
+                  )}
+                  style={{
+                    backgroundImage: `url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E")`,
+                  }}
+                  aria-hidden
+                />
+              </>
+            ) : null}
             <div className="relative z-[1] flex items-center gap-4 px-5 py-5">
-              <AppLogo
-                src={customIcon}
-                className={cn(
-                  'size-14 shrink-0 rounded-xl',
-                  resolvedTheme === 'dark'
-                    ? 'drop-shadow-[0_1px_3px_rgba(0,0,0,0.4)]'
-                    : 'drop-shadow-[0_1px_3px_rgba(15,23,42,0.3)]',
-                )}
-              />
+              {minimal ? (
+                customIcon && customIcon.length > 0 ? (
+                  <span
+                    className="size-14 shrink-0 rounded-xl"
+                    style={getMinimalBrandMarkStyle(customIcon)}
+                    aria-hidden
+                  />
+                ) : (
+                  <AppLogo
+                    src={MINIMAL_BRAND_MARK_SRC}
+                    className="size-14 shrink-0 rounded-xl"
+                  />
+                )
+              ) : (
+                <AppLogo
+                  src={customIcon}
+                  className={cn(
+                    'size-14 shrink-0 rounded-xl',
+                    resolvedTheme === 'dark'
+                      ? 'drop-shadow-[0_1px_3px_rgba(0,0,0,0.4)]'
+                      : 'drop-shadow-[0_1px_3px_rgba(15,23,42,0.3)]',
+                  )}
+                />
+              )}
               <div className="min-w-0">
                 <h2
                   className={cn(
-                    'text-2xl font-extrabold text-white leading-tight',
-                    resolvedTheme === 'dark'
-                      ? 'drop-shadow-[0_1px_2px_rgba(0,0,0,0.35)]'
-                      : 'drop-shadow-[0_1px_2px_rgba(15,23,42,0.22)]',
+                    'text-2xl font-extrabold leading-tight',
+                    minimal ? null : 'text-white',
+                    !minimal &&
+                      (resolvedTheme === 'dark'
+                        ? 'drop-shadow-[0_1px_2px_rgba(0,0,0,0.35)]'
+                        : 'drop-shadow-[0_1px_2px_rgba(15,23,42,0.22)]'),
                   )}
+                  style={minimal ? getMinimalBrandTitleStyle() : undefined}
                 >
                   {t('about.brandName')}
                 </h2>
                 <p
                   className={cn(
-                    'text-sm text-white/80 mt-0.5',
-                    resolvedTheme === 'dark'
-                      ? 'drop-shadow-[0_1px_1px_rgba(0,0,0,0.3)]'
-                      : 'drop-shadow-[0_1px_1px_rgba(15,23,42,0.15)]',
+                    'text-sm mt-0.5',
+                    minimal
+                      ? 'text-[#3D94EB]/80 dark:text-[#7DD3FC]/80'
+                      : 'text-white/80',
+                    !minimal &&
+                      (resolvedTheme === 'dark'
+                        ? 'drop-shadow-[0_1px_1px_rgba(0,0,0,0.3)]'
+                        : 'drop-shadow-[0_1px_1px_rgba(15,23,42,0.15)]'),
                   )}
                 >
                   {t('about.description')}
@@ -1481,7 +1521,7 @@ export default function SettingsPage() {
                           </p>
                         </div>
                         <div
-                          className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5"
+                          className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6"
                           role="radiogroup"
                           aria-label={t('settings.brandingBackdrop')}
                         >

@@ -2,7 +2,13 @@ import { memo, useEffect, useState, useMemo, type CSSProperties } from 'react';
 import { Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { cn } from '@/lib/utils';
-import { getLogoBackdropStyle } from '@/lib/brandingBackdrop';
+import {
+  getLogoBackdropStyle,
+  getMinimalBrandMarkStyle,
+  getMinimalBrandTitleStyle,
+  isMinimalBackdrop,
+  MINIMAL_BRAND_MARK_SRC,
+} from '@/lib/brandingBackdrop';
 import { useTheme } from '@/hooks/useTheme';
 import { useBrandingStore, resolveDisplayName, type BrandFontPreset } from '@/stores/branding';
 import { AppLogo } from './AppLogo';
@@ -48,6 +54,36 @@ const brandFontStyles: Record<BrandFontPreset, CSSProperties> = {
   },
 };
 
+function BrandMark({
+  customIcon,
+  minimal,
+  className,
+}: {
+  customIcon: string | null;
+  minimal: boolean;
+  className?: string;
+}) {
+  if (minimal) {
+    // Custom upload: tint with favicon gradient via mask. Default: use favicon.svg itself.
+    if (customIcon && customIcon.length > 0) {
+      return (
+        <span
+          className={cn('block shrink-0 rounded-lg', className)}
+          style={getMinimalBrandMarkStyle(customIcon)}
+          aria-hidden
+        />
+      );
+    }
+    return (
+      <AppLogo
+        src={MINIMAL_BRAND_MARK_SRC}
+        className={className}
+      />
+    );
+  }
+  return <AppLogo src={customIcon} className={className} />;
+}
+
 interface LogoStageRailProps {
   collapsed: boolean;
   isMobile: boolean;
@@ -71,37 +107,48 @@ export const LogoStageRail = memo(function LogoStageRail({
   const fontPreset = useBrandingStore((s) => s.brandFontPreset);
 
   const title = resolveDisplayName(displayName);
+  const minimal = isMinimalBackdrop(preset);
   const backdropStyle = useMemo(
     () => getLogoBackdropStyle(hour, preset, resolvedTheme),
     [hour, preset, resolvedTheme],
   );
   const brandFontStyle = brandFontStyles[fontPreset] ?? brandFontStyles.modern;
-
-  const stageShell = 'relative w-full overflow-hidden rounded-xl ring-1 ring-black/5 dark:ring-white/10';
-
-  const backdropLayer = (staticFill = false) => (
-    <>
-      <div
-        className={cn(
-          'logo-stage-backdrop absolute inset-0 rounded-[inherit]',
-          staticFill && 'logo-stage-backdrop--static',
-        )}
-        style={backdropStyle}
-        aria-hidden
-      />
-      <div
-        className={cn(
-          'pointer-events-none absolute inset-0 rounded-[inherit] mix-blend-soft-light',
-          resolvedTheme === 'dark' ? 'opacity-[0.055]' : 'opacity-[0.035]',
-          staticFill && 'opacity-0',
-        )}
-        style={{
-          backgroundImage: `url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E")`,
-        }}
-        aria-hidden
-      />
-    </>
+  const titleStyle = useMemo(
+    () => (minimal ? { ...brandFontStyle, ...getMinimalBrandTitleStyle() } : brandFontStyle),
+    [brandFontStyle, minimal],
   );
+
+  const stageShell = cn(
+    'relative w-full overflow-hidden rounded-xl',
+    !minimal && 'ring-1 ring-black/5 dark:ring-white/10',
+  );
+
+  const backdropLayer = (staticFill = false) => {
+    if (minimal) return null;
+    return (
+      <>
+        <div
+          className={cn(
+            'logo-stage-backdrop absolute inset-0 rounded-[inherit]',
+            staticFill && 'logo-stage-backdrop--static',
+          )}
+          style={backdropStyle}
+          aria-hidden
+        />
+        <div
+          className={cn(
+            'pointer-events-none absolute inset-0 rounded-[inherit] mix-blend-soft-light',
+            resolvedTheme === 'dark' ? 'opacity-[0.055]' : 'opacity-[0.035]',
+            staticFill && 'opacity-0',
+          )}
+          style={{
+            backgroundImage: `url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E")`,
+          }}
+          aria-hidden
+        />
+      </>
+    );
+  };
 
   /*
    * One morphing body for both states. Logo sits in a fixed 40px grid column that
@@ -120,29 +167,33 @@ export const LogoStageRail = memo(function LogoStageRail({
         )}
       >
         <span className="flex h-10 w-10 items-center justify-center">
-          <AppLogo
-            src={customIcon}
+          <BrandMark
+            customIcon={customIcon}
+            minimal={minimal}
             className={cn(
               '!size-10 !min-h-10 !min-w-10 !max-h-10 !max-w-10 object-contain',
-              resolvedTheme === 'dark'
-                ? 'drop-shadow-[0_1px_2px_rgba(0,0,0,0.38)]'
-                : 'drop-shadow-[0_1px_2px_rgba(15,23,42,0.28)]',
+              !minimal &&
+                (resolvedTheme === 'dark'
+                  ? 'drop-shadow-[0_1px_2px_rgba(0,0,0,0.38)]'
+                  : 'drop-shadow-[0_1px_2px_rgba(15,23,42,0.28)]'),
             )}
           />
         </span>
         <span
           aria-hidden={!showTitle}
           className={cn(
-            'truncate whitespace-nowrap text-xl font-extrabold leading-snug text-white',
+            'truncate whitespace-nowrap text-xl font-extrabold leading-snug',
             'transition-[opacity,transform] duration-200 ease-out',
-            resolvedTheme === 'dark'
-              ? 'drop-shadow-[0_1px_2px_rgba(0,0,0,0.35)]'
-              : 'drop-shadow-[0_1px_2px_rgba(15,23,42,0.22)]',
+            minimal ? null : 'text-white',
+            !minimal &&
+              (resolvedTheme === 'dark'
+                ? 'drop-shadow-[0_1px_2px_rgba(0,0,0,0.35)]'
+                : 'drop-shadow-[0_1px_2px_rgba(15,23,42,0.22)]'),
             showTitle
               ? 'min-w-0 translate-x-0 opacity-100'
               : 'pointer-events-none absolute w-0 overflow-hidden opacity-0',
           )}
-          style={brandFontStyle}
+          style={titleStyle}
         >
           {title}
         </span>
@@ -200,48 +251,62 @@ export const LogoStageMobile = memo(function LogoStageMobile() {
   const preset = useBrandingStore((s) => s.logoBackdropPreset);
   const fontPreset = useBrandingStore((s) => s.brandFontPreset);
   const title = resolveDisplayName(displayName);
+  const minimal = isMinimalBackdrop(preset);
   const backdropStyle = useMemo(
     () => getLogoBackdropStyle(hour, preset, resolvedTheme),
     [hour, preset, resolvedTheme],
   );
   const brandFontStyle = brandFontStyles[fontPreset] ?? brandFontStyles.modern;
+  const titleStyle = useMemo(
+    () => (minimal ? { ...brandFontStyle, ...getMinimalBrandTitleStyle() } : brandFontStyle),
+    [brandFontStyle, minimal],
+  );
 
   return (
     <Link to="/home" className="flex min-w-0 flex-1 items-center">
       <div
         className={cn(
-          'relative flex min-h-10 w-full min-w-0 overflow-hidden rounded-xl ring-1 ring-black/5 dark:ring-white/10'
+          'relative flex min-h-10 w-full min-w-0 overflow-hidden rounded-xl',
+          !minimal && 'ring-1 ring-black/5 dark:ring-white/10',
         )}
       >
-        <div className="logo-stage-backdrop absolute inset-0" style={backdropStyle} aria-hidden />
-        <div
-          className={cn(
-            'pointer-events-none absolute inset-0 mix-blend-soft-light',
-            resolvedTheme === 'dark' ? 'opacity-[0.055]' : 'opacity-[0.035]',
-          )}
-          style={{
-            backgroundImage: `url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E")`,
-          }}
-          aria-hidden
-        />
+        {!minimal ? (
+          <>
+            <div className="logo-stage-backdrop absolute inset-0" style={backdropStyle} aria-hidden />
+            <div
+              className={cn(
+                'pointer-events-none absolute inset-0 mix-blend-soft-light',
+                resolvedTheme === 'dark' ? 'opacity-[0.055]' : 'opacity-[0.035]',
+              )}
+              style={{
+                backgroundImage: `url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E")`,
+              }}
+              aria-hidden
+            />
+          </>
+        ) : null}
         <div className={cn(frostedInner, 'm-1 min-w-0 flex-1 gap-2 px-2 py-1.5')}>
-          <AppLogo
-            src={customIcon}
+          <BrandMark
+            customIcon={customIcon}
+            minimal={minimal}
             className={cn(
               'size-7 shrink-0',
-              resolvedTheme === 'dark'
-                ? 'drop-shadow-[0_1px_2px_rgba(0,0,0,0.38)]'
-                : 'drop-shadow-[0_1px_2px_rgba(15,23,42,0.28)]',
+              !minimal &&
+                (resolvedTheme === 'dark'
+                  ? 'drop-shadow-[0_1px_2px_rgba(0,0,0,0.38)]'
+                  : 'drop-shadow-[0_1px_2px_rgba(15,23,42,0.28)]'),
             )}
           />
           <span
             className={cn(
-              'min-w-0 flex-1 truncate font-bold text-sm text-white',
-              resolvedTheme === 'dark'
-                ? 'drop-shadow-[0_1px_2px_rgba(0,0,0,0.35)]'
-                : 'drop-shadow-[0_1px_2px_rgba(15,23,42,0.22)]',
+              'min-w-0 flex-1 truncate font-bold text-sm',
+              minimal ? null : 'text-white',
+              !minimal &&
+                (resolvedTheme === 'dark'
+                  ? 'drop-shadow-[0_1px_2px_rgba(0,0,0,0.35)]'
+                  : 'drop-shadow-[0_1px_2px_rgba(15,23,42,0.22)]'),
             )}
-            style={brandFontStyle}
+            style={titleStyle}
           >
             {title}
           </span>
