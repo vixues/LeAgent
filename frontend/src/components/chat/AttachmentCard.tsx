@@ -71,7 +71,7 @@ export function AttachmentCard({ attachment, className }: AttachmentCardProps) {
     return (
       <div
         className={cn(
-          'self-start max-w-xs min-w-0 overflow-hidden rounded-xl border border-border-subtle bg-surface shadow-soft',
+          'self-start max-w-64 min-w-0 overflow-hidden rounded-xl border border-border-subtle bg-surface shadow-soft',
           className,
         )}
         title={`${attachment.name} · ${sizeLabel}`}
