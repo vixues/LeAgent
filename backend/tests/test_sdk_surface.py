@@ -211,6 +211,22 @@ class TestTransport:
         assert "X-Request-Id" in headers
         assert headers["Authorization"] == "Bearer test"
 
+    def test_request_span_propagates_body_exceptions(self):
+        """Body errors must not become 'generator didn't stop after throw()'."""
+        from leagent.llm.transport import HttpTransport, TransportConfig
+
+        t = HttpTransport(TransportConfig(otel_enabled=True))
+        with pytest.raises(ConnectionError, match="boom"):
+            with t.request_span("balance", provider="deepseek"):
+                raise ConnectionError("boom")
+
+    def test_request_span_noop_when_otel_disabled(self):
+        from leagent.llm.transport import HttpTransport, TransportConfig
+
+        t = HttpTransport(TransportConfig(otel_enabled=False))
+        with t.request_span("balance") as span:
+            assert span is None
+
 
 class TestMemoryIdempotency:
     """Test the observe_turn deduplication."""

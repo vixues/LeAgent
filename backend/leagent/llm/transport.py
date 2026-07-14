@@ -113,22 +113,28 @@ class HttpTransport:
 
         No-op (yields ``None``) when OTel is disabled or unavailable, so
         providers can use this unconditionally.
+
+        Exceptions raised by the ``with`` body must propagate unchanged.
+        Only OTel *setup* failures are swallowed (fallback to a no-op span).
         """
         if not self._cfg.otel_enabled:
             yield None
             return
+
         try:
             from leagent.telemetry.otel import get_tracer
 
             tracer = get_tracer("leagent.llm.transport")
-            with tracer.start_as_current_span(f"llm.{operation}") as span:
-                for key, value in attributes.items():
-                    if value is not None:
-                        with contextlib.suppress(Exception):
-                            span.set_attribute(f"llm.{key}", value)
-                yield span
         except Exception:  # noqa: BLE001
             yield None
+            return
+
+        with tracer.start_as_current_span(f"llm.{operation}") as span:
+            for key, value in attributes.items():
+                if value is not None:
+                    with contextlib.suppress(Exception):
+                        span.set_attribute(f"llm.{key}", value)
+            yield span
 
     async def aclose(self) -> None:
         for client in (self._complete_client, self._stream_client):
