@@ -1272,3 +1272,407 @@ pre::-webkit-scrollbar-thumb {
   background: var(--color-border);
   border-radius: 2px;
 }
+
+/* ── Docs / tutorials shell ─────────────────────────────────────── */
+.docs-shell {
+  padding-top: 5.5rem;
+  padding-bottom: 4rem;
+}
+
+.docs-shell__inner {
+  display: grid;
+  gap: 2rem;
+  margin: 0 auto;
+  max-width: 72rem;
+  padding: 0 1.5rem;
+}
+
+@media (min-width: 1024px) {
+  .docs-shell__inner {
+    grid-template-columns: 16.5rem minmax(0, 1fr);
+    gap: 2.5rem;
+  }
+}
+
+.docs-shell__aside-sticky {
+  position: sticky;
+  top: 5.5rem;
+  max-height: calc(100vh - 6.5rem);
+  overflow-y: auto;
+  padding-right: 0.5rem;
+  scrollbar-width: none; /* Firefox */
+  -ms-overflow-style: none; /* legacy Edge */
+}
+
+.docs-shell__aside-sticky::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
+}
+
+.docs-shell__main {
+  min-width: 0;
+  max-width: 48rem;
+}
+
+.docs-sidebar__hub {
+  display: block;
+  margin-bottom: 1.25rem;
+  font-family: var(--font-display);
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+  transition: color 0.15s ease;
+}
+
+.docs-sidebar__hub:hover,
+.docs-sidebar__hub--active {
+  color: var(--color-accent);
+}
+
+.docs-sidebar__group {
+  margin-bottom: 1.35rem;
+}
+
+.docs-sidebar__group-title {
+  margin-bottom: 0.45rem;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+}
+
+.docs-sidebar__list {
+  display: grid;
+  gap: 0.1rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.docs-sidebar__link {
+  display: block;
+  border-radius: 6px;
+  padding: 0.3rem 0.5rem;
+  font-size: 0.8125rem;
+  line-height: 1.4;
+  color: var(--color-text-secondary);
+  transition: color 0.15s ease, background-color 0.15s ease;
+}
+
+.docs-sidebar__link:hover {
+  color: var(--color-text-primary);
+  background-color: color-mix(in oklab, var(--color-surface-hover) 55%, transparent);
+}
+
+.docs-sidebar__link--active {
+  color: var(--color-accent);
+  background-color: var(--color-accent-dim);
+}
+
+.docs-hub-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  border: 1px solid var(--color-border-subtle);
+  border-radius: 12px;
+  padding: 1.25rem 1.35rem;
+  background-color: color-mix(in oklab, var(--color-surface) 55%, transparent);
+  transition: border-color 0.18s ease, background-color 0.18s ease;
+}
+
+.docs-hub-card:hover {
+  border-color: color-mix(in oklab, var(--color-accent) 28%, var(--color-border-subtle));
+  background-color: color-mix(in oklab, var(--color-surface-raised) 60%, transparent);
+}
+
+.docs-hub-card__eyebrow {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+}
+
+.docs-hub-card__title {
+  font-family: var(--font-display);
+  font-size: 1.2rem;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  color: var(--color-text-primary);
+}
+
+.docs-hub-card__body {
+  font-size: 0.9rem;
+  line-height: 1.6;
+  color: var(--color-text-secondary);
+}
+
+.docs-hub-card__cta {
+  margin-top: 0.35rem;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--color-accent);
+}
+
+.docs-breadcrumb {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+  margin-bottom: 1.25rem;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  color: var(--color-text-muted);
+}
+
+.docs-breadcrumb a {
+  color: var(--color-text-secondary);
+  transition: color 0.15s ease;
+}
+
+.docs-breadcrumb a:hover {
+  color: var(--color-accent);
+}
+
+.docs-breadcrumb__current {
+  color: var(--color-text-primary);
+}
+
+.docs-lang-note {
+  margin-bottom: 1.25rem;
+  border-left: 2px solid var(--color-accent);
+  padding: 0.65rem 0.9rem;
+  font-size: 0.8125rem;
+  line-height: 1.55;
+  color: var(--color-text-secondary);
+  background-color: var(--color-accent-dim);
+}
+
+.docs-pager {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+  margin-top: 2.5rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid var(--color-border-subtle);
+}
+
+.docs-pager__link {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  border-radius: 10px;
+  border: 1px solid var(--color-border-subtle);
+  padding: 0.85rem 1rem;
+  transition: border-color 0.15s ease, background-color 0.15s ease;
+}
+
+.docs-pager__link:hover {
+  border-color: color-mix(in oklab, var(--color-accent) 30%, var(--color-border-subtle));
+  background-color: color-mix(in oklab, var(--color-surface-raised) 50%, transparent);
+}
+
+.docs-pager__link--next {
+  text-align: right;
+  grid-column: 2;
+}
+
+.docs-pager__label {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+}
+
+.docs-pager__title {
+  font-family: var(--font-display);
+  font-size: 0.9375rem;
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+/* ── Markdown prose ─────────────────────────────────────────────── */
+.docs-prose {
+  font-size: 0.95rem;
+  line-height: 1.75;
+  color: var(--color-text-secondary);
+}
+
+.docs-prose > *:first-child {
+  margin-top: 0;
+}
+
+.docs-prose h1,
+.docs-prose h2,
+.docs-prose h3,
+.docs-prose h4 {
+  color: var(--color-text-primary);
+  scroll-margin-top: 5.5rem;
+}
+
+.docs-prose h1 {
+  margin: 0 0 1rem;
+  font-size: 1.85rem;
+  font-weight: 650;
+  letter-spacing: -0.03em;
+  line-height: 1.2;
+}
+
+.docs-prose h2 {
+  margin: 2rem 0 0.75rem;
+  padding-bottom: 0.4rem;
+  border-bottom: 1px solid var(--color-border-subtle);
+  font-size: 1.35rem;
+  font-weight: 600;
+}
+
+.docs-prose h3 {
+  margin: 1.5rem 0 0.55rem;
+  font-size: 1.1rem;
+  font-weight: 600;
+}
+
+.docs-prose h4 {
+  margin: 1.25rem 0 0.45rem;
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.docs-prose p,
+.docs-prose ul,
+.docs-prose ol,
+.docs-prose blockquote,
+.docs-prose .docs-table-wrap,
+.docs-prose .docs-code-block {
+  margin: 0.85rem 0;
+}
+
+.docs-prose ul,
+.docs-prose ol {
+  padding-left: 1.35rem;
+}
+
+.docs-prose li + li {
+  margin-top: 0.3rem;
+}
+
+.docs-prose a {
+  color: var(--color-accent);
+  text-decoration: underline;
+  text-decoration-color: color-mix(in oklab, var(--color-accent) 35%, transparent);
+  text-underline-offset: 2px;
+}
+
+.docs-prose a:hover {
+  text-decoration-color: var(--color-accent);
+}
+
+.docs-prose blockquote {
+  border-left: 3px solid color-mix(in oklab, var(--color-accent) 45%, var(--color-border));
+  padding: 0.15rem 0 0.15rem 1rem;
+  color: var(--color-text-muted);
+}
+
+.docs-prose hr {
+  margin: 1.75rem 0;
+  border: 0;
+  height: 1px;
+  background: var(--color-border-subtle);
+}
+
+.docs-prose img {
+  max-width: 100%;
+  height: auto;
+  border-radius: 8px;
+  border: 1px solid var(--color-border-subtle);
+}
+
+.docs-prose img.docs-badge {
+  display: inline-block;
+  width: auto;
+  max-height: 1.4rem;
+  margin: 0.15rem 0.2rem;
+  border: 0;
+  border-radius: 4px;
+  vertical-align: middle;
+}
+
+.docs-prose p[align="center"],
+.docs-prose h1[align="center"],
+.docs-prose h2[align="center"],
+.docs-prose div[align="center"] {
+  text-align: center;
+}
+
+.docs-prose p[align="center"] img:not(.docs-badge) {
+  display: inline-block;
+  margin-inline: auto;
+}
+
+.docs-inline-code {
+  border-radius: 4px;
+  padding: 0.1em 0.35em;
+  font-size: 0.875em;
+  color: var(--color-accent);
+  background-color: var(--color-accent-dim);
+}
+
+.docs-code-block {
+  overflow-x: auto;
+  border: 1px solid var(--color-border-subtle);
+  border-radius: 10px;
+  padding: 0.9rem 1rem;
+  font-size: 0.8125rem;
+  line-height: 1.65;
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in oklab, var(--color-surface-raised) 78%, transparent) 0%,
+      color-mix(in oklab, var(--color-surface) 62%, transparent) 100%
+    );
+}
+
+.docs-code-block code {
+  font-family: var(--font-mono);
+  color: var(--color-text-secondary);
+  background: transparent;
+  padding: 0;
+}
+
+.docs-table-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--color-border-subtle);
+  border-radius: 10px;
+}
+
+.docs-prose table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.875rem;
+}
+
+.docs-prose th,
+.docs-prose td {
+  padding: 0.65rem 0.85rem;
+  border-bottom: 1px solid var(--color-border-subtle);
+  text-align: left;
+  vertical-align: top;
+}
+
+.docs-prose th {
+  font-family: var(--font-display);
+  font-weight: 600;
+  color: var(--color-text-primary);
+  background-color: color-mix(in oklab, var(--color-surface-raised) 55%, transparent);
+}
+
+.docs-prose tr:last-child td {
+  border-bottom: 0;
+}

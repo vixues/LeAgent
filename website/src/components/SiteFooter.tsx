@@ -44,6 +44,7 @@ export function SiteFooter() {
               {[
                 { to: "/", label: t.nav.about },
                 { to: "/about", label: t.nav.intro },
+                { to: "/tutorials", label: t.nav.tutorials },
                 { to: "/workflows", label: t.nav.workflows },
                 { to: "/business", label: t.nav.business },
                 { to: "/download", label: t.nav.download },
@@ -79,13 +80,21 @@ export function SiteFooter() {
                 </a>
               </li>
               <li>
+                <Link
+                  to="/tutorials"
+                  className="text-text-secondary transition-colors hover:text-text-primary"
+                >
+                  {t.footer.documentation}
+                </Link>
+              </li>
+              <li>
                 <a
                   href={README_URL}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="text-text-secondary transition-colors hover:text-text-primary"
                 >
-                  {t.footer.documentation}
+                  GitHub README
                 </a>
               </li>
               <li>

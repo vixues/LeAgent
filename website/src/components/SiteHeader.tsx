@@ -16,6 +16,7 @@ export function SiteHeader() {
   const navItems = [
     { label: t.nav.about, to: "/" },
     { label: t.nav.intro, to: "/about" },
+    { label: t.nav.tutorials, to: "/tutorials" },
     { label: t.nav.workflows, to: "/workflows" },
     { label: t.nav.business, to: "/business" },
     { label: t.nav.download, to: "/download" },
@@ -41,7 +42,10 @@ export function SiteHeader() {
           aria-label="Main"
         >
           {navItems.map((item) => {
-            const active = pathname === item.to;
+            const active =
+              item.to === "/"
+                ? pathname === "/"
+                : pathname === item.to || pathname.startsWith(`${item.to}/`);
             return (
               <Link
                 key={item.to}

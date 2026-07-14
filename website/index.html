@@ -20,15 +20,23 @@
     <meta name="twitter:title" content="LeAgent — Open-source desktop AI agent" />
     <meta name="twitter:description" content="Plans, calls tools, and self-corrects. 100+ built-in tools, visual workflows, Generative UI." />
     <meta name="twitter:image" content="https://vixues.com.cn/images/previews/home-preview.png" />
-    <link rel="sitemap" type="application/xml" title="Sitemap" href="./sitemap.xml" />
+    <link rel="sitemap" type="application/xml" title="Sitemap" href="/sitemap.xml" />
     <title>LeAgent — Open-source desktop AI agent</title>
-    <link rel="icon" type="image/svg+xml" href="./favicon.svg" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
     <script>
       (function () {
         try {
+          /* Legacy hash-router URLs → BrowserRouter paths */
+          var hash = window.location.hash || '';
+          if (hash.indexOf('#/') === 0) {
+            var path = hash.slice(1);
+            if (path.charAt(0) !== '/') path = '/' + path;
+            window.location.replace(path + window.location.search);
+            return;
+          }
           if (window.crypto && typeof window.crypto.randomUUID !== 'function') {
             window.crypto.randomUUID = function () {
               var bytes = new Uint8Array(16);

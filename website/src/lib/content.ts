@@ -6,6 +6,21 @@ export const SITE_ORIGIN =
 
 export const REPO_URL = import.meta.env.VITE_REPO_URL ?? DEFAULT_REPO_URL;
 
+function parseGithubRepo(repoUrl: string): { owner: string; repo: string } {
+  const match = repoUrl
+    .replace(/\.git$/, "")
+    .match(/github\.com[/:]([^/]+)\/([^/#?]+)/i);
+  return {
+    owner: match?.[1] ?? "vixues",
+    repo: match?.[2] ?? "LeAgent",
+  };
+}
+
+const { owner: GITHUB_OWNER, repo: GITHUB_REPO } = parseGithubRepo(REPO_URL);
+
+/** Raw file base for README / docs assets on the public site. */
+export const REPO_RAW_BASE = `https://raw.githubusercontent.com/${GITHUB_OWNER}/${GITHUB_REPO}/main`;
+
 export const RELEASES_URL = `${REPO_URL}/releases`;
 export const README_URL = `${REPO_URL}/blob/main/README.md`;
 export const LICENSE_URL = `${REPO_URL}/blob/main/LICENSE`;

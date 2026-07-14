@@ -95,11 +95,26 @@ interface Translation {
   nav: {
     about: string;
     intro: string;
+    tutorials: string;
     workflows: string;
     business: string;
     download: string;
     pets: string;
     company: string;
+  };
+  tutorials: {
+    eyebrow: string;
+    indexTitle: string;
+    indexLede: string;
+    hubLink: string;
+    readSection: string;
+    openToc: string;
+    closeToc: string;
+    tocLabel: string;
+    zhOnlyNote: string;
+    prev: string;
+    next: string;
+    pagerLabel: string;
   };
   footer: {
     tagline: string;
@@ -215,11 +230,27 @@ export const translations: Record<Lang, Translation> = {
     nav: {
       about: "关于",
       intro: "介绍",
+      tutorials: "教程",
       workflows: "工作流",
       business: "定制开发",
       download: "下载",
       pets: "宠物",
       company: "联系",
+    },
+    tutorials: {
+      eyebrow: "文档",
+      indexTitle: "教程与技术资料",
+      indexLede:
+        "面试题库、系统介绍、技术参考与 Agent 工程教程——以 LeAgent 真实实现为对照，按专业文档站方式阅读。",
+      hubLink: "教程首页",
+      readSection: "进入阅读",
+      openToc: "目录",
+      closeToc: "收起目录",
+      tocLabel: "教程目录",
+      zhOnlyNote: "本文暂仅提供中文正文。",
+      prev: "上一篇",
+      next: "下一篇",
+      pagerLabel: "上下篇导航",
     },
     footer: {
       tagline: "真正完成工作的开源桌面 AI 智能体。\n规划、工具、工作流与 Generative UI，集于一栈。",
@@ -546,11 +577,27 @@ cd LeAgent
     nav: {
       about: "About",
       intro: "Intro",
+      tutorials: "Tutorials",
       workflows: "Workflows",
       business: "Custom",
       download: "Download",
       pets: "Pets",
       company: "Company",
+    },
+    tutorials: {
+      eyebrow: "Docs",
+      indexTitle: "Tutorials & technical docs",
+      indexLede:
+        "Interview prep, system overview, technical references, and Agent engineering guides — grounded in LeAgent’s real implementation.",
+      hubLink: "Tutorials home",
+      readSection: "Read section",
+      openToc: "Contents",
+      closeToc: "Hide contents",
+      tocLabel: "Tutorial contents",
+      zhOnlyNote: "This article is currently available in Chinese only.",
+      prev: "Previous",
+      next: "Next",
+      pagerLabel: "Article navigation",
     },
     footer: {
       tagline:
