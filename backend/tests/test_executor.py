@@ -405,6 +405,40 @@ def test_parse_tool_arguments_str_escapes_raw_newlines_in_codeblock() -> None:
     assert parsed["tree"]["props"]["code"] == "function greet(name) {\n  return 'Hello, ' + name;\n}"
 
 
+def test_parse_tool_arguments_str_repairs_unescaped_quotes_in_slides_body() -> None:
+    """CJK prose with raw ``"忘记"`` must not block ``slides_generate``."""
+    raw = (
+        '{"output_path":"deck.pptx","title":"可靠性故障分析",'
+        '"slides":[{"layout":"content","title":"故障1：上下文丢失",'
+        '"kicker":"故障分析",'
+        '"body":"**现象**\\nAgent在处理长对话时，偶尔"忘记"用户最初提供的详细信息，'
+        '需要用户后续重新确认。\\n\\n**根因**\\n- 上下文窗口管理策略有待优化\\n'
+        '- 长对话中信息压缩损失了关键细节\\n\\n**改进**"},'
+        '{"layout":"closing","title":"谢谢"}]}'
+    )
+    with pytest.raises(json.JSONDecodeError):
+        json.loads(raw)
+    parsed = parse_tool_arguments_str(raw)
+    assert parsed is not None
+    assert parsed["output_path"] == "deck.pptx"
+    assert parsed["slides"][0]["title"] == "故障1：上下文丢失"
+    assert '偶尔"忘记"用户' in parsed["slides"][0]["body"]
+    assert parsed["slides"][1]["layout"] == "closing"
+
+
+def test_parse_tool_arguments_str_repairs_unescaped_quotes_with_raw_newlines() -> None:
+    raw = (
+        '{"output_path":"x.md","content":"标题\n偶尔"忘记"细节\n结束",'
+        '"title":"t"}'
+    )
+    with pytest.raises(json.JSONDecodeError):
+        json.loads(raw)
+    parsed = parse_tool_arguments_str(raw)
+    assert parsed is not None
+    assert parsed["content"] == '标题\n偶尔"忘记"细节\n结束'
+    assert parsed["title"] == "t"
+
+
 def test_parse_tool_arguments_str_recovers_complete_emit_ui_tree_from_broken_outer_args() -> None:
     raw = '{"tree":{"type":"Text","props":{"value":"ok"}},"canvas_id":'
     parsed = parse_tool_arguments_str(raw)

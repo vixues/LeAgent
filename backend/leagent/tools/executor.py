@@ -152,6 +152,64 @@ def _escape_control_chars_in_json_strings(raw: str) -> str:
     return "".join(out)
 
 
+def _is_json_string_terminator_after_quote(raw: str, quote_pos: int) -> bool:
+    """True when the quote at *quote_pos* likely ends a JSON string key/value."""
+    j = quote_pos + 1
+    while j < len(raw) and raw[j] in " \t\n\r":
+        j += 1
+    if j >= len(raw):
+        return True
+    return raw[j] in ",}]:"
+
+
+def _escape_unescaped_quotes_in_json_strings(raw: str) -> str:
+    """Escape interior ASCII ``"`` that LLMs leave unescaped inside string values.
+
+    Heuristic: a ``"`` inside a JSON string is a terminator only when the next
+    non-whitespace character is ``,`` ``}`` ``]`` or ``:``; otherwise it is
+    written as ``\\\"``. Fixes common CJK prose such as ``偶尔"忘记"用户`` in
+    ``slides_generate`` / ``document_generate`` bodies.
+    """
+    out: list[str] = []
+    in_string = False
+    escaped = False
+    i = 0
+    n = len(raw)
+    while i < n:
+        ch = raw[i]
+        if not in_string:
+            out.append(ch)
+            if ch == '"':
+                in_string = True
+            i += 1
+            continue
+
+        if escaped:
+            out.append(ch)
+            escaped = False
+            i += 1
+            continue
+
+        if ch == "\\":
+            out.append(ch)
+            escaped = True
+            i += 1
+            continue
+
+        if ch == '"':
+            if _is_json_string_terminator_after_quote(raw, i):
+                out.append(ch)
+                in_string = False
+            else:
+                out.append('\\"')
+            i += 1
+            continue
+
+        out.append(ch)
+        i += 1
+    return "".join(out)
+
+
 def _candidate_json_texts(raw: str) -> list[str]:
     """Return increasingly repaired JSON candidates, preserving order."""
     candidates: list[str] = []
@@ -170,6 +228,14 @@ def _candidate_json_texts(raw: str) -> list[str]:
         escaped = _escape_control_chars_in_json_strings(value)
         add(escaped)
         add(_repair_trailing_commas(escaped))
+        # Quote repair before control-char escape so interior " keep us in-string
+        # across raw newlines (CJK ``"忘记"`` in deck/document bodies).
+        quoted = _escape_unescaped_quotes_in_json_strings(value)
+        add(quoted)
+        quoted_ctrl = _escape_control_chars_in_json_strings(quoted)
+        add(quoted_ctrl)
+        add(_repair_trailing_commas(quoted))
+        add(_repair_trailing_commas(quoted_ctrl))
     return candidates
 
 
@@ -972,10 +1038,12 @@ def parse_tool_arguments_str(raw: str) -> dict[str, Any] | None:
     """Parse LLM ``function.arguments`` text into a parameter dict when possible.
 
     Uses the same recovery as the executor ``__raw__`` path: BOM trim, optional
-    markdown code fences, trailing-comma repair, double-encoded JSON-string
-    wrappers, :func:`json.JSONDecoder.raw_decode` when only stray ``]``/``}``
-    trail a complete object, and a narrow single-character deletion near decode
-    errors (common with over-nested ``emit_ui_tree`` / ``canvas_publish`` payloads).
+    markdown code fences, trailing-comma repair, interior-quote repair (CJK
+    ``"word"`` in string values), control-character escaping, double-encoded
+    JSON-string wrappers, :func:`json.JSONDecoder.raw_decode` when only stray
+    ``]``/``}`` trail a complete object, and a narrow single-character deletion
+    near decode errors (common with over-nested ``emit_ui_tree`` /
+    ``canvas_publish`` payloads).
     """
     if raw is None:
         return None
@@ -1094,6 +1162,11 @@ def _tool_json_parse_recovery_hint(tool_name: str | None, raw: str) -> str:
         return (
             " The runtime usually auto-recovers inline content. "
             "If this fails again, use `*_blob_id` from `tool_argument_blob`."
+        )
+    if tool_name in ("slides_generate", "document_generate", "checklist_generate"):
+        return (
+            " Escape ASCII double quotes in titles/bodies as \\\" "
+            "(or use 「」 / 『』). Newlines must be \\n."
         )
     if tool_name == "tool_argument_blob":
         return (

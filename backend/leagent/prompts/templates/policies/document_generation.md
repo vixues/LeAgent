@@ -46,6 +46,17 @@ Formal-report precision switches (PDF-first, other formats degrade gracefully):
 
 Theme choice: `professional` (default), `corporate` (formal blue), `academic` (serif, wide line spacing — papers), `minimal` (clean gray), `modern` (vivid blue). Custom YAML themes in `~/.leagent/templates/styles/` also resolve by name.
 
+### JSON argument safety
+
+Tool calls must be strict JSON. Inside string values (especially slide `body` /
+document `content`):
+
+- Escape ASCII double quotes as `\"` and line breaks as `\n`.
+- Prefer Chinese book-title quotes「」/『』instead of raw `"` around quoted words —
+  e.g. write「忘记」not `"忘记"`, which breaks the outer tool-call JSON.
+- The runtime auto-repairs many unescaped-quote failures, but correct escaping
+  still avoids a wasted turn.
+
 ### Slide narrative (PPTX)
 
 Build a storyline, not a document on slides:
