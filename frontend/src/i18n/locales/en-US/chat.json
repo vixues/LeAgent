@@ -494,7 +494,7 @@
       },
       "genuiResume": {
         "label": "Summarize this week's work",
-        "prompt": "Based on our recent chat history, summarize this week's work: completed items, in-progress tasks, follow-ups, and key conclusions. Present it as a clear GenUI weekly report I can review and amend."
+        "prompt": "First call conversation_history (operation=extract, days=7) to load this week's chat transcripts, then summarize the work: completed items, in-progress tasks, follow-ups, and key conclusions. Present it as a clear GenUI weekly report I can review and amend. Do not invent details that are not in the history."
       },
       "petSpace": {
         "label": "Or adopt a desk pet first?",

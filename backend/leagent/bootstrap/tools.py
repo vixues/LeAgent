@@ -56,6 +56,7 @@ _CURATED_UTIL_TOOL_PATHS: tuple[tuple[str, str], ...] = (
     ("leagent.tools.util.plan_tools", "ExitPlanModeTool"),
     ("leagent.tools.util.plan_tools", "TodoWriteTool"),
     ("leagent.tools.util.plan_tools", "TodoReadTool"),
+    ("leagent.tools.util.conversation_history", "ConversationHistoryTool"),
     ("leagent.tools.util.task_tools", "TaskCreateTool"),
     ("leagent.tools.util.task_tools", "TaskGetTool"),
     ("leagent.tools.util.task_tools", "TaskListTool"),
