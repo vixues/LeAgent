@@ -36,7 +36,7 @@ LeAgent 是一个本地优先的智能办公自动化平台，将大语言模型
 | **工具（Tool）** | Agent 可使用的能力（如读取 PDF、发送邮件），支持别名、校验、路径沙箱和并发控制 |
 | **工作流（Workflow）** | 可视化或 YAML 定义的自动化步骤序列（ReactFlow 编辑器） |
 | **规则（Rule）** | 声明式 YAML 业务逻辑，用于校验和决策 |
-| **渠道（Channel）** | 通信接口（Web、钉钉、飞书、企业微信、控制台） |
+| **渠道（Channel）** | 通信接口（Web、钉钉、飞书、企业微信、个人微信、控制台） |
 | **技能（Skill）** | 可安装的 Agent 能力包，扩展 Agent 的功能 |
 | **记忆（Memory）** | 认知三存储系统（情景记忆、语义记忆、程序记忆），为 Agent 提供上下文 |
 
@@ -640,6 +640,23 @@ uv run leagent channels add dingtalk \
 
 1. 在企业微信管理后台中创建一个应用
 2. 通过渠道 CLI 进行配置
+
+### 微信（个人微信 / iLink Bot）
+
+通过腾讯 iLink Bot API 连接个人微信账号（长轮询，无需公网 webhook）。这与企业微信不同。
+
+```bash
+cd backend
+uv run leagent channels login weixin   # 用微信扫码并在手机上确认
+```
+
+或在前端 **消息通道** 页使用微信扫码面板。手机确认后凭据立即保存并 **热启动长轮询**，无需重启前后端。
+
+想系统了解「如何把微信接到任意自建 Agent」（iLink 协议、`context_token`、AES CDN、适配器/桥接分层），见开源技术分享：[`docs/guides/weixin-agent-from-scratch.md`](guides/weixin-agent-from-scratch.md)。
+
+凭据保存在 `$LEAGENT_HOME/weixin/accounts/` 与 `config.yaml`（`channels.weixin`）。入站私信经通道桥接到 `default_agent`。
+
+**限制：** 扫码登录绑定的是 iLink bot 身份——私信可靠；普通微信群通常不会向 bot 推送事件。
 
 ### 渠道配置（YAML）
 

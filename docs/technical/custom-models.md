@@ -6,6 +6,8 @@ node in the workflow palette, and registering a **workflow node** class adds it
 to `/object_info` with no frontend changes. This guide covers both paths plus
 the self-hosted model setup (diffusers, local Whisper/TTS).
 
+中文版: [`custom-models_zh.md`](./custom-models_zh.md)
+
 ## 1. Domain-model adapters
 
 A *domain model* is any task-specific capability that isn't chat: image

@@ -606,3 +606,4 @@ asyncio.run(main())
 - LeAgent provider source: `backend/leagent/llm/providers/dashscope.py`
 - LeAgent model catalog: `backend/leagent/llm/provider_config.py` (`PROVIDER_CATALOG["qwen"]`)
 - Sibling provider guide: [`deepseek-guide.md`](./deepseek-guide.md)
+- 中文版: [`dashscope-guide_zh.md`](./dashscope-guide_zh.md)

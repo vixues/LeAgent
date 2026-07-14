@@ -10,6 +10,8 @@ Durable **debug / eval** telemetry for agent turns. This plane is separate from:
 
 Inspired by Hermes (OTel / OpenInference span kinds), Codex (`trace.jsonl` + out-of-line payloads), and Claude session transcripts (append-only events).
 
+中文版: [`agent-trace_zh.md`](./agent-trace_zh.md)
+
 ## Capture
 
 - `begin_execution` / `end_execution*` open and close the root `agent` span (`trace_id` = `run_id`).

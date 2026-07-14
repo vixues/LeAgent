@@ -95,7 +95,7 @@ LeAgent/
 └── start.sh / start.ps1     # 开发编排（uv + npm）
 ```
 
-完整子系统图见 [`AGENTS.md`](AGENTS.md)；Agent 循环 / 流程引擎之状态契约，见 [`docs/technical/execution-topology.md`](docs/technical/execution-topology.md)。
+完整子系统图见 [`AGENTS.md`](AGENTS.md)；Agent 循环 / 流程引擎之状态契约，见 [`docs/technical/execution-topology_zh.md`](docs/technical/execution-topology_zh.md)。
 
 ## 工具目录
 
@@ -211,9 +211,9 @@ curl -fsSL https://vixues.com.cn/install.sh | bash
 完整文档居于 [`docs/`](docs/README.md) —— 宜自[架构总览](docs/technical/architecture.md)始。
 
 - **由此而始** —— [架构总览](docs/technical/architecture.md) · [使用教程](docs/tutorial_zh.md)
-- **运行时** —— [执行拓扑](docs/technical/execution-topology.md) · [Agent 运行时](docs/technical/agent-runtime.md) · [Agent SDK](docs/technical/agent_sdk.md)
+- **运行时** —— [执行拓扑](docs/technical/execution-topology_zh.md) · [Agent 运行时](docs/technical/agent-runtime_zh.md) · [Agent SDK](docs/technical/agent_sdk_zh.md)
 - **诸能** —— [论文模式](docs/research-paper-mode.md) · [流程引擎](backend/docs/workflow-engine/overview.md) · [美术资产节点](backend/docs/workflow-engine/art-asset-nodes.md) · [GenUI 标准](docs/technical/genui-rendering-standard.md)
-- **工具与模型** —— [工具参数约定](docs/technical/tool-parameters.md) · [DeepSeek](docs/deepseek-guide.md) · [DashScope](docs/dashscope-guide.md) · [自定义模型](docs/technical/custom-models.md)
+- **工具与模型** —— [工具参数约定](docs/technical/tool-parameters_zh.md) · [DeepSeek](docs/deepseek-guide_zh.md) · [DashScope](docs/dashscope-guide_zh.md) · [自定义模型](docs/technical/custom-models_zh.md)
 
 ## 参与贡献
 

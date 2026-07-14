@@ -45,11 +45,13 @@ import {
   type ChannelType,
   type ChannelStatus,
 } from '@/hooks/useChannels';
+import { WeixinConnectPanel } from './WeixinConnectPanel';
 
 const TYPE_ICONS: Record<ChannelType, typeof MessageSquare> = {
   dingtalk: MessageSquare,
   feishu: Hash,
   wechat_work: Users,
+  weixin: MessageSquare,
   web: Globe,
   api: Code,
   console: Terminal,
@@ -67,12 +69,17 @@ const TYPE_PRESENTATION: Record<
   },
   feishu: {
     iconWrap:
-      'bg-blue-100 text-blue-800 dark:bg-blue-950/50 dark:text-blue-300 ring-1 ring-blue-200/60 dark:ring-blue-800/60',
+      'bg-blue-100 text-blue-800 dark:bg-blue-950/50 dark:text-blue-300 ring-1 ring-blue-800/60 dark:ring-blue-800/60',
     typeBadge: 'info',
   },
   wechat_work: {
     iconWrap:
       'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300 ring-1 ring-emerald-200/60 dark:ring-emerald-800/60',
+    typeBadge: 'success',
+  },
+  weixin: {
+    iconWrap:
+      'bg-green-100 text-green-700 dark:bg-green-950/50 dark:text-green-300 ring-1 ring-green-200/60 dark:ring-green-800/60',
     typeBadge: 'success',
   },
   web: {
@@ -103,6 +110,8 @@ function defaultConfigForType(type: ChannelType): Record<string, unknown> {
     case 'dingtalk':
     case 'wechat_work':
       return { webhook_url: '', secret: '' };
+    case 'weixin':
+      return { account_id: '', token: '', dm_policy: 'open' };
     case 'feishu':
       return { app_id: '', app_secret: '', webhook_url: '' };
     case 'web':
@@ -319,6 +328,48 @@ export default function ChannelsPage() {
             </div>
           </>
         );
+      case 'weixin':
+        return (
+          <>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                {t('channels.fields.accountId')}
+              </label>
+              <Input
+                value={String(config.account_id ?? '')}
+                onChange={(e) => setConfigField('account_id', e.target.value)}
+                autoComplete="off"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                {t('channels.fields.token')}
+              </label>
+              <Input
+                type="password"
+                value={String(config.token ?? '')}
+                onChange={(e) => setConfigField('token', e.target.value)}
+                autoComplete="off"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                {t('channels.fields.dmPolicy')}
+              </label>
+              <Select
+                value={String(config.dm_policy ?? 'open')}
+                onChange={(e) => setConfigField('dm_policy', e.target.value)}
+              >
+                <option value="open">open</option>
+                <option value="allowlist">allowlist</option>
+                <option value="disabled">disabled</option>
+              </Select>
+            </div>
+            <p className="text-sm text-gray-500 dark:text-gray-400">
+              {t('channels.weixinHint')}
+            </p>
+          </>
+        );
       case 'feishu':
         return (
           <>
@@ -415,6 +466,9 @@ export default function ChannelsPage() {
         </Button>
       }
     >
+      <WeixinConnectPanel />
+
+      <div className="flex min-h-0 flex-1 flex-col gap-4">
         <div className="flex flex-wrap gap-3">
           <Select
             className="w-44"
@@ -437,6 +491,7 @@ export default function ChannelsPage() {
             <option value="dingtalk">dingtalk</option>
             <option value="feishu">feishu</option>
             <option value="wechat_work">wechat_work</option>
+            <option value="weixin">weixin</option>
             <option value="web">web</option>
             <option value="api">api</option>
             <option value="console">console</option>
@@ -553,6 +608,7 @@ export default function ChannelsPage() {
             })}
           </div>
         )}
+      </div>
 
         <Modal isOpen={modalOpen} onClose={() => setModalOpen(false)} size="lg">
           <ModalHeader onClose={() => setModalOpen(false)}>
@@ -577,6 +633,7 @@ export default function ChannelsPage() {
                 <option value="dingtalk">dingtalk</option>
                 <option value="feishu">feishu</option>
                 <option value="wechat_work">wechat_work</option>
+                <option value="weixin">weixin</option>
                 <option value="web">web</option>
                 <option value="api">api</option>
                 <option value="console">console</option>

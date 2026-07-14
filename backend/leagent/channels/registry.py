@@ -26,6 +26,7 @@ BUILTIN_CHANNEL_SPECS: dict[str, tuple[str, str]] = {
     "dingtalk": (".dingtalk.channel", "DingTalkChannel"),
     "feishu": (".feishu.channel", "FeishuChannel"),
     "wechat_work": (".wechat_work.channel", "WeChatWorkChannel"),
+    "weixin": (".weixin.channel", "WeixinChannel"),
     "api": (".api.channel", "APIChannel"),
 }
 

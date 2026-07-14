@@ -321,3 +321,4 @@ PYTHONPATH="" DEEPSEEK_API_KEY=sk-... \
 - Pricing: <https://api-docs.deepseek.com/quick_start/pricing>
 - LeAgent AGENTS.md: DeepSeek provider section
 - LeAgent context compression guide: `docs/context-compression-and-usage.md`
+- 中文版: [`deepseek-guide_zh.md`](./deepseek-guide_zh.md)

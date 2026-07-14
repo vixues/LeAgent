@@ -4,12 +4,13 @@ from __future__ import annotations
 
 from datetime import datetime
 from enum import Enum
-from typing import Annotated, Any, Optional
+from typing import Any, Optional
 from uuid import UUID, uuid4
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, HTTPException, Query, status
 from pydantic import BaseModel, Field
 
+from leagent.api.deps import ServiceManagerDep
 from leagent.services.auth import CurrentUserId
 
 router = APIRouter()
@@ -21,6 +22,7 @@ class ChannelType(str, Enum):
     DINGTALK = "dingtalk"
     FEISHU = "feishu"
     WECHAT_WORK = "wechat_work"
+    WEIXIN = "weixin"
     WEB = "web"
     API = "api"
     CONSOLE = "console"
@@ -82,6 +84,167 @@ class ChannelTestResponse(BaseModel):
     success: bool
     latency_ms: int
     error: Optional[str] = None
+
+
+class WeixinLoginStartRequest(BaseModel):
+    """Optional overrides when requesting a Weixin QR code."""
+
+    base_url: Optional[str] = None
+
+
+class WeixinLoginStartResponse(BaseModel):
+    """QR session returned to the frontend for scanning."""
+
+    qrcode: str
+    qr_url: str = ""
+    qr_image_data_url: str = ""
+    base_url: str
+    status: str = "wait"
+
+
+class WeixinLoginStatusResponse(BaseModel):
+    """Polled QR login status; on confirmed, gateway is hot-started."""
+
+    status: str
+    qrcode: str
+    connected: bool = False
+    account_id: str = ""
+    base_url: str = ""
+    running: bool = False
+    message: str = ""
+
+
+class WeixinRuntimeResponse(BaseModel):
+    """Live Weixin poller status."""
+
+    enabled: bool = False
+    configured: bool = False
+    running: bool = False
+    account_id: str = ""
+    session_expired: bool = False
+
+
+# ── Weixin QR login (must be registered before /{channel_id}) ───────────
+
+
+@router.post("/weixin/login/start", response_model=WeixinLoginStartResponse)
+async def weixin_login_start(
+    user_id: CurrentUserId,
+    body: WeixinLoginStartRequest | None = None,
+) -> WeixinLoginStartResponse:
+    """Request a Weixin iLink QR code for browser scanning."""
+    from leagent.channels.weixin.client import ILINK_BASE_URL
+    from leagent.channels.weixin.login import start_qr_session
+
+    _ = user_id
+    base = ((body.base_url if body else None) or ILINK_BASE_URL).rstrip("/")
+    try:
+        session = await start_qr_session(base_url=base)
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Failed to request Weixin QR: {exc}",
+        ) from exc
+
+    return WeixinLoginStartResponse(
+        qrcode=session.qrcode,
+        qr_url=session.qr_url,
+        qr_image_data_url=session.qr_image_data_url,
+        base_url=session.base_url,
+        status="wait",
+    )
+
+
+@router.get("/weixin/login/status", response_model=WeixinLoginStatusResponse)
+async def weixin_login_status(
+    user_id: CurrentUserId,
+    sm: ServiceManagerDep,
+    qrcode: str = Query(..., min_length=1),
+    base_url: Optional[str] = Query(default=None),
+) -> WeixinLoginStatusResponse:
+    """Poll QR scan status; on confirm, hot-start the Weixin agent channel."""
+    from leagent.channels.weixin.client import ILINK_BASE_URL
+    from leagent.channels.weixin.login import check_qr_session
+
+    _ = user_id
+    resolved_base = (base_url or ILINK_BASE_URL).rstrip("/")
+    try:
+        result = await check_qr_session(qrcode, base_url=resolved_base)
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Failed to poll Weixin QR status: {exc}",
+        ) from exc
+
+    status_value = str(result.get("status") or "unknown")
+    response = WeixinLoginStatusResponse(
+        status=status_value,
+        qrcode=qrcode,
+        connected=bool(result.get("connected")),
+        account_id=str(result.get("account_id") or ""),
+        base_url=str(result.get("base_url") or resolved_base),
+    )
+
+    if status_value == "confirmed":
+        try:
+            runtime = await sm.ensure_weixin_running()
+            response.running = bool(runtime.get("running"))
+            response.message = "Weixin connected; long-poll started (no restart needed)."
+        except Exception as exc:
+            response.running = False
+            response.message = (
+                f"Credentials saved, but failed to start poller: {exc}. "
+                "Try again from the Weixin panel."
+            )
+    elif status_value == "scanned":
+        response.message = "QR scanned — confirm on your phone."
+    elif status_value == "expired":
+        response.message = "QR expired — request a new code."
+    else:
+        response.message = "Waiting for scan…"
+
+    return response
+
+
+@router.get("/weixin/runtime", response_model=WeixinRuntimeResponse)
+async def weixin_runtime(
+    user_id: CurrentUserId,
+    sm: ServiceManagerDep,
+) -> WeixinRuntimeResponse:
+    """Return whether the Weixin long-poller is currently running."""
+    _ = user_id
+    data = sm.weixin_runtime_status()
+    return WeixinRuntimeResponse(**data)
+
+
+@router.post("/weixin/start", response_model=WeixinRuntimeResponse)
+async def weixin_start(
+    user_id: CurrentUserId,
+    sm: ServiceManagerDep,
+) -> WeixinRuntimeResponse:
+    """Hot-start / reload Weixin from saved credentials (no process restart)."""
+    _ = user_id
+    try:
+        await sm.ensure_weixin_running()
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+    data = sm.weixin_runtime_status()
+    return WeixinRuntimeResponse(**data)
+
+
+@router.post("/weixin/stop", response_model=WeixinRuntimeResponse)
+async def weixin_stop(
+    user_id: CurrentUserId,
+    sm: ServiceManagerDep,
+) -> WeixinRuntimeResponse:
+    """Stop the live Weixin poller and persist enabled=false (keeps credentials)."""
+    _ = user_id
+    await sm.stop_weixin_channel()
+    data = sm.weixin_runtime_status()
+    return WeixinRuntimeResponse(**data)
 
 
 @router.get("", response_model=ChannelListResponse)

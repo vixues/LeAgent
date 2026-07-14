@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.5] - 2026-07-14
+
+Patch release: **Weixin (personal WeChat) agent channel** with QR hot-start, native outbound files/images, and a lighter stop/status path.
+
+### Added
+
+- **Weixin (personal WeChat) agent channel** — iLink Bot long-polling adapter (`leagent/channels/weixin/`) with QR login (`leagent channels login weixin` **or** Channels page scan panel), AES-128-ECB CDN media, `context_token` persistence, typing indicators, DM access policy, and `ChannelManager` + `AgentRuntime` bridge so inbound DMs run the default agent. Confirming a QR code **hot-starts** the poller via `POST /channels/weixin/login/status` / `ensure_weixin_running` — no frontend/backend restart. Distinct from WeChat Work (`wechat_work`). Note: QR-login iLink bot identities are DM-focused; ordinary WeChat groups usually do not deliver events. Guide for OSS readers: [`docs/guides/weixin-agent-from-scratch.md`](docs/guides/weixin-agent-from-scratch.md).
+
+### Fixed
+
+- **Channel session `user_id`** — IM/agent bridge now owns channel sessions with `LOCAL_USER_ID` (and the session store falls back on insert), eliminating `chat_sessions.user_id` NOT NULL IntegrityError warnings on Weixin DMs.
+- **Weixin outbound files** — Agent-produced artifacts (e.g. `document_generate` PDFs / `image_generate` / `web_image_download`) upload via iLink CDN as native attachments; `file_id`+path duplicates and `file.bin` placeholders are collapsed; `/api/v1/files/.../preview` links are always stripped from WeChat text replies.
+
+### Changed
+
+- **Weixin reply latency** — Typing `getconfig` no longer blocks the agent turn; IM turns get a concise no-exploratory-tools system hint so casual chats skip needless `file_manager` rounds.
+- **Weixin stop / status load** — `POST /channels/weixin/stop` persists `enabled=false` (credentials kept); the Channels UI only polls `/weixin/runtime` while running; runtime `config.yaml` loads are mtime-cached (debug log) to cut idle overhead.
+
 ## [1.2.4] - 2026-07-14
 
 Patch release: **access-password** control plane, progressive **knowledge_search**, sturdier tool **artifact promotion**, slide JSON recovery, and a **minimal** sidebar brand backdrop.
@@ -1343,7 +1361,8 @@ _Subsections below keep `— YYYY-MM-DD` on each heading for maintainers (commit
 - **Minor (0.X.0)**: New features, backward compatible
 - **Patch (0.0.X)**: Bug fixes, security patches
 
-[Unreleased]: https://github.com/vixues/LeAgent/compare/v1.2.4...HEAD
+[Unreleased]: https://github.com/vixues/LeAgent/compare/v1.2.5...HEAD
+[1.2.5]: https://github.com/vixues/LeAgent/compare/v1.2.4...v1.2.5
 [1.2.4]: https://github.com/vixues/LeAgent/compare/v1.2.3...v1.2.4
 [1.2.3]: https://github.com/vixues/LeAgent/compare/v1.2.2...v1.2.3
 [1.2.2]: https://github.com/vixues/LeAgent/compare/v1.2.1...v1.2.2

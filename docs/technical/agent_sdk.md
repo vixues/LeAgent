@@ -3,6 +3,8 @@
 > **Version:** 0.1.0  
 > **Package:** `leagent.sdk`
 
+中文版: [`agent_sdk_zh.md`](./agent_sdk_zh.md)
+
 ## Overview
 
 The Agent SDK is the single, versioned public surface through which every

@@ -26,6 +26,7 @@ CHANNEL_DESCRIPTIONS = {
     "api": "REST API endpoint",
     "console": "CLI console interface",
     "wechat_work": "WeChat Work (企业微信)",
+    "weixin": "Weixin / personal WeChat (iLink Bot)",
     "feishu": "Feishu/Lark (飞书)",
     "dingtalk": "DingTalk (钉钉)",
     "email": "Email integration",
@@ -37,6 +38,7 @@ CHANNEL_CONFIG_FIELDS = {
     "api": ["endpoint", "token"],
     "console": [],
     "wechat_work": ["endpoint", "token", "webhook_url"],
+    "weixin": ["token", "account_id"],
     "feishu": ["endpoint", "token", "webhook_url"],
     "dingtalk": ["endpoint", "token", "webhook_url"],
     "email": ["endpoint", "token"],
@@ -189,6 +191,14 @@ def config_channel(
             if new_webhook:
                 channel_config.webhook_url = new_webhook
 
+        if "account_id" in fields:
+            new_account = prompt_text(
+                "Weixin account_id",
+                default=str(channel_config.extra.get("account_id") or ""),
+            )
+            if new_account:
+                channel_config.extra["account_id"] = new_account
+
         enable = prompt_confirm("Enable this channel?", default=channel_config.enabled)
         channel_config.enabled = enable
 
@@ -259,6 +269,17 @@ def _test_channel_connection(channel: str, config: Any, message: str) -> None:
         console.print(f"  [dim]Test message:[/] {message}")
         return
 
+    if channel == "weixin":
+        account_id = (config.extra or {}).get("account_id") or ""
+        if not config.token or not account_id:
+            raise ValueError(
+                "Weixin requires token + extra.account_id "
+                "(run `leagent channels login weixin`)"
+            )
+        console.print(f"  [dim]account_id:[/] {account_id}")
+        console.print("  [dim]Credentials present; live send requires a running gateway.[/]")
+        return
+
     webhook_url = config.webhook_url
     if not webhook_url:
         raise ValueError(f"No webhook URL configured for channel '{channel}'")
@@ -285,6 +306,80 @@ def _test_channel_connection(channel: str, config: Any, message: str) -> None:
     response.raise_for_status()
 
     console.print(f"  [dim]Response:[/] {response.status_code}")
+
+
+@channels_group.command(name="login")
+@click.argument("channel")
+@click.option("--base-url", default=None, help="Override iLink base URL.")
+def login_channel(channel: str, base_url: str | None) -> None:
+    """Scan a QR code to link a messaging account (currently: weixin)."""
+    import asyncio
+
+    if channel != "weixin":
+        print_error(f"QR login is only supported for 'weixin' (got '{channel}').")
+        raise click.Abort()
+
+    from leagent.channels.weixin.client import ILINK_BASE_URL
+    from leagent.channels.weixin.login import run_qr_login
+    from leagent.config.config import ChannelConfig
+
+    resolved_base = (base_url or ILINK_BASE_URL).rstrip("/")
+
+    console.print()
+    console.rule("[bold cyan]Weixin QR Login[/]")
+    console.print()
+    print_info("Requesting QR code from iLink…")
+    print_info("Scan with WeChat, then confirm on your phone.")
+    console.print()
+
+    def _print_qr(url: str) -> None:
+        console.print(f"  [bold]QR URL / content:[/]\n  [cyan]{url}[/]\n")
+        try:
+            import qrcode
+
+            qr = qrcode.QRCode(border=1)
+            qr.add_data(url)
+            qr.make(fit=True)
+            qr.print_ascii(invert=True)
+        except Exception:
+            print_info("(Install the optional `qrcode` package for terminal QR rendering.)")
+
+    def _on_status(status: str, _data: dict) -> None:
+        if status in {"scaned", "scanned", "scan"}:
+            print_info("QR scanned — confirm login on your phone…")
+        elif status in {"wait", "waiting"}:
+            pass
+        else:
+            console.print(f"  [dim]status: {status}[/]")
+
+    try:
+        result = asyncio.run(
+            run_qr_login(
+                base_url=resolved_base,
+                print_qr_url=_print_qr,
+                on_status=_on_status,
+            )
+        )
+    except Exception as exc:
+        print_error(f"Weixin login failed: {exc}")
+        raise click.Abort() from exc
+
+    config = load_config()
+    if "weixin" not in config.channels:
+        config.channels["weixin"] = ChannelConfig()
+    wx = config.channels["weixin"]
+    wx.enabled = True
+    wx.token = result.token
+    wx.extra["account_id"] = result.account_id
+    wx.extra["base_url"] = result.base_url
+    if result.user_id:
+        wx.extra["user_id"] = result.user_id
+    save_config(config)
+
+    print_success(f"Weixin connected, account_id={result.account_id}")
+    print_info("Credentials saved under LEAGENT_HOME/weixin/accounts/")
+    print_info("If the server is already running, open Channels → Weixin scan (or POST /channels/weixin/start) — no process restart needed.")
+    console.print()
 
 
 @channels_group.command(name="show")

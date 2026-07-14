@@ -2,6 +2,8 @@
 
 > Status: production. Package: `backend/leagent/runtime/`.
 
+中文版: [`agent-runtime_zh.md`](./agent-runtime_zh.md)
+
 The Agent Runtime is the unified, SDK-governed harness for building and
 executing agents in LeAgent. It replaces the previous pattern of
 hand-constructing `QueryEngine` / `QueryEngineConfig` at every call site

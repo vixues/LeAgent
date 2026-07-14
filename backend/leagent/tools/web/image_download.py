@@ -122,9 +122,13 @@ class WebImageDownloadTool(BaseTool):
         preview_path = f"/api/v1/files/{fid}/preview"
         return {
             "file_id": fid,
+            "filename": safe_name,
             "preview_path": preview_path,
             "content_type": ctype,
+            "mime": ctype,
+            "kind": "image",
             "bytes": len(data),
+            "storage_path": out.get("storage_path"),
             "preview_url": out.get("preview_url"),
             "download_url": out.get("download_url"),
         }

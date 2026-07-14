@@ -30,6 +30,7 @@ class ChannelType(str, Enum):
     DINGTALK = "dingtalk"
     FEISHU = "feishu"
     WECHAT_WORK = "wechat_work"
+    WEIXIN = "weixin"
     API = "api"
 
 

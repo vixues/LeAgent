@@ -4,7 +4,7 @@ import { CACHE_TIME } from '@/controllers/API/helpers/constants';
 
 // ---- Types ----
 
-export type ChannelType = 'dingtalk' | 'feishu' | 'wechat_work' | 'web' | 'api' | 'console';
+export type ChannelType = 'dingtalk' | 'feishu' | 'wechat_work' | 'weixin' | 'web' | 'api' | 'console';
 export type ChannelStatus = 'active' | 'inactive' | 'error';
 
 export interface ChannelConfig {
@@ -58,9 +58,37 @@ export interface ChannelStateResponse {
   message?: string;
 }
 
+/** Weixin iLink QR login */
+export interface WeixinLoginStartResponse {
+  qrcode: string;
+  qr_url: string;
+  qr_image_data_url: string;
+  base_url: string;
+  status: string;
+}
+
+export interface WeixinLoginStatusResponse {
+  status: string;
+  qrcode: string;
+  connected: boolean;
+  account_id: string;
+  base_url: string;
+  running: boolean;
+  message: string;
+}
+
+export interface WeixinRuntimeResponse {
+  enabled: boolean;
+  configured: boolean;
+  running: boolean;
+  account_id: string;
+  session_expired: boolean;
+}
+
 const QK = {
   list: (filters?: ChannelFilters) => ['channels', 'list', filters] as const,
   detail: (id: string) => ['channels', 'detail', id] as const,
+  weixinRuntime: ['channels', 'weixin', 'runtime'] as const,
 };
 
 // ---- Queries ----
@@ -152,6 +180,69 @@ export function useDeactivateChannel() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['channels', 'list'] });
       queryClient.invalidateQueries({ queryKey: ['channels', 'detail'] });
+    },
+  });
+}
+
+export function useWeixinRuntime(
+  options?: Omit<UseQueryOptions<WeixinRuntimeResponse, ApiError>, 'queryKey' | 'queryFn'>
+) {
+  return useQuery<WeixinRuntimeResponse, ApiError>({
+    queryKey: QK.weixinRuntime,
+    queryFn: () => apiClient.get<WeixinRuntimeResponse>('/channels/weixin/runtime'),
+    staleTime: CACHE_TIME.STALE_TIME_SHORT,
+    // Only poll while the long-poller is live — stopped state must not keep
+    // hitting the API / writing access logs every 10s.
+    refetchInterval: (query) => (query.state.data?.running ? 10_000 : false),
+    refetchIntervalInBackground: false,
+    ...options,
+  });
+}
+
+export function useWeixinLoginStart() {
+  return useMutation<WeixinLoginStartResponse, ApiError, { base_url?: string } | void>({
+    mutationFn: (input) =>
+      apiClient.post<WeixinLoginStartResponse>('/channels/weixin/login/start', input ?? {}),
+  });
+}
+
+export function useWeixinLoginStatus() {
+  const queryClient = useQueryClient();
+  return useMutation<
+    WeixinLoginStatusResponse,
+    ApiError,
+    { qrcode: string; base_url?: string }
+  >({
+    mutationFn: ({ qrcode, base_url }) =>
+      apiClient.get<WeixinLoginStatusResponse>('/channels/weixin/login/status', {
+        qrcode,
+        base_url,
+      }),
+    onSuccess: (data) => {
+      if (data.connected) {
+        queryClient.invalidateQueries({ queryKey: QK.weixinRuntime });
+        queryClient.invalidateQueries({ queryKey: ['channels', 'list'] });
+      }
+    },
+  });
+}
+
+export function useWeixinStart() {
+  const queryClient = useQueryClient();
+  return useMutation<WeixinRuntimeResponse, ApiError, void>({
+    mutationFn: () => apiClient.post<WeixinRuntimeResponse>('/channels/weixin/start'),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: QK.weixinRuntime });
+    },
+  });
+}
+
+export function useWeixinStop() {
+  const queryClient = useQueryClient();
+  return useMutation<WeixinRuntimeResponse, ApiError, void>({
+    mutationFn: () => apiClient.post<WeixinRuntimeResponse>('/channels/weixin/stop'),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: QK.weixinRuntime });
     },
   });
 }

@@ -62,6 +62,7 @@ class Config(BaseModel):
         "api": ChannelConfig(enabled=True),
         "console": ChannelConfig(enabled=True),
         "wechat_work": ChannelConfig(),
+        "weixin": ChannelConfig(),
         "feishu": ChannelConfig(),
         "dingtalk": ChannelConfig(),
     })
@@ -73,22 +74,55 @@ class Config(BaseModel):
     extra: dict[str, Any] = Field(default_factory=dict)
 
 
+_config_cache: Config | None = None
+_config_cache_mtime: float | None = None
+_config_cache_path: str | None = None
+
+
+def _invalidate_config_cache() -> None:
+    global _config_cache, _config_cache_mtime, _config_cache_path
+    _config_cache = None
+    _config_cache_mtime = None
+    _config_cache_path = None
+
+
 def load_config(path: Path | str | None = None) -> Config:
-    """Load runtime configuration from a YAML file, falling back to defaults."""
+    """Load runtime configuration from a YAML file, falling back to defaults.
+
+    Results are cached by path mtime so hot status endpoints do not re-read
+    and re-log the YAML on every poll.
+    """
+    global _config_cache, _config_cache_mtime, _config_cache_path
+
     config_path = Path(path) if path else CONFIG_PATH
+    path_key = str(config_path.resolve()) if config_path.exists() else str(config_path)
     if config_path.exists():
         try:
+            mtime = config_path.stat().st_mtime
+            if (
+                _config_cache is not None
+                and _config_cache_path == path_key
+                and _config_cache_mtime == mtime
+            ):
+                return _config_cache
             with open(config_path, encoding="utf-8") as f:
                 raw = yaml.safe_load(f) or {}
-            logger.info("Loaded runtime config from %s", config_path)
-            return Config.model_validate(raw)
+            config = Config.model_validate(raw)
+            _config_cache = config
+            _config_cache_mtime = mtime
+            _config_cache_path = path_key
+            logger.debug("Loaded runtime config from %s", config_path)
+            return config
         except Exception:
             logger.warning("Failed to parse config at %s, using defaults", config_path, exc_info=True)
+            _invalidate_config_cache()
     return Config()
 
 
 def save_config(config: Config, path: Path | str | None = None) -> None:
     """Persist runtime configuration to a YAML file."""
+    global _config_cache, _config_cache_mtime, _config_cache_path
+
     config_path = Path(path) if path else CONFIG_PATH
     config_path.parent.mkdir(parents=True, exist_ok=True)
     with open(config_path, "w", encoding="utf-8") as f:
@@ -99,4 +133,10 @@ def save_config(config: Config, path: Path | str | None = None) -> None:
             allow_unicode=True,
             sort_keys=False,
         )
+    try:
+        _config_cache = config
+        _config_cache_mtime = config_path.stat().st_mtime
+        _config_cache_path = str(config_path.resolve())
+    except OSError:
+        _invalidate_config_cache()
     logger.info("Saved runtime config to %s", config_path)

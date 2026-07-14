@@ -143,12 +143,16 @@ async def generate_media(
         if reg:
             fid = str(reg.get("id") or "")
             result["file_id"] = fid
+            result["filename"] = display_name
             result["file_size_bytes"] = reg.get("size")
+            if kind == "image":
+                result["kind"] = "image"
             if fid:
                 result["preview_path"] = f"/api/v1/files/{fid}/preview"
             result["preview_url"] = reg.get("preview_url")
             result["download_url"] = reg.get("download_url")
             result["output_path"] = reg.get("storage_path")
+            result["storage_path"] = reg.get("storage_path")
 
     logger.info("media_generated", kind=kind, provider=out.provider, model=out.model, elapsed_ms=elapsed_ms)
     return result

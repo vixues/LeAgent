@@ -278,9 +278,18 @@ class TieredSessionStore:
                     db, state.session_id, owner_user_id=None
                 )
                 if chat is None:
+                    # ``chat_sessions.user_id`` is NOT NULL. Channel / background
+                    # turns occasionally omit it; fall back to the local owner
+                    # rather than failing the whole save with IntegrityError.
+                    owner_id = state.user_id
+                    if owner_id is None:
+                        from leagent.services.auth.service import LOCAL_USER_ID
+
+                        owner_id = LOCAL_USER_ID
+                        state.user_id = owner_id
                     chat = ChatSession(
                         id=state.session_id,
-                        user_id=state.user_id,
+                        user_id=owner_id,
                         flow_id=state.flow_id,
                         workspace_id=state.workspace_id,
                         message_count=len(state.messages),

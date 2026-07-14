@@ -3,6 +3,8 @@
 LeAgent’s security control plane stops unauthenticated LAN access, reduces
 information disclosure, and adds light multi-user isolation/quotas.
 
+中文版: [`security-control-plane_zh.md`](./security-control-plane_zh.md)
+
 ## Compulsory authentication
 
 | Piece | Location |

@@ -3,6 +3,8 @@
 > Status: living contract. See also [`agent_sdk.md`](agent_sdk.md) and
 > [`agent-runtime.md`](agent-runtime.md).
 
+中文版: [`execution-topology_zh.md`](./execution-topology_zh.md)
+
 This document formalizes how requests flow through LeAgent's execution stack,
 which subsystems own state, and the canonical entry paths every caller should use.
 

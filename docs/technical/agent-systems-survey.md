@@ -3,6 +3,8 @@
 > Status: reference. Informs `leagent/runtime/`, `leagent/sdk/`, and the
 > agent-stack layering upgrade.
 
+中文版: [`agent-systems-survey_zh.md`](./agent-systems-survey_zh.md)
+
 Before evolving the LeAgent agent architecture we surveyed publicly documented
 agent harnesses to identify the abstractions they share, and to decide where
 LeAgent should **align** with established patterns versus **diverge**

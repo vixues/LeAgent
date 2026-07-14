@@ -117,7 +117,7 @@ LeAgent/
 - **三种工作流形态，同一引擎。** 已保存的 DAG 流程、聊天 Playbook 步骤卡（编译为线性流程）、以及聊天内的图嵌入，都在同一个 `WorkflowExecutor` 上执行：按就绪批次调度、并发执行独立分支，并统一应用重试/退避与超时。
 - **清晰的状态归属。** 聊天记录存于 `TieredSessionStore`，暂停的回合存于 `CheckpointStore`（`agent_checkpoints`），工作流运行存于 `WorkflowStateStore` —— 子系统之间不共享可变状态。
 
-完整的子系统地图见 [`AGENTS.md`](AGENTS.md)；Agent 循环 / 工作流引擎的权威状态契约见 [`docs/technical/execution-topology.md`](docs/technical/execution-topology.md)。
+完整的子系统地图见 [`AGENTS.md`](AGENTS.md)；Agent 循环 / 工作流引擎的权威状态契约见 [`docs/technical/execution-topology_zh.md`](docs/technical/execution-topology_zh.md)。
 
 ## 工具目录
 
@@ -275,9 +275,9 @@ curl -fsSL https://vixues.com.cn/install.sh | bash
 完整文档位于 [`docs/`](docs/README.md) —— 建议从[架构总览](docs/technical/architecture.md)开始。
 
 - **从这里开始** —— [架构总览](docs/technical/architecture.md) · [使用教程](docs/tutorial_zh.md)
-- **运行时** —— [执行拓扑](docs/technical/execution-topology.md) · [Agent 运行时](docs/technical/agent-runtime.md) · [Agent SDK](docs/technical/agent_sdk.md)
+- **运行时** —— [执行拓扑](docs/technical/execution-topology_zh.md) · [Agent 运行时](docs/technical/agent-runtime_zh.md) · [Agent SDK](docs/technical/agent_sdk_zh.md)
 - **能力** —— [论文模式](docs/research-paper-mode.md) · [工作流引擎](backend/docs/workflow-engine/overview.md) · [美术资产节点](backend/docs/workflow-engine/art-asset-nodes.md) · [GenUI 标准](docs/technical/genui-rendering-standard.md)
-- **工具与模型** —— [工具参数约定](docs/technical/tool-parameters.md) · [DeepSeek](docs/deepseek-guide.md) · [DashScope](docs/dashscope-guide.md) · [自定义模型](docs/technical/custom-models.md)
+- **工具与模型** —— [工具参数约定](docs/technical/tool-parameters_zh.md) · [DeepSeek](docs/deepseek-guide_zh.md) · [DashScope](docs/dashscope-guide_zh.md) · [自定义模型](docs/technical/custom-models_zh.md)
 
 ## 参与贡献
 

@@ -60,6 +60,7 @@ class ServiceManager:
         self._session_manager: SessionManager | None = None
         self._agent_memory: AgentMemory | None = None
         self._runtime_context: RuntimeContext | None = None
+        self._channel_manager: Any = None
 
         self._started = False
 
@@ -220,6 +221,10 @@ class ServiceManager:
     def is_started(self) -> bool:
         return self._started
 
+    @property
+    def channel_manager(self) -> Any:
+        return self._channel_manager
+
     async def start_all(self) -> None:
         if self._started:
             logger.warning("Services already started")
@@ -242,12 +247,15 @@ class ServiceManager:
         await self._start_cron()
         await self._start_task_manager()
         await self._start_file_processing()
+        await self._start_channels()
 
         self._started = True
         logger.info("All services started successfully")
 
     async def stop_all(self) -> None:
         logger.info("Stopping services...")
+
+        await self._stop_channels()
 
         if self._task_manager is not None:
             try:
@@ -302,6 +310,7 @@ class ServiceManager:
 
         self._started = False
         logger.info("All services stopped")
+
 
     async def health_check(self) -> dict[str, Any]:
         results: dict[str, Any] = {"healthy": True, "services": {}}
@@ -664,6 +673,184 @@ class ServiceManager:
             logger.info("AgentMemory initialised (embedding_dim=%d, vector=off)", embedding_dim)
         except Exception:
             logger.warning("AgentMemory initialisation skipped", exc_info=True)
+
+    async def _start_channels(self) -> None:
+        """Start enabled messaging channels (currently Weixin inbound agent)."""
+        try:
+            import os
+
+            from leagent.config.config import load_config
+
+            config = load_config()
+            wx_cfg = config.channels.get("weixin")
+            enabled = bool(wx_cfg and wx_cfg.enabled)
+            if os.getenv("WEIXIN_CHANNEL_ENABLED", "").strip() == "1":
+                enabled = True
+            if not enabled:
+                logger.info("Channels: weixin not enabled, skip")
+                return
+            await self.ensure_weixin_running()
+        except Exception:
+            logger.warning("Channel manager start skipped", exc_info=True)
+
+    async def ensure_weixin_running(self) -> dict[str, Any]:
+        """Start or hot-reload the Weixin long-poll channel (no process restart).
+
+        Loads credentials from runtime ``config.yaml`` / env / disk account store.
+        Safe to call after QR login from the API.
+        """
+        import os
+
+        from leagent.channels.agent_bridge import make_agent_process_handler
+        from leagent.channels.manager import ChannelManager
+        from leagent.channels.weixin import WeixinChannel
+        from leagent.channels.weixin.store import load_account
+        from leagent.config.config import load_config
+
+        config = load_config()
+        wx_cfg = config.channels.get("weixin")
+        extra: dict[str, Any] = dict(wx_cfg.extra) if wx_cfg else {}
+        account_id = str(extra.get("account_id") or "").strip()
+        token = str((wx_cfg.token if wx_cfg else "") or extra.get("token") or "").strip()
+        account_id = os.getenv("WEIXIN_ACCOUNT_ID", account_id).strip() or account_id
+        token = os.getenv("WEIXIN_TOKEN", token).strip() or token
+
+        if account_id and not token:
+            persisted = load_account(account_id)
+            if persisted:
+                token = str(persisted.get("token") or "").strip()
+                if persisted.get("base_url"):
+                    extra.setdefault("base_url", persisted["base_url"])
+
+        if not account_id or not token:
+            raise RuntimeError(
+                "Weixin credentials missing; complete QR login first "
+                "(channels.weixin.token + extra.account_id)"
+            )
+
+        channel_config: dict[str, Any] = {
+            "enabled": True,
+            "token": token,
+            "extra": {
+                **extra,
+                "account_id": account_id,
+                "base_url": extra.get("base_url") or os.getenv("WEIXIN_BASE_URL", ""),
+                "cdn_base_url": extra.get("cdn_base_url")
+                or os.getenv("WEIXIN_CDN_BASE_URL", ""),
+                "dm_policy": extra.get("dm_policy")
+                or os.getenv("WEIXIN_DM_POLICY", "open"),
+                "group_policy": extra.get("group_policy")
+                or os.getenv("WEIXIN_GROUP_POLICY", "disabled"),
+                "allow_from": extra.get("allow_from")
+                or os.getenv("WEIXIN_ALLOWED_USERS", ""),
+                "group_allow_from": extra.get("group_allow_from")
+                or os.getenv("WEIXIN_GROUP_ALLOWED_USERS", ""),
+            },
+        }
+        if not channel_config["extra"]["base_url"]:
+            channel_config["extra"].pop("base_url", None)
+        if not channel_config["extra"]["cdn_base_url"]:
+            channel_config["extra"].pop("cdn_base_url", None)
+
+        handler = make_agent_process_handler(self)
+        weixin = WeixinChannel.from_config(channel_config, process_handler=handler)
+
+        if self._channel_manager is None:
+            manager = ChannelManager()
+            manager.register(weixin)
+            await manager.start_all()
+            self._channel_manager = manager
+        else:
+            await self._channel_manager.replace_channel(weixin)
+
+        # Keep config enabled so a later process restart also picks it up.
+        if wx_cfg is not None:
+            from leagent.config.config import save_config
+
+            wx_cfg.enabled = True
+            wx_cfg.token = token
+            wx_cfg.extra["account_id"] = account_id
+            save_config(config)
+
+        health = await weixin.health_check()
+        logger.info("Weixin channel running", account_id=account_id[:12])
+        return {
+            "running": True,
+            "account_id": account_id,
+            "health": health,
+        }
+
+    async def stop_weixin_channel(self) -> dict[str, Any]:
+        """Fully stop the Weixin poller and persist ``enabled=false``.
+
+        Credentials (token / account_id) are kept so **启动监听** can resume
+        without re-scanning. Process restart will not auto-start Weixin until
+        start/login enables it again.
+        """
+        if self._channel_manager is not None:
+            channel = self._channel_manager.get_channel("weixin")
+            if channel is not None:
+                try:
+                    await channel.stop()
+                except Exception:
+                    logger.warning("Weixin channel stop error", exc_info=True)
+                self._channel_manager.unregister("weixin")
+
+        try:
+            from leagent.config.config import ChannelConfig, load_config, save_config
+
+            config = load_config()
+            if "weixin" not in config.channels:
+                config.channels["weixin"] = ChannelConfig()
+            config.channels["weixin"].enabled = False
+            save_config(config)
+        except Exception:
+            logger.warning("Failed to persist Weixin enabled=false", exc_info=True)
+
+        logger.info("Weixin channel fully stopped (enabled=false)")
+        return self.weixin_runtime_status()
+
+    def weixin_runtime_status(self) -> dict[str, Any]:
+        """Return current Weixin poller status without I/O."""
+        from leagent.config.config import load_config
+
+        config = load_config()
+        wx_cfg = config.channels.get("weixin")
+        account_id = ""
+        enabled = False
+        has_token = False
+        if wx_cfg:
+            enabled = bool(wx_cfg.enabled)
+            account_id = str((wx_cfg.extra or {}).get("account_id") or "")
+            has_token = bool(wx_cfg.token or (wx_cfg.extra or {}).get("token"))
+
+        channel = None
+        if self._channel_manager is not None:
+            channel = self._channel_manager.get_channel("weixin")
+
+        running = bool(
+            channel is not None
+            and getattr(channel, "_running", False)
+            and not getattr(channel, "_session_expired", False)
+        )
+        return {
+            "enabled": enabled,
+            "configured": bool(account_id and has_token),
+            "running": running,
+            "account_id": account_id,
+            "session_expired": bool(
+                channel is not None and getattr(channel, "_session_expired", False)
+            ),
+        }
+
+    async def _stop_channels(self) -> None:
+        if self._channel_manager is None:
+            return
+        try:
+            await self._channel_manager.stop_all()
+        except Exception:
+            logger.warning("Channel manager shutdown error", exc_info=True)
+        self._channel_manager = None
 
 
 _service_manager: ServiceManager | None = None

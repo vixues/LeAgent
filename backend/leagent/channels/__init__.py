@@ -1,7 +1,8 @@
 """Channel system for LeAgent.
 
 Provides a unified messaging infrastructure for multiple communication
-channels including console, web, DingTalk, Feishu, WeChat Work, and API.
+channels including console, web, DingTalk, Feishu, WeChat Work, Weixin (iLink),
+and API.
 """
 
 from .base import (

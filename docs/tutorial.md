@@ -36,7 +36,7 @@ LeAgent is a local-first intelligent office automation platform that combines th
 | **Tool** | A capability the agent can use (e.g., read PDF, send email), with aliases, validation, path sandboxing, and concurrency control |
 | **Workflow** | A visual or YAML-defined sequence of automated steps (ReactFlow editor) |
 | **Rule** | Declarative YAML business logic for validation and decision-making |
-| **Channel** | Communication interface (Web, DingTalk, Feishu, WeChat Work, Console) |
+| **Channel** | Communication interface (Web, DingTalk, Feishu, WeChat Work, Weixin, Console) |
 | **Skill** | Installable agent capability packages that extend what the agent can do |
 | **Memory** | Cognitive three-store system (episodic, semantic, procedural) for agent context |
 
@@ -640,6 +640,23 @@ uv run leagent channels add dingtalk \
 
 1. Create an application in the WeChat Work admin console
 2. Configure via the channels CLI
+
+### Weixin (个人微信 / iLink Bot)
+
+Connect a personal WeChat account via Tencent's iLink Bot API (long-polling; no public webhook required). This is **not** WeChat Work.
+
+```bash
+cd backend
+uv run leagent channels login weixin   # scan QR with WeChat, confirm on phone
+```
+
+Or open **Channels** in the UI → **Weixin** panel → **Scan to connect**. Confirming on your phone saves credentials and **starts long-polling immediately** (no process restart).
+
+For a protocol-oriented walkthrough (iLink, `context_token`, CDN crypto, adapter/bridge pattern — useful beyond LeAgent), see [`docs/guides/weixin-agent-from-scratch.md`](guides/weixin-agent-from-scratch.md)（中文技术分享）.
+
+Credentials land in `$LEAGENT_HOME/weixin/accounts/` and `config.yaml` (`channels.weixin`). Inbound DMs run `default_agent` via the channel bridge.
+
+**Limits:** QR-login binds an iLink bot identity — DMs work reliably; ordinary WeChat groups usually do not deliver events to the bot.
 
 ### Channel Configuration (YAML)
 

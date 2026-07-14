@@ -18,7 +18,7 @@ LeAgent/
 │   │   ├── alembic/      # Alembic migration scripts
 │   │   ├── api/          # FastAPI routers (v1, incubating v2)
 │   │   ├── bootstrap/    # Tool + workflow-node startup
-│   │   ├── channels/     # Outbound integrations (DingTalk, Feishu, WeChat Work, console)
+│   │   ├── channels/     # Outbound + IM ingress (DingTalk, Feishu, WeChat Work, Weixin/iLink, console)
 │   │   ├── chat_workflow/ # Chat-workflow compilation + embed
 │   │   ├── cli/          # Click CLI (23 modules)
 │   │   ├── code/         # Code execution layer (sandbox, workspace, runner)

@@ -493,8 +493,8 @@
         "prompt": "In short bullets, explain what I can do with LeAgent in this app: chat with attachments and knowledge-base references, designing and running workflows, knowledge base and folder context, and practical limits (e.g. attach files before the agent can read them, how tools relate to workflows). Assume I’m new—keep it under ten short sentences—and mention sidebar/top-bar areas worth opening first."
       },
       "genuiResume": {
-        "label": "Design a résumé layout with GenUI",
-        "prompt": "Use GenUI (the visual components in chat) to draft a résumé-style layout: sections for basics, education/work experience, projects and skills, each with placeholder bullets I can replace. Keep it scannable for a first pass, then refine after I add details."
+        "label": "Summarize this week's work",
+        "prompt": "Based on our recent chat history, summarize this week's work: completed items, in-progress tasks, follow-ups, and key conclusions. Present it as a clear GenUI weekly report I can review and amend."
       },
       "petSpace": {
         "label": "Or adopt a desk pet first?",

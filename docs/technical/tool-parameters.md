@@ -4,6 +4,8 @@ LeAgent tool inputs follow a **strict canonical contract**: the JSON Schema
 declared on each tool's `parameters` property is the only authoritative
 definition exposed to LLMs. There is no silent alias coercion.
 
+中文版: [`tool-parameters_zh.md`](./tool-parameters_zh.md)
+
 ## Canonical keys
 
 | Semantic role | Canonical key | Example tools |
