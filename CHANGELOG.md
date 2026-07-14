@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.4] - 2026-07-14
+
+Patch release: **access-password** control plane, progressive **knowledge_search**, sturdier tool **artifact promotion**, slide JSON recovery, and a **minimal** sidebar brand backdrop.
+
+### Added
+
+- **Access-password control plane** — Enforce instance login on non-loopback binds; gate file / WebSocket / SSE clients with the session JWT; close IDOR and public-route gaps so LAN exposure no longer leaves previews and admin APIs open by default.
+- **`knowledge_search` + file summaries** — Progressive catalog → search → read for the knowledge base; extractive summaries persisted on files; knowledge UI search and shared-folder nav improvements. Agent-trace JSON columns made nullable with a hardened recorder/store path.
+- **Minimal logo backdrop** — Settings → appearance: no-background sidebar Logo stage; default mark uses `favicon.svg`, title uses the same blue gradient (`#7DD3FC` → `#5CB8FA` → `#3D94EB`).
+- **In-app docs architecture** — Expanded `/docs` system implementation notes for the current kernel (AgentRuntime, gated prompts, workflows, memory).
+
+### Fixed
+
+- **Tool artifact promotion** — Sandbox overwrites no longer leave stale downloadable attachments: `SessionManager.promote_tool_output` versions by path+hash, gates empty spreadsheets/images/PDFs at promotion, and surfaces failures on assistant messages. Gated elicitation policy plus office audit/signin skills to cut multi-round layout loops.
+- **Slides / docs tool-call JSON** — Recover unescaped interior quotes (common in CJK slide bodies) before `json.loads`; document safer 「」 usage so `slides_generate` can proceed.
+- **Mobile nav drawer** — Force expanded rail layout so tablet collapse no longer hides nav labels on the full-width mobile panel.
+
+## [1.2.3] - 2026-07-12
+
+Patch release: durable **agent running traces**, shared **chat project folders**, and **Tavily** as the preferred web-search provider.
+
 ### Added
 
 - **Agent running trace** — Durable debug/eval plane (`agent_traces` / spans / experiments) separate from checkpoints and chat SSOT. Captures LLM/tool/compact/subagent spans via `run_loop` + `TraceHook`; joins `llm_request_logs.run_id`. APIs for list/detail/JSONL export, by-model stats, and same-prompt multi-model experiments. Chat execution panel waterfall + Admin **Agent Traces** tab. See `docs/technical/agent-trace.md`.
@@ -15,6 +36,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - **Tavily as default web search** — `WEB_SEARCH_PROVIDER` defaults to `tavily`; `auto` prefers Tavily first among configured APIs. Without `WEB_SEARCH_TAVILY_API_KEY`, search falls back to Playwright Bing and tool `next_step` / agent prompts proactively recommend configuring Tavily.
+
+### Fixed
+
+- **Folder Project strip** — Keep Files/Code/Git/Run on the header row; hide absolute disk path from the Project badge; render Git history inline in-tab (single closable sheet for file history) so duplicate X buttons no longer fail to dismiss.
 
 ## [1.2.2] - 2026-07-12
 
@@ -1318,7 +1343,9 @@ _Subsections below keep `— YYYY-MM-DD` on each heading for maintainers (commit
 - **Minor (0.X.0)**: New features, backward compatible
 - **Patch (0.0.X)**: Bug fixes, security patches
 
-[Unreleased]: https://github.com/vixues/LeAgent/compare/v1.2.2...HEAD
+[Unreleased]: https://github.com/vixues/LeAgent/compare/v1.2.4...HEAD
+[1.2.4]: https://github.com/vixues/LeAgent/compare/v1.2.3...v1.2.4
+[1.2.3]: https://github.com/vixues/LeAgent/compare/v1.2.2...v1.2.3
 [1.2.2]: https://github.com/vixues/LeAgent/compare/v1.2.1...v1.2.2
 [1.2.1]: https://github.com/vixues/LeAgent/compare/v1.2.0...v1.2.1
 [1.2.0]: https://github.com/vixues/LeAgent/compare/v1.1.3...v1.2.0
