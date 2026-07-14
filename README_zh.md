@@ -274,7 +274,7 @@ curl -fsSL https://vixues.com.cn/install.sh | bash
 
 完整文档位于 [`docs/`](docs/README.md) —— 建议从[架构总览](docs/technical/architecture.md)开始。
 
-- **从这里开始** —— [架构总览](docs/technical/architecture.md) · [使用教程](docs/tutorial_zh.md)
+- **从这里开始** —— [架构总览](docs/technical/architecture.md) · [使用教程](docs/tutorial_zh.md) · [Agent 工程教程（48 篇）](docs/guides/agent/README.md) · [Agent 面试题库](docs/interview/README.md)
 - **运行时** —— [执行拓扑](docs/technical/execution-topology_zh.md) · [Agent 运行时](docs/technical/agent-runtime_zh.md) · [Agent SDK](docs/technical/agent_sdk_zh.md)
 - **能力** —— [论文模式](docs/research-paper-mode.md) · [工作流引擎](backend/docs/workflow-engine/overview.md) · [美术资产节点](backend/docs/workflow-engine/art-asset-nodes.md) · [GenUI 标准](docs/technical/genui-rendering-standard.md)
 - **工具与模型** —— [工具参数约定](docs/technical/tool-parameters_zh.md) · [DeepSeek](docs/deepseek-guide_zh.md) · [DashScope](docs/dashscope-guide_zh.md) · [自定义模型](docs/technical/custom-models_zh.md)
