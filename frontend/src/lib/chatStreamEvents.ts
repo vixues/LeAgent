@@ -469,13 +469,14 @@ export function applyChatStreamEvent(
       if (hydrated.length === 0) break;
       const prev =
         s.messages[sessionId]?.find((m) => m.id === assistantMsgId)?.attachments ?? [];
-      const seen = new Set(prev.map((a) => a.id));
-      const merged = [
-        ...prev,
-        ...hydrated.filter((a) => !seen.has(a.id)),
-      ];
+      // Merge by id so newly versioned attachments (new file_id after overwrite)
+      // appear immediately; query invalidation refreshes the full session list.
+      const byId = new Map(prev.map((a) => [a.id, a]));
+      for (const att of hydrated) {
+        byId.set(att.id, att);
+      }
       s.updateMessage(sessionId, assistantMsgId, {
-        attachments: merged,
+        attachments: Array.from(byId.values()),
       });
       void queryClient.invalidateQueries({
         queryKey: ['chat', 'session-attachments', sessionId],

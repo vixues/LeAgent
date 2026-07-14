@@ -847,6 +847,44 @@ class CodeExecutionTool(BaseTool):
         )
         if managed_artifacts:
             envelope["managed_artifacts"] = managed_artifacts
+            downloadable = [
+                a for a in managed_artifacts
+                if a.get("download_url") or a.get("id")
+            ]
+            if downloadable:
+                cites = []
+                for a in downloadable[:8]:
+                    name = a.get("filename") or a.get("name") or "file"
+                    fid = a.get("id") or ""
+                    url = a.get("download_url") or ""
+                    ver = a.get("version")
+                    ver_s = f" v{ver}" if isinstance(ver, int) and ver > 1 else ""
+                    cites.append(
+                        f"{name}{ver_s} (file_id={fid}"
+                        + (f", download={url}" if url else "")
+                        + ")"
+                    )
+                envelope["download_hint"] = (
+                    "Cite managed download URLs / file_id for the user — never "
+                    "sandbox workspace paths. Latest versions: "
+                    + "; ".join(cites)
+                )
+            quality_failures = [
+                str(a.get("quality_error") or a.get("filename") or "artifact")
+                for a in managed_artifacts
+                if a.get("quality_passed") is False
+            ]
+            if not quality_failures:
+                quality_failures = [
+                    str(p.get("quality_error") or p.get("file_path") or "file")
+                    for p in produced_files
+                    if isinstance(p, dict) and p.get("quality_passed") is False
+                ]
+            if quality_failures:
+                envelope["quality_passed"] = False
+                envelope["quality_error"] = "; ".join(quality_failures)[:800]
+            else:
+                envelope["quality_passed"] = True
         preview_paths = _scan_image_preview_urls(envelope)
         if preview_paths:
             envelope["display_hint"] = (

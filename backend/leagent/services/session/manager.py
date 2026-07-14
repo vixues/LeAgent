@@ -611,7 +611,8 @@ class SessionManager:
     ) -> dict[str, Any]:
         """Serialize a session attachment for tool/UI consumers."""
         self._populate_urls(attachment, user_id=user_id)
-        return {
+        extra = attachment.extra if isinstance(attachment.extra, dict) else {}
+        row: dict[str, Any] = {
             "id": str(attachment.id),
             "filename": attachment.filename,
             "name": attachment.filename,
@@ -622,32 +623,223 @@ class SessionManager:
             "storage_path": attachment.storage_path,
             "preview_url": attachment.preview_url,
             "download_url": attachment.download_url,
+            "extra": dict(extra),
         }
+        source_path = extra.get("source_tool_path")
+        if isinstance(source_path, str) and source_path:
+            row["source_tool_path"] = source_path
+        version = extra.get("version")
+        if isinstance(version, int):
+            row["version"] = version
+        if "is_latest" in extra:
+            row["is_latest"] = bool(extra.get("is_latest"))
+        superseded_by = extra.get("superseded_by")
+        if superseded_by is not None:
+            row["superseded_by"] = str(superseded_by)
+        # Quality is owned here (assessed once at promotion) — callers must not
+        # re-run openpyxl/PIL outside SessionManager.
+        if "quality_passed" in extra:
+            row["quality_passed"] = bool(extra.get("quality_passed"))
+        if extra.get("quality_error"):
+            row["quality_error"] = str(extra["quality_error"])
+        if extra.get("quality_artifact_type"):
+            row["quality_artifact_type"] = str(extra["quality_artifact_type"])
+        return row
 
-    async def _find_existing_attachment(
+    @staticmethod
+    def _ensure_quality_on_attachment(attachment: SessionAttachment) -> None:
+        """Run content quality once per content hash; persist on ``extra``.
+
+        This is the **sole** promotion-time quality hook for downloadable
+        session artifacts. Tool code and QueryEngine should only *read*
+        ``quality_passed`` from the attachment row.
+        """
+        extra = dict(attachment.extra or {})
+        if (
+            "quality_passed" in extra
+            and extra.get("quality_sha256")
+            and attachment.sha256
+            and extra.get("quality_sha256") == attachment.sha256
+        ):
+            return
+        try:
+            from leagent.file.quality import assess_artifact_quality
+
+            verdict = assess_artifact_quality(
+                attachment.storage_path,
+                content_type=attachment.content_type,
+                filename=attachment.filename,
+            )
+        except Exception:  # noqa: BLE001 — never block promotion
+            logger.debug("attachment_quality_check_failed", exc_info=True)
+            return
+        if verdict is None:
+            return
+        extra["quality_passed"] = verdict.passed
+        extra["quality_artifact_type"] = verdict.artifact_type
+        extra["quality_sha256"] = attachment.sha256
+        if verdict.details:
+            extra["quality_details"] = dict(verdict.details)
+        if not verdict.passed:
+            extra["quality_error"] = verdict.message or "artifact quality gate failed"
+        else:
+            extra.pop("quality_error", None)
+        attachment.extra = extra
+
+    def _finalize_attachment_row(
+        self,
+        attachment: SessionAttachment,
+        *,
+        user_id: UUID | None = None,
+        assess_quality: bool = True,
+    ) -> dict[str, Any]:
+        """Quality-annotate (once) then serialize for tool/UI consumers."""
+        if assess_quality:
+            self._ensure_quality_on_attachment(attachment)
+        return self._attachment_row_dict(attachment, user_id=user_id)
+
+    async def promote_tool_output(
+        self,
+        session_id: UUID,
+        user_id: UUID | None,
+        *,
+        path: str | os.PathLike[str] | None = None,
+        data: bytes | None = None,
+        filename: str | None = None,
+        content_type: str | None = None,
+        source_tool_path: str | None = None,
+        allowed_roots: Iterable[str | os.PathLike[str]] | None = None,
+        origin_ref: str | None = None,
+    ) -> dict[str, Any] | None:
+        """Unified promotion of a tool output into FileService + session attachments.
+
+        Prefer this (or the thin wrappers ``register_external_file`` /
+        ``register_artifact_bytes`` / ``register_tool_artifact``) over ad-hoc
+        quality checks or direct FileService calls from tools.
+
+        Exactly one of *path* or *data* must be provided.
+        """
+        if path is not None and data is not None:
+            raise ValueError("promote_tool_output: pass path or data, not both")
+        if path is None and data is None:
+            raise ValueError("promote_tool_output: path or data is required")
+        if path is not None:
+            return await self.register_external_file(
+                session_id,
+                user_id,
+                str(path),
+                display_name=filename,
+                allowed_roots=allowed_roots,
+            )
+        return await self.register_artifact_bytes(
+            session_id,
+            user_id,
+            data or b"",
+            filename=filename or "artifact",
+            content_type=content_type,
+            origin_ref=origin_ref,
+            source_tool_path=source_tool_path,
+        )
+
+    @staticmethod
+    def _paths_equal(left: str, right: str) -> bool:
+        try:
+            return (
+                str(Path(left).expanduser().resolve())
+                == str(Path(right).expanduser().resolve())
+            )
+        except OSError:
+            return left == right
+
+    def _latest_attachment_for_source_path(
+        self,
+        attachments: list[SessionAttachment],
+        resolved_src: str,
+    ) -> SessionAttachment | None:
+        """Return the newest attachment keyed by ``source_tool_path``, if any."""
+        matches: list[SessionAttachment] = []
+        for existing in attachments:
+            extra = existing.extra if isinstance(existing.extra, dict) else {}
+            prior_src = extra.get("source_tool_path")
+            if not isinstance(prior_src, str) or not prior_src:
+                continue
+            if self._paths_equal(prior_src, resolved_src):
+                matches.append(existing)
+        if not matches:
+            return None
+        # Prefer explicit latest flag, then highest version, then created_at.
+        def _sort_key(att: SessionAttachment) -> tuple[int, int, float]:
+            extra = att.extra if isinstance(att.extra, dict) else {}
+            is_latest = 1 if extra.get("is_latest", True) else 0
+            version = extra.get("version")
+            ver = int(version) if isinstance(version, int) else 0
+            return (is_latest, ver, att.created_at.timestamp())
+
+        return max(matches, key=_sort_key)
+
+    async def _find_reusable_attachment(
         self,
         session_id: UUID,
         *,
-        user_id: UUID | None,
         src: Path,
         checksum: str | None = None,
     ) -> SessionAttachment | None:
-        """Return an existing session attachment for the same tool output, if any."""
+        """Return an attachment to reuse only when content still matches.
+
+        Same ``source_tool_path`` with a **different** sha256 must not reuse the
+        prior row (that is the attachment/path drift bug). Identical checksum
+        still dedupes even when paths differ.
+        """
         resolved_src = str(src)
         async with self.locked(session_id) as state:
+            by_path = self._latest_attachment_for_source_path(
+                list(state.attachments),
+                resolved_src,
+            )
+            if by_path is not None:
+                if checksum and by_path.sha256 and by_path.sha256 == checksum:
+                    return by_path
+                if checksum and by_path.sha256 and by_path.sha256 != checksum:
+                    return None
+                # No checksum available: treat as reuse only if sizes match.
+                if not checksum:
+                    try:
+                        if by_path.size == src.stat().st_size:
+                            return by_path
+                    except OSError:
+                        return by_path
+                    return None
+            if checksum:
+                for existing in state.attachments:
+                    if existing.sha256 and existing.sha256 == checksum:
+                        return existing
+        return None
+
+    async def _supersede_path_attachments(
+        self,
+        session_id: UUID,
+        *,
+        resolved_src: str,
+        new_id: UUID,
+        new_version: int,
+    ) -> None:
+        """Mark prior attachments for *resolved_src* as superseded by *new_id*."""
+        async with self.locked(session_id) as state:
             for existing in state.attachments:
+                if existing.id == new_id:
+                    continue
                 extra = existing.extra if isinstance(existing.extra, dict) else {}
                 prior_src = extra.get("source_tool_path")
-                if isinstance(prior_src, str) and prior_src:
-                    try:
-                        if str(Path(prior_src).expanduser().resolve()) == resolved_src:
-                            return existing
-                    except OSError:
-                        if prior_src == resolved_src:
-                            return existing
-                if checksum and existing.sha256 and existing.sha256 == checksum:
-                    return existing
-        return None
+                if not isinstance(prior_src, str) or not prior_src:
+                    continue
+                if not self._paths_equal(prior_src, resolved_src):
+                    continue
+                updated = dict(extra)
+                updated["is_latest"] = False
+                updated["superseded_by"] = str(new_id)
+                if "version" not in updated:
+                    updated["version"] = max(1, new_version - 1)
+                existing.extra = updated
 
     async def _register_external_via_service(
         self,
@@ -657,7 +849,12 @@ class SessionManager:
         *,
         label: str,
     ) -> dict[str, Any] | None:
-        """Register an external file using FileService.register()."""
+        """Register an external file using FileService.register().
+
+        Path is a workspace alias: identical content (sha256) reuses the prior
+        attachment; content changes mint a new FileRef and supersede the old
+        attachment for that path so downloads never serve a stale snapshot.
+        """
         import hashlib
 
         from leagent.file.primitives import FileScope
@@ -672,14 +869,27 @@ class SessionManager:
         except OSError:
             checksum = ""
 
-        existing = await self._find_existing_attachment(
+        existing = await self._find_reusable_attachment(
             session_id,
-            user_id=user_id,
             src=src,
             checksum=checksum or None,
         )
         if existing is not None:
-            return self._attachment_row_dict(existing, user_id=user_id)
+            return await self._attachment_row_for_id(
+                session_id, existing.id, user_id=user_id
+            )
+
+        # Determine next version for this workspace path.
+        version = 1
+        async with self.locked(session_id) as state:
+            prior = self._latest_attachment_for_source_path(
+                list(state.attachments),
+                str(src),
+            )
+            if prior is not None:
+                prior_extra = prior.extra if isinstance(prior.extra, dict) else {}
+                prior_ver = prior_extra.get("version")
+                version = (int(prior_ver) if isinstance(prior_ver, int) else 1) + 1
 
         file_service = self._ensure_file_service()
         try:
@@ -697,13 +907,44 @@ class SessionManager:
             logger.warning("register_external_via_service_failed: %s", exc)
             return None
 
-        return await self._attach_ref(
+        row = await self._attach_ref(
             ref,
             session_id,
             user_id,
             label=label,
-            extra={"source_tool_path": str(src)},
+            extra={
+                "source_tool_path": str(src),
+                "version": version,
+                "is_latest": True,
+            },
+            allow_path_replace=True,
         )
+        if version > 1 and row is not None:
+            await self._supersede_path_attachments(
+                session_id,
+                resolved_src=str(src),
+                new_id=ref.id,
+                new_version=version,
+            )
+            # Refresh URLs after supersede metadata write.
+            return await self._attachment_row_for_id(
+                session_id, ref.id, user_id=user_id
+            ) or row
+        return row
+
+    async def _attachment_row_for_id(
+        self,
+        session_id: UUID,
+        attachment_id: UUID,
+        *,
+        user_id: UUID | None = None,
+    ) -> dict[str, Any] | None:
+        async with self.locked(session_id) as state:
+            for existing in state.attachments:
+                if existing.id == attachment_id:
+                    self._ensure_quality_on_attachment(existing)
+                    return self._attachment_row_dict(existing, user_id=user_id)
+        return None
 
     async def register_artifact_bytes(
         self,
@@ -714,16 +955,50 @@ class SessionManager:
         filename: str,
         content_type: str | None = None,
         origin_ref: str | None = None,
+        source_tool_path: str | None = None,
     ) -> dict[str, Any] | None:
         """Register an in-memory tool artifact as a session attachment.
 
         The single managed-blob ingress (``FileService.register``) persists the
-        bytes and the ``File`` row; tools must call this instead of writing the
-        artifact to disk and then re-registering it.
+        bytes and the ``File`` row. Optional *source_tool_path* enables the same
+        path-alias versioning as :meth:`register_external_file`.
         """
+        import hashlib
+
         from leagent.file.primitives import FileScope
 
         label = sanitize_filename(filename, default="artifact")
+        checksum = hashlib.sha256(data).hexdigest() if data is not None else ""
+
+        version = 1
+        extra: dict[str, Any] = {"is_latest": True, "version": 1}
+        alias = (source_tool_path or "").strip()
+        if alias:
+            extra["source_tool_path"] = alias
+            try:
+                src = Path(alias).expanduser().resolve()
+            except OSError:
+                src = Path(alias)
+            existing = await self._find_reusable_attachment(
+                session_id,
+                src=src,
+                checksum=checksum or None,
+            )
+            if existing is not None:
+                return await self._attachment_row_for_id(
+                    session_id, existing.id, user_id=user_id
+                )
+            async with self.locked(session_id) as state:
+                prior = self._latest_attachment_for_source_path(
+                    list(state.attachments),
+                    str(src),
+                )
+                if prior is not None:
+                    prior_extra = prior.extra if isinstance(prior.extra, dict) else {}
+                    prior_ver = prior_extra.get("version")
+                    version = (int(prior_ver) if isinstance(prior_ver, int) else 1) + 1
+            extra["version"] = version
+
         file_service = self._ensure_file_service()
         try:
             ref = await file_service.register(
@@ -742,7 +1017,6 @@ class SessionManager:
             logger.warning("register_artifact_bytes_failed: %s", exc)
             return None
 
-        # Link tool artifacts into the chat-project shared folder when applicable.
         if user_id is not None:
             try:
                 from leagent.db.service import get_database_service
@@ -765,7 +1039,29 @@ class SessionManager:
             except Exception:  # noqa: BLE001
                 logger.debug("register_artifact_project_folder_link_skipped", exc_info=True)
 
-        return await self._attach_ref(ref, session_id, user_id, label=label)
+        row = await self._attach_ref(
+            ref,
+            session_id,
+            user_id,
+            label=label,
+            extra=extra,
+            allow_path_replace=bool(alias),
+        )
+        if alias and version > 1 and row is not None:
+            try:
+                resolved_alias = str(Path(alias).expanduser().resolve())
+            except OSError:
+                resolved_alias = alias
+            await self._supersede_path_attachments(
+                session_id,
+                resolved_src=resolved_alias,
+                new_id=ref.id,
+                new_version=version,
+            )
+            return await self._attachment_row_for_id(
+                session_id, ref.id, user_id=user_id
+            ) or row
+        return row
 
     async def _attach_ref(
         self,
@@ -775,8 +1071,14 @@ class SessionManager:
         *,
         label: str,
         extra: dict[str, Any] | None = None,
+        allow_path_replace: bool = False,
     ) -> dict[str, Any]:
-        """Build a :class:`SessionAttachment` from *ref* and upsert it."""
+        """Build a :class:`SessionAttachment` from *ref* and upsert it.
+
+        When *allow_path_replace* is True (content-changed workspace path), do
+        not short-circuit on ``source_tool_path`` — the caller mints a new
+        FileRef and supersedes prior path versions explicitly.
+        """
         kind = classify_file_kind(label, ref.content_type).value
         attachment = SessionAttachment(
             id=ref.id,
@@ -790,6 +1092,8 @@ class SessionManager:
             extra=extra or {},
         )
         self._populate_urls(attachment, user_id=user_id)
+        # Assess quality before upsert so the lock/save below persists it.
+        self._ensure_quality_on_attachment(attachment)
 
         new_extra = extra or {}
         new_src = new_extra.get("source_tool_path")
@@ -797,21 +1101,25 @@ class SessionManager:
             if state.user_id is None and user_id is not None:
                 state.user_id = user_id
             for existing in state.attachments:
+                if existing.id == ref.id:
+                    state.upsert_attachment(attachment)
+                    return self._attachment_row_dict(attachment, user_id=user_id)
                 existing_extra = existing.extra if isinstance(existing.extra, dict) else {}
                 prior_src = existing_extra.get("source_tool_path")
-                if isinstance(new_src, str) and new_src and isinstance(prior_src, str) and prior_src:
-                    try:
-                        if (
-                            str(Path(new_src).expanduser().resolve())
-                            == str(Path(prior_src).expanduser().resolve())
-                        ):
-                            self._populate_urls(existing, user_id=user_id)
-                            return self._attachment_row_dict(existing, user_id=user_id)
-                    except OSError:
-                        if new_src == prior_src:
-                            self._populate_urls(existing, user_id=user_id)
-                            return self._attachment_row_dict(existing, user_id=user_id)
+                if (
+                    not allow_path_replace
+                    and isinstance(new_src, str)
+                    and new_src
+                    and isinstance(prior_src, str)
+                    and prior_src
+                    and self._paths_equal(new_src, prior_src)
+                ):
+                    if ref.checksum and existing.sha256 and existing.sha256 == ref.checksum:
+                        self._ensure_quality_on_attachment(existing)
+                        self._populate_urls(existing, user_id=user_id)
+                        return self._attachment_row_dict(existing, user_id=user_id)
                 if ref.checksum and existing.sha256 and existing.sha256 == ref.checksum:
+                    self._ensure_quality_on_attachment(existing)
                     self._populate_urls(existing, user_id=user_id)
                     return self._attachment_row_dict(existing, user_id=user_id)
             state.upsert_attachment(attachment)

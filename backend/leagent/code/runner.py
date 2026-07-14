@@ -56,28 +56,43 @@ def _guess_mime(path: Path) -> str | None:
     return mime
 
 
-def _scan_files(base: Path) -> set[Path]:
-    """Return a set of resolved file paths under *base* (best-effort)."""
-    out: set[Path] = set()
+def _file_fingerprint(path: Path) -> tuple[int, int] | None:
+    """Return ``(size, mtime_ns)`` for *path*, or ``None`` if unreadable."""
+    try:
+        st = path.stat()
+        return (int(st.st_size), int(getattr(st, "st_mtime_ns", int(st.st_mtime * 1e9))))
+    except OSError:
+        return None
+
+
+def _scan_files(base: Path) -> dict[Path, tuple[int, int]]:
+    """Return ``path → (size, mtime_ns)`` for files under *base* (best-effort)."""
+    out: dict[Path, tuple[int, int]] = {}
     if not base.exists():
         return out
     for path in base.rglob("*"):
         try:
-            if path.is_file():
-                out.add(path)
+            if not path.is_file():
+                continue
         except OSError:
             continue
+        fp = _file_fingerprint(path)
+        if fp is not None:
+            out[path] = fp
     return out
 
 
 def _listing(
     base: Path,
-    before: set[Path],
+    before: dict[Path, tuple[int, int]],
     *,
     extra_roots: list[Path] | None = None,
-    extra_before: dict[Path, set[Path]] | None = None,
+    extra_before: dict[Path, dict[Path, tuple[int, int]]] | None = None,
 ) -> list[dict[str, Any]]:
     """Diff workspace + extra roots against their pre-execution snapshots.
+
+    Emits both **created** files and **modified** files (size/mtime changed).
+    Unchanged paths that already existed before the run are omitted.
 
     Files inside *base* are reported with **relative** paths (legacy behaviour).
     Files inside *extra_roots* are reported with **absolute** paths so the
@@ -86,7 +101,7 @@ def _listing(
     produced: list[dict[str, Any]] = []
     seen: set[Path] = set()
 
-    def _emit(path: Path, *, root: Path | None) -> None:
+    def _emit(path: Path, *, root: Path | None, change: str) -> None:
         if path in seen:
             return
         seen.add(path)
@@ -108,33 +123,46 @@ def _listing(
             "file_path": location,
             "path": location,
             "bytes": size,
+            "change": change,
         }
         if mime:
             entry["mime"] = mime
         produced.append(entry)
 
-    if base.exists():
-        for path in base.rglob("*"):
-            try:
-                if not path.is_file():
-                    continue
-            except OSError:
-                continue
-            if path in before:
-                continue
-            _emit(path, root=base)
-
-    for root in extra_roots or []:
+    def _diff_tree(
+        root: Path,
+        snapshot: dict[Path, tuple[int, int]],
+        *,
+        location_root: Path | None,
+    ) -> None:
         if not root.exists():
-            continue
-        snapshot = (extra_before or {}).get(root, set())
+            return
         for path in root.rglob("*"):
             try:
                 if not path.is_file():
                     continue
             except OSError:
                 continue
-            if path in snapshot:
+            fp = _file_fingerprint(path)
+            if fp is None:
+                continue
+            prior = snapshot.get(path)
+            if prior is None:
+                _emit(path, root=location_root, change="created")
+            elif prior != fp:
+                _emit(path, root=location_root, change="modified")
+
+    _diff_tree(base, before, location_root=base)
+
+    for root in extra_roots or []:
+        if not root.exists():
+            continue
+        snapshot = (extra_before or {}).get(root, {})
+        for path in root.rglob("*"):
+            try:
+                if not path.is_file():
+                    continue
+            except OSError:
                 continue
             try:
                 resolved = path.resolve()
@@ -145,7 +173,14 @@ def _listing(
                     continue
             except (AttributeError, ValueError):
                 pass
-            _emit(path, root=root)
+            fp = _file_fingerprint(path)
+            if fp is None:
+                continue
+            prior = snapshot.get(path)
+            if prior is None:
+                _emit(path, root=root, change="created")
+            elif prior != fp:
+                _emit(path, root=root, change="modified")
 
     return produced
 
@@ -289,7 +324,7 @@ def main() -> int:
     os.environ.setdefault("MPLBACKEND", "Agg")
     _configure_matplotlib_if_needed(source, base)
     before = _scan_files(base)
-    extra_before: dict[Path, set[Path]] = {
+    extra_before: dict[Path, dict[Path, tuple[int, int]]] = {
         root: _scan_files(root) for root in extra_roots
     }
 

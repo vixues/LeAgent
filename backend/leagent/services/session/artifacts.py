@@ -2,8 +2,11 @@
 
 The agent runtime sees filesystem paths from several places: ordinary tools,
 code-execution workspaces, nested subagents, and older ``ArtifactRef`` shaped
-payloads. This module is the single place that turns those internal paths into
-managed session attachments with UUID preview/download URLs.
+payloads. This module is the thin adapter that turns those paths into
+managed session attachments via
+:meth:`~leagent.services.session.manager.SessionManager.promote_tool_output`
+(FileService blob + versioning + quality). Do not re-implement promotion or
+quality here.
 """
 
 from __future__ import annotations
@@ -26,6 +29,22 @@ logger = structlog.get_logger(__name__)
 _PREVIEWABLE_MIME_PREFIXES = ("image/", "application/pdf", "text/html")
 _PREVIEWABLE_EXTENSIONS = frozenset({
     ".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp", ".svg", ".pdf", ".html", ".htm",
+})
+# Office / data downloads promoted into FileService alongside previewables so
+# ``code_execution`` overwrites refresh managed attachment identity.
+_MANAGED_DOWNLOAD_EXTENSIONS = frozenset({
+    ".xlsx", ".xls", ".csv", ".tsv", ".docx", ".doc", ".pptx", ".ppt",
+    ".zip", ".json", ".md", ".txt", ".xml",
+})
+_MANAGED_DOWNLOAD_MIMES = frozenset({
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    "application/vnd.ms-excel",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "application/msword",
+    "text/csv",
+    "application/json",
+    "application/zip",
+    "application/x-zip-compressed",
 })
 
 
@@ -351,11 +370,18 @@ def extract_produced_path_candidates(
 
 
 def is_previewable_produced_file(path: Path, *, mime: str | None = None) -> bool:
-    """Return whether a produced file should be exposed in the chat file workspace."""
-    guessed = mime or mimetypes.guess_type(path.name)[0] or ""
+    """Return whether a produced file should be promoted into managed attachments.
+
+    Includes classic previewables (image/PDF/HTML) and common downloadable
+    office/data formats so path overwrites refresh FileService identity.
+    """
+    guessed = (mime or mimetypes.guess_type(path.name)[0] or "").lower()
     if guessed.startswith(_PREVIEWABLE_MIME_PREFIXES):
         return True
-    return path.suffix.lower() in _PREVIEWABLE_EXTENSIONS
+    if guessed in _MANAGED_DOWNLOAD_MIMES:
+        return True
+    suffix = path.suffix.lower()
+    return suffix in _PREVIEWABLE_EXTENSIONS or suffix in _MANAGED_DOWNLOAD_EXTENSIONS
 
 
 def _resolve_produced_entry_path(raw_path: str, workspace_root: Path | None) -> Path | None:
@@ -484,11 +510,11 @@ async def ingest_previewable_produced_files(
             updated.append(entry)
             continue
 
-        reg = await session_manager.register_external_file(
+        reg = await session_manager.promote_tool_output(
             session_uuid,
             user_uuid,
-            str(resolved),
-            display_name=raw_entry.get("name") or resolved.name,
+            path=str(resolved),
+            filename=raw_entry.get("name") or resolved.name,
             allowed_roots=allowed_roots or None,
         )
         if reg is None:
@@ -510,7 +536,20 @@ async def ingest_previewable_produced_files(
             entry["preview_url"] = reg["preview_url"]
         if reg.get("download_url"):
             entry["download_url"] = reg["download_url"]
+        if reg.get("sha256"):
+            entry["sha256"] = reg["sha256"]
+        if isinstance(reg.get("version"), int):
+            entry["version"] = reg["version"]
+        if "is_latest" in reg:
+            entry["is_latest"] = bool(reg.get("is_latest"))
+        if reg.get("size") is not None:
+            entry["bytes"] = reg["size"]
         entry["managed"] = True
+        # Quality is assessed once inside SessionManager.promote / register.
+        if "quality_passed" in reg:
+            entry["quality_passed"] = bool(reg.get("quality_passed"))
+        if reg.get("quality_error"):
+            entry["quality_error"] = reg["quality_error"]
         updated.append(entry)
         managed.append(dict(reg))
         logger.info(
@@ -520,6 +559,8 @@ async def ingest_previewable_produced_files(
                 "source_path": str(resolved),
                 "storage_path": entry["path"],
                 "file_id": entry.get("file_id"),
+                "version": entry.get("version"),
+                "quality_passed": entry.get("quality_passed"),
             },
         )
 
@@ -546,6 +587,10 @@ class ArtifactRegistrar:
             return []
 
         registered: list[RegisteredArtifact] = []
+        # Deduplicate candidates within a single call only. Cross-tool re-register
+        # of the same workspace path is intentional: SessionManager versions by
+        # content hash so overwrites refresh downloadable identity.
+        local_seen: set[str] = set()
 
         if produced_files:
             for ref in produced_files:
@@ -558,8 +603,11 @@ class ArtifactRegistrar:
                     key = str(Path(storage_path).expanduser().resolve())
                 except OSError:
                     continue
-                if seen_paths is not None and key in seen_paths:
+                if key in local_seen:
                     continue
+                local_seen.add(key)
+                if seen_paths is not None:
+                    seen_paths.add(key)
                 att_dict = {
                     "id": str(ref.id) if hasattr(ref, "id") else str(ref),
                     "filename": getattr(ref, "filename", Path(storage_path).name),
@@ -569,8 +617,6 @@ class ArtifactRegistrar:
                     "size": getattr(ref, "size", 0),
                     "sha256": getattr(ref, "checksum", ""),
                 }
-                if seen_paths is not None:
-                    seen_paths.add(key)
                 registered.append(RegisteredArtifact(path=key, attachment=att_dict))
             if registered:
                 return registered
@@ -580,17 +626,21 @@ class ArtifactRegistrar:
                 key = str(Path(candidate.path).expanduser().resolve())
             except OSError:
                 continue
-            if seen_paths is not None and key in seen_paths:
+            if key in local_seen:
                 continue
-            out = await self._session_manager.register_external_file(
+            # Allow re-registration when content may have changed: only skip when
+            # *this call* already handled the path. Callers may still pass
+            # ``seen_paths`` for telemetry; do not block overwrite refresh.
+            out = await self._session_manager.promote_tool_output(
                 session_id,
                 user_id,
-                candidate.path,
-                display_name=candidate.display_name or Path(candidate.path).name,
+                path=candidate.path,
+                filename=candidate.display_name or Path(candidate.path).name,
                 allowed_roots=(candidate.allowed_root,) if candidate.allowed_root else None,
             )
             if out is None:
                 continue
+            local_seen.add(key)
             if seen_paths is not None:
                 seen_paths.add(key)
             registered.append(RegisteredArtifact(path=key, attachment=out))

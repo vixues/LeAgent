@@ -406,9 +406,47 @@ class SettingsSetupSource(GatedPolicySource):
     )
 
 
+class StructuredOutputElicitationSource(GatedPolicySource):
+    """Ask blocking layout/business params before underspecified spreadsheet/report gen."""
+
+    id = "structured_output_elicitation"
+    priority = 1110
+    policy_names = ("structured_output_elicitation",)
+    gate = RelevanceGate(
+        name="structured_output_elicitation",
+        hints=(
+            "签到表",
+            "考勤",
+            "attendance",
+            "spreadsheet",
+            "excel",
+            "xlsx",
+            "excel_generator",
+            "报表",
+            "填表",
+            "差旅",
+            "报销",
+            "采购审核",
+            "audit",
+            "审核",
+            "generate table",
+            "fill template",
+            "打印",
+            "行高",
+            "sign-in sheet",
+            "attendance sheet",
+        ),
+        opt_in_keys=(
+            "structured_output_elicitation",
+            "enable_structured_elicitation",
+        ),
+    )
+
+
 SOURCE_REGISTRY[CanvasGuideSource.id] = CanvasGuideSource
 SOURCE_REGISTRY[ChartGuideSource.id] = ChartGuideSource
 SOURCE_REGISTRY[DocumentFontsSource.id] = DocumentFontsSource
 SOURCE_REGISTRY[DocumentGenerationSource.id] = DocumentGenerationSource
 SOURCE_REGISTRY[EmailToolSource.id] = EmailToolSource
 SOURCE_REGISTRY[SettingsSetupSource.id] = SettingsSetupSource
+SOURCE_REGISTRY[StructuredOutputElicitationSource.id] = StructuredOutputElicitationSource

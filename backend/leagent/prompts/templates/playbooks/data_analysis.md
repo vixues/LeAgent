@@ -21,6 +21,16 @@ tabular data (CSV/TSV, inline rows, or session files).
 | Summarise | **`data_aggregate`** | groupby, describe, pivot, value_counts |
 | Visualise | **`chart_generator`** | bar, line, pie, scatter, heatmap |
 
+### Multi-file association (required when ≥2 attachments)
+
+Before filling a master template from multiple Excel/PDF/CSV inputs:
+
+1. **List** each attachment with its role (master / lookup / rules).
+2. **Schema-align** — for each file, name the join keys and columns you will use.
+3. **Coverage check** — confirm every required master row has a match strategy
+   (exact key, fuzzy name, or “leave blank / fetch from web”).
+4. Only then write the filled spreadsheet, and cite the managed `file_id`.
+
 ### Workflow
 
 1. **Profile** — Start with `csv_processor` stats or read on the source file,
@@ -38,3 +48,4 @@ tabular data (CSV/TSV, inline rows, or session files).
 - Do not hand-roll matplotlib in `code_execution` when `chart_generator`
   covers the chart type.
 - Do not inline megabyte-scale datasets; spill to CSV and use `source_path`.
+- Do not skip schema alignment when joining two or more attachments.

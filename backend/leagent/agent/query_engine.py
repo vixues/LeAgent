@@ -12,6 +12,7 @@ import json
 import time
 from dataclasses import dataclass, field
 from collections.abc import Awaitable, Callable
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, AsyncIterator
 from uuid import UUID, uuid4
 
@@ -702,6 +703,7 @@ class QueryEngine:
         quality_score: float | None = None
         quality_threshold: float | None = None
         quality_passed: bool | None = None
+        artifact_type_hint = ""
         env = item.envelope
         if isinstance(env, dict):
             data = env.get("data")
@@ -721,6 +723,18 @@ class QueryEngine:
                         passed = outputs.get("quality_passed")
                         if isinstance(passed, bool):
                             quality_passed = passed
+                # Downloadable artifact quality gate (xlsx/image/pdf).
+                if quality_passed is None and "quality_passed" in data:
+                    qp = data.get("quality_passed")
+                    if isinstance(qp, bool):
+                        quality_passed = qp
+                        if not qp and not error_text:
+                            error_text = str(
+                                data.get("quality_error") or "artifact quality gate failed"
+                            )[:500]
+                        hint = data.get("artifact_quality_type")
+                        if isinstance(hint, str) and hint:
+                            artifact_type_hint = hint
         tracker.record_from_tool_result(
             tool_name=item.name,
             tool_call_id=item.tool_call_id,
@@ -731,6 +745,7 @@ class QueryEngine:
             quality_score=quality_score,
             quality_threshold=quality_threshold,
             quality_passed=quality_passed,
+            artifact_type_hint=artifact_type_hint,
         )
 
     async def _register_workspace_attachments(
@@ -753,6 +768,36 @@ class QueryEngine:
         if not attachments:
             return None
         self._augment_tool_result_with_managed_artifacts(item, attachments)
+        # Mirror quality flags from SessionManager promotion (already on attachment
+        # rows) — do not re-run openpyxl/PIL here.
+        env = item.envelope if isinstance(item.envelope, dict) else {}
+        data = env.get("data")
+        if isinstance(data, dict):
+            failures = [
+                f"{a.get('filename') or a.get('name') or a.get('id')}: "
+                f"{a.get('quality_error') or 'quality gate failed'}"
+                for a in attachments
+                if a.get("quality_passed") is False
+            ]
+            if failures:
+                data["quality_passed"] = False
+                data["quality_error"] = "; ".join(failures)[:1000]
+            elif any("quality_passed" in a for a in attachments):
+                data["quality_passed"] = True
+            env["data"] = data
+            item.envelope = env
+            try:
+                parsed = json.loads(item.content) if item.content.strip().startswith("{") else {}
+            except json.JSONDecodeError:
+                parsed = {}
+            if isinstance(parsed, dict):
+                if "quality_passed" in data:
+                    parsed["quality_passed"] = data["quality_passed"]
+                if data.get("quality_error"):
+                    parsed["quality_error"] = data["quality_error"]
+                item.content = json.dumps(parsed, ensure_ascii=False, default=str)
+            if data.get("quality_passed") is False:
+                self._track_artifact_error(item)
         return SDKMessage(
             type="workspace_attachments",
             data={
@@ -777,6 +822,65 @@ class QueryEngine:
             data = {}
         data = strip_inline_base64_payloads(data)
         data["managed_artifacts"] = attachments
+        # Rewrite produced_files / output_path entries to cite managed identity.
+        by_source: dict[str, dict[str, Any]] = {}
+        for att in attachments:
+            src = att.get("source_tool_path")
+            if isinstance(src, str) and src:
+                try:
+                    by_source[str(Path(src).expanduser().resolve())] = att
+                except OSError:
+                    by_source[src] = att
+        produced = data.get("produced_files")
+        if isinstance(produced, list):
+            rewritten: list[Any] = []
+            for entry in produced:
+                if not isinstance(entry, dict):
+                    rewritten.append(entry)
+                    continue
+                updated = dict(entry)
+                for key in ("source_path", "file_path", "path"):
+                    raw = updated.get(key)
+                    if not isinstance(raw, str) or not raw:
+                        continue
+                    try:
+                        resolved = str(Path(raw).expanduser().resolve())
+                    except OSError:
+                        resolved = raw
+                    att = by_source.get(resolved)
+                    if att is None:
+                        continue
+                    updated["file_id"] = str(att.get("id") or "")
+                    if att.get("download_url"):
+                        updated["download_url"] = att["download_url"]
+                    if att.get("preview_url"):
+                        updated["preview_url"] = att["preview_url"]
+                    if att.get("sha256"):
+                        updated["sha256"] = att["sha256"]
+                    if isinstance(att.get("version"), int):
+                        updated["version"] = att["version"]
+                    updated["managed"] = True
+                    break
+                rewritten.append(updated)
+            data["produced_files"] = rewritten
+        for path_key in ("output_path", "file_path", "path"):
+            raw = data.get(path_key)
+            if not isinstance(raw, str) or not raw:
+                continue
+            try:
+                resolved = str(Path(raw).expanduser().resolve())
+            except OSError:
+                resolved = raw
+            att = by_source.get(resolved)
+            if att is None:
+                continue
+            data["file_id"] = str(att.get("id") or "")
+            if att.get("download_url"):
+                data["download_url"] = att["download_url"]
+            if isinstance(att.get("version"), int):
+                data["version"] = att["version"]
+            data["managed"] = True
+            break
         env["data"] = data
         item.envelope = env
 
@@ -788,6 +892,11 @@ class QueryEngine:
             parsed = {}
         parsed = strip_inline_base64_payloads(parsed)
         parsed["managed_artifacts"] = attachments
+        if "produced_files" in data:
+            parsed["produced_files"] = data["produced_files"]
+        for k in ("file_id", "download_url", "version", "managed"):
+            if k in data:
+                parsed[k] = data[k]
         item.content = json.dumps(parsed, ensure_ascii=False, default=str)
 
     # ------------------------------------------------------------------

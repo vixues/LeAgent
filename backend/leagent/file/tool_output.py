@@ -39,8 +39,12 @@ async def register_tool_artifact(
     session_id: Any | None = None,
     user_id: Any | None = None,
     origin_ref: str | None = None,
+    source_tool_path: str | None = None,
 ) -> dict[str, Any] | None:
     """Persist *data* as a managed artifact and return its attachment dict.
+
+    Routes through :meth:`SessionManager.promote_tool_output` /
+    ``register_artifact_bytes`` so versioning + quality live in one place.
 
     Args:
         data: The raw artifact bytes.
@@ -48,10 +52,12 @@ async def register_tool_artifact(
         content_type: Optional MIME type (guessed from *filename* if omitted).
         session_id: Owning chat session, if any.
         user_id: Owning user, if any.
+        origin_ref: Optional origin reference for the File row.
+        source_tool_path: Optional workspace path alias for versioned overwrites.
 
     Returns:
         An attachment-shaped dict (``id``, ``storage_path``, ``preview_url``,
-        ``download_url``, ``size`` …) or ``None`` on failure.
+        ``download_url``, ``size``, ``quality_passed`` …) or ``None`` on failure.
     """
     session_uuid = _coerce_uuid(session_id)
     user_uuid = _coerce_uuid(user_id)
@@ -67,13 +73,14 @@ async def register_tool_artifact(
             session_manager = None
 
     if session_manager is not None:
-        return await session_manager.register_artifact_bytes(
+        return await session_manager.promote_tool_output(
             session_uuid,
             user_uuid,
-            data,
+            data=data,
             filename=filename,
             content_type=content_type,
             origin_ref=origin_ref,
+            source_tool_path=source_tool_path,
         )
 
     # No session context: persist as a managed blob without attachment wiring.

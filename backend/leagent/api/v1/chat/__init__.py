@@ -45,6 +45,7 @@ from leagent.services.chat.projects import ChatProjectService
 from leagent.db.models.message import (
     MessageRead,
     MessageRole,
+    MessageStatus,
     SessionCreate,
     SessionRead,
     chat_session_to_read,
@@ -663,6 +664,65 @@ async def chat_stream_endpoint(
         last_complete_event: dict[str, Any] | None = None
         workspace_attachment_ids: list[str] = []
         first_token_recorded = False
+        # Quality / tool failure notes for Message.error / status observability.
+        turn_quality_errors: list[str] = []
+        turn_tool_errors: list[str] = []
+
+        def _record_tool_quality_observability(edata: dict[str, Any]) -> None:
+            """Collect tool/quality failures so assistant rows are not all COMPLETED."""
+            name = str(edata.get("name") or "tool")
+            if edata.get("success") is False:
+                err = str(edata.get("error") or edata.get("content") or "tool failed")[:300]
+                turn_tool_errors.append(f"{name}: {err}")
+            envelope = edata.get("envelope")
+            payload: Any = None
+            if isinstance(envelope, dict):
+                payload = envelope.get("data")
+                if not isinstance(payload, dict):
+                    payload = envelope
+            if not isinstance(payload, dict):
+                raw = edata.get("data")
+                if isinstance(raw, dict):
+                    payload = raw
+                elif isinstance(edata.get("content"), str):
+                    try:
+                        parsed = json.loads(edata["content"])
+                    except json.JSONDecodeError:
+                        parsed = None
+                    if isinstance(parsed, dict):
+                        payload = parsed
+            if not isinstance(payload, dict):
+                return
+            qp = payload.get("quality_passed")
+            if qp is False:
+                qerr = str(
+                    payload.get("quality_error")
+                    or "artifact quality gate failed"
+                )[:400]
+                turn_quality_errors.append(f"{name}: {qerr}")
+                try:
+                    logger.warning(
+                        "artifact_quality_gate_failed",
+                        tool=name,
+                        session_id=str(parsed_session_id),
+                        quality_error=qerr,
+                    )
+                except Exception:
+                    pass
+
+        def _assistant_persist_status() -> tuple[MessageStatus, str | None]:
+            if turn_quality_errors:
+                return (
+                    MessageStatus.FAILED,
+                    "; ".join(turn_quality_errors)[:2000],
+                )
+            if turn_tool_errors and not (response_content or "").strip():
+                # Primary artifacts failed and the assistant produced no text.
+                return (
+                    MessageStatus.FAILED,
+                    "; ".join(turn_tool_errors)[:2000],
+                )
+            return MessageStatus.COMPLETED, None
 
         def _record_ttft() -> None:
             nonlocal first_token_recorded
@@ -835,6 +895,8 @@ async def chat_stream_endpoint(
                             tc_oai = _openai_tool_call_from_stream_edata(edata)
                             if tc_oai:
                                 accum_tool_calls_by_id[tc_oai["id"]] = tc_oai
+                        if etype == "tool_result" and isinstance(edata, dict):
+                            _record_tool_quality_observability(edata)
                         yield _format_frontend_event(etype, edata)
                         if isinstance(edata, dict):
                             for sub_type, sub_data in _companion_sse_events(etype, edata):
@@ -959,6 +1021,7 @@ async def chat_stream_endpoint(
             )
 
             if response_content or merged_extensions or tc_for_db or workspace_attachment_ids:
+                _msg_status, _msg_error = _assistant_persist_status()
                 assistant_row = await chat_svc.add_message(
                     parsed_session_id,
                     MessageRole.ASSISTANT,
@@ -970,7 +1033,14 @@ async def chat_stream_endpoint(
                     extensions=merged_extensions,
                     tool_calls=tc_for_db,
                     attachments=workspace_attachment_ids or None,
+                    status=_msg_status,
                 )
+                if _msg_error and assistant_row is not None:
+                    await chat_svc.update_message_status(
+                        assistant_row.id,
+                        _msg_status,
+                        error=_msg_error,
+                    )
                 schedule_auto_title(assistant_row)
         except asyncio.CancelledError:
             logger.warning("chat_stream_cancelled session=%s", parsed_session_id)
@@ -1019,7 +1089,13 @@ async def chat_stream_endpoint(
                         output_tokens=_pout_fin,
                         extensions=merged_ext_fin,
                         attachments=workspace_attachment_ids or None,
+                        status=_assistant_persist_status()[0],
                     )
+                    _st, _err = _assistant_persist_status()
+                    if _err and assistant_row is not None:
+                        await chat_svc.update_message_status(
+                            assistant_row.id, _st, error=_err,
+                        )
                 except Exception:
                     logger.debug("partial_assistant_persist_failed", exc_info=True)
                 else:

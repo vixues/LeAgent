@@ -602,6 +602,8 @@ class ExcelGeneratorTool(SyncTool):
         }
         if recalc_result is not None:
             result["recalc"] = recalc_result
+        # Quality / managed identity are owned by SessionManager after promotion
+        # (ArtifactRegistrar → register_external_file); do not gate here.
         return result
 
     def _parse_range(self, range_str: str) -> tuple[int, int, int, int]:

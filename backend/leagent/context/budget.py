@@ -40,6 +40,7 @@ SOURCE_HARD_CAPS: dict[str, int] = {
     "playbooks": 18_000,
     "art_playbook": 18_000,
     "document_generation": 18_000,
+    "structured_output_elicitation": 6_000,
     "policies": 18_000,
 }
 

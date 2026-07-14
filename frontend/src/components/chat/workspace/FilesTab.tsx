@@ -53,6 +53,12 @@ type SessionWorkspaceItem = {
   previewPath?: string;
   /** Hide from ZIP bundle (no storage file UUID). */
   excludeFromZip?: boolean;
+  /** Workspace path alias this AI artifact was promoted from. */
+  source_tool_path?: string;
+  /** Monotonic version for the same source_tool_path (1-based). */
+  version?: number;
+  /** False when a newer content version superseded this row. */
+  is_latest?: boolean;
 };
 
 type SelectedItem =
@@ -252,15 +258,6 @@ export function FilesTab() {
     return mapped.filter((d) => d.file_name.toLowerCase().includes(q));
   }, [projectFolderItems, query]);
 
-  const sessionAttRowsById = useMemo(() => {
-    const m = new Map<string, Record<string, unknown>>();
-    for (const row of sessionAttData?.attachments ?? []) {
-      const id = row && typeof row === 'object' && typeof row.id === 'string' ? row.id : '';
-      if (id) m.set(id, row as Record<string, unknown>);
-    }
-    return m;
-  }, [sessionAttData]);
-
   const sessionAttachmentList = useMemo(
     () => normalizeAttachmentList(sessionAttData?.attachments ?? []),
     [sessionAttData],
@@ -276,35 +273,85 @@ export function FilesTab() {
     const out: SessionWorkspaceItem[] = [];
     const seenIds = new Set<string>();
     const seenFingerprints = new Set<string>();
+    const latestBySourcePath = new Map<string, string>();
     const messageIdSet = new Set(sessionMessages.map((m) => m.id));
 
     const remember = (item: SessionWorkspaceItem, fingerprint: string) => {
       if (seenIds.has(item.file_id)) return false;
-      if (seenFingerprints.has(fingerprint)) return false;
+      // Superseded path versions: keep only the latest row in the default list.
+      if (item.source_tool_path) {
+        const priorId = latestBySourcePath.get(item.source_tool_path);
+        if (priorId && priorId !== item.file_id && item.is_latest === false) {
+          return false;
+        }
+        if (item.is_latest !== false) {
+          latestBySourcePath.set(item.source_tool_path, item.file_id);
+          // Drop an earlier draft for the same path if we already pushed it.
+          const priorIdx = out.findIndex(
+            (x) =>
+              x.source_tool_path === item.source_tool_path &&
+              x.file_id !== item.file_id,
+          );
+          if (priorIdx >= 0) {
+            const removed = out.splice(priorIdx, 1)[0];
+            if (removed) {
+              seenIds.delete(removed.file_id);
+            }
+          }
+        }
+      }
+      if (seenFingerprints.has(fingerprint) && item.is_latest === false) return false;
       seenIds.add(item.file_id);
       seenFingerprints.add(fingerprint);
       out.push(item);
       return true;
     };
 
-    for (const att of sessionAttachmentList) {
-      if (!att.id || !att.name) continue;
-      const raw = sessionAttRowsById.get(att.id);
+    // Prefer API attachments first so version/extra metadata is available.
+    const attRowsSorted = [...(sessionAttData?.attachments ?? [])].sort((a, b) => {
+      const va = typeof a?.extra === 'object' && a.extra && typeof (a.extra as { version?: number }).version === 'number'
+        ? (a.extra as { version: number }).version
+        : 0;
+      const vb = typeof b?.extra === 'object' && b.extra && typeof (b.extra as { version?: number }).version === 'number'
+        ? (b.extra as { version: number }).version
+        : 0;
+      return vb - va;
+    });
+
+    for (const raw of attRowsSorted) {
+      if (!raw || typeof raw !== 'object') continue;
+      const id = typeof raw.id === 'string' ? raw.id : '';
+      const name = typeof raw.filename === 'string'
+        ? raw.filename
+        : typeof raw.name === 'string'
+          ? raw.name
+          : '';
+      if (!id || !name) continue;
       const extra =
-        raw && typeof raw.extra === 'object' && raw.extra !== null
+        typeof raw.extra === 'object' && raw.extra !== null
           ? (raw.extra as Record<string, unknown>)
           : undefined;
       const fromTool = typeof extra?.source_tool_path === 'string';
+      const version = typeof extra?.version === 'number' ? extra.version : undefined;
+      const isLatest = extra?.is_latest === false ? false : true;
+      const att = sessionAttachmentList.find((a) => a.id === id);
       remember(
         {
-          file_id: att.id,
-          file_name: att.name,
-          size: att.size ?? 0,
-          mime_type: att.type,
+          file_id: id,
+          file_name: name,
+          size: typeof raw.size === 'number' ? raw.size : att?.size ?? 0,
+          mime_type: typeof raw.content_type === 'string' ? raw.content_type : att?.type,
           source: 'upload',
           is_ai: fromTool,
+          source_tool_path: fromTool ? String(extra?.source_tool_path) : undefined,
+          version,
+          is_latest: isLatest,
         },
-        attachmentFingerprint(att, raw),
+        workspaceFileFingerprint(
+          name,
+          typeof raw.size === 'number' ? raw.size : 0,
+          typeof raw.sha256 === 'string' ? raw.sha256 : undefined,
+        ),
       );
     }
 
@@ -322,6 +369,7 @@ export function FilesTab() {
             mime_type: att.type,
             source: 'upload',
             is_ai: msg.role === 'assistant',
+            is_latest: true,
           },
           fingerprint,
         );
@@ -391,7 +439,7 @@ export function FilesTab() {
     artifacts,
     currentSessionId,
     sessionAttachmentList,
-    sessionAttRowsById,
+    sessionAttData,
     sessionMessages,
   ]);
 
@@ -698,6 +746,13 @@ export function FilesTab() {
                         <span className="flex-1 min-w-0 truncate">
                           {item.file_name}
                         </span>
+                        {item.is_ai && item.version && item.version > 1 ? (
+                          <span className="text-[10px] rounded bg-emerald-100 dark:bg-emerald-900/30 text-emerald-800 dark:text-emerald-200 px-1 py-0.5 shrink-0">
+                            {t('chat.workspace.files.latestVersion', {
+                              defaultValue: 'latest',
+                            })}
+                          </span>
+                        ) : null}
                         {isAiOperated(item) && (
                           <span className="text-[10px] rounded bg-primary-100 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300 px-1 py-0.5">
                             AI

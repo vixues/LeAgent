@@ -53,6 +53,10 @@ def classify_artifact_tool(tool_name: str) -> str | None:
         return "code"
     if tool_name in {"workflow_run", "workflow_resume"}:
         return "workflow"
+    if tool_name in {"excel_generator", "spreadsheet_generate"}:
+        return "spreadsheet"
+    if tool_name in {"pdf_generator", "document_generate", "docx_generator"}:
+        return "document"
     return None
 
 
@@ -75,7 +79,7 @@ class ArtifactErrorTracker:
             error.failure_count = existing.failure_count + 1
         error.turn_index = self._turn_index
         self._errors[error.artifact_id] = error
-        if error.artifact_type == "code":
+        if error.artifact_type in {"code", "spreadsheet", "document"}:
             self._workspace_dirty = True
 
     def record_from_tool_result(
@@ -90,6 +94,7 @@ class ArtifactErrorTracker:
         quality_score: float | None = None,
         quality_threshold: float | None = None,
         quality_passed: bool | None = None,
+        artifact_type_hint: str = "",
     ) -> None:
         """Convenience: derive an :class:`ArtifactError` from a tool result.
 
@@ -97,39 +102,50 @@ class ArtifactErrorTracker:
         still miss the quality bar (``quality_passed is False`` per the gate, or
         ``quality_score < quality_threshold``); such runs are treated as dirty
         so the agent re-runs the closed loop (regenerate -> save -> run ->
-        evaluate).
+        evaluate). The same ``quality_passed=False`` contract applies to
+        downloadable spreadsheet/image/PDF artifacts after FileService promotion.
         """
         art_type = classify_artifact_tool(tool_name)
+        if art_type is None and artifact_type_hint:
+            art_type = artifact_type_hint
+        if art_type is None and quality_passed is False:
+            art_type = "download"
         if art_type is None:
             return
         aid = canvas_id or tool_call_id
 
-        # Workflow runs are scored, not just pass/fail. Prefer the gate's own
-        # pass decision (which used its configured threshold) when present.
+        # Prefer explicit quality_passed for any artifact tool; workflow also
+        # falls back to score/threshold when the gate omits the boolean.
         below_bar = False
-        if art_type == "workflow":
-            if quality_passed is not None:
-                below_bar = not quality_passed
-            elif quality_score is not None and quality_threshold is not None:
+        if quality_passed is not None:
+            below_bar = not quality_passed
+        elif art_type == "workflow":
+            if quality_score is not None and quality_threshold is not None:
                 below_bar = quality_score < quality_threshold
 
         if success and not below_bar:
             self._errors.pop(aid, None)
-            if art_type == "code":
+            if art_type in {"code", "spreadsheet", "document", "download"}:
                 self._workspace_dirty = False
             return
 
         message = error_text[:500]
         if below_bar:
-            if quality_score is not None and quality_threshold is not None:
+            if art_type == "workflow":
+                if quality_score is not None and quality_threshold is not None:
+                    message = (
+                        f"workflow run scored {quality_score:.2f} (threshold "
+                        f"{quality_threshold:.2f}) — below the quality bar"
+                    )
+                elif quality_score is not None:
+                    message = f"workflow run scored {quality_score:.2f} — below the quality bar"
+                else:
+                    message = "workflow run did not pass the quality gate"
+            elif not message:
                 message = (
-                    f"workflow run scored {quality_score:.2f} (threshold "
-                    f"{quality_threshold:.2f}) — below the quality bar"
+                    "managed downloadable artifact failed the content quality "
+                    "gate — regenerate, re-register, and cite the new file_id"
                 )
-            elif quality_score is not None:
-                message = f"workflow run scored {quality_score:.2f} — below the quality bar"
-            else:
-                message = "workflow run did not pass the quality gate"
         self.record_error(ArtifactError(
             artifact_id=aid,
             artifact_type=art_type,
@@ -236,6 +252,15 @@ class ArtifactErrorTracker:
                     "back-edge, or adjusted generation params), re-publish it with "
                     "workflow_save, and re-run it with workflow_run until the "
                     "quality bar is met."
+                )
+            elif err.artifact_type in {"spreadsheet", "document", "download"}:
+                directives.append(
+                    f"Previous downloadable artifact (tool_call {err.source_tool_call_id}) "
+                    f"failed the content quality gate: {err.error_message}. "
+                    "Rewrite the file with real content (not header-only / empty), "
+                    "re-run the producing tool so SessionManager registers a new "
+                    "file_id version, and cite the new download_url / file_id — "
+                    "never reuse a superseded sandbox path."
                 )
         return directives
 
