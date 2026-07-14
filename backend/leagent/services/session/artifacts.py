@@ -46,6 +46,12 @@ _MANAGED_DOWNLOAD_MIMES = frozenset({
     "application/zip",
     "application/x-zip-compressed",
 })
+_INTERNAL_TOOL_ARTIFACT_NAMES = frozenset({
+    "__last_source__.py",
+})
+_INTERNAL_TOOL_ARTIFACT_NAMES_CASEFOLD = frozenset(
+    name.casefold() for name in _INTERNAL_TOOL_ARTIFACT_NAMES
+)
 
 
 _SINGLE_PATH_KEYS = (
@@ -78,6 +84,25 @@ class RegisteredArtifact:
 
     path: str
     attachment: dict[str, Any]
+
+
+def is_internal_tool_artifact(value: str | Path | dict[str, Any]) -> bool:
+    """Return whether an artifact is runtime state, not a user-facing output."""
+
+    if isinstance(value, dict):
+        raw = (
+            value.get("filename")
+            or value.get("name")
+            or value.get("source_tool_path")
+            or value.get("storage_path")
+            or ""
+        )
+    else:
+        raw = str(value)
+    return (
+        Path(str(raw).replace("\\", "/")).name.casefold()
+        in _INTERNAL_TOOL_ARTIFACT_NAMES_CASEFOLD
+    )
 
 
 def coerce_tool_result_data(raw: Any) -> dict[str, Any]:
@@ -275,6 +300,8 @@ def extract_produced_path_candidates(
         if not isinstance(raw, str) or not raw.strip():
             return
         value = raw.strip()
+        if is_internal_tool_artifact(display_name or value):
+            return
         if value.startswith("file://"):
             converted = _file_uri_to_path(value)
             if not converted:
@@ -662,6 +689,7 @@ __all__ = [
     "collect_image_preview_urls_from_messages",
     "extract_produced_path_candidates",
     "ingest_previewable_produced_files",
+    "is_internal_tool_artifact",
     "is_previewable_produced_file",
     "rewrite_inline_data_image_markdown",
     "strip_base64_from_text",

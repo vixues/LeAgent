@@ -36,6 +36,7 @@ from leagent.prompts import PromptBuilder, get_prompt_builder
 from leagent.services.session.artifacts import (
     ArtifactRegistrar,
     attachment_dicts,
+    is_internal_tool_artifact,
     strip_inline_base64_payloads,
 )
 from leagent.utils.logging import get_logger
@@ -757,14 +758,36 @@ class QueryEngine:
         if not item.success:
             return None
         env = item.envelope if isinstance(item.envelope, dict) else {}
+        data = env.get("data")
+        existing_managed = (
+            [
+                dict(artifact)
+                for artifact in data.get("managed_artifacts", [])
+                if isinstance(artifact, dict)
+                and artifact.get("id")
+                and not is_internal_tool_artifact(artifact)
+            ]
+            if isinstance(data, dict)
+            and isinstance(data.get("managed_artifacts"), list)
+            else []
+        )
         registered = await self._artifact_registrar.register_tool_result(
             session_id=self.session_id,
             user_id=self.config.user_id,
-            data=env.get("data"),
+            data=data,
             metadata=dict(env.get("metadata") or {}),
             seen_paths=self._ingested_produced_paths,
         )
-        attachments = attachment_dicts(registered)
+        attachments: list[dict[str, Any]] = []
+        seen_attachment_ids: set[str] = set()
+        for attachment in [*existing_managed, *attachment_dicts(registered)]:
+            if is_internal_tool_artifact(attachment):
+                continue
+            attachment_id = str(attachment.get("id") or "").strip()
+            if not attachment_id or attachment_id in seen_attachment_ids:
+                continue
+            seen_attachment_ids.add(attachment_id)
+            attachments.append(attachment)
         if not attachments:
             return None
         self._augment_tool_result_with_managed_artifacts(item, attachments)
@@ -803,7 +826,18 @@ class QueryEngine:
             data={
                 "session_id": str(self.session_id),
                 "attachments": attachments,
-                "paths": [item.path for item in registered],
+                "paths": [
+                    *[
+                        str(
+                            attachment.get("source_tool_path")
+                            or attachment.get("storage_path")
+                        )
+                        for attachment in existing_managed
+                        if attachment.get("source_tool_path")
+                        or attachment.get("storage_path")
+                    ],
+                    *[registered_item.path for registered_item in registered],
+                ],
             },
         )
 

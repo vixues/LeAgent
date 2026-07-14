@@ -2,6 +2,29 @@ import { apiClient } from '@/api/client';
 import type { Message } from '@/types/chat';
 import { normalizeAttachment } from '@/types/chat';
 
+const INTERNAL_ATTACHMENT_NAMES = new Set(['__last_source__.py']);
+
+/** Hide runtime state and keep only the latest card for each logical file. */
+export function selectVisibleMessageAttachments(
+  attachments: Message['attachments'],
+): NonNullable<Message['attachments']> {
+  if (!attachments?.length) return [];
+
+  const byKey = new Map<string, NonNullable<Message['attachments']>[number]>();
+  for (const attachment of attachments) {
+    const name = attachment.name.trim();
+    if (INTERNAL_ATTACHMENT_NAMES.has(name.toLowerCase())) continue;
+    const key =
+      name && name !== 'attachment'
+        ? `name:${name.toLowerCase()}`
+        : `id:${attachment.id}`;
+    // Stream and persistence order are chronological, so replacement retains
+    // the newest managed-file identity for repeated overwrites.
+    byKey.set(key, attachment);
+  }
+  return Array.from(byKey.values());
+}
+
 /**
  * After GET /chat/sessions/:id/messages, user rows often store attachment **IDs**
  * only (`["uuid", …]`). Merge the catalog from GET /sessions/:id/attachments so

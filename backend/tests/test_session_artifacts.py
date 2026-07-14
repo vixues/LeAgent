@@ -224,6 +224,13 @@ def test_strip_base64_from_text() -> None:
     assert "[base64 image omitted]" in strip_base64_from_text(text)
 
 
+def test_internal_workspace_source_is_not_a_produced_artifact(tmp_path: Path) -> None:
+    source = tmp_path / "__last_source__.py"
+    source.write_text("print('internal')", encoding="utf-8")
+
+    assert extract_produced_path_candidates({"path": str(source)}) == []
+
+
 def test_rewrite_inline_data_image_markdown_uses_preview_urls() -> None:
     preview = "/api/v1/files/abc/preview"
     md = "![plot](data:image/png;base64," + ("A" * 300) + ")"
@@ -318,3 +325,60 @@ async def test_query_engine_emits_workspace_attachments_for_tool_outputs(tmp_pat
     assert messages[0].data["attachments"][0]["preview_url"].startswith("/api/v1/files/")
     payload = json.loads(messages[1].data["content"])
     assert payload["managed_artifacts"][0]["preview_url"].startswith("/api/v1/files/")
+
+
+@pytest.mark.asyncio
+async def test_query_engine_emits_artifacts_already_managed_by_tool() -> None:
+    manager = _FakeSessionManager()
+
+    async def call_model(**_kwargs):
+        if False:
+            yield None
+
+    async def microcompact(messages, _ctx):
+        return messages
+
+    async def autocompact(messages, _ctx, _system_prompt=""):
+        return messages
+
+    engine = QueryEngine(
+        QueryEngineConfig(
+            deps=QueryDeps(
+                call_model=call_model,
+                microcompact=microcompact,
+                autocompact=autocompact,
+            ),
+            session_manager=manager,
+            session_id=uuid4(),
+            user_id=uuid4(),
+        )
+    )
+    managed = {
+        "id": "image-file-id",
+        "filename": "hello_card.png",
+        "kind": "image",
+        "content_type": "image/png",
+        "preview_url": "/api/v1/files/image-file-id/preview",
+        "download_url": "/api/v1/files/image-file-id/download",
+        "storage_path": "/managed/hello_card.png",
+    }
+
+    messages = [
+        msg
+        async for msg in engine._map_item(
+            ToolResultMessage(
+                tool_call_id="call_1",
+                name="code_execution",
+                content=json.dumps({"managed_artifacts": [managed]}),
+                success=True,
+                envelope={"data": {"managed_artifacts": [managed]}, "metadata": {}},
+            )
+        )
+    ]
+
+    assert [message.type for message in messages] == [
+        "workspace_attachments",
+        "tool_result",
+    ]
+    assert messages[0].data["attachments"] == [managed]
+    assert messages[0].data["paths"] == ["/managed/hello_card.png"]

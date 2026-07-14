@@ -956,7 +956,9 @@ class CodeExecutionTool(BaseTool):
         (e.g. ``/<upload_root>/<session_id>/report.pdf``) are surfaced in
         ``produced_files`` and can be ingested as session attachments by the
         controller. Without this, a script that writes outside its
-        ``cwd`` would silently disappear from the chat workspace.
+        ``cwd`` would silently disappear from the chat workspace. Shared system
+        temp roots are intentionally excluded: recursively diffing ``/tmp`` can
+        attribute files created by unrelated concurrent processes to this turn.
         """
         roots: list[str] = []
         seen: set[str] = set()
@@ -987,19 +989,6 @@ class CodeExecutionTool(BaseTool):
             value = extra_ctx.get(key)
             if isinstance(value, str):
                 _add(value)
-
-        try:
-            from leagent.config.settings import get_settings
-            from leagent.file.sandbox import _system_temp_roots
-
-            settings = get_settings()
-            if settings.is_single_machine_profile or getattr(
-                settings, "code_execution_permissive", False
-            ):
-                for temp_root in _system_temp_roots():
-                    _add(str(temp_root))
-        except Exception:  # noqa: BLE001
-            logger.debug("scan_roots_temp_unavailable", exc_info=True)
 
         return tuple(roots)
 
