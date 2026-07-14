@@ -29,8 +29,10 @@ class ImageGenerateTool(BaseTool):
     description = (
         "Generate an image from a text prompt using a configured image model. "
         "Routes through locally configured providers/presets (admin-managed). "
-        "In chat sessions, registers the image for preview and returns "
-        "`preview_path` (`/api/v1/files/{id}/preview`) for `emit_ui_tree` Image nodes. "
+        "In chat sessions, registers the image for preview and returns `preview_path` "
+        "(`/api/v1/files/{id}/preview`), which can be used in Markdown image syntax "
+        "or as the source of an `emit_ui_tree` Image node. Choose the presentation "
+        "format that best fits the user's request and the response context. "
         "Use for creating illustrations, diagrams, icons, photos, artwork, "
         "or any visual content described in natural language."
     )

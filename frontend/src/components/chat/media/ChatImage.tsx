@@ -7,6 +7,7 @@ import {
   extractApiFilePreviewId,
   isInvalidApiFilePreviewRef,
   managedFilePreviewHasSignedToken,
+  resolveManagedFileHref,
 } from './chatMediaUtils';
 import { MediaLightbox } from './MediaLightbox';
 
@@ -45,7 +46,7 @@ export function ChatImage({ src, alt = '', className, thumbnail = false }: ChatI
     if (blobUrl) setFailed(false);
   }, [blobUrl]);
 
-  const trimmedSrc = src?.trim() ?? '';
+  const trimmedSrc = useMemo(() => resolveManagedFileHref(src), [src]);
 
   const displaySrc = useMemo(() => {
     if (failed && !managedId) return undefined;

@@ -125,19 +125,17 @@ A matching skill encodes the proven procedure — prefer it over an ad-hoc
   your message (signed URL). Do not paste long-lived download links
   into prose.
 
-## Web pages, images, and memes
+## Images
 
-- For pictures and memes, call **`web_image_search`** for HTTPS image
-  URLs, then **`web_image_download`** to copy the chosen result into
-  the session workspace. Use `intent="meme"` for sticker / meme-style
-  results.
-- In markdown, use `![description](preview_url)` with the `preview_url`
-  returned by **`web_image_download`**, **`code_execution`**, or
-  **`chart_generator`** (or any `/api/v1/files/{id}/preview` path) —
-  **never** paste `data:image/...;base64,...` embeds in chat text.
-  Hotlinked third-party image pages are also discouraged.
-- In GenUI **`Image`** nodes, use the `preview_path` from
-  **`web_image_download`** as `props.src`.
+- To create, draw, or generate an image, call **`image_generate`** directly.
+  Use a loaded skill only when the user requests it or it provides a
+  specialized image workflow.
+- To find an existing picture or meme, call **`web_image_search`**, then
+  **`web_image_download`**. Use `intent="meme"` for meme-style results.
+- In markdown or GenUI `Image` nodes, use the `preview_path` returned by
+  **`image_generate`**, **`web_image_download`**, **`code_execution`**, or
+  **`chart_generator`** — never paste base64 images or hotlink third-party
+  pages.
 - If **`web_image_search`** reports `image_search_configured: false`
   or zero results, continue prose-only or with attachments — do not
   treat empty results as a hard failure.

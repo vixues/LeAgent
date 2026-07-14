@@ -53,6 +53,29 @@ export function managedFilePreviewHasSignedToken(src: string | undefined): boole
   return Boolean(parseUrl(src)?.searchParams.get('token')) && extractApiFilePreviewId(src) !== null;
 }
 
+/**
+ * Keep managed file links on the active deployment. Persisted messages may
+ * contain an absolute URL minted by another host (for example production data
+ * opened in local development); the signed path/query remain valid here.
+ */
+export function resolveManagedFileHref(src: string | undefined): string {
+  const raw = src?.trim() ?? '';
+  if (!raw || extractApiFilePreviewId(raw) === null) return raw;
+  if (!/^https?:\/\//i.test(raw)) return raw;
+
+  const parsed = parseUrl(raw);
+  if (!parsed) return raw;
+  const path = `${parsed.pathname}${parsed.search}${parsed.hash}`;
+  const apiBase = import.meta.env.VITE_API_BASE_URL || '/api/v1';
+  if (!/^https?:\/\//i.test(apiBase)) return path;
+
+  try {
+    return new URL(path, apiBase).href;
+  } catch {
+    return path;
+  }
+}
+
 export function isProbablyVideoUrl(href: string | undefined): boolean {
   if (!href) return false;
   return VIDEO_EXT_RE.test(href);

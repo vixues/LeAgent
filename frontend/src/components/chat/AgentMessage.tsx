@@ -57,6 +57,8 @@ import {
 } from '@/components/chat/ProjectToolCallBlock';
 import { useGenUiStore, genUiTreeKey } from '@/stores/genUi';
 import { regenerateAssistantReply } from '@/lib/regenerateAssistantReply';
+import { collectAgentImageArtifacts } from '@/lib/agentImageArtifacts';
+import { selectVisibleMessageAttachments } from '@/lib/chatAttachments';
 
 interface AgentMessageProps {
   message: Message;
@@ -190,21 +192,37 @@ function AgentMessageInner({
   const messageArtifacts = useArtifactStore(
     useShallow((s) => Object.values(s.artifacts).filter((a) => a.messageId === message.id)),
   );
+  const inlineMedia = useMemo(() => {
+    const existing = Array.isArray(message.inlineMedia) ? message.inlineMedia : [];
+    const seen = new Set(existing.map((attachment) => attachment.id));
+    const recovered: Attachment[] = collectAgentImageArtifacts([message])
+      .filter((artifact) => !seen.has(artifact.id))
+      .map((artifact) => ({
+        id: artifact.id,
+        name: artifact.fileName || 'generated-image',
+        type: artifact.mime,
+        kind: 'image',
+        size: 0,
+        previewUrl: artifact.previewUrl,
+        downloadUrl: artifact.downloadUrl,
+      }));
+    return [...existing, ...recovered];
+  }, [message]);
   // Attachments rendered inline (assistant media) are excluded from the card grid.
   const cardAttachments = useMemo(() => {
-    const all = Array.isArray(message.attachments) ? message.attachments : [];
-    const inlineIds = new Set((message.inlineMedia ?? []).map((m) => m.id));
+    const all = selectVisibleMessageAttachments(message.attachments);
+    const inlineIds = new Set(inlineMedia.map((m) => m.id));
     return all.filter((a) => !inlineIds.has(a.id));
-  }, [message.attachments, message.inlineMedia]);
+  }, [message.attachments, inlineMedia]);
   const markdownImageAttachments = useMemo(() => {
-    const all = [...(message.attachments ?? []), ...(message.inlineMedia ?? [])];
+    const all = [...(message.attachments ?? []), ...inlineMedia];
     const seen = new Set<string>();
     return all.filter((attachment) => {
       if (seen.has(attachment.id)) return false;
       seen.add(attachment.id);
       return true;
     });
-  }, [message.attachments, message.inlineMedia]);
+  }, [message.attachments, inlineMedia]);
   const sortedTaskProgress = useMemo(() => {
     if (!message.taskProgress?.length) {
       return [];
@@ -522,8 +540,8 @@ function AgentMessageInner({
         </div>
       )}
 
-      {Array.isArray(message.inlineMedia) && message.inlineMedia.length > 0 && (
-        <AssistantInlineMedia media={message.inlineMedia} native={message.nativeMedia} />
+      {inlineMedia.length > 0 && (
+        <AssistantInlineMedia media={inlineMedia} native={message.nativeMedia} />
       )}
 
       {cardAttachments.length > 0 && (
