@@ -43,8 +43,10 @@ For **posters, PPT-style slide previews, business cards, and themed layouts**, c
 - **Syntax + envelope** (`schemaVersion`, node keys, `emit_ui_patch` paths)? Call `get_genui_guide`.
 - Need exact component `kind` names and prop hints? Call `list_ui_components`.
 - Authoring hosted HTML with `canvas_publish` and need its runtime contract or design rubric? Call
-  `get_html_canvas_guide`. Simple single-page HTML does **not** need the guide first —
-  Tailwind/Inter are already injected by the canvas host.
+  `get_html_canvas_guide`. Simple pages can skip the guide when using a **body fragment** (or a bare
+  full document without your own stylesheet): the host injects Tailwind, Inter, and wa-* utilities.
+  If you ship a substantial `<style>` / non-font stylesheet, or already load the Tailwind CDN, the
+  host **does not** re-inject — authored CSS is preserved; you own the visual stack.
 
 - Generating a PDF/DOCX/PPTX/Excel or CJK chart from a visual turn? The
   `document_fonts` block loads automatically alongside this one (pan-Unicode

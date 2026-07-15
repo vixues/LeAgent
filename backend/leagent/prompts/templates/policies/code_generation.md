@@ -14,14 +14,9 @@ Code generation policy:
   `project_apply_patch`) over wholesale regeneration so prior work
   can be reused across turns. Reach for `project_write` only when
   creating a new file or doing an intentional whole-file rewrite.
-- **Frontend files and webpages are not Python string literals.** Never generate
-  HTML, CSS, or JavaScript by writing them as Python strings inside
-  `code_execution` (e.g. `html = "<html>..." ; open("index.html","w").write(html)`).
-  Project frontend files must be written directly with `project_write`;
-  standalone webpages must be published directly with
-  `canvas_publish(mode=html, html="...")`. The `code_execution` sandbox is
-  for computation, data processing, and visualisation — not for producing
-  markup via Python string concatenation.
+- **Frontend / webpage files are not Python string literals.** Project files
+  go through `project_write`; hosted pages through `canvas_publish` / blob
+  staging. `code_execution` is for computation and data — not markup assembly.
 - **Markdown documents → `markdown_processor` (ALWAYS).** When the
   deliverable is a `.md` file (story, report, notes, article, meeting
   minutes, README, changelog, or any saved markdown), use

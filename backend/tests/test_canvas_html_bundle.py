@@ -7,7 +7,10 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from leagent.services.canvas.html_bundle import merge_html_files_to_document
+from leagent.services.canvas.html_bundle import (
+    merge_html_files_to_document,
+    resolve_html_bundle_entry,
+)
 from leagent.services.canvas.service import sanitize_html
 
 
@@ -34,6 +37,56 @@ def test_merge_html_files_inlines_css_and_js() -> None:
     assert "color: red" in out_disabled
     assert "console.log(1);" not in out_disabled
     assert "console.log(1);" in out_enabled
+
+
+def test_resolve_entry_prefers_index_then_sole_html() -> None:
+    assert (
+        resolve_html_bundle_entry(
+            {"index.html": "<html/>", "style.css": "a{}"},
+            None,
+        )
+        == "index.html"
+    )
+    assert (
+        resolve_html_bundle_entry(
+            {"dashboard.html": "<html/>", "style.css": "a{}"},
+            None,
+        )
+        == "dashboard.html"
+    )
+    assert (
+        resolve_html_bundle_entry(
+            {"dashboard.html": "<html/>"},
+            "index.html",
+        )
+        == "dashboard.html"
+    )
+
+
+def test_resolve_entry_requires_explicit_when_ambiguous() -> None:
+    files = {"a.html": "<html/>", "b.html": "<html/>"}
+    with pytest.raises(ValueError, match="required when multiple HTML"):
+        resolve_html_bundle_entry(files, None)
+    assert resolve_html_bundle_entry(files, "b.html") == "b.html"
+    with pytest.raises(ValueError, match="missing from html_files"):
+        resolve_html_bundle_entry(files, "missing.html")
+
+
+def test_merge_auto_picks_non_index_sole_html() -> None:
+    merged = merge_html_files_to_document(
+        entry=None,
+        files={
+            "dashboard.html": (
+                "<!DOCTYPE html><html><head>"
+                '<link rel="stylesheet" href="style.css"/>'
+                "</head><body>ok</body></html>"
+            ),
+            "style.css": "body{margin:0}",
+        },
+        max_output_bytes=64 * 1024,
+    )
+    assert "body{margin:0}" in merged
+    assert "ok" in merged
 
 
 def test_sanitize_html_preserves_three_global_src_on_full_document() -> None:
@@ -114,6 +167,72 @@ async def test_publish_revision_accepts_html_files(monkeypatch: pytest.MonkeyPat
         html_bundle_entry="index.html",
     )
     assert out["canvas_id"]
+    inner.add.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_publish_revision_auto_resolves_sole_html_entry(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from uuid import uuid4
+
+    from leagent.services.canvas.service import CanvasService
+
+    session_id = uuid4()
+    user_id = uuid4()
+
+    async def _assert_ok(*_a: object, **_k: object) -> MagicMock:
+        m = MagicMock()
+        m.workspace_id = None
+        return m
+
+    db = MagicMock()
+    db.session = MagicMock(return_value=AsyncMock(__aenter__=AsyncMock(), __aexit__=AsyncMock()))
+    inner = AsyncMock()
+    inner.execute = AsyncMock(
+        return_value=MagicMock(scalar_one=MagicMock(return_value=None)),
+    )
+    inner.get = AsyncMock(return_value=None)
+    inner.add = MagicMock()
+    inner.flush = AsyncMock()
+    inner.refresh = AsyncMock()
+    db.session.return_value.__aenter__.return_value = inner
+
+    settings = MagicMock()
+    settings.canvas.max_html_bytes = 512 * 1024
+    settings.canvas.embed_allow_loopback = True
+    settings.canvas.max_tree_depth = 8
+    settings.canvas.max_nodes_per_tree = 100
+    settings.canvas.max_ui_snapshot_bytes = 1024
+
+    chat = MagicMock()
+    chat.get_session = AsyncMock(side_effect=_assert_ok)
+
+    svc = CanvasService(settings, db, chat=chat)
+    monkeypatch.setattr(
+        "leagent.services.canvas.service.mint_preview_token",
+        lambda *_a, **_k: "tok",
+    )
+    monkeypatch.setattr(
+        "leagent.services.canvas.service.preview_query_path",
+        lambda _t: "/api/v1/canvas/preview?token=t",
+    )
+
+    # Reproduce the production failure mode: sole non-index HTML, no entry.
+    out = await svc.publish_revision(
+        user_id=user_id,
+        session_id=session_id,
+        title="vixues.com.cn 访问日志分析报告",
+        mode="html",
+        html=None,
+        html_files={
+            "dashboard.html": "<!DOCTYPE html><html><body>report</body></html>",
+        },
+        html_bundle_entry=None,
+    )
+    assert out["canvas_id"]
+    added = inner.add.call_args[0][0]
+    assert "report" in (added.html_body or "")
     inner.add.assert_called_once()
 
 

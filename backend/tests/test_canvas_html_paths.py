@@ -45,3 +45,31 @@ def test_load_html_paths_map_rejects_traversal(tmp_path: Path) -> None:
     )
     with pytest.raises(ValueError, match="Unsafe"):
         load_html_paths_map(["../etc/passwd"], ctx)
+
+
+def test_load_html_paths_absolute_under_root(tmp_path: Path) -> None:
+    """Absolute paths under an allowed root become root-relative keys."""
+    page = tmp_path / "agents.html"
+    page.write_text("<!DOCTYPE html><html><body>agents</body></html>", encoding="utf-8")
+    ctx = ToolContext(
+        user_id=str(uuid4()),
+        session_id=str(uuid4()),
+        extra={"project_roots": [str(tmp_path)]},
+    )
+    files = load_html_paths_map([str(page)], ctx)
+    assert files == {"agents.html": page.read_text(encoding="utf-8")}
+
+
+def test_load_html_paths_outside_roots(tmp_path: Path) -> None:
+    outside = tmp_path / "elsewhere" / "x.html"
+    outside.parent.mkdir()
+    outside.write_text("<html></html>", encoding="utf-8")
+    allowed = tmp_path / "allowed"
+    allowed.mkdir()
+    ctx = ToolContext(
+        user_id=str(uuid4()),
+        session_id=str(uuid4()),
+        extra={"project_roots": [str(allowed)]},
+    )
+    with pytest.raises(ValueError, match="outside allowed roots"):
+        load_html_paths_map([str(outside)], ctx)

@@ -22,10 +22,10 @@ What is the deliverable?
 │
 ├── Hosted webpage / landing page / printable report / page-scale layout
 │   → canvas_publish(mode=html)
-│        ├── compact single page ≲ ~20KB → inline `html`
-│        ├── larger / multi-asset → write files then `html_paths` + `html_bundle_entry`
-│        │                         (or `html_files_blob_id` via tool_argument_blob)
-│        └── tiny multi-file map ≲ ~20KB total → inline `html_files`
+│        ├── compact ≲ ~20KB → inline `html`
+│        ├── larger, no Active Project → tool_argument_blob → html_*_blob_id
+│        ├── larger, Active Project → project_write → html_paths
+│        └── tiny multi-file map ≲ ~20KB → inline `html_files`
 │
 └── Allowlisted embed (Maps · YouTube · Vimeo · OpenStreetMap)
     → canvas_publish(mode=embed_url)
@@ -35,6 +35,8 @@ If markdown can carry the content, **use markdown** — even when the user says
 "分点 / 条列 / 要点". Those describe **text layout**, not a GenUI license.
 Offer GenUI in one sentence ("如需卡片式排版我可以再生成画布") rather than
 emitting a tree preemptively.
+
+Webpage markup is published only via `canvas_publish` / blob / `project_write`.
 
 ### When **not** to use GenUI (`emit_ui_tree` / `emit_ui_patch`)
 
@@ -62,11 +64,7 @@ If unsure, **answer in markdown first**. Offer GenUI in one sentence — **do no
 
 ### Decision rule (after the gate above)
 
-- **Simple webpages / landing pages / resumes:** write a complete HTML document directly with
-  `canvas_publish(mode=html, html="…")` when the document stays under ~20KB. Larger pages must
-  **not** re-emit bodies in one tool call — write files (`project_write` / session tools) then
-  `canvas_publish(html_paths=[…], html_bundle_entry=…)` or stage via
-  `tool_argument_blob` → `html_files_blob_id` / `html_blob_id`.
+- **Hosted pages:** follow the TL;DR ladder above (`html` / blob / `project_write`+`html_paths`).
 - **Design / branded UI tasks:** load relevant skills via `load_skill` only when the user asks for
   a polished design system, brand treatment, or a complex visual artifact. A simple page request
   does not require skill loading.

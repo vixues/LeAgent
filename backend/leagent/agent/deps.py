@@ -279,11 +279,11 @@ async def _try_direct_content_ingest(
         if isinstance(files, dict) and files and not recovered.get("html"):
             import json as _json
 
-            entry = recovered.get("html_bundle_entry") or "index.html"
-            payload = _json.dumps(
-                {"entry": str(entry), "files": files},
-                ensure_ascii=False,
-            )
+            entry_raw = recovered.get("html_bundle_entry")
+            payload_obj: dict[str, Any] = {"files": files}
+            if isinstance(entry_raw, str) and entry_raw.strip():
+                payload_obj["entry"] = entry_raw.strip()
+            payload = _json.dumps(payload_obj, ensure_ascii=False)
             blob_id = await _stage_text_blob(session_id, payload)
             if blob_id is None:
                 return None

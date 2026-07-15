@@ -26,7 +26,7 @@ export function AuthGatePage() {
 
   if (isHydratingAuth || authStatus === null) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-slate-950">
+      <div className="flex min-h-screen items-center justify-center bg-zinc-50">
         <PageLoader message={t('common.meta.starting')} />
       </div>
     );
@@ -67,29 +67,33 @@ export function AuthGatePage() {
     }
   }
 
+  const fieldClass =
+    'mt-1 w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-zinc-900 outline-none ' +
+    'placeholder:text-zinc-400 ring-sky-500/30 focus:border-sky-400 focus:ring';
+
   return (
-    <div className="relative flex min-h-screen items-center justify-center overflow-hidden bg-slate-950 px-4">
+    <div className="relative flex min-h-screen items-center justify-center overflow-hidden bg-zinc-50 px-4">
       <div
         aria-hidden
-        className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_top,_rgba(56,189,248,0.18),_transparent_55%),radial-gradient(ellipse_at_bottom,_rgba(14,165,233,0.12),_transparent_50%)]"
+        className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_top,_rgba(14,165,233,0.08),_transparent_55%),radial-gradient(ellipse_at_bottom,_rgba(56,189,248,0.06),_transparent_50%)]"
       />
       <form
         onSubmit={onSubmit}
-        className="relative w-full max-w-md rounded-2xl border border-white/10 bg-slate-900/70 p-8 shadow-2xl backdrop-blur-md"
+        className="relative w-full max-w-md rounded-2xl border border-zinc-200/80 bg-white p-8 shadow-sm"
       >
-        <p className="text-sm font-medium tracking-[0.2em] text-sky-300/90 uppercase">LeAgent</p>
-        <h1 className="mt-3 text-2xl font-semibold text-white">
+        <p className="text-sm font-medium tracking-[0.2em] text-sky-700 uppercase">LeAgent</p>
+        <h1 className="mt-3 text-2xl font-semibold text-zinc-900">
           {needsSetup ? t('auth.setupTitle') : t('auth.login')}
         </h1>
-        <p className="mt-2 text-sm text-slate-300">
+        <p className="mt-2 text-sm text-zinc-600">
           {needsSetup ? t('auth.setupSubtitle') : t('login.subtitle')}
         </p>
 
         {!needsSetup && authStatus?.multi_user ? (
-          <label className="mt-6 block text-sm text-slate-300">
+          <label className="mt-6 block text-sm text-zinc-700">
             {t('login.username')}
             <input
-              className="mt-1 w-full rounded-lg border border-white/10 bg-slate-950/60 px-3 py-2 text-white outline-none ring-sky-400/40 focus:ring"
+              className={fieldClass}
               value={username}
               onChange={(e) => setUsername(e.target.value)}
               placeholder={t('login.usernamePlaceholder')}
@@ -98,11 +102,11 @@ export function AuthGatePage() {
           </label>
         ) : null}
 
-        <label className="mt-4 block text-sm text-slate-300">
+        <label className="mt-4 block text-sm text-zinc-700">
           {needsSetup ? t('auth.accessPassword') : t('login.password')}
           <input
             type="password"
-            className="mt-1 w-full rounded-lg border border-white/10 bg-slate-950/60 px-3 py-2 text-white outline-none ring-sky-400/40 focus:ring"
+            className={fieldClass}
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             placeholder={t('login.passwordPlaceholder')}
@@ -112,11 +116,11 @@ export function AuthGatePage() {
         </label>
 
         {needsSetup ? (
-          <label className="mt-4 block text-sm text-slate-300">
+          <label className="mt-4 block text-sm text-zinc-700">
             {t('auth.confirmPassword')}
             <input
               type="password"
-              className="mt-1 w-full rounded-lg border border-white/10 bg-slate-950/60 px-3 py-2 text-white outline-none ring-sky-400/40 focus:ring"
+              className={fieldClass}
               value={confirm}
               onChange={(e) => setConfirm(e.target.value)}
               autoComplete="new-password"
@@ -124,12 +128,12 @@ export function AuthGatePage() {
           </label>
         ) : null}
 
-        {error ? <p className="mt-4 text-sm text-rose-300">{error}</p> : null}
+        {error ? <p className="mt-4 text-sm text-rose-600">{error}</p> : null}
 
         <button
           type="submit"
           disabled={busy}
-          className="mt-6 w-full rounded-lg bg-sky-500 px-4 py-2.5 text-sm font-semibold text-slate-950 transition hover:bg-sky-400 disabled:opacity-60"
+          className="mt-6 w-full rounded-lg bg-sky-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-sky-500 disabled:opacity-60"
         >
           {busy ? t('common.meta.starting') : needsSetup ? t('auth.completeSetup') : t('auth.login')}
         </button>

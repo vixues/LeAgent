@@ -12,38 +12,38 @@ from typing import Any
 from leagent.tools.base import BaseTool, ToolCategory, ToolContext
 
 _REFERENCE_TEMPLATE = """\
-<main class="min-h-screen bg-white text-zinc-950 dark:bg-zinc-950 dark:text-zinc-50">
+<main class="min-h-screen bg-white text-zinc-950">
   <div class="mx-auto max-w-6xl px-5 py-12 sm:px-8 lg:py-20">
     <header class="max-w-3xl">
-      <p class="text-sm font-medium tracking-wide text-zinc-500 dark:text-zinc-400">
+      <p class="text-sm font-medium tracking-wide text-zinc-500">
         Context label
       </p>
       <h1 class="mt-3 text-4xl font-semibold tracking-tight sm:text-6xl">
         One clear promise, expressed in the product's own voice
       </h1>
-      <p class="mt-5 max-w-2xl text-base leading-7 text-zinc-600 dark:text-zinc-300 sm:text-lg">
+      <p class="mt-5 max-w-2xl text-base leading-7 text-zinc-600 sm:text-lg">
         A concise explanation that gives the reader enough context to act.
       </p>
     </header>
 
-    <section aria-labelledby="details" class="mt-12 border-t border-black/10 pt-8 dark:border-white/15">
+    <section aria-labelledby="details" class="mt-12 border-t border-black/10 pt-8">
       <h2 id="details" class="text-xl font-semibold tracking-tight">What matters</h2>
       <div class="mt-6 grid gap-8 md:grid-cols-3">
         <article>
           <h3 class="font-medium">Clear hierarchy</h3>
-          <p class="mt-2 text-sm leading-6 text-zinc-600 dark:text-zinc-400">
+          <p class="mt-2 text-sm leading-6 text-zinc-600">
             Make the reading order obvious without decorating every block.
           </p>
         </article>
         <article>
           <h3 class="font-medium">Useful content</h3>
-          <p class="mt-2 text-sm leading-6 text-zinc-600 dark:text-zinc-400">
+          <p class="mt-2 text-sm leading-6 text-zinc-600">
             Replace this example with specific, credible user-facing copy.
           </p>
         </article>
         <article>
           <h3 class="font-medium">Responsive by default</h3>
-          <p class="mt-2 text-sm leading-6 text-zinc-600 dark:text-zinc-400">
+          <p class="mt-2 text-sm leading-6 text-zinc-600">
             Let the layout collapse naturally before adding extra breakpoints.
           </p>
         </article>
@@ -73,7 +73,9 @@ _GUIDE_PAYLOAD: dict[str, Any] = {
         "Infer the page's job first: audience, primary action, information order, "
         "tone, and constraints. Preserve user-provided copy, assets, colors, and "
         "brand rules; do not invent a competing identity.",
-        "Choose one coherent visual direction that fits that job. Do not default "
+        "Choose one coherent visual direction that fits that job. Default to a "
+        "light surface (white / light gray background, dark text) unless the brief "
+        "explicitly asks for dark mode or a nocturnal aesthetic. Do not default "
         "every page to a SaaS dashboard, centered hero, blue gradient, glassmorphism, "
         "or a grid of rounded cards.",
         "Establish the reading order before decoration: one dominant idea per "
@@ -110,18 +112,24 @@ _GUIDE_PAYLOAD: dict[str, Any] = {
         "Controls need visible focus, keyboard operation, labels, and adequate hit areas.",
         "Use one h1, ordered headings, landmarks, native buttons/links, alt text, and "
         "ARIA only when native semantics are insufficient.",
-        "The host follows prefers-color-scheme. Either support both schemes coherently "
-        "with dark: variants or define a complete intentional surface; never leave "
+        "The preview host defaults to a light color scheme. Prefer light pages "
+        "(light backgrounds, dark text) unless the user asks for dark. Only add "
+        "`dark:` variants when intentionally supporting both schemes; never leave "
         "text and backgrounds with accidental low contrast.",
     ],
     "preview_runtime": {
         "injected": (
-            "Tailwind CSS via CDN; Inter with system fallbacks; a reset; "
-            "prefers-color-scheme dark mode; and Three.js as `window.THREE`."
+            "Body fragments and bare full documents (no Tailwind CDN, no substantial "
+            "authored stylesheet) get Tailwind CDN, Inter, a host reset/helpers with a "
+            "light color-scheme default, and Three.js as `window.THREE`. Full documents "
+            "that already load Tailwind or ship a substantial `<style>` / non-font "
+            "stylesheet are left intact — the host does not re-inject its shell, "
+            "because Preflight and body resets would clobber page-owned CSS."
         ),
         "document_shape": (
             "A body fragment and a full HTML document both work. Prefer a fragment "
-            "for host assets; use a full document only for meaningful head/style needs."
+            "when you want host Tailwind/wa-* helpers. Use a full document when you "
+            "need your own head, fonts, or stylesheet; authored CSS is preserved."
         ),
         "javascript": (
             "Raw scripts and on* handlers are stored. The preview API defaults JS off "
@@ -144,7 +152,8 @@ _GUIDE_PAYLOAD: dict[str, Any] = {
     "surface_matrix": {
         "hosted_canvas": (
             "`canvas_publish(mode=html)` opens a page-scale artifact in the workspace. "
-            "The host injects Tailwind, Inter, the wa-* helpers, and global THREE."
+            "For fragments / bare shells the host injects Tailwind, Inter, wa-* helpers, "
+            "and global THREE; authored full documents keep their own CSS stack."
         ),
         "html_frame": (
             "`emit_ui_tree` with `HtmlFrame` renders arbitrary HTML inline in chat. "
@@ -175,15 +184,13 @@ _GUIDE_PAYLOAD: dict[str, Any] = {
         },
     },
     "delivery": [
-        "Compact page up to about 20KB: pass `html` directly.",
-        "Larger or multi-file page: write files, then publish with `html_paths` and "
-        "`html_bundle_entry`; alternatively stage `html_blob_id` or "
-        "`html_files_blob_id`. Do not place a large escaped page in one tool-call JSON.",
-        "The hosted preview accepts up to the configured HTML limit (4MB by default), "
-        "with at most 40 multi-file paths, but output-token limits still make thin "
-        "file/blob publishing the reliable path.",
-        "Use short managed asset URLs such as `/api/v1/files/{id}/preview`; the preview "
-        "service signs managed file references when serving the page.",
+        "Compact ≤~20KB: `canvas_publish(html=…)`.",
+        "Larger, no Active Project: `tool_argument_blob` → `html_blob_id` / "
+        "`html_files_blob_id`.",
+        "Larger, Active Project: `project_write` → `html_paths` "
+        "(`html_bundle_entry` only if multiple HTML files lack index.html).",
+        "Preview accepts up to the configured HTML limit (4MB default), ≤40 paths.",
+        "Use short asset URLs: `/api/v1/files/{id}/preview`.",
     ],
     "quality_gate": [
         "The first viewport communicates what this is, why it matters, and what to do next.",

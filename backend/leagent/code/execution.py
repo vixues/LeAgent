@@ -385,10 +385,12 @@ class CodeExecutionTool(BaseTool):
     description = (
         "Run Python inside an isolated subprocess sandbox with CPU/memory "
         "caps, a sanitized environment, and a persistent per-session "
-        "workspace as cwd. Use this for focused computation, data inspection, "
-        "and file generation. Keep tool arguments valid JSON; assign a "
-        "concise JSON-serialisable `result` for summaries, and write large "
-        "outputs to files so they are returned as `produced_files`. "
+        "workspace as cwd. Use for computation, data inspection, charts, and "
+        "non-HTML file generation. Webpage `.html`/`.htm` writes are rejected "
+        "with `next_step` toward `canvas_publish` / blob / `project_write`. "
+        "Keep tool arguments valid JSON; assign a concise JSON-serialisable "
+        "`result` for summaries, and write large outputs to files so they are "
+        "returned as `produced_files`. "
         "Optional `skill_name` syncs that skill's declared Python packages "
         "(via uv) before execution when auto-install is enabled. "
         "When generating PDF (ReportLab), DOCX, PPTX, or Excel with mixed "
@@ -604,6 +606,30 @@ class CodeExecutionTool(BaseTool):
                     )
                 ) from exc
 
+        from leagent.code.markup_guard import attach_webpage_block, source_writes_webpage
+
+        if source_writes_webpage(source):
+            ws_path = ""
+            persisted: str | None = None
+            try:
+                ws = self._get_workspace(context)
+                ws_path = str(ws.path)
+                persisted = self._persist_source(source, context)
+            except Exception:  # noqa: BLE001
+                ws_path = ""
+            return attach_webpage_block(
+                _build_envelope(
+                    status="error",
+                    source=source,
+                    error="",
+                    error_type="validation",
+                    workspace=ws_path,
+                    returncode=-1,
+                    include_source_echo=True,
+                    workspace_file=persisted,
+                )
+            ), None
+
         skip_syntax = bool(params.get("skip_syntax_check", False))
         artifact = await self._prepare_artifact(source, params, context, skip_syntax)
 
@@ -813,6 +839,48 @@ class CodeExecutionTool(BaseTool):
         managed_artifacts: list[dict[str, Any]] = []
         image_artifacts = list(result.image_artifacts or [])
         file_artifacts = list(result.file_artifacts or [])
+
+        if not is_error:
+            from leagent.code.markup_guard import (
+                attach_webpage_block,
+                webpage_paths_in_produced,
+            )
+
+            blocked_pages = webpage_paths_in_produced(produced_files)
+            if blocked_pages:
+                from leagent.code.pipeline import record_operation
+
+                envelope = attach_webpage_block(
+                    _build_envelope(
+                        status="error",
+                        source=source,
+                        error="",
+                        error_type="validation",
+                        stdout=result.stdout,
+                        stderr=result.stderr,
+                        stdout_truncated=result.stdout_truncated,
+                        stderr_truncated=result.stderr_truncated,
+                        result=result.result,
+                        produced_files=produced_files,
+                        duration_ms=result.duration_ms,
+                        workspace=str(workspace.path),
+                        returncode=result.returncode,
+                        artifact_id=artifact_id,
+                        include_source_echo=False,
+                        workspace_file=persisted_file,
+                    ),
+                    paths=blocked_pages,
+                )
+                record_operation(
+                    context,
+                    tool="code_execution",
+                    kind="execute",
+                    summary="blocked webpage write",
+                    success=False,
+                    artifact_id=artifact_id,
+                )
+                return envelope
+
         if not is_error and produced_files:
             produced_files, managed_artifacts = await ingest_previewable_produced_files(
                 context,

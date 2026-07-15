@@ -779,7 +779,8 @@ def test_build_preview_html_professional_shell():
     assert "Inter" in html
     assert "wa-card" in html
     assert "wa-gradient" in html
-    assert "prefers-color-scheme: dark" in html
+    assert "color-scheme: light" in html
+    assert "darkMode: 'class'" in html
     assert "scrollbar-width: none" in html
     assert "text/html" in mime
 
@@ -804,6 +805,84 @@ def test_build_preview_html_injects_tailwind_into_full_document():
     assert html.count("cdn.tailwindcss.com") >= 1
     assert "tailwind.config" in html
     assert "Styled" in html
+
+
+def test_build_preview_html_skips_shell_for_authored_full_document():
+    """Authored <style> pages must not get Tailwind Preflight / host body resets."""
+    s = _minimal_settings()
+    full = """<!DOCTYPE html>
+<html lang="zh-CN"><head><meta charset="utf-8"/>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+body{background:#f8fafc;color:#0f172a;min-height:100vh}
+h1{font-size:clamp(28px,5vw,52px);font-weight:700;letter-spacing:-.025em}
+h1 span{display:block;background:linear-gradient(135deg,#2563eb,#06b6d4);
+-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.card{background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:20px}
+</style>
+<title>AI Agent</title></head>
+<body><header><h1>AI Agent <span>框架与工具</span></h1></header></body></html>"""
+    doc = CanvasDocument(
+        id=uuid4(),
+        canvas_id=uuid4(),
+        revision=1,
+        session_id=uuid4(),
+        user_id=uuid4(),
+        title="Authored",
+        content_type=CanvasContentType.HTML.value,
+        html_body=full,
+    )
+    html, _mime = build_preview_html(doc, s)
+    assert "cdn.tailwindcss.com" not in html
+    assert "tailwind.config" not in html
+    assert "three.min.js" not in html
+    assert "font-size:clamp(28px,5vw,52px)" in html
+    assert "-webkit-background-clip:text" in html
+    assert "框架与工具" in html
+
+
+def test_build_preview_html_skips_shell_for_external_stylesheet():
+    """Non-font stylesheet links mark the document as authored."""
+    s = _minimal_settings()
+    full = """<!DOCTYPE html>
+<html><head>
+<link rel="stylesheet" href="https://cdn.example.com/app.css"/>
+</head><body><h1 class="hero">Hi</h1></body></html>"""
+    doc = CanvasDocument(
+        id=uuid4(),
+        canvas_id=uuid4(),
+        revision=1,
+        session_id=uuid4(),
+        user_id=uuid4(),
+        title="LinkedCSS",
+        content_type=CanvasContentType.HTML.value,
+        html_body=full,
+    )
+    html, _mime = build_preview_html(doc, s)
+    assert "cdn.tailwindcss.com" not in html
+    assert "cdn.example.com/app.css" in html
+
+
+def test_build_preview_html_still_injects_when_only_font_stylesheet():
+    """Google Fonts alone must not suppress the host Tailwind shell."""
+    s = _minimal_settings()
+    full = """<!DOCTYPE html>
+<html><head>
+<link href="https://fonts.googleapis.com/css2?family=Inter&display=swap" rel="stylesheet"/>
+</head><body><div class="p-4">Fonts only</div></body></html>"""
+    doc = CanvasDocument(
+        id=uuid4(),
+        canvas_id=uuid4(),
+        revision=1,
+        session_id=uuid4(),
+        user_id=uuid4(),
+        title="FontsOnly",
+        content_type=CanvasContentType.HTML.value,
+        html_body=full,
+    )
+    html, _mime = build_preview_html(doc, s)
+    assert "cdn.tailwindcss.com" in html
+    assert "Fonts only" in html
 
 
 def test_sanitize_html_fragment_preserves_tailwind_class_svg_and_style():

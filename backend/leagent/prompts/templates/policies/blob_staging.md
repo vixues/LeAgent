@@ -17,17 +17,13 @@ malformed JSON when double quotes or newlines break the outer envelope.
 ### Large HTML / multi-file pages (preferred ladder)
 
 When the page (or `html_files` map) would exceed ~20KB **do not** put bodies in
-one `canvas_publish` tool-call JSON. Use:
+one `canvas_publish` tool-call JSON:
 
-1. **Disk then thin publish (best):** write shards with `project_write` (or
-   session file tools), each body under the output-token budget / via
-   `content_blob_id`, then:
-   `canvas_publish(mode=html, html_paths=["index.html", …], html_bundle_entry="index.html")`
-2. **Blob staging:** `tool_argument_blob(action=create_and_finalize, chunk=…)` then
-   `canvas_publish(html_blob_id=…)` or `html_files_blob_id=…` (JSON
-   `{"entry","files"}`).
-3. **Last resort:** inline `html` / `html_files` only if the **total** payload
-   stays under ~20KB.
+1. **No Active Project:** `tool_argument_blob(create_and_finalize)` →
+   `html_blob_id` / `html_files_blob_id`.
+2. **Active Project:** `project_write` → `canvas_publish(html_paths=[…])`
+   (`html_bundle_entry` optional when `index.html` or a sole `*.html` exists).
+3. **Last resort:** inline `html` / `html_files` only if TOTAL payload ≲ ~20KB.
 
 ### Staging flow
 

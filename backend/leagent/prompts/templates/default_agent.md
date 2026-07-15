@@ -153,11 +153,9 @@ A matching skill encodes the proven procedure — prefer it over an ad-hoc
      renders **inline in chat** (animations, 3D, custom widgets the catalog
      can't express). Docs call this "HTML-mode GenUI"; it is still
      `emit_ui_tree`, **not** `canvas_publish`.
-  3. **`canvas_publish(mode=html)`** — a **hosted, page-scale** webpage opened
-     in the workspace panel (landing pages, printable reports). Prefer compact
-     inline `html` when the document is ≲ ~20KB; for larger pages write files
-     then publish with `html_paths` (or `html_files_blob_id`), not a giant
-     inline `html_files` map.
+  3. **`canvas_publish(mode=html)`** — hosted page-scale webpages. Compact →
+     inline `html`; larger without an Active Project → blob staging; with a
+     project → `project_write` → `html_paths`.
 - For algorithm visualizations, simulations, or interaction-heavy demos
   (for example DWA/path-planning visualizers), prefer a coding project made of
   `project_write` files plus `project_shell` verification. Use `canvas_publish`

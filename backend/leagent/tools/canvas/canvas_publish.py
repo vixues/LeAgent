@@ -33,7 +33,7 @@ def _resolve_session_uuid(raw: Any, context: ToolContext) -> UUID:
 
 
 def _canvas_search_roots(context: ToolContext) -> list[Path]:
-    """Roots allowed for ``html_paths`` resolution (project + session uploads)."""
+    """Roots allowed for ``html_paths`` (project + session uploads)."""
     roots: list[Path] = []
     extra = context.extra or {}
     raw_roots = extra.get("project_roots")
@@ -80,11 +80,18 @@ def _norm_rel_key(path: str) -> str:
     return s.lstrip("/")
 
 
+def _root_for(resolved: Path, roots: list[Path]) -> Path | None:
+    for root in roots:
+        if is_path_inside(resolved, [root]):
+            return root
+    return None
+
+
 def load_html_paths_map(
     paths: list[str],
     context: ToolContext,
 ) -> dict[str, str]:
-    """Read workspace/session files into an ``html_files`` map (thin publish path)."""
+    """Read project/session files into an ``html_files`` map (thin publish path)."""
     if not paths:
         raise ValueError("html_paths must be a non-empty list of relative paths")
     if len(paths) > _MAX_HTML_PATHS:
@@ -98,16 +105,19 @@ def load_html_paths_map(
     for raw in paths:
         if not isinstance(raw, str) or not raw.strip():
             raise ValueError("html_paths entries must be non-empty strings")
-        key = _norm_rel_key(raw)
         found: Path | None = None
-        candidate = Path(raw).expanduser()
+        candidate = Path(raw.strip()).expanduser()
         if candidate.is_absolute():
             resolved = candidate.resolve()
-            if not is_path_inside(resolved, roots):
+            root = _root_for(resolved, roots)
+            if root is None:
                 raise ValueError(f"html_paths entry outside allowed roots: {raw!r}")
-            if resolved.is_file():
-                found = resolved
+            if not resolved.is_file():
+                raise ValueError(f"html_paths file not found: {raw!r}")
+            found = resolved
+            key = str(resolved.relative_to(root)).replace("\\", "/")
         else:
+            key = _norm_rel_key(raw)
             for root in roots:
                 resolved = (root / key).resolve()
                 if not is_path_inside(resolved, [root]):
@@ -115,10 +125,10 @@ def load_html_paths_map(
                 if resolved.is_file():
                     found = resolved
                     break
-        if found is None:
-            raise ValueError(
-                f"html_paths file not found under project/session roots: {key!r}"
-            )
+            if found is None:
+                raise ValueError(
+                    f"html_paths file not found under project/session roots: {key!r}"
+                )
         try:
             files[key] = found.read_text(encoding="utf-8")
         except UnicodeDecodeError as exc:
@@ -149,21 +159,26 @@ class CanvasPublishTool(BaseTool):
         "`emit_ui_tree`, which renders inline in the chat without opening the workspace. "
         "session_id: real chat UUID, or omit / pass 'current' to use the active "
         "session from context. "
-        "mode=html payload ladder (avoid output-token truncation): "
-        "(1) compact single page ≲ ~20KB → inline `html`; "
-        "(2) larger pages → write files with `project_write` / session tools, then "
-        "`html_paths` + `html_bundle_entry` (thin call — bodies read from disk); "
-        "(3) or stage JSON via `tool_argument_blob` → `html_files_blob_id` / `html_blob_id`; "
-        "(4) inline `html_files` map only when the TOTAL map stays under ~20KB. "
-        "Never put a multi-hundred-KB page into one tool-call JSON string. "
+        "mode=html payload ladder: "
+        "(1) ≲ ~20KB → inline `html`; "
+        "(2) larger + no Active Project → `tool_argument_blob` → "
+        "`html_blob_id` / `html_files_blob_id`; "
+        "(3) larger + Active Project → `project_write` then `html_paths`; "
+        "(4) tiny multi-file map only if TOTAL ≲ ~20KB. "
         "Escape double quotes as \\\" and newlines as \\n when inlining. Keep image "
         "src URLs short: `/api/v1/files/{file_id}/preview` (omit JWT tokens). "
         "Inline `<script>` and `on*` handlers are stored. The preview API is safe-off "
         "without `js=1`; the standard Canvas UI opens with its JS toggle on, and the "
         "user can disable it. "
-        "The host injects Tailwind, Inter, and shipped "
-        "utility classes; call `get_html_canvas_guide` for substantial or "
-        "appearance-sensitive pages and the exact preview contract, not trivial HTML. "
+        "Preview shell (mode=html): body fragments and bare full documents "
+        "(no Tailwind CDN, no substantial authored stylesheet) get host Tailwind, "
+        "Inter, and wa-* utilities injected; documents that already load "
+        "`cdn.tailwindcss.com` or ship a substantial `<style>` / non-font "
+        "stylesheet pass through unchanged (host does not re-inject, so authored "
+        "CSS is not clobbered by Preflight). Prefer a fragment when you want the "
+        "host shell; use a full self-styled document only when you own the CSS. "
+        "Call `get_html_canvas_guide` for substantial or appearance-sensitive "
+        "pages and the exact preview contract, not trivial HTML. "
         "mode=embed_url: allowlisted iframe embeds (Google Maps, YouTube, "
         "Vimeo, OpenStreetMap). "
         "mode=gen_ui: persisted gen UI snapshot (rare; prefer `emit_ui_tree` "
@@ -221,16 +236,18 @@ class CanvasPublishTool(BaseTool):
                     "maxItems": _MAX_HTML_PATHS,
                     "description": (
                         "For mode=html: relative paths under the active coding project "
-                        "or session uploads directory. Bodies are read from disk — "
-                        "preferred for large pages after `project_write` / file writes. "
-                        "Use with `html_bundle_entry` (default index.html)."
+                        "or session uploads. Absolute paths must stay under those roots "
+                        "(stored as root-relative keys). Entry defaults to index.html "
+                        "or the sole *.html file."
                     ),
                 },
                 "html_bundle_entry": {
                     "type": "string",
                     "description": (
-                        "Entry file path inside `html_files` / `html_paths` "
-                        "(default index.html)."
+                        "Entry file path inside `html_files` / `html_paths`. "
+                        "Optional: defaults to index.html when present, otherwise "
+                        "the sole *.html / *.htm key. Required only when multiple "
+                        "HTML files exist and none is index.html."
                     ),
                 },
                 "html_files_blob_id": {
@@ -238,7 +255,8 @@ class CanvasPublishTool(BaseTool):
                     "description": (
                         "Finalized UTF-8 JSON blob: "
                         '{"entry":"index.html","files":{...}} '
-                        "same shape as `html_files` + `html_bundle_entry`."
+                        "(`entry` optional when it can be auto-resolved). "
+                        "Same shape as `html_files` + `html_bundle_entry`."
                     ),
                 },
                 "embed_url": {"type": "string"},

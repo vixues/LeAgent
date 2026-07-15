@@ -47,21 +47,15 @@ _HTML_COMPLETE_MIN_CHARS = 500
 _HTML_BODY_COMPLETE_MIN_CHARS = 2048
 
 _TRUNCATION_RECOVERY_HINT = (
-    "[System: your previous output was truncated because "
-    "the tool call arguments exceeded the output token "
-    "limit. Do NOT retry the same oversized inline call. "
-    "For HTML pages: do **not** put the full document into one tool-call JSON. "
-    "Preferred ladder: "
-    "(1) `project_write` / write each file (use `content_blob_id` if large) → "
-    "`canvas_publish(mode=html, html_paths=[...], html_bundle_entry=index.html)`; "
-    "(2) `tool_argument_blob(create_and_finalize)` → "
-    "`html_files_blob_id` or `html_blob_id`; "
-    "(3) compact inline `html` / `html_files` only if TOTAL payload stays under "
+    "[System: tool-call arguments were truncated. Do not retry the same "
+    "oversized inline call. For HTML: "
+    "(1) no Active Project → `tool_argument_blob` → `html_blob_id` / "
+    "`html_files_blob_id`; "
+    "(2) Active Project → `project_write` → `canvas_publish(html_paths=[...])`; "
+    "(3) compact inline `html` only if TOTAL stays under "
     f"~{_COMPACT_INLINE_HTML_BYTES} bytes. "
-    "Use short image URLs like `/api/v1/files/{file_id}/preview` (no JWT). "
-    "Prefer plain `chunk` over `chunk_base64` if blob staging is used. "
-    "For code/project edits: pass `*_blob_id` from `tool_argument_blob` "
-    "(`create_and_finalize` with `chunk`).]"
+    "Prefer plain `chunk` over `chunk_base64` for blobs. "
+    "Short image URLs: `/api/v1/files/{file_id}/preview`.]"
 )
 
 _CANVAS_TRUNCATION_INCOMPLETE_HINT = (

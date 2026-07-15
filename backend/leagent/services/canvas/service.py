@@ -83,7 +83,7 @@ def preview_query_path(token: str) -> str:
     return f"/api/v1/canvas/preview?token={quote(token, safe='')}"
 
 
-# --- HTML sanitisation ----------------------------------------------------
+# --- HTML sanitisation + preview shell ------------------------------------
 #
 # The agent ships HTML through two shapes:
 #   * Body fragments (no <html>) — Tailwind CDN + base styles are wrapped
@@ -96,6 +96,11 @@ def preview_query_path(token: str) -> str:
 #     strips genuinely dangerous bits (untrusted <script>, inline event
 #     handlers, javascript: URLs) and lets the rest through. Hosting is in a
 #     sandboxed iframe with a strict CSP, which provides defence in depth.
+#
+# Preview-asset injection for full documents is conditional: bare shells and
+# Tailwind-utility pages get the host CDN shell; documents that already ship
+# Tailwind or a substantial authored stylesheet pass through unchanged so
+# Preflight / host body resets cannot clobber page-owned CSS.
 
 _SCRIPT_SRC_ALLOWLIST: tuple[str, ...] = (
     "cdn.tailwindcss.com",
@@ -365,12 +370,12 @@ tailwind.config = {
       },
     },
   },
-  darkMode: 'media',
+  darkMode: 'class',
 }
 </script>
 <style>
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-  html { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; height: 100%; }
+  html { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; height: 100%; color-scheme: light; }
   body {
     font-family: 'Inter', system-ui, -apple-system, sans-serif;
     color: #1a1a2e;
@@ -380,9 +385,6 @@ tailwind.config = {
   }
   body::-webkit-scrollbar { width: 0; height: 0; }
   body { scrollbar-width: none; }
-  @media (prefers-color-scheme: dark) {
-    body { background: #0f0f1a; color: #f8fafc; }
-  }
   img { max-width: 100%; height: auto; }
   a { color: #0284c7; text-decoration: none; }
   a:hover { text-decoration: underline; }
@@ -390,9 +392,6 @@ tailwind.config = {
   .wa-gradient { background: linear-gradient(135deg, #0ea5e9 0%, #6366f1 100%); color: #fff; }
   .wa-gradient-warm { background: linear-gradient(135deg, #f97316 0%, #ec4899 100%); color: #fff; }
   .wa-gradient-fresh { background: linear-gradient(135deg, #10b981 0%, #0ea5e9 100%); color: #fff; }
-  @media (prefers-color-scheme: dark) {
-    .wa-card { background: #1a1a2e; border-color: #334155; }
-  }
   canvas { display: block; max-width: 100%; }
 </style>
 """
@@ -434,6 +433,101 @@ def _preview_head_assets(html: str) -> str:
 _PREVIEW_HEAD_ASSETS = _PREVIEW_HEAD_CORE + _THREE_JS_BOOTSTRAP
 
 _CANVAS_BODY_MARKER = "__LEAGENT_CANVAS_BODY__"
+
+# Full documents that own typography/layout via <style> (or a non-font stylesheet)
+# must not receive the host Tailwind/Preflight shell — Preflight resets h1–h6 and
+# the host body rules would override authored colours/backgrounds.
+_AUTHORED_STYLE_MIN_CHARS = 80
+_STYLE_BLOCK_RE = re.compile(r"(?is)<style\b[^>]*>(.*?)</style\s*>")
+_LINK_TAG_RE = re.compile(r"(?is)<link\b[^>]*>")
+_STYLESHEET_REL_RE = re.compile(r"""(?i)\brel\s*=\s*(['"]?)stylesheet\1""")
+_HREF_ATTR_RE = re.compile(
+    r"""(?ix)\bhref\s*=\s*(?:\"([^\"]*)\"|'([^']*)'|([^\s>]+))"""
+)
+_FONT_STYLESHEET_HOSTS = frozenset(
+    {
+        "fonts.googleapis.com",
+        "fonts.gstatic.com",
+    }
+)
+
+
+def _authored_style_char_count(html: str) -> int:
+    """Whitespace-collapsed length of inline ``<style>`` contents."""
+    total = 0
+    for match in _STYLE_BLOCK_RE.finditer(html or ""):
+        total += len(re.sub(r"\s+", "", match.group(1) or ""))
+    return total
+
+
+def _has_non_font_stylesheet_link(html: str) -> bool:
+    """True when a ``rel=stylesheet`` link targets a page-owned CSS file/CDN."""
+    for match in _LINK_TAG_RE.finditer(html or ""):
+        tag = match.group(0)
+        if not _STYLESHEET_REL_RE.search(tag):
+            continue
+        href_m = _HREF_ATTR_RE.search(tag)
+        href = (
+            (href_m.group(1) or href_m.group(2) or href_m.group(3) or "")
+            if href_m
+            else ""
+        ).strip().lower()
+        if not href or href.startswith("data:"):
+            continue
+        if any(host in href for host in _FONT_STYLESHEET_HOSTS):
+            continue
+        return True
+    return False
+
+
+def document_has_authored_styles(html: str) -> bool:
+    """Whether a full document already owns presentation CSS.
+
+    Used to decide host shell injection. Tiny diagnostic ``<style>`` blocks
+    (below ``_AUTHORED_STYLE_MIN_CHARS``) still receive the shell so bare
+    utility-class pages keep working.
+    """
+    return (
+        _authored_style_char_count(html) >= _AUTHORED_STYLE_MIN_CHARS
+        or _has_non_font_stylesheet_link(html)
+    )
+
+
+def document_provides_tailwind(html: str) -> bool:
+    """True when the HTML already loads the Tailwind Play CDN."""
+    return "cdn.tailwindcss.com" in (html or "").lower()
+
+
+def _should_inject_preview_shell(html: str) -> bool:
+    """Inject host Tailwind/Inter/base only for bare / utility-oriented pages."""
+    if document_provides_tailwind(html):
+        return False
+    if document_has_authored_styles(html):
+        return False
+    return True
+
+
+def _insert_assets_in_document_head(html: str, assets: str) -> str:
+    """Place ``assets`` inside ``<head>``, creating one when missing."""
+    m = re.search(r"(?i)</head\s*>", html)
+    if m:
+        pos = m.start()
+        return html[:pos] + "\n" + assets + "\n" + html[pos:]
+    m2 = re.search(r"(?i)<head[^>]*>", html)
+    if m2:
+        pos = m2.end()
+        return html[:pos] + "\n" + assets + "\n" + html[pos:]
+    m3 = re.search(r"(?i)<html[^>]*>", html)
+    if m3:
+        pos = m3.end()
+        return (
+            html[:pos]
+            + "\n<head>\n"
+            + assets
+            + "\n</head>\n"
+            + html[pos:]
+        )
+    return html
 
 
 def _wrap_html_fragment(body: str) -> str:
@@ -537,32 +631,19 @@ def _inject_preview_iframe_bootstrap(html: str) -> str:
 
 
 def _inject_preview_assets_into_full_document(html: str) -> str:
-    """When the agent returns a full <!DOCTYPE html>… doc, it often omits Tailwind; inject ours."""
-    low = html.lower()
-    if "<html" not in low:
+    """Conditionally inject the host preview shell into a full HTML document.
+
+    * Already loads Tailwind CDN → leave as-is (author owns the stack).
+    * Substantial authored ``<style>`` / non-font stylesheet → leave as-is so
+      Tailwind Preflight and host body resets cannot override page CSS.
+    * Otherwise (bare shell / utility-class page) → inject Tailwind + Inter +
+      base helpers + Three.js global when missing.
+    """
+    if "<html" not in (html or "").lower():
         return html
-    if "cdn.tailwindcss.com" in low:
+    if not _should_inject_preview_shell(html):
         return html
-    assets = _preview_head_assets(html)
-    m = re.search(r"(?i)</head\s*>", html)
-    if m:
-        pos = m.start()
-        return html[:pos] + "\n" + assets + "\n" + html[pos:]
-    m2 = re.search(r"(?i)<head[^>]*>", html)
-    if m2:
-        pos = m2.end()
-        return html[:pos] + "\n" + assets + "\n" + html[pos:]
-    m3 = re.search(r"(?i)<html[^>]*>", html)
-    if m3:
-        pos = m3.end()
-        return (
-            html[:pos]
-            + "\n<head>\n"
-            + assets
-            + "\n</head>\n"
-            + html[pos:]
-        )
-    return html
+    return _insert_assets_in_document_head(html, _preview_head_assets(html))
 
 
 def playwright_document_base(settings: Settings) -> str:
@@ -660,8 +741,8 @@ def build_preview_html(
             f'<div class="max-w-3xl mx-auto">'
             f'<p class="text-sm text-gray-500 mb-4">Generative UI snapshot '
             f"(use the host app right panel for the interactive tree).</p>"
-            f'<pre class="text-xs bg-gray-50 dark:bg-gray-800 p-4 rounded-xl '
-            f'overflow-auto whitespace-pre-wrap border border-gray-200 dark:border-gray-700">'
+            f'<pre class="text-xs bg-gray-50 p-4 rounded-xl '
+            f'overflow-auto whitespace-pre-wrap border border-gray-200">'
             f"{esc}</pre></div>",
         )
         return html, "text/html; charset=utf-8"
@@ -765,9 +846,9 @@ class CanvasService:
                 if html_files is not None and len(html_files) > 0:
                     if html and html.strip():
                         raise ValueError("Pass either `html` or `html_files`, not both")
-                    entry = (html_bundle_entry or "index.html").strip()
+                    entry_raw = (html_bundle_entry or "").strip() or None
                     html_out = merge_html_files_to_document(
-                        entry=entry,
+                        entry=entry_raw,
                         files=html_files,
                         max_output_bytes=self._settings.canvas.max_html_bytes,
                     )
@@ -775,7 +856,8 @@ class CanvasService:
                     html_out = html
                 if not html_out or not html_out.strip():
                     raise ValueError(
-                        "html mode requires non-empty `html`, or `html_files` plus `html_bundle_entry`",
+                        "html mode requires non-empty `html`, or `html_files` "
+                        "(entry auto-resolved when omitted / sole HTML file)",
                     )
                 content_type = CanvasContentType.HTML.value
                 # Store raw HTML; sanitisation runs at preview time (js=0/1).

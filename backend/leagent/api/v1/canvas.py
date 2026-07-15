@@ -65,7 +65,11 @@ class CanvasPublishRequest(BaseModel):
     html_files: dict[str, str] | None = None
     html_bundle_entry: str | None = Field(
         default=None,
-        description="Entry path when using html_files (default index.html).",
+        description=(
+            "Entry path when using html_files. Optional: prefers index.html, "
+            "else the sole *.html file; required when multiple HTML pages "
+            "exist without index.html."
+        ),
     )
     embed_url: str | None = None
     ui_snapshot: dict[str, Any] | None = None

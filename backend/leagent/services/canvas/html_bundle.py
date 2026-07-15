@@ -62,19 +62,95 @@ def _normalize_files_map(raw: dict[str, Any]) -> dict[str, str]:
     return out
 
 
+def _is_html_path(path: str) -> bool:
+    lower = path.lower()
+    return lower.endswith(".html") or lower.endswith(".htm")
+
+
+def _available_keys_hint(norm_files: dict[str, str]) -> str:
+    keys = sorted(norm_files)
+    preview = ", ".join(repr(k) for k in keys[:12])
+    if len(keys) > 12:
+        preview = f"{preview}, … (+{len(keys) - 12} more)"
+    return preview or "(none)"
+
+
+def resolve_html_bundle_entry(
+    files: dict[str, str],
+    entry: str | None = None,
+) -> str:
+    """Pick the document entry for an ``html_files`` / ``html_paths`` map.
+
+    Agents often omit ``html_bundle_entry`` or leave it as the default
+    ``index.html`` while naming the page something else (e.g. ``dashboard.html``).
+    Resolution order when ``entry`` is empty / missing from the map:
+
+    1. Explicit ``entry`` when it is a key in ``files``
+    2. ``index.html`` / ``index.htm`` when present
+    3. The sole ``*.html`` / ``*.htm`` key
+    4. The sole map key (any extension)
+
+    Otherwise raise ``ValueError`` listing available keys.
+    """
+    norm_files = _normalize_files_map(dict(files))
+    if not norm_files:
+        raise ValueError("html_files must be a non-empty map")
+
+    hint = _available_keys_hint(norm_files)
+    raw = (entry or "").strip()
+    if raw:
+        entry_n = _norm_rel_path(raw)
+        if not entry_n:
+            raise ValueError("html_bundle_entry must be a relative path")
+        if entry_n in norm_files:
+            return entry_n
+        # Explicit miss: only fall through when the caller passed the common
+        # default and a better sole-HTML candidate exists.
+        if entry_n not in ("index.html", "index.htm"):
+            raise ValueError(
+                f"html_bundle_entry {entry_n!r} missing from html_files keys; "
+                f"available: {hint}"
+            )
+
+    for candidate in ("index.html", "index.htm"):
+        if candidate in norm_files:
+            return candidate
+
+    html_keys = sorted(k for k in norm_files if _is_html_path(k))
+    if len(html_keys) == 1:
+        return html_keys[0]
+    if len(norm_files) == 1:
+        return next(iter(norm_files))
+
+    if raw:
+        raise ValueError(
+            f"html_bundle_entry {_norm_rel_path(raw)!r} missing from html_files "
+            f"keys; available: {hint}"
+        )
+    if html_keys:
+        listed = ", ".join(repr(k) for k in html_keys[:8])
+        raise ValueError(
+            "html_bundle_entry is required when multiple HTML files are present "
+            f"and none is index.html; candidates: {listed}"
+        )
+    raise ValueError(
+        "html_bundle_entry is required (no index.html / sole HTML file); "
+        f"available: {hint}"
+    )
+
+
 def merge_html_files_to_document(
     *,
-    entry: str,
+    entry: str | None,
     files: dict[str, str],
     max_output_bytes: int,
 ) -> str:
-    """Return one HTML document string (UTF-8) suitable for ``sanitize_html``."""
-    entry_n = _norm_rel_path(entry)
-    if not entry_n:
-        raise ValueError("html_bundle_entry must be a relative path")
+    """Return one HTML document string (UTF-8) suitable for ``sanitize_html``.
+
+    ``entry`` may be omitted; see :func:`resolve_html_bundle_entry`.
+    """
+    entry_n = resolve_html_bundle_entry(files, entry)
     norm_files = _normalize_files_map(dict(files))
-    if entry_n not in norm_files:
-        raise ValueError(f"html_bundle_entry {entry_n!r} missing from html_files keys")
 
     html = norm_files[entry_n]
 

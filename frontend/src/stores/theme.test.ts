@@ -3,23 +3,20 @@ import { useThemeStore } from './theme';
 
 describe('useThemeStore', () => {
   beforeEach(() => {
-    // Reset store state before each test
-    useThemeStore.setState({ theme: 'system' });
-    // Clear localStorage
+    useThemeStore.setState({ theme: 'light' });
     localStorage.clear();
-    // Reset document class list
-    document.documentElement.classList.remove('dark');
+    document.documentElement.classList.remove('dark', 'light');
   });
 
-  it('should have system as default theme', () => {
+  it('should have light as default theme', () => {
     const { theme } = useThemeStore.getState();
-    expect(theme).toBe('system');
+    expect(theme).toBe('light');
   });
 
   it('should set theme to light', () => {
     const { setTheme } = useThemeStore.getState();
     setTheme('light');
-    
+
     const { theme } = useThemeStore.getState();
     expect(theme).toBe('light');
   });
@@ -27,16 +24,16 @@ describe('useThemeStore', () => {
   it('should set theme to dark', () => {
     const { setTheme } = useThemeStore.getState();
     setTheme('dark');
-    
+
     const { theme } = useThemeStore.getState();
     expect(theme).toBe('dark');
   });
 
-  it('should set theme back to system', () => {
+  it('should set theme to system', () => {
     const { setTheme } = useThemeStore.getState();
     setTheme('dark');
     setTheme('system');
-    
+
     const { theme } = useThemeStore.getState();
     expect(theme).toBe('system');
   });
@@ -46,22 +43,22 @@ describe('useThemeStore', () => {
       const { setTheme, initializeTheme } = useThemeStore.getState();
       setTheme('dark');
       initializeTheme();
-      
+
       expect(document.documentElement.classList.contains('dark')).toBe(true);
     });
 
-    it('should remove dark class when theme is light', () => {
+    it('should add light class when theme is light', () => {
       document.documentElement.classList.add('dark');
-      
+
       const { setTheme, initializeTheme } = useThemeStore.getState();
       setTheme('light');
       initializeTheme();
-      
+
       expect(document.documentElement.classList.contains('dark')).toBe(false);
+      expect(document.documentElement.classList.contains('light')).toBe(true);
     });
 
     it('should respect system preference when theme is system', () => {
-      // Mock matchMedia to return dark preference
       Object.defineProperty(window, 'matchMedia', {
         writable: true,
         value: (query: string) => ({
@@ -76,9 +73,10 @@ describe('useThemeStore', () => {
         }),
       });
 
-      const { initializeTheme } = useThemeStore.getState();
+      const { setTheme, initializeTheme } = useThemeStore.getState();
+      setTheme('system');
       initializeTheme();
-      
+
       expect(document.documentElement.classList.contains('dark')).toBe(true);
     });
   });
