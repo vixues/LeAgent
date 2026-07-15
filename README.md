@@ -21,7 +21,7 @@
 <p align="center">
   <a href="README_zh.md">中文文档</a> ·
   <a href="README_lzh.md">汉文</a> ·
-  <a href="docs/tutorial.md">Tutorial</a> ·
+  <a href="./docs/tutorial.md">Tutorial</a> ·
   <a href="AGENTS.md">Contributor guide</a> ·
   <a href="https://github.com/vixues/LeAgent/releases">Releases</a>
 </p>
