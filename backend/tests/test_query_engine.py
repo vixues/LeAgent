@@ -1281,6 +1281,41 @@ class TestCanvasLengthSalvage:
             "summarize this PDF",
             base=8192,
         ) == 8192
+        assert resolve_canvas_intent_max_output_tokens(
+            "@skill:Frontend_Design#frontend-design 优化一下设计",
+            base=8192,
+        ) == CANVAS_INTENT_MAX_OUTPUT_TOKENS
+        assert resolve_canvas_intent_max_output_tokens(
+            "美化一下这个页面",
+            base=8192,
+        ) == CANVAS_INTENT_MAX_OUTPUT_TOKENS
+
+    def test_canvas_intent_sticky_from_prior_canvas_publish(self) -> None:
+        prior = [
+            {"role": "user", "content": "做一个网页"},
+            {
+                "role": "assistant",
+                "content": "",
+                "tool_calls": [
+                    {
+                        "id": "c1",
+                        "name": "canvas_publish",
+                        "arguments": {"mode": "html"},
+                    }
+                ],
+            },
+            {"role": "tool", "content": '{"preview_path":"/api/v1/canvas/preview?token=x"}'},
+        ]
+        assert resolve_canvas_intent_max_output_tokens(
+            "再改一下排版",
+            base=8192,
+            messages=prior,
+        ) == CANVAS_INTENT_MAX_OUTPUT_TOKENS
+        assert resolve_canvas_intent_max_output_tokens(
+            "再改一下排版",
+            base=8192,
+            messages=[{"role": "user", "content": "hello"}],
+        ) == 8192
 
     def test_recovery_hint_for_canvas_without_raw_args(self) -> None:
         registry = _make_registry()
@@ -1314,6 +1349,7 @@ class TestCanvasLengthSalvage:
             if m.get("role") == "user" and "html_paths" in str(m.get("content", ""))
         ]
         assert hint_msgs
+        assert "tool_argument_blob" in str(hint_msgs[0].get("content", ""))
         assert recovered.max_output_tokens_recovery_count == 1
 
     def test_second_recovery_sets_force_sharded_html(self) -> None:

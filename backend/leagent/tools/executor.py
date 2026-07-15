@@ -344,6 +344,40 @@ def _extract_json_string_value(raw: str, key: str) -> tuple[str, int, int] | Non
     return value, value_start, value_end
 
 
+def _decode_partial_json_string_body(body: str) -> str:
+    """Decode a JSON string body that may have been cut before its closing quote."""
+    trimmed = body
+    while trimmed.endswith("\\"):
+        trimmed = trimmed[:-1]
+    try:
+        return json.loads(f'"{trimmed}"')
+    except json.JSONDecodeError:
+        return (
+            trimmed.replace("\\n", "\n")
+            .replace("\\r", "\r")
+            .replace("\\t", "\t")
+            .replace('\\"', '"')
+            .replace("\\\\", "\\")
+        )
+
+
+def _extract_unterminated_json_string_field(
+    raw: str,
+    field: str,
+) -> tuple[str, int, int] | None:
+    """Extract ``field`` when max_tokens cut the value mid-string (no closing quote)."""
+    match = re.search(rf'"{re.escape(field)}"\s*:\s*"', raw)
+    if not match:
+        return None
+    value_start = match.end()
+    if _find_json_string_end(raw, value_start) is not None:
+        return None
+    body = raw[value_start:]
+    if len(body.strip()) < 8:
+        return None
+    return _decode_partial_json_string_body(body), value_start, len(raw) - 1
+
+
 def _extract_malformed_quoted_field(
     raw: str,
     field: str,
@@ -560,7 +594,7 @@ def _recover_canvas_publish_args(raw: str) -> dict[str, Any] | None:
             "html_paths",
             "html_bundle_entry",
         ),
-    )
+    ) or _extract_unterminated_json_string_field(text, "html")
     end_pos: int | None = None
     if html_info is not None:
         html_body, _, html_end = html_info

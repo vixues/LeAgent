@@ -492,6 +492,7 @@ class QueryEngine:
             max_output_tokens=resolve_canvas_intent_max_output_tokens(
                 query_text,
                 base=self.config.max_output_tokens,
+                messages=self.mutable_messages,
             ),
             model_provider=self.config.model_provider,
             model_name=self.config.model_name,

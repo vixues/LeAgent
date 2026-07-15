@@ -47,23 +47,26 @@ _HTML_COMPLETE_MIN_CHARS = 500
 _HTML_BODY_COMPLETE_MIN_CHARS = 2048
 
 _TRUNCATION_RECOVERY_HINT = (
-    "[System: tool-call arguments were truncated. Do not retry the same "
-    "oversized inline call. For HTML: "
+    "[System: tool-call arguments were truncated by max output tokens. "
+    "Do not retry the same oversized inline call. For HTML use the registered "
+    "`tool_argument_blob` tool: "
     "(1) no Active Project → `tool_argument_blob` → `html_blob_id` / "
     "`html_files_blob_id`; "
     "(2) Active Project → `project_write` → `canvas_publish(html_paths=[...])`; "
-    "(3) compact inline `html` only if TOTAL stays under "
-    f"~{_COMPACT_INLINE_HTML_BYTES} bytes. "
-    "Prefer plain `chunk` over `chunk_base64` for blobs. "
+    "(3) compact inline `html` only when the tool-call JSON stays under "
+    f"~{_COMPACT_INLINE_HTML_BYTES} bytes (soft budget under default output "
+    "tokens; canvas store limit is much larger — up to max_html_bytes). "
+    "Prefer plain `chunk` over `chunk_base64`. "
     "Short image URLs: `/api/v1/files/{file_id}/preview`.]"
 )
 
 _CANVAS_TRUNCATION_INCOMPLETE_HINT = (
     "[System: a truncated `canvas_publish` HTML payload was salvaged and "
     "published so the user can preview partial content. Do **not** regenerate "
-    "the whole page from scratch. Continue by writing remaining shards to disk "
-    "then `canvas_publish(html_paths=...)`, or patch via `html_files_blob_id`. "
-    f"Keep any single tool-call payload under ~{_COMPACT_INLINE_HTML_BYTES} bytes.]"
+    "the whole page from scratch. Continue via `tool_argument_blob` then "
+    "`html_blob_id` / `html_files_blob_id`, or `html_paths`. "
+    f"Keep any single tool-call payload under ~{_COMPACT_INLINE_HTML_BYTES} bytes "
+    "(soft inline budget, not the canvas store cap).]"
 )
 
 

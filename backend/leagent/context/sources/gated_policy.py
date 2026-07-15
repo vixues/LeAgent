@@ -14,7 +14,7 @@ on every turn.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, ClassVar
+from typing import TYPE_CHECKING, Any, ClassVar
 
 import structlog
 
@@ -169,6 +169,17 @@ class CanvasGuideSource(GatedPolicySource):
             "仪表盘",
             "幻灯片",
             "图表",
+            # Follow-up redesign / skill polish (same session as first canvas publish)
+            "frontend-design",
+            "frontend_design",
+            "优化设计",
+            "改版",
+            "美化",
+            "重新设计",
+            "优化一下设计",
+            "改一下设计",
+            "redesign",
+            "restyle",
         ),
         opt_in_keys=("canvas_guide", "enable_canvas"),
     )
@@ -176,18 +187,52 @@ class CanvasGuideSource(GatedPolicySource):
 
 CANVAS_INTENT_MAX_OUTPUT_TOKENS = 32_768
 
+_CANVAS_STICKY_TOOLS = frozenset({"canvas_publish", "get_html_canvas_guide"})
+
+
+def _messages_imply_canvas_followup(messages: list[Any] | None) -> bool:
+    """True when recent transcript already did canvas HTML / guide work."""
+    if not messages:
+        return False
+    for message in messages[-16:]:
+        if not isinstance(message, dict):
+            continue
+        tool_calls = message.get("tool_calls")
+        if isinstance(tool_calls, list):
+            for tc in tool_calls:
+                if not isinstance(tc, dict):
+                    continue
+                name = tc.get("name")
+                if not name and isinstance(tc.get("function"), dict):
+                    name = tc["function"].get("name")
+                if name in _CANVAS_STICKY_TOOLS:
+                    return True
+        content = message.get("content")
+        if not isinstance(content, str):
+            continue
+        low = content.lower()
+        if "/api/v1/canvas/preview" in low or "canvas_publish" in low:
+            return True
+        if '"preview_path"' in low and "canvas" in low:
+            return True
+    return False
+
 
 def resolve_canvas_intent_max_output_tokens(
     query: str | None,
     *,
     base: int | None,
+    messages: list[Any] | None = None,
 ) -> int | None:
-    """Bump ``max_output_tokens`` when the turn matches canvas/GenUI intent.
+    """Bump ``max_output_tokens`` for canvas/GenUI turns (and sticky follow-ups).
 
-    Reuses :class:`CanvasGuideSource`'s ``RelevanceGate`` keyword list so the
-    first ``canvas_publish`` is less likely to hit output-length truncation.
+    Uses :class:`CanvasGuideSource`'s keyword gate, plus a light transcript scan
+    so ``优化一下设计`` after a prior ``canvas_publish`` still gets the 32k cap.
     """
-    if not CanvasGuideSource.gate.matches(query or ""):
+    hit = CanvasGuideSource.gate.matches(query or "") or _messages_imply_canvas_followup(
+        messages
+    )
+    if not hit:
         return base
     if base is None:
         return CANVAS_INTENT_MAX_OUTPUT_TOKENS

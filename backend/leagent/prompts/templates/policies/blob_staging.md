@@ -10,20 +10,22 @@ requires_tools:
 
 ### Default for compact content: inline
 
-For small payloads (scripts, diffs, compact HTML ≲ ~20KB) **inline** the content
-in the tool call (`html`, `content`, `source`, `diff`). The runtime auto-recovers
-malformed JSON when double quotes or newlines break the outer envelope.
+For small payloads (scripts, diffs, compact HTML ≲ ~20KB tool-call JSON — a soft
+inline budget under default output tokens, **not** the canvas store cap) **inline**
+the content in the tool call (`html`, `content`, `source`, `diff`). The runtime
+auto-recovers malformed JSON when double quotes or newlines break the outer
+envelope. Canvas HTML can be much larger on disk/blob (up to max_html_bytes).
 
 ### Large HTML / multi-file pages (preferred ladder)
 
-When the page (or `html_files` map) would exceed ~20KB **do not** put bodies in
-one `canvas_publish` tool-call JSON:
+When the page (or `html_files` map) would exceed ~20KB **in one tool-call JSON**
+**do not** inline bodies into `canvas_publish`:
 
 1. **No Active Project:** `tool_argument_blob(create_and_finalize)` →
-   `html_blob_id` / `html_files_blob_id`.
+   `html_blob_id` / `html_files_blob_id` (`tool_argument_blob` is a registered tool).
 2. **Active Project:** `project_write` → `canvas_publish(html_paths=[…])`
    (`html_bundle_entry` optional when `index.html` or a sole `*.html` exists).
-3. **Last resort:** inline `html` / `html_files` only if TOTAL payload ≲ ~20KB.
+3. **Last resort:** inline `html` / `html_files` only if TOTAL tool-call JSON ≲ ~20KB.
 
 ### Staging flow
 

@@ -484,6 +484,21 @@ def test_recover_canvas_publish_args_html_files_map() -> None:
     assert recovered["html_bundle_entry"] == "index.html"
 
 
+def test_recover_canvas_publish_args_unterminated_html() -> None:
+    """max_tokens mid-string: recover partial html so ingest can stage a blob."""
+    raw = (
+        '{"title":"Arch","mode":"html","html":"<!DOCTYPE html>\\n<html><body>'
+        "<h1>AirSim</h1><p>truncated"
+    )
+    recovered = _recover_canvas_publish_args(raw)
+    assert recovered is not None
+    assert recovered["title"] == "Arch"
+    assert recovered["mode"] == "html"
+    assert "<!DOCTYPE html>" in recovered["html"]
+    assert "AirSim" in recovered["html"]
+    assert "truncated" in recovered["html"]
+
+
 def test_recover_project_edit_args_basic() -> None:
     raw = (
         '{"path":"src/index.html","old_string":"<div>old</div>",'

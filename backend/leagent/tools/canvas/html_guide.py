@@ -184,12 +184,12 @@ _GUIDE_PAYLOAD: dict[str, Any] = {
         },
     },
     "delivery": [
-        "Compact ≤~20KB: `canvas_publish(html=…)`.",
-        "Larger, no Active Project: `tool_argument_blob` → `html_blob_id` / "
-        "`html_files_blob_id`.",
-        "Larger, Active Project: `project_write` → `html_paths` "
+        "Compact tool-call JSON ≲~20KB (soft inline budget): `canvas_publish(html=…)`. "
+        "Prefer a body fragment so the host shell applies.",
+        "Larger pages (up to canvas max_html_bytes, default 4MB): "
+        "`tool_argument_blob` → `html_blob_id` / `html_files_blob_id`.",
+        "Active Project: `project_write` → `html_paths` "
         "(`html_bundle_entry` only if multiple HTML files lack index.html).",
-        "Preview accepts up to the configured HTML limit (4MB default), ≤40 paths.",
         "Use short asset URLs: `/api/v1/files/{id}/preview`.",
     ],
     "quality_gate": [
