@@ -977,10 +977,35 @@ def test_build_preview_html_uses_sanitized_body_classes():
 @pytest.mark.asyncio
 async def test_get_html_canvas_guide_returns_payload():
     data = await GetHtmlCanvasGuideTool().execute({}, ToolContext(user_id="u1", session_id="s1"))
-    assert "shipped_utility_classes" in data
-    assert "wa-card" in data["shipped_utility_classes"]
-    assert "Three.js" in data["shell"]
-    assert "reference_template" in data
+    assert "when_to_call" in data
+    assert "design_method" in data
+    assert "visual_quality" in data
+    assert "responsive_accessibility" in data
+    assert "preview_runtime" in data
+    assert "surface_matrix" in data
+    assert "quality_gate" in data
+    assert "wa-card" in data["available_shell_tokens"]["utilities"]
+    assert "window.THREE" in data["preview_runtime"]["three_js"]
+    assert "API defaults JS off" in data["preview_runtime"]["javascript"]
+    assert "does not receive" in data["surface_matrix"]["html_frame"]
+    assert "html_paths" in " ".join(data["delivery"])
+    assert "<main" in data["reference_template"]
+    assert any("not a house style" in line.lower() for line in [data["purpose"]])
+    assert any("do not default" in line.lower() for line in data["design_method"])
+
+    doc = CanvasDocument(
+        id=uuid4(),
+        canvas_id=uuid4(),
+        revision=1,
+        session_id=uuid4(),
+        user_id=uuid4(),
+        title="Guide parity",
+        content_type=CanvasContentType.HTML.value,
+        html_body="<main>Guide parity</main>",
+    )
+    preview_html, _mime = build_preview_html(doc, _minimal_settings())
+    for class_name in data["available_shell_tokens"]["utilities"]:
+        assert f".{class_name}" in preview_html
 
 
 @pytest.mark.asyncio

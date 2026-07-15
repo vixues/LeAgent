@@ -287,6 +287,44 @@ class TestSelection:
         assert "get_genui_guide" in names
         assert "list_ui_components" in names
 
+    def test_canvas_publish_selection_keeps_html_guide_companion(self) -> None:
+        from leagent.tools.canvas.canvas_publish import CanvasPublishTool
+        from leagent.tools.canvas.html_guide import GetHtmlCanvasGuideTool
+
+        reg = ToolRegistry()
+        reg.register(CanvasPublishTool())
+        reg.register(GetHtmlCanvasGuideTool())
+
+        schemas = reg.get_tools_for_llm(
+            provider_format="openai",
+            context_hint="canvas_publish",
+            max_tools=1,
+        )
+        names = {schema["function"]["name"] for schema in schemas}
+
+        assert "canvas_publish" in names
+        assert "get_html_canvas_guide" in names
+
+    def test_webpage_hint_forces_publish_and_html_guide(self) -> None:
+        from leagent.tools.canvas.canvas_publish import CanvasPublishTool
+        from leagent.tools.canvas.html_guide import GetHtmlCanvasGuideTool
+
+        reg = ToolRegistry()
+        for idx in range(30):
+            reg.register(self._FillerTool(f"aaa_filler_{idx:02d}"))
+        reg.register(CanvasPublishTool())
+        reg.register(GetHtmlCanvasGuideTool())
+
+        schemas = reg.get_tools_for_llm(
+            provider_format="openai",
+            context_hint="请生成一个专业的产品落地页，并发布到网页画布。",
+            max_tools=5,
+        )
+        names = {schema["function"]["name"] for schema in schemas}
+
+        assert "canvas_publish" in names
+        assert "get_html_canvas_guide" in names
+
 
 class TestValidation:
     def test_empty_name_raises(self) -> None:

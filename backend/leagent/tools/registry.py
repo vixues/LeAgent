@@ -418,6 +418,21 @@ class ToolRegistry:
         "get_genui_guide",
         "list_ui_components",
     )
+    _HTML_CANVAS_HINT_TERMS: frozenset[str] = frozenset({
+        "webpage",
+        "web page",
+        "landing page",
+        "hosted page",
+        "printable report",
+        "html page",
+        "网页",
+        "落地页",
+        "可打印报告",
+    })
+    _HTML_CANVAS_TOOL_NAMES: tuple[str, ...] = (
+        "canvas_publish",
+        "get_html_canvas_guide",
+    )
     _KNOWLEDGE_HINT_TERMS: frozenset[str] = frozenset({
         "知识库",
         "knowledge base",
@@ -594,6 +609,8 @@ class ToolRegistry:
         forced: list[str] = []
         if any(term in hint_lower for term in self._GENUI_HINT_TERMS):
             forced.extend(self._GENUI_TOOL_NAMES)
+        if any(term in hint_lower for term in self._HTML_CANVAS_HINT_TERMS):
+            forced.extend(self._HTML_CANVAS_TOOL_NAMES)
         if any(term in hint_lower for term in self._KNOWLEDGE_HINT_TERMS):
             forced.extend(self._KNOWLEDGE_TOOL_NAMES)
         return tuple(forced)

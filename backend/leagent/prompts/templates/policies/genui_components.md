@@ -42,7 +42,7 @@ For **posters, PPT-style slide previews, business cards, and themed layouts**, c
 
 - **Syntax + envelope** (`schemaVersion`, node keys, `emit_ui_patch` paths)? Call `get_genui_guide`.
 - Need exact component `kind` names and prop hints? Call `list_ui_components`.
-- Authoring HTML and need `wa-*` class names or the full reference template? Call
+- Authoring hosted HTML with `canvas_publish` and need its runtime contract or design rubric? Call
   `get_html_canvas_guide`. Simple single-page HTML does **not** need the guide first —
   Tailwind/Inter are already injected by the canvas host.
 

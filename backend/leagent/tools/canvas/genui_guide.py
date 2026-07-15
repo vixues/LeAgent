@@ -47,7 +47,7 @@ _GUIDE_PAYLOAD: dict[str, Any] = {
     ],
     "when_to_call": [
         "Do **not** open this guide just to polish a normal chat answer — onboarding, feature lists, "
-        "and navigation tips belong in markdown (see canvas_design / emit_ui_tree scope).",
+        "and navigation tips belong in markdown (see canvas_routing / emit_ui_tree scope).",
         "Dashboards, multi-card layouts, posters/slides, or any tree with more than ~6 nodes.",
         "Whenever the user cares about appearance (report, deck preview, landing-style card).",
         "After scope drift: if an earlier attempt looked cluttered, re-read this guide then simplify.",
@@ -102,7 +102,7 @@ _GUIDE_PAYLOAD: dict[str, Any] = {
         "If validation fails, cross-check each `kind`/prop against **`list_ui_components`** and adjust — preserve the layout intent.",
     ],
     "workflow_order": [
-        "1. Confirm **`canvas_design`** allows GenUI for this turn.",
+        "1. Confirm **`canvas_routing`** allows GenUI for this turn.",
         "2. **Required before non-trivial trees:** call `list_ui_components` to verify every `kind` and prop shape you plan to use.",
         "3. Build **`emit_ui_tree`** args using **`wire_format_and_syntax`** above (valid envelope + nodes first).",
         "4. Re-read **`layout_structure`**/**`typography`**/**`emoji_and_icons`** below if the tree is non-trivial — simplify before emitting.",
@@ -117,8 +117,9 @@ _GUIDE_PAYLOAD: dict[str, Any] = {
         "package, resource cleanup, DPR caps, resize handling, and viewport pausing. Prefer these "
         "props over `sceneScript`; `sceneScript` is treated as a legacy hint only.",
         "When you need arbitrary HTML/JS (custom widgets, third-party snippets), use **`HtmlFrame`** "
-        "with `props.html` (fragment or full document). Scripts run in a sandboxed iframe only after "
-        "the user enables JS from the preview toolbar.",
+        "with `props.html` (fragment or full document). It does not receive the hosted canvas "
+        "Tailwind/Inter/Three.js shell. Scripts run in a sandboxed iframe while the GenUI JS toggle "
+        "is on (currently the UI default; the user can disable it).",
         "Do not try to inject `<script>` into other component kinds — use `ThreeJsFrame` or `HtmlFrame`.",
     ],
     "anti_patterns": [

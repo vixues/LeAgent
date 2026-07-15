@@ -119,7 +119,7 @@ class ListUiComponentsTool(BaseTool):
 
     name = "list_ui_components"
     description = (
-        "Return the gen UI component catalog (kinds + prop hints). When `canvas_design` warrants "
+        "Return the gen UI component catalog (kinds + prop hints). When `canvas_routing` warrants "
         "GenUI, call `get_genui_guide` first for layout/visual polish, then call this tool before "
         "authoring any non-trivial `emit_ui_tree` payload. Read-only, no side effects."
     )
@@ -152,7 +152,7 @@ class EmitUiTreeTool(BaseTool):
         "Default canvas tool: emit a validated gen UI tree (schemaVersion 1) that renders inline in the "
         "chat stream (ui_tree). Use it for cards, dashboards, tables, alerts, weather, KPIs, and other "
         "component-based layouts when the user does not want a hosted HTML page from `canvas_publish`. "
-        "Scope is governed by **`canvas_design`**: do not call for plain Q&A, onboarding, product "
+        "Scope is governed by **`canvas_routing`**: do not call for plain Q&A, onboarding, product "
         "summaries, navigation/where-to-click guidance, or anything that belongs in assistant markdown "
         "(including bullet lists). Call when the reply needs genuine component UI—charts, KPI or "
         "dashboard layouts, slide/poster-style frames, dense interactive tables, image-led sections—or "
@@ -176,7 +176,8 @@ class EmitUiTreeTool(BaseTool):
         "For 3D/Three.js scenes prefer **`ThreeJsFrame`** with structured props (`geometry`, `color`, "
         "`accentColor`, `particles`, `orbiters`, `quality`, optional `height`/`title`/`background`/"
         "`autoRotate`/`cameraZ`); for other arbitrary HTML/JS use **`HtmlFrame`** (`props.html`, optional "
-        "`height`/`title`). HtmlFrame scripts run only after the user enables JS in the preview toolbar."
+        "`height`/`title`). HtmlFrame does not inherit the hosted canvas asset shell; scripts follow "
+        "the GenUI JS toolbar (currently on by default, and user-disableable)."
     )
     category = ToolCategory.CANVAS
     is_read_only = True

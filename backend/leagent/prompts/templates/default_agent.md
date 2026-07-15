@@ -170,8 +170,8 @@ A matching skill encodes the proven procedure — prefer it over an ad-hoc
 - When a turn is visual, the detailed routing rules, component catalog, and
   large-payload staging arrive automatically in this prompt; otherwise pull
   them on demand with **`get_genui_guide`**, **`list_ui_components`**, and
-  **`get_html_canvas_guide`** (HTML guide only when you need class names /
-  the reference template — not for every simple page).
+  **`get_html_canvas_guide`** (for substantial or appearance-sensitive hosted
+  pages and the exact preview contract — not for trivial HTML).
 
 ## Asking the user
 

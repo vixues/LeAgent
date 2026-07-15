@@ -18,7 +18,7 @@ briefs, or polishing prose before export.
 |-------------|------|-------|
 | Structured copy (headlines, sections) | **`markdown_processor`** | create, template (article, report), build_list |
 | Plain-text polish (.txt, logs) | **`text_processor`** | transform, replace, stats, write |
-| Visual layout / posters | **`emit_ui_tree`** / **`canvas_publish`** | Follow `canvas_design` — only when genuinely visual |
+| Visual layout / posters | **`emit_ui_tree`** / **`canvas_publish`** | Follow `canvas_routing` — only when genuinely visual |
 
 ### Workflow
 

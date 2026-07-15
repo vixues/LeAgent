@@ -71,8 +71,9 @@ If unsure, **answer in markdown first**. Offer GenUI in one sentence — **do no
   a polished design system, brand treatment, or a complex visual artifact. A simple page request
   does not require skill loading.
 - Before **dashboards, slide/poster previews, or multi-card GenUI layouts**, call `get_genui_guide`
-  then `list_ui_components` if you need exact `kind` names. HTML webpages do not need this guide
-  unless you specifically need shipped utility class names.
+  then `list_ui_components` if you need exact `kind` names. For a substantial or
+  appearance-sensitive hosted webpage, call `get_html_canvas_guide`; it is on-demand, so skip it
+  for trivial HTML.
 - **Use `emit_ui_patch`** to update an already-emitted tree in small increments.
 - **Use `canvas_publish(mode=html)`** only when the user explicitly wants HTML / a webpage /
   a printable report, or the layout is page-scale and cannot be expressed by gen UI components.

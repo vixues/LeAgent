@@ -1,10 +1,8 @@
-"""On-demand HTML canvas design guide for the model.
+"""On-demand HTML canvas authoring guide for the model.
 
-The agent calls this **before** authoring `canvas_publish(mode=html)` to fetch
-the small design system shipped by the canvas preview shell — utility class
-names (`wa-card`, `wa-gradient*`), design tokens (whitespace/radii/shadow),
-dark-mode notes, and a reference template. Keeping this material out of the
-always-on system prompt avoids spending tokens on every chat turn.
+The payload combines the preview runtime contract with a compact, style-neutral
+quality rubric. Keeping it behind a tool avoids charging ordinary chat turns
+for page-design guidance.
 """
 
 from __future__ import annotations
@@ -13,90 +11,187 @@ from typing import Any
 
 from leagent.tools.base import BaseTool, ToolCategory, ToolContext
 
-
 _REFERENCE_TEMPLATE = """\
-<div class="max-w-sm mx-auto">
-  <div class="wa-card wa-gradient-fresh rounded-2xl p-6 text-white">
-    <div class="flex justify-between items-start">
-      <div>
-        <p class="text-sm opacity-80">Beijing</p>
-        <p class="text-5xl font-bold mt-1">23&deg;C</p>
-        <p class="text-sm mt-1 opacity-90">Partly Cloudy</p>
+<main class="min-h-screen bg-white text-zinc-950 dark:bg-zinc-950 dark:text-zinc-50">
+  <div class="mx-auto max-w-6xl px-5 py-12 sm:px-8 lg:py-20">
+    <header class="max-w-3xl">
+      <p class="text-sm font-medium tracking-wide text-zinc-500 dark:text-zinc-400">
+        Context label
+      </p>
+      <h1 class="mt-3 text-4xl font-semibold tracking-tight sm:text-6xl">
+        One clear promise, expressed in the product's own voice
+      </h1>
+      <p class="mt-5 max-w-2xl text-base leading-7 text-zinc-600 dark:text-zinc-300 sm:text-lg">
+        A concise explanation that gives the reader enough context to act.
+      </p>
+    </header>
+
+    <section aria-labelledby="details" class="mt-12 border-t border-black/10 pt-8 dark:border-white/15">
+      <h2 id="details" class="text-xl font-semibold tracking-tight">What matters</h2>
+      <div class="mt-6 grid gap-8 md:grid-cols-3">
+        <article>
+          <h3 class="font-medium">Clear hierarchy</h3>
+          <p class="mt-2 text-sm leading-6 text-zinc-600 dark:text-zinc-400">
+            Make the reading order obvious without decorating every block.
+          </p>
+        </article>
+        <article>
+          <h3 class="font-medium">Useful content</h3>
+          <p class="mt-2 text-sm leading-6 text-zinc-600 dark:text-zinc-400">
+            Replace this example with specific, credible user-facing copy.
+          </p>
+        </article>
+        <article>
+          <h3 class="font-medium">Responsive by default</h3>
+          <p class="mt-2 text-sm leading-6 text-zinc-600 dark:text-zinc-400">
+            Let the layout collapse naturally before adding extra breakpoints.
+          </p>
+        </article>
       </div>
-      <span class="text-5xl">&#x26C5;</span>
-    </div>
-    <div class="flex gap-4 mt-6 text-sm">
-      <span>&#x1F4A7; 65%</span>
-      <span>&#x1F32C; 12 km/h</span>
-      <span>&#x1F321; Feels 21&deg;C</span>
-    </div>
+    </section>
   </div>
-</div>
+</main>
 """
 
 
 _GUIDE_PAYLOAD: dict[str, Any] = {
-    "shell": (
-        "The canvas HTML preview ships with Tailwind CSS (CDN), Inter font, "
-        "Three.js global build (CDN, `window.THREE`), a professional CSS reset, "
-        "dark-mode via prefers-color-scheme, and a few utility classes. You only "
-        "need to author the body fragment — the host wraps it in <!DOCTYPE html> "
-        "and injects the assets. Do not add a separate Three.js `<script src>` "
-        "unless you need a specific version."
+    "purpose": (
+        "Create a complete, credible webpage whose visual language follows the "
+        "content, audience, product, and any supplied brand—not a house style from "
+        "this guide. Aesthetic quality should come from hierarchy, proportion, "
+        "typography, alignment, restraint, and intentional detail."
     ),
-    "design_principles": [
-        "Generous whitespace: prefer p-6, gap-4, space-y-4 over tight layouts.",
-        "Soft shadows only: shadow-sm or shadow-md, never heavy drop shadows.",
-        "Rounded corners: rounded-xl or rounded-2xl on cards and containers.",
-        "Professional palette: slate/gray neutrals with sky/blue accents; "
-        "use gradients sparingly for hero sections.",
-        "Typography: text-sm for body, text-lg/text-xl for headings, "
-        "font-semibold for emphasis.",
-        "Mobile-first responsive: flex/grid + gap utilities, sm:/md:/lg: breakpoints.",
-        "Dark mode: pair every color with a dark: variant "
-        "(bg-white dark:bg-gray-900, text-gray-900 dark:text-gray-100).",
+    "when_to_call": [
+        "Use this guide for substantial, branded, interactive, 3D, or "
+        "appearance-sensitive hosted webpages, and when improving a bland first draft.",
+        "Skip it for trivial HTML fragments when the preview contract and visual "
+        "direction are already known.",
+        "This guide is for `canvas_publish(mode=html)`. Do not assume its injected "
+        "assets exist inside chat-inline `HtmlFrame`.",
     ],
-    "shipped_utility_classes": {
-        "wa-card": (
-            "White card with 1px slate border, 12px radius, 20px padding, soft "
-            "shadow. Auto-darkens in dark mode."
+    "design_method": [
+        "Infer the page's job first: audience, primary action, information order, "
+        "tone, and constraints. Preserve user-provided copy, assets, colors, and "
+        "brand rules; do not invent a competing identity.",
+        "Choose one coherent visual direction that fits that job. Do not default "
+        "every page to a SaaS dashboard, centered hero, blue gradient, glassmorphism, "
+        "or a grid of rounded cards.",
+        "Establish the reading order before decoration: one dominant idea per "
+        "viewport, clear section transitions, and a single obvious primary action "
+        "when an action is needed.",
+        "Use the reference template only as a structural example. Replace its "
+        "layout and language when the brief calls for editorial, data-dense, "
+        "luxury, playful, technical, institutional, or other treatment.",
+    ],
+    "visual_quality": [
+        "Layout: use a small spacing scale, consistent alignment, deliberate "
+        "container widths, and CSS grid/flex based on content relationships. "
+        "Whitespace is structure, not empty decoration.",
+        "Typography: create visible contrast between display, heading, body, and "
+        "metadata roles. Keep prose comfortably readable (roughly 45–75 characters "
+        "per line), use sensible line-height, and avoid excessive font weights.",
+        "Color: derive semantic roles (background, surface, text, muted, accent, "
+        "success/warning/error) from the brief. Check contrast; do not rely on hue "
+        "alone or introduce gradients without a compositional reason.",
+        "Shape and depth: borders, radii, shadows, and blur must communicate grouping "
+        "or elevation. Do not round, shadow, or outline every section.",
+        "Content: use specific labels and realistic values. Avoid filler, repeated "
+        "headlines, ornamental badges, emoji as UI icons, and unsupported claims.",
+        "Media: preserve aspect ratio, set object-fit intentionally, provide useful "
+        "alt text, and make imagery support the hierarchy rather than compete with it.",
+        "Motion: add only when it explains state or rewards an action; keep it subtle "
+        "and honor prefers-reduced-motion. The page must remain complete with JS off.",
+    ],
+    "responsive_accessibility": [
+        "Start with semantic HTML and a single-column mobile reading order; enhance "
+        "at sm:/md:/lg: only where the content needs it. Avoid fixed widths and "
+        "viewport heights that clip content.",
+        "Verify 320px mobile, common tablet/desktop widths, long labels, and overflow. "
+        "Controls need visible focus, keyboard operation, labels, and adequate hit areas.",
+        "Use one h1, ordered headings, landmarks, native buttons/links, alt text, and "
+        "ARIA only when native semantics are insufficient.",
+        "The host follows prefers-color-scheme. Either support both schemes coherently "
+        "with dark: variants or define a complete intentional surface; never leave "
+        "text and backgrounds with accidental low contrast.",
+    ],
+    "preview_runtime": {
+        "injected": (
+            "Tailwind CSS via CDN; Inter with system fallbacks; a reset; "
+            "prefers-color-scheme dark mode; and Three.js as `window.THREE`."
         ),
-        "wa-gradient": "Linear gradient sky-500 -> indigo-500, white text.",
-        "wa-gradient-warm": "Linear gradient orange-500 -> pink-500, white text.",
-        "wa-gradient-fresh": "Linear gradient emerald-500 -> sky-500, white text.",
+        "document_shape": (
+            "A body fragment and a full HTML document both work. Prefer a fragment "
+            "for host assets; use a full document only for meaningful head/style needs."
+        ),
+        "javascript": (
+            "Raw scripts and on* handlers are stored. The preview API defaults JS off "
+            "unless `js=1`; the standard Canvas UI currently opens with its JS toggle "
+            "on, and the user can turn it off. Design a useful no-JS state because "
+            "sanitized previews, exports, and user settings may disable scripts. Local "
+            "scripts from multi-file bundles follow the same toggle."
+        ),
+        "three_js": (
+            "Use the preloaded `window.THREE`; do not add another Three.js script "
+            "unless a specific incompatible version is required. Scene code still "
+            "requires the preview JS toggle."
+        ),
+        "html_css_svg": (
+            "Inline <style>, class/style attributes, and common SVG/chart primitives "
+            "are supported. Without JS opt-in, unsafe scripts, event handlers, and "
+            "javascript: URLs are removed at preview time."
+        ),
     },
-    "tailwind_config": {
-        "fonts": "Inter, system-ui, -apple-system, sans-serif (already loaded).",
-        "primary_palette": (
-            "primary-50..900 maps sky-50..900 (e.g. text-primary-600, "
-            "bg-primary-100). Use this when you want the app's accent color."
+    "surface_matrix": {
+        "hosted_canvas": (
+            "`canvas_publish(mode=html)` opens a page-scale artifact in the workspace. "
+            "The host injects Tailwind, Inter, the wa-* helpers, and global THREE."
         ),
-        "surface_palette": (
-            "surface (white), surface-elevated (white), surface-sunken "
-            "(slate-100). Mirror the app's neutrals."
+        "html_frame": (
+            "`emit_ui_tree` with `HtmlFrame` renders arbitrary HTML inline in chat. "
+            "It does not receive the hosted canvas Tailwind/Inter/wa-*/Three shell; "
+            "include any required assets in the frame HTML. JS follows the GenUI toolbar."
         ),
-        "dark_mode": "Triggered by prefers-color-scheme; use dark: variants.",
+        "three_js_frame": (
+            "`emit_ui_tree` with `ThreeJsFrame` is the preferred chat-inline 3D surface "
+            "when its structured geometry, material, camera, and animation props suffice; "
+            "the frontend uses its installed Three.js package and manages lifecycle."
+        ),
     },
-    "html_authoring_rules": [
-        "Author a body fragment OR a full <!DOCTYPE html> document — both work. "
-        "Fragments are easier; only return a full document if you actually need "
-        "<head>/<style> overrides.",
-        "Inline <style> is allowed. Inline <script> tags and event handlers "
-        "(onclick=, onload=, …) are stored at publish time but **disabled by "
-        "default** in the hosted preview — the user enables JS from the Canvas "
-        "preview toolbar (`js=1` on the preview URL).",
-        "For multi-file bundles, local <script src=…> refs are inlined from "
-        "`html_files` and follow the same preview-time JS toggle.",
-        "Three.js is preloaded as `window.THREE` for normal inline scripts. "
-        "Inline scene initialization still requires the user to enable JS "
-        "(`js=1`), but you do not need to import or load the Three.js library.",
-        "SVG and the common chart primitives (svg, path, g, circle, rect, "
-        "line, polyline, polygon, ellipse, defs, linearGradient, "
-        "radialGradient, stop, text, tspan) are allowed.",
-        "Class and style attributes survive on every tag — Tailwind utilities "
-        "render as expected.",
-        "Keep payload under a few hundred KB. For very long reports, split the "
-        "content or stay in gen UI.",
+    "available_shell_tokens": {
+        "note": (
+            "These are optional compatibility primitives, not a prescribed aesthetic. "
+            "Prefer page-specific styling when the brief has its own visual language."
+        ),
+        "font": "Inter, system-ui, -apple-system, sans-serif.",
+        "colors": (
+            "primary-50..900 maps to sky; surface, surface-elevated, and "
+            "surface-sunken mirror the host neutrals."
+        ),
+        "utilities": {
+            "wa-card": "Neutral bordered surface with 12px radius, padding, and soft shadow.",
+            "wa-gradient": "Sky-to-indigo gradient with white text.",
+            "wa-gradient-warm": "Orange-to-pink gradient with white text.",
+            "wa-gradient-fresh": "Emerald-to-sky gradient with white text.",
+        },
+    },
+    "delivery": [
+        "Compact page up to about 20KB: pass `html` directly.",
+        "Larger or multi-file page: write files, then publish with `html_paths` and "
+        "`html_bundle_entry`; alternatively stage `html_blob_id` or "
+        "`html_files_blob_id`. Do not place a large escaped page in one tool-call JSON.",
+        "The hosted preview accepts up to the configured HTML limit (4MB by default), "
+        "with at most 40 multi-file paths, but output-token limits still make thin "
+        "file/blob publishing the reliable path.",
+        "Use short managed asset URLs such as `/api/v1/files/{id}/preview`; the preview "
+        "service signs managed file references when serving the page.",
+    ],
+    "quality_gate": [
+        "The first viewport communicates what this is, why it matters, and what to do next.",
+        "Hierarchy remains clear in grayscale and no decorative device is repeated by habit.",
+        "Copy is complete, specific, and free of placeholders or implementation commentary.",
+        "No clipping, horizontal overflow, broken assets, unreadable contrast, or empty controls.",
+        "The page works without JS; enabled interactions have useful states and cleanup.",
+        "The result visibly fits this brief rather than looking like a reusable AI template.",
     ],
     "reference_template": _REFERENCE_TEMPLATE,
 }
@@ -107,20 +202,17 @@ class GetHtmlCanvasGuideTool(BaseTool):
 
     name = "get_html_canvas_guide"
     description = (
-        "Return the canvas HTML preview design system: shipped utility classes "
-        "(wa-card, wa-gradient/wa-gradient-warm/wa-gradient-fresh), Tailwind "
-        "config (Inter font, primary/surface palettes, dark mode), preloaded "
-        "Three.js (global THREE), authoring rules (allowed tags/attributes, "
-        "inline <style> ok, scripts/events stored but off until preview JS toggle), "
-        "and a reference HTML template. "
-        "Call this before authoring "
-        "`canvas_publish(mode=html)` so you do not have to memorise the "
-        "details. Read-only, no side effects."
+        "Return the on-demand professional HTML guide for `canvas_publish`: "
+        "style-neutral design method, visual-quality and accessibility checks, "
+        "preview runtime contract (Tailwind, SVG, JS toggle, global THREE), "
+        "large-page delivery, optional shell utilities, and a structural template. "
+        "Use for substantial or appearance-sensitive webpages; skip for trivial HTML. "
+        "Read-only, no side effects."
     )
     category = ToolCategory.CANVAS
     is_read_only = True
     is_concurrency_safe = True
-    search_hint = "html canvas design guide tailwind utility classes"
+    search_hint = "professional html webpage canvas design accessibility tailwind guide"
 
     @property
     def parameters(self) -> dict[str, Any]:
