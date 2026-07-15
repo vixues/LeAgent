@@ -54,7 +54,7 @@ interface BrandingState {
 const defaults = {
   displayName: '',
   customIconDataUrl: null as string | null,
-  logoBackdropPreset: 'auto' as LogoBackdropPreset,
+  logoBackdropPreset: 'minimal' as LogoBackdropPreset,
   brandFontPreset: 'modern' as BrandFontPreset,
 };
 

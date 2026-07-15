@@ -296,7 +296,7 @@ def calculate_total(items: list[dict]) -> float:
 ## Links
 
 - [LeAgent Docs](https://docs.leagent.example.com)
-- [GitHub](https://github.com/leagent)
+- [GitHub](https://github.com/example/leagent)
 
 ## Nested List
 
