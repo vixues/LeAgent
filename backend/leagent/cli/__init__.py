@@ -6,7 +6,8 @@ Command groups:
 ``QueryEngine``-backed turns via :class:`~leagent.agent.controller.AgentController`),
 ``init`` (``~/.leagent``), ``rules``, ``skills``, ``models`` (``providers.yaml``),
 ``config`` (per-repo ``.leagent/``), ``channels`` (runtime YAML), ``env``, ``clean``,
-``prune``, ``doctor``, Alembic helpers (``migrate``, ``upgrade``, ``downgrade``).
+``prune``, ``doctor``, ``reset-password``, Alembic helpers (``migrate``, ``upgrade``,
+``downgrade``).
 
 **ASGI process** — ``run``, ``serve``, ``app`` (Uvicorn / Gunicorn for ``leagent.main:app``).
 

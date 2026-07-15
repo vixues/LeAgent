@@ -51,6 +51,7 @@ from leagent.cli.workflows_cmd import workflows_group
 from leagent.cli.tasks_cmd import tasks_group
 from leagent.cli.templates_cmd import templates_group
 from leagent.cli.webhooks_cmd import webhooks_group
+from leagent.cli.auth_cmd import reset_password_cmd
 
 
 class AgenticGroup(click.Group):
@@ -104,6 +105,7 @@ def cli(ctx: click.Context, debug: bool, message: str | None, verbose_chat: bool
 
     **Operators** — ``workflows``, ``tasks``, ``chats``, ``cron``, … talk to
     ``LEAGENT_API_URL`` (start the server first unless a command documents a local fallback).
+    ``reset-password`` force-resets the access password (or a named user) locally.
 
     \b
     Quick start:
@@ -114,9 +116,10 @@ def cli(ctx: click.Context, debug: bool, message: str | None, verbose_chat: bool
       leagent app start        # Same with SSL / Gunicorn / reload flags
       leagent models list      # providers.yaml + model tiers
       leagent doctor           # Dependency and config checks
+      leagent reset-password   # Force-reset forgotten access password
 
     \b
-    Docs: https://docs.leagent.io
+    Docs: https://github.com/vixues/LeAgent
     """
     ctx.ensure_object(dict)
     ctx.obj["debug"] = debug
@@ -146,6 +149,7 @@ cli.add_command(templates_group)
 cli.add_command(webhooks_group)
 cli.add_command(clean_cmd)
 cli.add_command(prune_cmd)
+cli.add_command(reset_password_cmd)
 
 
 # ── Server commands ─────────────────────────────────────────────────
