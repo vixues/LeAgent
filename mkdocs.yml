@@ -1,10 +1,10 @@
 site_name: LeAgent Documentation
-site_url: https://your-org.github.io/leagent
+site_url: https://vixues.github.io/LeAgent
 site_description: Enterprise-Grade Intelligent Office Automation Platform
 site_author: LeAgent Team
 
-repo_name: your-org/leagent
-repo_url: https://github.com/your-org/leagent
+repo_name: vixues/LeAgent
+repo_url: https://github.com/vixues/LeAgent
 edit_uri: edit/main/docs/
 
 theme:
@@ -99,7 +99,7 @@ markdown_extensions:
 extra:
   social:
     - icon: fontawesome/brands/github
-      link: https://github.com/your-org/leagent
+      link: https://github.com/vixues/LeAgent
   generator: false
   analytics:
     provider: google

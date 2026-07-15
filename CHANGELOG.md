@@ -1372,6 +1372,6 @@ _Subsections below keep `— YYYY-MM-DD` on each heading for maintainers (commit
 [1.1.2]: https://github.com/vixues/LeAgent/releases/tag/v1.1.2
 [1.1.1]: https://github.com/vixues/LeAgent/releases/tag/v1.1.1
 [1.1.0]: https://github.com/vixues/LeAgent/releases/tag/v1.1.0
-[1.0.0]: https://github.com/your-org/leagent/releases/tag/v1.0.0
-[0.9.0]: https://github.com/your-org/leagent/releases/tag/v0.9.0
-[0.8.0]: https://github.com/your-org/leagent/releases/tag/v0.8.0
+[1.0.0]: https://github.com/vixues/LeAgent/releases/tag/v1.0.0
+[0.9.0]: https://github.com/vixues/LeAgent/releases/tag/v0.9.0
+[0.8.0]: https://github.com/vixues/LeAgent/releases/tag/v0.8.0

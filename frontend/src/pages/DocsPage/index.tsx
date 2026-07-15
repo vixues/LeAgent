@@ -12,7 +12,7 @@ import { Button, Card, CardContent } from '@/components/ui';
 import { PageShell, PageSection } from '@/components/layout/PageShell';
 import { cn } from '@/lib/utils';
 
-const REPO_FALLBACK = 'https://github.com/your-org/leagent';
+const REPO_FALLBACK = 'https://github.com/vixues/LeAgent';
 
 const featureRoutes = [
   { key: 'chat' as const, to: '/home', icon: MessageSquare },
