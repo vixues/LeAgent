@@ -70,6 +70,7 @@ _CURATED_UTIL_TOOL_PATHS: tuple[tuple[str, str], ...] = (
     ("leagent.tools.util.file_ops", "FileOpsTool"),
     ("leagent.tools.util.json_parser", "JsonParserTool"),
     ("leagent.tools.util.ask_user", "AskUserTool"),
+    ("leagent.tools.util.pet_bubble", "EmitPetBubbleTool"),
     ("leagent.tools.util.date_calculator", "DateCalculatorTool"),
     ("leagent.tools.util.text_splitter", "TextSplitterTool"),
     ("leagent.tools.util.game_state", "GameStateTool"),

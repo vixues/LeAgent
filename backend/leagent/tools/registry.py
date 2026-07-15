@@ -386,10 +386,13 @@ class ToolRegistry:
         while len(self._llm_tool_schema_cache) > self._llm_tool_schema_cache_max_entries:
             self._llm_tool_schema_cache.pop(next(iter(self._llm_tool_schema_cache)))
 
-    # Core tools that are always included regardless of context filtering
+    # Core tools that are always included regardless of context filtering.
+    # ``emit_pet_bubble`` stays here so the chat mascot caption stays callable
+    # under max_tools pruning (prompt tells the agent to use it; the schema is tiny).
     _CORE_TOOL_NAMES: frozenset[str] = frozenset({
         "ask_user", "code_execution", "web_search", "file_manager",
         "project_write", "project_tree", "project_grep",
+        "emit_pet_bubble",
     })
     _COMPANION_TOOL_NAMES: dict[str, tuple[str, ...]] = {
         "emit_ui_tree": ("get_genui_guide", "list_ui_components"),

@@ -100,8 +100,10 @@ const RenderedMarkdown = memo(
 );
 RenderedMarkdown.displayName = 'RenderedMarkdown';
 
-const PET_AGENT_BUBBLE_MS = 9000;
-const PET_CLICK_BUBBLE_MS = 6000;
+/** How long an agent ``emit_pet_bubble`` / fallback caption stays visible before auto-hide. */
+const PET_AGENT_BUBBLE_MS = 22_000;
+/** Click-greeting bubbles on the chat mascot. */
+const PET_CLICK_BUBBLE_MS = 10_000;
 
 const PET_CLICK_GREETING_KEYS = [
   'chat.petBubble.clickGreeting1',
@@ -115,10 +117,13 @@ const PET_CLICK_GREETING_KEYS = [
 function AssistantPetRailLink({
   className,
   agentBubble,
+  streamActive,
   onPickClickGreeting,
 }: {
   className?: string;
   agentBubble?: Message['petBubble'];
+  /** While the turn is still streaming, keep the agent bubble visible (timer starts after settle). */
+  streamActive?: boolean;
   onPickClickGreeting: () => PetBubblePayload;
 }) {
   const [clickBubble, setClickBubble] = useState<PetBubblePayload | null>(null);
@@ -129,10 +134,13 @@ function AssistantPetRailLink({
       setAgentBubbleHidden(false);
       return;
     }
+    // Bubble may arrive mid-turn via ``emit_pet_bubble``; don't start the dwell
+    // countdown until the assistant turn has settled, or it vanishes before the reply finishes.
     setAgentBubbleHidden(false);
+    if (streamActive) return;
     const id = window.setTimeout(() => setAgentBubbleHidden(true), PET_AGENT_BUBBLE_MS);
     return () => window.clearTimeout(id);
-  }, [agentBubble?.text, agentBubble?.emoji]);
+  }, [agentBubble?.text, agentBubble?.emoji, streamActive]);
 
   useEffect(() => {
     if (!clickBubble) return;
@@ -421,6 +429,7 @@ function AgentMessageInner({
         <AssistantPetRailLink
           className="absolute -left-20 top-0"
           agentBubble={message.petBubble}
+          streamActive={assistantStreamingLive}
           onPickClickGreeting={pickClickPetGreeting}
         />
       )}

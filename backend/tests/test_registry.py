@@ -325,6 +325,23 @@ class TestSelection:
         assert "canvas_publish" in names
         assert "get_html_canvas_guide" in names
 
+    def test_emit_pet_bubble_always_survives_max_tools_prune(self) -> None:
+        """Mascot bubble tool is core — must stay callable under pruning."""
+        from leagent.tools.util.pet_bubble import EmitPetBubbleTool
+
+        reg = ToolRegistry()
+        for idx in range(40):
+            reg.register(self._FillerTool(f"aaa_filler_{idx:02d}"))
+        reg.register(EmitPetBubbleTool())
+
+        schemas = reg.get_tools_for_llm(
+            provider_format="openai",
+            context_hint="帮我写封催款邮件",
+            max_tools=8,
+        )
+        names = {schema["function"]["name"] for schema in schemas}
+        assert "emit_pet_bubble" in names
+
 
 class TestValidation:
     def test_empty_name_raises(self) -> None:
