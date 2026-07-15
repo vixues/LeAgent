@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Play, RefreshCw } from 'lucide-react';
@@ -7,10 +7,13 @@ import { adminApi } from '@/api/admin';
 import { Button } from '@/components/ui';
 import { SectionHeader } from '@/components/common/SectionHeader';
 import { PageLoader } from '@/components/common/PageLoader';
+import { Paginator } from '@/components/common/Paginator';
 import { ChatTraceInspector } from '@/components/chat/ChatTraceInspector';
 import { cn } from '@/lib/utils';
 
 type SubTab = 'runs' | 'byModel' | 'compare';
+
+const DEFAULT_PAGE_SIZE = 20;
 
 function formatMs(v: number): string {
   if (!v) return '—';
@@ -28,46 +31,77 @@ function TraceRunsTable({
   onSelect: (id: string) => void;
 }) {
   const { t } = useTranslation();
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE);
+
+  useEffect(() => {
+    setPage(1);
+  }, [rows.length, pageSize]);
+
+  const totalPages = Math.max(1, Math.ceil(rows.length / pageSize));
+  const safePage = Math.min(page, totalPages);
+  const pageRows = useMemo(() => {
+    const start = (safePage - 1) * pageSize;
+    return rows.slice(start, start + pageSize);
+  }, [rows, safePage, pageSize]);
+
   if (rows.length === 0) {
     return <p className="text-sm text-muted-foreground">{t('admin.traces.empty')}</p>;
   }
   return (
-    <div className="overflow-x-auto rounded-lg border border-border">
-      <table className="min-w-full text-left text-xs">
-        <thead className="bg-muted/40 text-muted-foreground">
-          <tr>
-            <th className="px-2 py-1.5 font-medium">{t('admin.traces.colModel')}</th>
-            <th className="px-2 py-1.5 font-medium">{t('admin.traces.colStatus')}</th>
-            <th className="px-2 py-1.5 font-medium">{t('admin.traces.colLatency')}</th>
-            <th className="px-2 py-1.5 font-medium">{t('admin.traces.colTokens')}</th>
-            <th className="px-2 py-1.5 font-medium">{t('admin.traces.colTools')}</th>
-            <th className="px-2 py-1.5 font-medium">{t('admin.traces.colSession')}</th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((row) => (
-            <tr
-              key={row.trace_id}
-              className={cn(
-                'cursor-pointer border-t border-border/60 hover:bg-muted/30',
-                selected === row.trace_id && 'bg-primary-50/60 dark:bg-primary-950/30',
-              )}
-              onClick={() => onSelect(row.trace_id)}
-            >
-              <td className="px-2 py-1.5 font-mono">{row.model || '—'}</td>
-              <td className="px-2 py-1.5">{row.status}</td>
-              <td className="px-2 py-1.5 tabular-nums">{formatMs(row.latency_ms)}</td>
-              <td className="px-2 py-1.5 tabular-nums">
-                {row.input_tokens + row.output_tokens}
-              </td>
-              <td className="px-2 py-1.5 tabular-nums">{row.tool_call_count}</td>
-              <td className="max-w-[140px] truncate px-2 py-1.5 font-mono text-muted-foreground">
-                {row.session_id ?? '—'}
-              </td>
+    <div className="space-y-3">
+      <div className="overflow-x-auto rounded-lg border border-border">
+        <table className="min-w-full text-left text-xs">
+          <thead className="bg-muted/40 text-muted-foreground">
+            <tr>
+              <th className="px-2 py-1.5 font-medium">{t('admin.traces.colModel')}</th>
+              <th className="px-2 py-1.5 font-medium">{t('admin.traces.colStatus')}</th>
+              <th className="px-2 py-1.5 font-medium">{t('admin.traces.colLatency')}</th>
+              <th className="px-2 py-1.5 font-medium">{t('admin.traces.colTokens')}</th>
+              <th className="px-2 py-1.5 font-medium">{t('admin.traces.colTools')}</th>
+              <th className="px-2 py-1.5 font-medium">{t('admin.traces.colSession')}</th>
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {pageRows.map((row) => (
+              <tr
+                key={row.trace_id}
+                className={cn(
+                  'cursor-pointer border-t border-border/60 hover:bg-muted/30',
+                  selected === row.trace_id && 'bg-primary-50/60 dark:bg-primary-950/30',
+                )}
+                onClick={() => onSelect(row.trace_id)}
+              >
+                <td className="px-2 py-1.5 font-mono">{row.model || '—'}</td>
+                <td className="px-2 py-1.5">{row.status}</td>
+                <td className="px-2 py-1.5 tabular-nums">{formatMs(row.latency_ms)}</td>
+                <td className="px-2 py-1.5 tabular-nums">
+                  {row.input_tokens + row.output_tokens}
+                </td>
+                <td className="px-2 py-1.5 tabular-nums">{row.tool_call_count}</td>
+                <td className="max-w-[140px] truncate px-2 py-1.5 font-mono text-muted-foreground">
+                  {row.session_id ?? '—'}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <Paginator
+        className="pt-1"
+        currentPage={safePage}
+        totalPages={totalPages}
+        totalItems={rows.length}
+        pageSize={pageSize}
+        pageSizeOptions={[10, 20, 50]}
+        onPageChange={setPage}
+        onPageSizeChange={(size) => {
+          setPageSize(size);
+          setPage(1);
+        }}
+        showPageSizeSelector
+        showPageInfo
+      />
     </div>
   );
 }
@@ -215,6 +249,7 @@ export function AgentTraces() {
               />
             </div>
             <TraceRunsTable
+              key={`${modelFilter}:${statusFilter}`}
               rows={tracesQuery.data ?? []}
               selected={selectedTrace}
               onSelect={setSelectedTrace}
