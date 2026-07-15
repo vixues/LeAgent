@@ -32,7 +32,7 @@
 
 ---
 
-> 此卷以**雅言**述之，取其简严雅正；若涉术语之细，仍以 [English](README.md) 与 [简体中文](README_zh.md) 二本为准。
+> 此卷以**汉文**述之，取其简严雅正；若涉术语之细，仍以 [English](README.md) 与 [简体中文](README_zh.md) 二本为准。
 
 **LeAgent** 者，开源桌面之智能体也——非徒能言，乃能成事。异于云端之问答、专于代码之 CLI，LeAgent 合众家所分之三长于一身：于一「思—行」之环中**自筹谋、调工具、且自纠其失**之流式运行时；由智能体**亲为擘画、运行而迭善**之 ReactFlow DAG，是谓**智能可视之流程**（且每一工具皆自成带型之节点）；又有 Generative UI 之能，使 KPI 之版、幻灯之集、图廊之属等**可即时交互之界面，径流于会话之中**。内置**百余离线工具**（文牍、网页、数据、代码、数据库、媒体、游戏美术之生成），兼具声明式规则引擎、Agent Skills 与 Model Context Protocol；**默认无外部依赖**（SQLite、单进程）即可行于本机。用户可自携模型密钥，亦可接本地 Ollama / vLLM 端点，**全程离线**而用之。
 
@@ -194,7 +194,7 @@ curl -fsSL https://vixues.com.cn/install.sh | bash
 | 层 | 技术 |
 | --- | --- |
 | **后端** | Python 3.11+、FastAPI、Uvicorn/Gunicorn、SQLModel + Alembic、Pydantic v2、异步 I/O、OpenTelemetry |
-| **前端** | React 19、TypeScript、Vite、Zustand、TanStack Query、ReactFlow、i18next（zh-CN / en-US / 雅言） |
+| **前端** | React 19、TypeScript、Vite、Zustand、TanStack Query、ReactFlow、i18next（zh-CN / en-US / 汉文） |
 | **桌面** | Electron（ESM 主进程）、内置 Python 后端 |
 | **数据** | SQLite（默认）、PostgreSQL（可选）、Milvus（可选向量记忆） |
 | **工具链** | uv（Python）、npm（前端）、Playwright、black + ruff、ESLint |
@@ -221,11 +221,11 @@ curl -fsSL https://vixues.com.cn/install.sh | bash
 
 1. 凡较大改动，或范围未明者，请先开 Issue 议定。
 2. 请为所涉之处运行测试（`cd backend && uv run pytest tests/ -v` / `cd frontend && npm run test`）。
-3. 请遵 [`AGENTS.md`](AGENTS.md) 之代码规范与 i18n 之则（每新增 UI 文案，皆须同见于 `zh-CN` 与 `en-US` 二词条；界面雅言见 [`docs/lzh-style-guide.md`](docs/lzh-style-guide.md)）。
+3. 请遵 [`AGENTS.md`](AGENTS.md) 之代码规范与 i18n 之则（每新增 UI 文案，皆须同见于 `zh-CN` 与 `en-US` 二词条；界面汉文见 [`docs/lzh-style-guide.md`](docs/lzh-style-guide.md)）。
 
-## 界面雅言译则
+## 界面汉文译则
 
-界面第三语种「雅言」之译法、术语表与贡献清单，见 [`docs/lzh-style-guide.md`](docs/lzh-style-guide.md)。
+界面第三语种「汉文」之译法、术语表与贡献清单，见 [`docs/lzh-style-guide.md`](docs/lzh-style-guide.md)。
 
 更多说明见 [`CONTRIBUTING.md`](CONTRIBUTING.md)，社区准则见 [`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md)。
 

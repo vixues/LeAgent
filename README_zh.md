@@ -20,8 +20,8 @@
 
 <p align="center">
   <a href="README.md">English</a> ·
-  <a href="README_lzh.md">雅言</a> ·
-  <a href="docs/tutorial_zh.md">使用教程</a> ·
+  <a href="README_lzh.md">汉文</a> ·
+  <a href="./docs/tutorial_zh.md">使用教程</a> ·
   <a href="AGENTS.md">贡献者指南</a> ·
   <a href="https://github.com/vixues/LeAgent/releases">版本发布</a>
 </p>
@@ -258,7 +258,7 @@ curl -fsSL https://vixues.com.cn/install.sh | bash
 | 层级 | 技术 |
 | --- | --- |
 | **后端** | Python 3.11+、FastAPI、Uvicorn/Gunicorn、SQLModel + Alembic、Pydantic v2、异步 I/O、OpenTelemetry |
-| **前端** | React 19、TypeScript、Vite、Zustand、TanStack Query、ReactFlow、i18next（zh-CN / en-US / [雅言](docs/lzh-style-guide.md)） |
+| **前端** | React 19、TypeScript、Vite、Zustand、TanStack Query、ReactFlow、i18next（zh-CN / en-US / [汉文](docs/lzh-style-guide.md)） |
 | **桌面端** | Electron（ESM 主进程）、内置 Python 后端 |
 | **数据** | SQLite（默认）、PostgreSQL（可选）、Milvus（可选向量记忆） |
 | **工具链** | uv（Python）、npm（前端）、Playwright、black + ruff、ESLint |

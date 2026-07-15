@@ -20,7 +20,7 @@
 
 <p align="center">
   <a href="README_zh.md">中文文档</a> ·
-  <a href="README_lzh.md">雅言</a> ·
+  <a href="README_lzh.md">汉文</a> ·
   <a href="docs/tutorial.md">Tutorial</a> ·
   <a href="AGENTS.md">Contributor guide</a> ·
   <a href="https://github.com/vixues/LeAgent/releases">Releases</a>
@@ -258,7 +258,7 @@ See all releases: **<https://github.com/vixues/LeAgent/releases>**
 | Layer | Technology |
 | --- | --- |
 | **Backend** | Python 3.11+, FastAPI, Uvicorn/Gunicorn, SQLModel + Alembic, Pydantic v2, async I/O, OpenTelemetry |
-| **Frontend** | React 19, TypeScript, Vite, Zustand, TanStack Query, ReactFlow, i18next (zh-CN / en-US / 雅言) |
+| **Frontend** | React 19, TypeScript, Vite, Zustand, TanStack Query, ReactFlow, i18next (zh-CN / en-US / 汉文) |
 | **Desktop** | Electron (ESM main process), bundled Python backend |
 | **Data** | SQLite (default), PostgreSQL (optional), Milvus (optional vector memory) |
 | **Tooling** | uv (Python), npm (frontend), Playwright, black + ruff, ESLint |
