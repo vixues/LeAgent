@@ -10,6 +10,11 @@ Resolution order (see ``FontManager.resolve``):
    deployments
 5. Helvetica fallback with a structured warning surfaced to the caller
 
+Emoji (PDF only) uses a parallel path (``LEAGENT_EMOJI_FONT`` → managed
+``NotoEmoji.ttf`` → system Noto Emoji → auto-download). ReportLab cannot
+embed Noto *Color* Emoji (CBDT bitmaps); we ship the monochrome Noto Emoji
+variable TTF and switch faces per run in paragraph markup.
+
 The manager also owns format-specific registration: ReportLab ``TTFont``
 registration (with TTC subfont probing) and ascii+eastAsia font-name pairs
 for python-docx / python-pptx.
@@ -50,6 +55,11 @@ _GSTATIC_BOLD = (
     "s/notosanssc/v40/k3kCo84MPvpLmixcA63oeAL7Iqp5IZJF9bmaGzjCnYw.ttf"
 )
 
+# Monochrome Noto Emoji (variable TTF) — ReportLab-compatible outlines.
+# Pinned to a google/fonts commit so sha256 stays stable.
+_EMOJI_COMMIT = "b979dba422e445492b0eb9951ac52ee0b4d648c3"
+_EMOJI_PATH = "ofl/notoemoji/NotoEmoji%5Bwght%5D.ttf"
+
 
 @dataclass(frozen=True)
 class FontAsset:
@@ -81,12 +91,38 @@ FONT_MANIFEST: dict[str, FontAsset] = {
         sha256="0066a522a1ac007c1d72bc4fccb114f80ff7294641c78cead9715bd14d43b9ea",
         size_bytes=10_530_408,
     ),
+    "emoji": FontAsset(
+        filename="NotoEmoji.ttf",
+        urls=(
+            f"https://raw.githubusercontent.com/google/fonts/{_EMOJI_COMMIT}/{_EMOJI_PATH}",
+            f"https://cdn.jsdelivr.net/gh/google/fonts@{_EMOJI_COMMIT}/{_EMOJI_PATH}",
+        ),
+        sha256="de6c18832938afc99caf132b39d6a30a19bac7f2e812e28db2535b4608d27551",
+        size_bytes=1_982_596,
+    ),
 }
 
 # ReportLab internal font names registered by this module.
 PDF_FONT_REGULAR = "LeAgentDocSans"
 PDF_FONT_BOLD = "LeAgentDocSansBold"
+PDF_FONT_EMOJI = "LeAgentDocEmoji"
 PDF_FONT_FAMILY = "LeAgentDocFamily"
+
+# Common install locations for monochrome Noto Emoji (never Color/CBDT).
+_EMOJI_SYSTEM_NAMES = (
+    "NotoEmoji-Regular.ttf",
+    "NotoEmoji-Medium.ttf",
+    "NotoEmoji.ttf",
+    "NotoEmoji[wght].ttf",
+)
+_EMOJI_SYSTEM_DIRS = (
+    Path("/usr/share/fonts/truetype/noto"),
+    Path("/usr/share/fonts/TTF"),
+    Path("/usr/local/share/fonts"),
+    Path.home() / ".local/share/fonts",
+    Path("/Library/Fonts"),
+    Path.home() / "Library/Fonts",
+)
 
 
 @dataclass
@@ -199,6 +235,42 @@ class FontManager:
         out.source = "none"
         return out
 
+    def resolve_emoji(self, *, allow_download: bool = True) -> tuple[str | None, list[str]]:
+        """Resolve a ReportLab-compatible monochrome emoji font path."""
+        warnings: list[str] = []
+
+        env = os.environ.get("LEAGENT_EMOJI_FONT", "").strip()
+        if env and Path(env).is_file():
+            if _looks_color_emoji(env):
+                warnings.append(
+                    f"LEAGENT_EMOJI_FONT points to a color emoji font (unsupported "
+                    f"by ReportLab): {env}"
+                )
+            else:
+                return env, warnings
+        elif env:
+            warnings.append(f"LEAGENT_EMOJI_FONT points to a missing file: {env}")
+
+        managed = self._managed_path("emoji")
+        if managed:
+            return managed, warnings
+
+        system = discover_emoji_font_file()
+        if system:
+            return system, warnings
+
+        if allow_download and _auto_download_enabled():
+            downloaded = self._download_faces(("emoji",), warnings=warnings)
+            if downloaded.get("emoji"):
+                return downloaded["emoji"], warnings
+        elif allow_download:
+            warnings.append(
+                "No emoji font found and auto-download is disabled "
+                "(LEAGENT_FONT_AUTO_DOWNLOAD=0)."
+            )
+
+        return None, warnings
+
     def _managed_path(self, face: str) -> str | None:
         asset = FONT_MANIFEST[face]
         path = self._fonts_dir / asset.filename
@@ -280,9 +352,9 @@ class FontManager:
     def register_pdf_fonts(self, *, allow_download: bool = True) -> dict[str, Any]:
         """Register resolved fonts with ReportLab and return the mapping.
 
-        Returns a dict with keys ``regular`` / ``bold`` / ``mono`` (ReportLab
-        font names — built-ins when embedding failed), ``embedded`` (bool),
-        ``source``, and ``warnings``.
+        Returns a dict with keys ``regular`` / ``bold`` / ``mono`` / ``emoji``
+        (ReportLab font names — built-ins / ``None`` when embedding failed),
+        ``embedded`` / ``emoji_embedded`` (bool), ``source``, and ``warnings``.
 
         A resolved font can still fail registration — ReportLab rejects CFF
         outlines, which covers many distro Noto CJK OTF/TTCs. In that case we
@@ -349,6 +421,18 @@ class FontManager:
         # monospace — CJK comments/strings in code must not tofu.
         mono = regular if embedded else "Courier"
 
+        emoji_name: str | None = None
+        emoji_path, emoji_warnings = self.resolve_emoji(allow_download=allow_download)
+        warnings.extend(emoji_warnings)
+        if emoji_path and self._register_pdf_face(
+            pdfmetrics, TTFont, PDF_FONT_EMOJI, emoji_path, is_bold=False
+        ):
+            emoji_name = PDF_FONT_EMOJI
+        elif emoji_path:
+            warnings.append(
+                f"Emoji font is not ReportLab-compatible (color/CBDT?): {emoji_path}"
+            )
+
         if not embedded:
             warnings.append(
                 "中文字体未成功嵌入，中文将显示为方框（tofu）。"
@@ -360,9 +444,12 @@ class FontManager:
             "regular": regular,
             "bold": bold,
             "mono": mono,
+            "emoji": emoji_name,
             "embedded": embedded,
+            "emoji_embedded": emoji_name is not None,
             "source": source,
             "regular_path": regular_path,
+            "emoji_path": emoji_path,
             "warnings": warnings,
         }
 
@@ -450,6 +537,28 @@ def _ttc_subfont_sequence(path: str, is_bold: bool) -> list[Any]:
     if any(x in p for x in ("wqy", "droid", "arphic", "ukai", "uming", "microhei", "zenhei")):
         return [0, 1, 2, *names, *index_probe]
     return [*names, *index_probe]
+
+
+def _looks_color_emoji(path: str) -> bool:
+    name = Path(path).name.lower()
+    return "color" in name or "colr" in name or "cbdt" in name
+
+
+def discover_emoji_font_file() -> str | None:
+    """Locate a monochrome Noto Emoji TTF on the system (never Color/CBDT)."""
+    for directory in _EMOJI_SYSTEM_DIRS:
+        if not directory.is_dir():
+            continue
+        for name in _EMOJI_SYSTEM_NAMES:
+            candidate = directory / name
+            if candidate.is_file() and not _looks_color_emoji(str(candidate)):
+                return str(candidate)
+        # Fuzzy: any NotoEmoji*.ttf that isn't color.
+        with contextlib.suppress(OSError):
+            for candidate in sorted(directory.glob("NotoEmoji*.ttf")):
+                if candidate.is_file() and not _looks_color_emoji(str(candidate)):
+                    return str(candidate)
+    return None
 
 
 _manager: FontManager | None = None

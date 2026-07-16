@@ -85,6 +85,59 @@ logger = structlog.get_logger(__name__)
 _SOFT_BREAK_RE = re.compile(r"[A-Za-z0-9_./:@#%+\-]{24,}")
 _PLACEHOLDER_RE = re.compile(r"\{(page|pages|title|author|date|section)\}")
 
+# Emoji / pictograph runs for ReportLab font switching. Matches flags, ZWJ
+# sequences, keycaps, skin tones, and common BMP dingbats — not every
+# Miscellaneous Technical symbol (those stay on the body face).
+_EMOJI_RE = re.compile(
+    "(?:"
+    r"[\U0001F1E6-\U0001F1FF]{2}"
+    r"|[#*0-9]\U0000FE0F?\U000020E3"
+    r"|(?:"
+    r"["
+    r"\U0001F300-\U0001F5FF"
+    r"\U0001F600-\U0001F64F"
+    r"\U0001F680-\U0001F6FF"
+    r"\U0001F700-\U0001F77F"
+    r"\U0001F780-\U0001F7FF"
+    r"\U0001F800-\U0001F8FF"
+    r"\U0001F900-\U0001F9FF"
+    r"\U0001FA00-\U0001FAFF"
+    r"\U00002600-\U000026FF"
+    r"\U00002700-\U000027BF"
+    r"\U0000231A-\U0000231B"
+    r"\U000023E9-\U000023F3"
+    r"\U000023F8-\U000023FA"
+    r"\U000025AA-\U000025AB"
+    r"\U000025B6\U000025C0"
+    r"\U000025FB-\U000025FE"
+    r"\U00002B05-\U00002B07"
+    r"\U00002B1B-\U00002B1C"
+    r"\U00002B50\U00002B55"
+    r"\U0000203C\U00002049"
+    r"\U00002122\U00002139"
+    r"\U00002194-\U00002199"
+    r"\U000021A9-\U000021AA"
+    r"\U000024C2"
+    r"\U00002934-\U00002935"
+    r"\U00003030\U0000303D"
+    r"\U00003297\U00003299"
+    r"\U000000A9\U000000AE"
+    r"]"
+    r"\U0000FE0F?"
+    r"[\U0001F3FB-\U0001F3FF]?"
+    r"(?:"
+    r"\U0000200D"
+    r"["
+    r"\U0001F300-\U0001FAFF"
+    r"\U00002600-\U000027BF"
+    r"]"
+    r"\U0000FE0F?"
+    r"[\U0001F3FB-\U0001F3FF]?"
+    r")*"
+    r")"
+    r")"
+)
+
 
 def _inject_soft_breaks(text: str, max_len: int = 24) -> str:
     """Insert zero-width breakpoints inside long unspaced tokens."""
@@ -94,6 +147,22 @@ def _inject_soft_breaks(text: str, max_len: int = 24) -> str:
         return "\u200b".join(token[i : i + max_len] for i in range(0, len(token), max_len))
 
     return _SOFT_BREAK_RE.sub(_chunk, text)
+
+
+def text_contains_emoji(text: str) -> bool:
+    """Return True if ``text`` contains emoji / pictograph characters."""
+    return bool(text and _EMOJI_RE.search(text))
+
+
+def apply_emoji_font(text: str, emoji_font: str | None) -> str:
+    """Wrap emoji runs in ReportLab ``<font face=…>`` tags."""
+    if not emoji_font or not text:
+        return text
+
+    def _wrap(m: re.Match[str]) -> str:
+        return f'<font face="{emoji_font}">{m.group(0)}</font>'
+
+    return _EMOJI_RE.sub(_wrap, text)
 
 
 def _hex_color(colors_mod: Any, value: str, fallback: str = "#000000") -> Any:
@@ -111,6 +180,7 @@ def spans_to_markup(
     spans: list[InlineSpan],
     *,
     mono_font: str,
+    emoji_font: str | None = None,
     soft_breaks: bool = True,
     math_img: Any = None,
 ) -> str:
@@ -119,6 +189,10 @@ def spans_to_markup(
     ``math_img(latex) -> str | None`` supplies an ``<img …/>`` tag for
     inline math; when absent (or when rendering fails) math falls back to
     italic Unicode text.
+
+    When ``emoji_font`` is set, emoji / pictograph runs are wrapped in a
+    ``<font face>`` tag so they render from the monochrome Noto Emoji face
+    instead of tofu on the CJK body font.
     """
     parts: list[str] = []
     for span in spans:
@@ -145,6 +219,8 @@ def spans_to_markup(
             text = f"<super>{text}</super>"
         elif span.sub:
             text = f"<sub>{text}</sub>"
+        # Nested <font> after bold/code so emoji keep the emoji face.
+        text = apply_emoji_font(text, emoji_font)
         if span.link:
             href = escape(span.link, {'"': "&quot;"})
             text = f'<link href="{href}" color="#2E75B6"><u>{text}</u></link>'
@@ -152,8 +228,12 @@ def spans_to_markup(
     return "".join(parts)
 
 
-def _markup(text: str, *, mono_font: str) -> str:
-    return spans_to_markup(parse_inline(text), mono_font=mono_font)
+def _markup(
+    text: str, *, mono_font: str, emoji_font: str | None = None
+) -> str:
+    return spans_to_markup(
+        parse_inline(text), mono_font=mono_font, emoji_font=emoji_font
+    )
 
 
 def render_pdf(spec: DocumentSpec, output_path: Path) -> dict[str, Any]:
@@ -243,7 +323,9 @@ def render_pdf(spec: DocumentSpec, output_path: Path) -> dict[str, Any]:
     font_regular: str = fonts["regular"]
     font_bold: str = fonts["bold"]
     font_mono: str = fonts["mono"]
+    font_emoji: str | None = fonts.get("emoji")
     warnings: list[str] = list(fonts["warnings"])
+    _emoji_seen = False
 
     page_sizes = {"A4": A4, "LETTER": LETTER, "LEGAL": LEGAL, "A3": A3, "A5": A5}
     page_size = page_sizes.get(spec.page.size, A4)
@@ -363,9 +445,22 @@ def render_pdf(spec: DocumentSpec, output_path: Path) -> dict[str, Any]:
         )
 
     def _markup(text: str, *, mono_font: str) -> str:  # shadows module fn
+        nonlocal _emoji_seen
+        if not _emoji_seen and text_contains_emoji(text):
+            _emoji_seen = True
         return spans_to_markup(
-            parse_inline(text), mono_font=mono_font, math_img=_inline_math
+            parse_inline(text),
+            mono_font=mono_font,
+            emoji_font=font_emoji,
+            math_img=_inline_math,
         )
+
+    def _plain_markup(text: str) -> str:
+        """Escape + emoji face for titles/values without markdown inline."""
+        nonlocal _emoji_seen
+        if not _emoji_seen and text_contains_emoji(text):
+            _emoji_seen = True
+        return apply_emoji_font(escape(text), font_emoji)
 
     # ------------------------------------------------------------------
     # Heading numbering + TOC plumbing
@@ -543,7 +638,7 @@ def render_pdf(spec: DocumentSpec, output_path: Path) -> dict[str, Any]:
             textColor=on_band,
             wordWrap="CJK",
         )
-        title_p = Paragraph(escape(cv.title or "Untitled"), title_style)
+        title_p = Paragraph(_plain_markup(cv.title or "Untitled"), title_style)
         title_p.wrapOn(canv, text_w, band_h - 90)
         title_p.drawOn(canv, x, band_y + 30)
 
@@ -556,7 +651,7 @@ def render_pdf(spec: DocumentSpec, output_path: Path) -> dict[str, Any]:
                 textColor=text_light,
                 wordWrap="CJK",
             )
-            sub_p = Paragraph(escape(cv.subtitle), sub_style)
+            sub_p = Paragraph(_plain_markup(cv.subtitle), sub_style)
             _, sh = sub_p.wrapOn(canv, text_w, 200)
             sub_p.drawOn(canv, x, band_y - 40 - sh)
 
@@ -895,7 +990,7 @@ def render_pdf(spec: DocumentSpec, output_path: Path) -> dict[str, Any]:
         for item in items:
             parts: list[Any] = [
                 Paragraph(
-                    f"<b>{escape(item.value)}</b>",
+                    f"<b>{_plain_markup(item.value)}</b>",
                     ParagraphStyle(
                         "DocMetricValue",
                         fontName=font_bold,
@@ -907,7 +1002,7 @@ def render_pdf(spec: DocumentSpec, output_path: Path) -> dict[str, Any]:
                     ),
                 ),
                 Paragraph(
-                    escape(item.label),
+                    _plain_markup(item.label),
                     ParagraphStyle(
                         "DocMetricLabel",
                         parent=styles["caption"],
@@ -920,7 +1015,7 @@ def render_pdf(spec: DocumentSpec, output_path: Path) -> dict[str, Any]:
                 delta_color = "#2F9E5B" if not item.delta.strip().startswith("-") else "#C0392B"
                 parts.append(
                     Paragraph(
-                        f'<font color="{delta_color}">{escape(item.delta)}</font>',
+                        f'<font color="{delta_color}">{_plain_markup(item.delta)}</font>',
                         ParagraphStyle(
                             "DocMetricDelta",
                             parent=styles["caption"],
@@ -1327,11 +1422,11 @@ def render_pdf(spec: DocumentSpec, output_path: Path) -> dict[str, Any]:
     if not has_cover and spec.title and not any(
         isinstance(b, HeadingBlock) and b.level == 1 for b in spec.blocks[:1]
     ):
-        story.append(Paragraph(escape(spec.title), styles["title"]))
+        story.append(Paragraph(_plain_markup(spec.title), styles["title"]))
         if spec.subtitle:
             story.append(
                 Paragraph(
-                    escape(spec.subtitle),
+                    _plain_markup(spec.subtitle),
                     ParagraphStyle(
                         "DocSubtitle",
                         parent=styles["caption"],
@@ -1531,6 +1626,13 @@ def render_pdf(spec: DocumentSpec, output_path: Path) -> dict[str, Any]:
     if spec.merge_sources or spec.encryption:
         _postprocess_pdf(output_path, spec, warnings)
 
+    if _emoji_seen and not fonts.get("emoji_embedded"):
+        warnings.append(
+            "Document contains emoji but no monochrome emoji font was embedded; "
+            "emoji may render as boxes. Set LEAGENT_EMOJI_FONT or enable "
+            "LEAGENT_FONT_AUTO_DOWNLOAD."
+        )
+
     page_count = _count_pages(output_path)
     result = {
         "success": True,
@@ -1540,6 +1642,7 @@ def render_pdf(spec: DocumentSpec, output_path: Path) -> dict[str, Any]:
         "page_count": page_count,
         "content_stats": stats,
         "font_embedded": bool(fonts["embedded"]),
+        "emoji_embedded": bool(fonts.get("emoji_embedded")),
         "font_source": fonts["source"],
         "theme": theme.name,
         "encrypted": spec.encryption is not None,

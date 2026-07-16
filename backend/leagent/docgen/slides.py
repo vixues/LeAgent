@@ -34,10 +34,12 @@ __all__ = [
     "Region",
     "SlideGeometry",
     "TextStyle",
+    "estimate_code_card_height_pt",
     "estimate_text_height_pt",
     "fit_body_size",
     "flatten_body",
     "is_dark_color",
+    "segment_body",
 ]
 
 EMU_PER_IN = 914_400
@@ -129,7 +131,9 @@ class DeckTypography:
             colors: tuple[ColorRole, ...] = (
                 "text", "text", "text_light", "text_light", "text_light"
             )
-            glyphs = ("\u25aa", "\u2013", "\u00b7", "\u00b7", "\u00b7")
+            # Optically balanced markers (• – ◦) — avoid tiny · / ▪ that
+            # read smaller than body text even at 100% bullet size.
+            glyphs = ("\u2022", "\u2013", "\u25e6", "\u25e6", "\u25e6")
             return BulletLevelStyle(
                 text=TextStyle(
                     size=max(10.0, sizes[i]),
@@ -139,7 +143,7 @@ class DeckTypography:
                 ),
                 glyph=glyphs[i],
                 indent_in=0.02 + 0.32 * i,
-                hang_in=0.26,
+                hang_in=0.28,
             )
 
         return cls(
@@ -173,7 +177,14 @@ class DeckTypography:
             takeaway=TextStyle(size=body + 0.5, bold=True, color="text"),
             caption=TextStyle(size=12.0, color="text_light"),
             footer=TextStyle(size=10.0, color="text_light"),
-            code=TextStyle(size=max(9.0, body - 3.0), color="text_light", font="mono"),
+            code=TextStyle(
+                size=max(10.0, body - 2.0),
+                color="text",
+                font="mono",
+                line_spacing=1.28,
+                space_before_pt=0.0,
+                space_after_pt=1.5,
+            ),
             levels=tuple(_level(i) for i in range(5)),
         )
 
@@ -395,13 +406,35 @@ def flatten_body(markdown_text: str) -> list[BulletPara]:
         elif isinstance(block, QuoteBlock):
             out.append(BulletPara(text=block.text, kind="quote"))
         elif isinstance(block, CodeBlock):
-            for line in block.code.splitlines():
+            lines = block.code.splitlines() or [""]
+            for line in lines:
                 out.append(BulletPara(text=line, kind="code"))
         elif isinstance(block, ParagraphBlock):
             out.append(BulletPara(text=block.text, kind="para"))
         # Tables/charts/images inside body markdown are ignored here — they
         # have first-class slide fields with proper layout treatment.
     return out
+
+
+BodySegmentKind = Literal["text", "code"]
+
+# Vertical chrome around a fenced code surface (padding + outer gap), points.
+_CODE_PAD_PT = 10.0
+_CODE_GAP_PT = 8.0
+
+
+def segment_body(
+    paras: list[BulletPara],
+) -> list[tuple[BodySegmentKind, list[BulletPara]]]:
+    """Group consecutive paragraphs into text vs fenced-code segments."""
+    segments: list[tuple[BodySegmentKind, list[BulletPara]]] = []
+    for para in paras:
+        kind: BodySegmentKind = "code" if para.kind == "code" else "text"
+        if segments and segments[-1][0] == kind:
+            segments[-1][1].append(para)
+        else:
+            segments.append((kind, [para]))
+    return segments
 
 
 # ---------------------------------------------------------------------------
@@ -427,31 +460,59 @@ def _plain_len_pt(text: str, size: float) -> float:
     return width * size
 
 
+def _para_height_pt(
+    para: BulletPara, typo: DeckTypography, width_pt: float, *, scale: float
+) -> float:
+    if para.kind == "heading":
+        style = typo.run_in_heading
+        avail = width_pt
+    elif para.kind == "quote":
+        style = typo.body
+        avail = width_pt
+    elif para.kind == "code":
+        style = typo.code
+        # Inner text width accounts for surface padding + accent bar.
+        avail = max(36.0, width_pt - 28.0)
+    else:
+        lvl = typo.level(para.level)
+        style = lvl.text
+        avail = max(36.0, width_pt - (lvl.indent_in + lvl.hang_in) * 72.0)
+    size = style.size * scale
+    line_h = size * max(style.line_spacing, 1.0) * 1.08
+    text_w = _plain_len_pt(para.text, size)
+    lines = max(1, -(-int(text_w) // max(1, int(avail))))
+    return lines * line_h + (style.space_before_pt + style.space_after_pt) * scale
+
+
 def estimate_text_height_pt(
     paras: list[BulletPara], typo: DeckTypography, width_pt: float, *, scale: float = 1.0
 ) -> float:
     """Estimated rendered height of a paragraph plan at a given size scale."""
     total = 0.0
-    for para in paras:
-        if para.kind == "heading":
-            style = typo.run_in_heading
-            avail = width_pt
-        elif para.kind == "quote":
-            style = typo.body
-            avail = width_pt
-        elif para.kind == "code":
-            style = typo.code
-            avail = width_pt
+    for seg_i, (kind, items) in enumerate(segment_body(paras)):
+        if kind == "code":
+            if seg_i > 0:
+                total += _CODE_GAP_PT * scale
+            total += estimate_code_card_height_pt(
+                items, typo, width_pt, scale=scale
+            )
         else:
-            lvl = typo.level(para.level)
-            style = lvl.text
-            avail = max(36.0, width_pt - (lvl.indent_in + lvl.hang_in) * 72.0)
-        size = style.size * scale
-        line_h = size * max(style.line_spacing, 1.0) * 1.08
-        text_w = _plain_len_pt(para.text, size)
-        lines = max(1, -(-int(text_w) // max(1, int(avail))))
-        total += lines * line_h + (style.space_before_pt + style.space_after_pt) * scale
+            total += sum(
+                _para_height_pt(p, typo, width_pt, scale=scale) for p in items
+            )
     return total
+
+
+def estimate_code_card_height_pt(
+    lines: list[BulletPara],
+    typo: DeckTypography,
+    width_pt: float,
+    *,
+    scale: float = 1.0,
+) -> float:
+    """Height of a fenced-code surface card (lines + inner padding), in points."""
+    inner = sum(_para_height_pt(p, typo, width_pt, scale=scale) for p in lines)
+    return inner + 2.0 * _CODE_PAD_PT * scale
 
 
 def fit_body_size(

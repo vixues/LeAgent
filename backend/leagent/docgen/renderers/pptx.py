@@ -14,8 +14,10 @@ Content features:
   image with a legibility scrim — text colors adapt to background darkness
 - image-and-text layouts (``image.position``: right/left/top/full/background)
 - 2-4 headed ``columns`` layouts with optional card emphasis
-- leveled bullet typography with hanging indents, accent markers, numbered
-  and task lists; body text auto-shrinks to fit its region
+- leveled bullet typography with hanging indents, accent markers sized to
+  match body text (``buSzPts``), numbered and task lists; body autofit
+- fenced code as surface cards (mono type, padding, accent edge) plus
+  inline ``code`` run highlights
 - bottom "takeaway" bar for the slide's so-what message
 """
 
@@ -45,10 +47,13 @@ from leagent.docgen.slides import (
     Region,
     SlideGeometry,
     TextStyle,
+    estimate_code_card_height_pt,
+    estimate_text_height_pt,
     fit_body_size,
     flatten_body,
     is_dark_color,
     relative_luminance,
+    segment_body,
 )
 from leagent.docgen.tables import process_table, resolve_table_style
 from leagent.docgen.themes import get_theme
@@ -59,6 +64,10 @@ if TYPE_CHECKING:
 logger = structlog.get_logger(__name__)
 
 _CHECK_COLOR = "#16A34A"
+_CODE_PAD_PT = 10.0
+_CODE_GAP_PT = 8.0
+_CODE_ACCENT_PT = 3.0
+_NUMBERED_HANG_IN = 0.34  # room for "10." markers
 
 
 def render_pptx(deck: DeckSpec, output_path: Path) -> dict[str, Any]:
@@ -138,6 +147,7 @@ def render_pptx(deck: DeckSpec, output_path: Path) -> dict[str, Any]:
         italic: bool = False,
         mono: bool = False,
         color: Any = None,
+        highlight: bool = False,
     ) -> None:
         font_role = "mono" if mono else style.font
         run.font.name = getattr(theme.fonts, font_role)
@@ -153,6 +163,16 @@ def render_pptx(deck: DeckSpec, output_path: Path) -> dict[str, Any]:
             ea = rpr.makeelement(qn("a:ea"), {})
             rpr.append(ea)
         ea.set("typeface", theme.fonts.east_asia)
+        for el in rpr.findall(qn("a:highlight")):
+            rpr.remove(el)
+        if highlight:
+            hl = rpr.makeelement(qn("a:highlight"), {})
+            srgb = rpr.makeelement(
+                qn("a:srgbClr"),
+                {"val": theme.colors.surface.lstrip("#").upper()[:6]},
+            )
+            hl.append(srgb)
+            rpr.append(hl)
 
     def _fill_rich(
         paragraph: Any,
@@ -195,6 +215,7 @@ def render_pptx(deck: DeckSpec, output_path: Path) -> dict[str, Any]:
                 italic=span.italic,
                 mono=span.code,
                 color=color,
+                highlight=span.code,
             )
             if span.sup or span.sub:
                 rpr = run._r.get_or_add_rPr()
@@ -219,9 +240,19 @@ def render_pptx(deck: DeckSpec, output_path: Path) -> dict[str, Any]:
         char: str | None = None,
         auto_number: bool = False,
         color: Any = None,
+        size_pt: float | None = None,
     ) -> None:
         p_pr = paragraph._p.get_or_add_pPr()
-        for tag in ("a:buClr", "a:buChar", "a:buNone", "a:buAutoNum", "a:buFont"):
+        for tag in (
+            "a:buClr",
+            "a:buChar",
+            "a:buNone",
+            "a:buAutoNum",
+            "a:buFont",
+            "a:buSzPts",
+            "a:buSzPct",
+            "a:buSzTx",
+        ):
             for el in p_pr.findall(qn(tag)):
                 p_pr.remove(el)
         if char is None and not auto_number:
@@ -232,6 +263,14 @@ def render_pptx(deck: DeckSpec, output_path: Path) -> dict[str, Any]:
             srgb = p_pr.makeelement(qn("a:srgbClr"), {"val": str(color)})
             bu_clr.append(srgb)
             p_pr.append(bu_clr)
+        # Match marker size to body text (hundredths of a point).
+        if size_pt is not None and size_pt > 0:
+            p_pr.append(
+                p_pr.makeelement(
+                    qn("a:buSzPts"),
+                    {"val": str(int(round(size_pt * 100)))},
+                )
+            )
         p_pr.append(p_pr.makeelement(qn("a:buFont"), {"typeface": "Arial"}))
         if auto_number:
             p_pr.append(p_pr.makeelement(qn("a:buAutoNum"), {"type": "arabicPeriod"}))
@@ -294,15 +333,26 @@ def render_pptx(deck: DeckSpec, output_path: Path) -> dict[str, Any]:
                 # Suppress extra leading space on the very first bullet.
                 if idx == 0:
                     style = dataclasses.replace(style, space_before_pt=0.0)
+                marker_pt = max(8.0, style.size * scale)
+                hang_in = (
+                    max(lvl.hang_in, _NUMBERED_HANG_IN)
+                    if item.kind == "numbered"
+                    else lvl.hang_in
+                )
                 p.level = min(item.level, 4)
                 _para_spacing(p, style, scale=scale)
                 _set_indent(
                     p,
                     int(lvl.indent_in * 914_400 * scale),
-                    int(lvl.hang_in * 914_400 * scale),
+                    int(hang_in * 914_400 * scale),
                 )
                 if item.kind == "numbered":
-                    _set_bullet(p, auto_number=True, color=accent_hex)
+                    _set_bullet(
+                        p,
+                        auto_number=True,
+                        color=accent_hex,
+                        size_pt=marker_pt,
+                    )
                 elif item.checked is not None:
                     _set_bullet(p, char=None)
                     glyph = "\u2713 " if item.checked else "\u25a1 "
@@ -317,7 +367,12 @@ def render_pptx(deck: DeckSpec, output_path: Path) -> dict[str, Any]:
                         color=_rgb(_CHECK_COLOR) if item.checked else palette["text_light"],
                     )
                 else:
-                    _set_bullet(p, char=lvl.glyph, color=accent_hex)
+                    _set_bullet(
+                        p,
+                        char=lvl.glyph,
+                        color=accent_hex,
+                        size_pt=marker_pt,
+                    )
                 _fill_rich(p, item.text, style, palette, scale=scale)
             elif item.kind == "heading":
                 _para_spacing(p, typo.run_in_heading, scale=scale)
@@ -335,15 +390,76 @@ def render_pptx(deck: DeckSpec, output_path: Path) -> dict[str, Any]:
                     color=palette["text_light"],
                 )
             elif item.kind == "code":
+                # Fallback when code slips into a plain text frame.
                 _para_spacing(p, typo.code, scale=scale)
                 _set_bullet(p, char=None)
                 run = p.add_run()
-                run.text = item.text
+                run.text = item.text if item.text else " "
                 _style_run(run, typo.code, palette, scale=scale, mono=True)
             else:  # para
                 _para_spacing(p, typo.body, scale=scale)
                 _set_bullet(p, char=None)
                 _fill_rich(p, item.text, typo.body, palette, scale=scale)
+
+    def _render_code_surface(
+        slide: Any,
+        lines: list[BulletPara],
+        region: Region,
+        palette: dict[str, Any],
+        *,
+        scale: float = 1.0,
+    ) -> None:
+        """Fenced code as a surface card with accent edge + mono type."""
+        from pptx.enum.shapes import MSO_SHAPE
+
+        card = slide.shapes.add_shape(
+            MSO_SHAPE.ROUNDED_RECTANGLE,
+            Emu(region.left),
+            Emu(region.top),
+            Emu(region.width),
+            Emu(region.height),
+        )
+        with contextlib.suppress(Exception):
+            card.adjustments[0] = 0.04
+        card.fill.solid()
+        card.fill.fore_color.rgb = surface
+        card.line.color.rgb = _rgb(theme.colors.border)
+        card.line.width = Pt(0.75)
+        card.shadow.inherit = False
+
+        bar_w = max(int(_CODE_ACCENT_PT * EMU_PER_PT), 1)
+        bar = slide.shapes.add_shape(
+            MSO_SHAPE.RECTANGLE,
+            Emu(region.left),
+            Emu(region.top),
+            Emu(bar_w),
+            Emu(region.height),
+        )
+        bar.fill.solid()
+        bar.fill.fore_color.rgb = accent
+        bar.line.fill.background()
+        bar.shadow.inherit = False
+
+        pad_x = int(_CODE_PAD_PT * EMU_PER_PT * scale)
+        pad_y = int(_CODE_PAD_PT * EMU_PER_PT * scale)
+        text_region = Region(
+            region.left + bar_w + pad_x,
+            region.top + pad_y,
+            max(0, region.width - bar_w - 2 * pad_x),
+            max(0, region.height - 2 * pad_y),
+        )
+        if text_region.width <= 0 or text_region.height <= 0:
+            return
+        box = _textbox(slide, text_region)
+        first = True
+        for item in lines:
+            p = box.text_frame.paragraphs[0] if first else box.text_frame.add_paragraph()
+            first = False
+            _para_spacing(p, typo.code, scale=scale)
+            _set_bullet(p, char=None)
+            run = p.add_run()
+            run.text = item.text if item.text else " "
+            _style_run(run, typo.code, palette, scale=scale, mono=True)
 
     def _render_body(
         slide: Any,
@@ -355,8 +471,43 @@ def render_pptx(deck: DeckSpec, output_path: Path) -> dict[str, Any]:
         if not paras:
             return
         scale = fit_body_size(paras, typo, region)
-        box = _textbox(slide, region)
-        _render_paras(box.text_frame, paras, palette, scale=scale)
+        width_pt = region.width / EMU_PER_PT
+        y = region.top
+        for seg_i, (kind, items) in enumerate(segment_body(paras)):
+            remaining = region.bottom - y
+            if remaining <= 0:
+                break
+            if kind == "code":
+                if seg_i > 0:
+                    gap = int(_CODE_GAP_PT * EMU_PER_PT * scale)
+                    y += gap
+                    remaining = region.bottom - y
+                    if remaining <= 0:
+                        break
+                card_h = int(
+                    estimate_code_card_height_pt(items, typo, width_pt, scale=scale)
+                    * EMU_PER_PT
+                )
+                card_h = max(card_h, int(28 * EMU_PER_PT * scale))
+                card_h = min(card_h, remaining)
+                _render_code_surface(
+                    slide,
+                    items,
+                    Region(region.left, y, region.width, card_h),
+                    palette,
+                    scale=scale,
+                )
+                y += card_h
+            else:
+                text_h = int(
+                    estimate_text_height_pt(items, typo, width_pt, scale=scale)
+                    * EMU_PER_PT
+                )
+                text_h = max(text_h, int(18 * EMU_PER_PT * scale))
+                text_h = min(text_h, remaining)
+                box = _textbox(slide, Region(region.left, y, region.width, text_h))
+                _render_paras(box.text_frame, items, palette, scale=scale)
+                y += text_h
 
     # ------------------------------------------------------------------
     # Backgrounds

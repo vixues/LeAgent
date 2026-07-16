@@ -20,6 +20,7 @@ from leagent.docgen.slides import (
     fit_body_size,
     flatten_body,
     is_dark_color,
+    segment_body,
 )
 from leagent.docgen.themes import get_theme
 
@@ -56,6 +57,10 @@ def test_typography_scale_from_theme() -> None:
     assert typo.level(2).indent_in > typo.level(0).indent_in
     # Out-of-range levels clamp instead of raising.
     assert typo.level(99) == typo.level(4)
+    # Primary bullet uses a full-size glyph (not a tiny square / middle-dot).
+    assert typo.level(0).glyph == "\u2022"
+    assert typo.code.font == "mono"
+    assert typo.code.size >= 10.0
 
 
 def test_is_dark_color() -> None:
@@ -159,6 +164,16 @@ def test_flatten_body_empty() -> None:
     assert flatten_body("   \n  ") == []
 
 
+def test_segment_body_groups_code_fences() -> None:
+    paras = flatten_body(
+        "- bullet\n\n```python\nprint(1)\nprint(2)\n```\n\n尾段"
+    )
+    segments = segment_body(paras)
+    assert [kind for kind, _ in segments] == ["text", "code", "text"]
+    assert len(segments[1][1]) == 2
+    assert all(p.kind == "code" for p in segments[1][1])
+
+
 # ---------------------------------------------------------------------------
 # Autofit
 # ---------------------------------------------------------------------------
@@ -238,16 +253,57 @@ def test_render_pptx_consulting_anatomy(tmp_path: Path) -> None:
         assert heading in joined
 
     # Numbered items use native auto-numbering; leveled bullets carry
-    # hanging-indent geometry.
+    # hanging-indent geometry and explicit marker size matching body text.
     content_xml = prs.slides[1].shapes._spTree.xml
     assert "buAutoNum" in content_xml
     assert 'indent="-' in content_xml
+    assert "buSzPts" in content_xml
 
     # The emphasized column draws a card (an autoshape besides text boxes).
     from pptx.enum.shapes import MSO_SHAPE_TYPE
 
     col_slide_shapes = [s.shape_type for s in prs.slides[2].shapes]
     assert MSO_SHAPE_TYPE.AUTO_SHAPE in col_slide_shapes
+
+
+def test_render_pptx_code_surface_and_inline_highlight(tmp_path: Path) -> None:
+    """Fenced code becomes a surface card; inline code gets a highlight."""
+    pptx = pytest.importorskip("pptx")
+    from pptx.enum.shapes import MSO_SHAPE_TYPE
+
+    from leagent.docgen.renderers.pptx import render_pptx
+
+    spec = DeckSpec.model_validate(
+        {
+            "title": "代码",
+            "slides": [
+                {"layout": "title", "title": "代码"},
+                {
+                    "layout": "content",
+                    "title": "示例",
+                    "body": (
+                        "- 使用 `slides_generate` 生成\n\n"
+                        "```python\ndef hello():\n    return 42\n```\n"
+                    ),
+                },
+            ],
+        }
+    )
+    out = tmp_path / "code.pptx"
+    assert render_pptx(spec, out)["success"] is True
+
+    prs = pptx.Presentation(str(out))
+    slide = prs.slides[1]
+    joined = _all_text(prs)
+    assert "def hello():" in joined
+    assert "return 42" in joined
+    assert "slides_generate" in joined
+
+    # Surface card + accent bar for the fenced block.
+    assert any(s.shape_type == MSO_SHAPE_TYPE.AUTO_SHAPE for s in slide.shapes)
+    xml = slide.shapes._spTree.xml
+    assert "buSzPts" in xml
+    assert "highlight" in xml
 
 
 def test_render_pptx_backgrounds(tmp_path: Path) -> None:
