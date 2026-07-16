@@ -162,11 +162,13 @@ class EmitUiTreeTool(BaseTool):
         "(title, value, padding, variant, headers, events, …) stay inside `props`; `children` holds only "
         "nested nodes. "
         "Before substantial trees (decks, posters, multi-card layouts), call `get_genui_guide` "
-        "(payload **`wire_format_and_syntax`** + **`workflow_order`**), then **must call** "
+        "(sections **`wire_format_and_syntax`** + **`workflow_order`**), then **must call** "
         "`list_ui_components` for exact `kind`/prop names. "
         "Tool arguments must be strict JSON—escape double quotes as \\\" and newlines as \\n inside string "
-        "values. Accepts `{schemaVersion:'1', root:{...}}`, `{root:{...}}`, or a bare root object. "
-        "Keep payloads compact; prefer `emit_ui_patch` for incremental updates instead of re-emitting. "
+        "values. Args and result share the same top-level shape: `{tree, optional canvas_id}` "
+        "(never a `payload` wrapper). "
+        "Accepts `{schemaVersion:'1', root:{...}}`, `{root:{...}}`, or a bare root object. "
+        "Keep trees compact; prefer `emit_ui_patch` for incremental updates instead of re-emitting. "
         "Pass `tree` as a JSON object when possible; a string containing the same JSON is accepted—on "
         "parse failure, fix escaping at the reported byte offset or pass an object. "
         "Actions: set `props.action` to `{type, payload}` with snake_case `type` "
@@ -255,7 +257,11 @@ class EmitUiTreeTool(BaseTool):
             max_depth=settings["max_tree_depth"],
             max_nodes=settings["max_nodes_per_tree"],
         )
-        return {"payload": {"tree": normalized, "canvas_id": params.get("canvas_id")}}
+        out: dict[str, Any] = {"tree": normalized}
+        canvas_id = params.get("canvas_id")
+        if canvas_id is not None:
+            out["canvas_id"] = canvas_id
+        return out
 
 
 class EmitUiPatchTool(BaseTool):
@@ -266,9 +272,9 @@ class EmitUiPatchTool(BaseTool):
         "Apply incremental JSON-Patch updates (add/replace/remove) to an "
         "already-emitted gen UI tree, validated server-side. Use this instead "
         "of re-emitting the whole tree when you want to refresh a few fields. "
-        "Pass top-level `{patches, optional seq, optional canvas_id}` — do not "
-        "nest under `payload` (that wrapper is only on the tool result). Omit "
-        "`canvas_id` when unused; never pass null."
+        "Args and result share the same top-level shape: "
+        "`{patches, optional seq, optional canvas_id}` — never a `payload` wrapper. "
+        "Omit `canvas_id` when unused; never pass null."
     )
     category = ToolCategory.CANVAS
     is_read_only = True
@@ -315,9 +321,8 @@ class EmitUiPatchTool(BaseTool):
 
     async def execute(self, params: dict[str, Any], context: ToolContext) -> Any:
         validate_ui_patch(params)
-        payload = {
+        return {
             k: v
             for k, v in params.items()
             if k in ("patches", "canvas_id", "seq") and v is not None
         }
-        return {"payload": payload}

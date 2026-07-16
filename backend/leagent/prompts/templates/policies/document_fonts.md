@@ -35,7 +35,7 @@ if not (cjk and Path(cjk).is_file()):
 ```
 
 - **ReportLab note:** it rejects CFF/PostScript outlines (`postscript outlines are not supported`) — many distro Noto CJK **OTF/TTC** files fail. Prefer **TrueType `.ttf`** (the managed `~/.leagent/fonts/NotoSansSC-*.ttf` files are TrueType); for `.ttc` pass the right `subfontIndex`.
-- **matplotlib:** the `code_execution` subprocess auto-configures CJK when the script references matplotlib (`pyplot`, `plt.`, `font_manager`, …): registers the resolved font, sets `font.sans-serif` and `axes.unicode_minus = False`. Override per-plot with `FontProperties(fname=...)` only when you need a specific face.
+- **matplotlib:** the `code_execution` subprocess auto-configures CJK when the script references matplotlib (`pyplot`, `plt.`, `font_manager`, …): registers the resolved font (and common aliases such as `SimHei` / `Microsoft YaHei`), sets `font.sans-serif`, and re-applies that stack on `savefig`. Do **not** reset `font.sans-serif` to Windows-only names; leave the runtime defaults, or pass `FontProperties(fname=os.environ["LEAGENT_CJK_FONT"])` when you need an explicit face.
 - **python-docx/pptx & openpyxl:** the family name must exist on the machine that **opens** the file. Set both the latin font and the east-Asian font (`w:eastAsia` in DOCX, `<a:ea>` in PPTX); portable names: `Microsoft YaHei`, `PingFang SC`, `Noto Sans CJK SC`, `WenQuanYi Micro Hei`.
 
 If no font can be resolved anywhere, suggest installing **`fonts-noto-cjk`** or **`fonts-wqy-microhei`** (Debian/Ubuntu) or setting **`LEAGENT_CJK_FONT`** to an absolute `.ttf` path.

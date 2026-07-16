@@ -129,18 +129,57 @@ def test_configure_matplotlib_cjk_sets_rcparams(monkeypatch: pytest.MonkeyPatch,
 
     matplotlib.use("Agg", force=True)
 
-    with patch("matplotlib.font_manager.fontManager.addfont") as addfont_mock:
-        with patch("matplotlib.font_manager.FontProperties") as fp_cls:
-            fp_inst = MagicMock()
-            fp_inst.get_name.return_value = "Noto Sans SC"
-            fp_cls.return_value = fp_inst
-            assert mpl_cjk.configure_matplotlib_cjk() is True
-            addfont_mock.assert_called_once_with(str(font_path))
+    with patch.object(mpl_cjk, "_register_family_aliases"):
+        with patch("matplotlib.font_manager.fontManager.addfont") as addfont_mock:
+            with patch("matplotlib.font_manager.FontProperties") as fp_cls:
+                fp_inst = MagicMock()
+                fp_inst.get_name.return_value = "Noto Sans SC"
+                fp_cls.return_value = fp_inst
+                assert mpl_cjk.configure_matplotlib_cjk() is True
+                addfont_mock.assert_called_once_with(str(font_path))
 
     import matplotlib.pyplot as plt
 
     assert plt.rcParams["axes.unicode_minus"] is False
     assert plt.rcParams["font.sans-serif"][0] == "Noto Sans SC"
 
+    # Second call must restore rcParams after a script overwrite.
+    plt.rcParams["font.sans-serif"] = ["DejaVu Sans"]
     assert mpl_cjk.configure_matplotlib_cjk() is True
+    assert plt.rcParams["font.sans-serif"][0] == "Noto Sans SC"
+    mpl_cjk.reset_matplotlib_cjk_configured_for_tests()
+
+
+def test_configure_matplotlib_cjk_aliases_common_family_names() -> None:
+    """SimHei / YaHei overrides must resolve to the registered CJK file."""
+    from pathlib import Path
+
+    from leagent.code import matplotlib_cjk as mpl_cjk
+    from leagent.utils.cjk_font_discovery import resolve_cjk_regular_path
+
+    font = resolve_cjk_regular_path()
+    if not font or not Path(font).is_file():
+        pytest.skip("no CJK font available on this host")
+
+    mpl_cjk.reset_matplotlib_cjk_configured_for_tests()
+    import matplotlib
+
+    matplotlib.use("Agg", force=True)
+    from matplotlib import font_manager
+    import matplotlib.pyplot as plt
+
+    assert mpl_cjk.configure_matplotlib_cjk() is True
+
+    for alias in ("SimHei", "Microsoft YaHei", "PingFang SC"):
+        found = font_manager.findfont(font_manager.FontProperties(family=alias))
+        assert Path(found).resolve() == Path(font).resolve()
+
+    # Typical LLM override: sans-serif = Windows name only.
+    plt.rcParams["font.sans-serif"] = ["SimHei"]
+    plt.rcParams["font.family"] = "sans-serif"
+    resolved = font_manager.findfont(
+        font_manager.FontProperties(family=plt.rcParams["font.sans-serif"])
+    )
+    assert Path(resolved).resolve() == Path(font).resolve()
+
     mpl_cjk.reset_matplotlib_cjk_configured_for_tests()

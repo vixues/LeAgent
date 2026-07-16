@@ -10,7 +10,6 @@ from leagent.api.v1 import chat as chat_mod
 from jsonschema.exceptions import ValidationError
 
 from leagent.services.gen_ui.schema import (
-    coerce_ui_patch_tool_params,
     normalize_ui_tree,
     validate_ui_patch,
     validate_ui_tree,
@@ -95,6 +94,24 @@ def test_companion_emit_ui():
             "name": "emit_ui_tree",
             "success": True,
             "data": {
+                "tree": {
+                    "schemaVersion": "1",
+                    "root": {"nodeId": "1", "kind": "Text", "props": {"value": "x"}},
+                }
+            },
+        },
+    )
+    assert any(x[0] == "ui_tree" for x in out)
+
+
+def test_companion_emit_ui_legacy_payload_wrapper():
+    """SSE still unwraps pre-flatten tool results stored as `{payload: {tree}}`."""
+    out = chat_mod._companion_sse_events(
+        "tool_result",
+        {
+            "name": "emit_ui_tree",
+            "success": True,
+            "data": {
                 "payload": {
                     "tree": {
                         "schemaVersion": "1",
@@ -116,11 +133,9 @@ def test_companion_includes_tool_call_id():
             "name": "emit_ui_tree",
             "success": True,
             "data": {
-                "payload": {
-                    "tree": {
-                        "schemaVersion": "1",
-                        "root": {"nodeId": "1", "kind": "Text", "props": {"value": "x"}},
-                    }
+                "tree": {
+                    "schemaVersion": "1",
+                    "root": {"nodeId": "1", "kind": "Text", "props": {"value": "x"}},
                 }
             },
         },
@@ -377,7 +392,7 @@ async def test_emit_ui_tree_accepts_tree_as_json_string():
     ok, err = tool.validate_params({"tree": raw})
     assert ok, err
     result = await tool.execute({"tree": raw}, ToolContext(user_id="u1", session_id="s1"))
-    assert result["payload"]["tree"]["schemaVersion"] == "1"
+    assert result["tree"]["schemaVersion"] == "1"
 
 
 @pytest.mark.asyncio
@@ -386,7 +401,7 @@ async def test_emit_ui_tree_returns_normalized_payload_for_sse():
         {"tree": {"type": "Badge", "props": {"text": "Ready", "variant": "success"}}},
         ToolContext(user_id="u1", session_id="s1"),
     )
-    tree = result["payload"]["tree"]
+    tree = result["tree"]
     assert tree["root"]["kind"] == "Badge"
     assert tree["root"]["props"]["value"] == "Ready"
 
@@ -394,7 +409,7 @@ async def test_emit_ui_tree_returns_normalized_payload_for_sse():
         "tool_result",
         {"name": "emit_ui_tree", "success": True, "data": result},
     )
-    assert out == [("ui_tree", {"tree": tree, "canvas_id": None})]
+    assert out == [("ui_tree", {"tree": tree})]
 
 
 def test_normalize_lifts_known_flat_card_props():
@@ -488,7 +503,7 @@ async def test_emit_ui_tree_repairs_malformed_json_string():
     result = await EmitUiTreeTool().execute(
         {"tree": raw}, ToolContext(user_id="u1", session_id="s1")
     )
-    root = result["payload"]["tree"]["root"]
+    root = result["tree"]["root"]
     assert root["kind"] == "Stack"
     kinds = [c.get("kind") for c in root.get("children", [])]
     assert "Alert" in kinds
@@ -496,8 +511,9 @@ async def test_emit_ui_tree_repairs_malformed_json_string():
 
 @pytest.mark.asyncio
 async def test_emit_ui_tree_invalid_json_string_includes_decode_hint():
-    """Malformed nested JSON string surfaces byte position so the model can fix escapes."""
-    bad = '{"root":{"kind":"Text","props":{"value":"broken "inner" quote"}}}'
+    """Irrecoverable nested JSON string surfaces byte position so the model can fix it."""
+    # Escape-repair can salvage unescaped quotes; use token garbage that stays invalid.
+    bad = '{"root": NOT_JSON}'
     with pytest.raises(ValueError) as excinfo:
         await EmitUiTreeTool().execute(
             {"tree": bad}, ToolContext(user_id="u1", session_id="s1")
@@ -548,7 +564,7 @@ async def test_emit_ui_tree_repairs_superfluous_closing_brackets():
     result = await EmitUiTreeTool().execute(
         {"tree": bad}, ToolContext(user_id="u1", session_id="s1")
     )
-    root = result["payload"]["tree"]["root"]
+    root = result["tree"]["root"]
     kinds = [c.get("kind") for c in root.get("children", [])]
     assert "Card" in kinds
 
@@ -625,23 +641,28 @@ async def test_emit_ui_patch_execute_without_canvas_id():
     tool = EmitUiPatchTool()
     patches = [{"op": "replace", "path": "/root/props/title", "value": "LeAgent Workflow 引擎"}]
     result = await tool.execute({"patches": patches, "seq": 1}, ToolContext(user_id="u1", session_id="s1"))
-    assert result["payload"]["patches"] == patches
-    assert "canvas_id" not in result["payload"]
-    assert result["payload"]["seq"] == 1
+    assert result["patches"] == patches
+    assert "canvas_id" not in result
+    assert result["seq"] == 1
 
 
-def test_emit_ui_patch_rejects_nested_payload_wrapper():
+def test_emit_ui_patch_rejects_payload_key():
     patches = [{"op": "add", "path": "/root/children/-", "value": {"kind": "Text", "props": {"value": "x"}}}]
     ok, err = EmitUiPatchTool().validate_params({"payload": {"patches": patches, "seq": 2}})
     assert not ok
     assert err is not None
-    assert "payload" in err or "patches" in err
+    assert "payload" in err
+    assert "patches" in err
 
 
-def test_emit_ui_patch_coerce_helper_requires_top_level_patches():
-    patches = [{"op": "add", "path": "/root/children/-", "value": {"kind": "Text", "props": {"value": "x"}}}]
-    with pytest.raises(ValueError, match="patches"):
-        coerce_ui_patch_tool_params({"payload": {"patches": patches, "seq": 2}})
+def test_emit_ui_tree_rejects_payload_key():
+    """Args must use ``tree``; unknown ``payload`` gets an actionable hint (no silent rewrite)."""
+    node = {"kind": "Image", "props": {"src": "/api/v1/files/x/preview", "alt": "chart"}}
+    ok, err = EmitUiTreeTool().validate_params({"payload": node})
+    assert not ok
+    assert err is not None
+    assert "payload" in err
+    assert "tree" in err
 
 
 def test_emit_ui_patch_recovers_top_level_patches_from_raw():
@@ -711,7 +732,7 @@ async def test_emit_ui_tree_accepts_real_failing_payload():
     result = await EmitUiTreeTool().execute(
         {"tree": failing}, ToolContext(user_id="u1", session_id="s1")
     )
-    tree = result["payload"]["tree"]
+    tree = result["tree"]
     root = tree["root"]
     assert root["kind"] == "Stack"
     assert root["props"]["gap"] == 24

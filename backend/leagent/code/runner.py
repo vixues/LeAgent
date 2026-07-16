@@ -217,22 +217,47 @@ def _configure_matplotlib_if_needed(source: str, base: Path) -> None:
 
         matplotlib.use("Agg", force=True)
         import matplotlib.pyplot as plt
+        from matplotlib.figure import Figure
     except Exception:
         return
 
+    ensure_cjk = None
     try:
-        from leagent.code.matplotlib_cjk import configure_matplotlib_cjk
+        from leagent.code.matplotlib_cjk import configure_matplotlib_cjk as _configure_cjk
 
-        configure_matplotlib_cjk()
+        _configure_cjk()
+        ensure_cjk = _configure_cjk
     except Exception:
         pass
+
+    def _ensure_cjk() -> None:
+        if ensure_cjk is None:
+            return
+        try:
+            ensure_cjk()
+        except Exception:
+            pass
+
+    _orig_plt_savefig = plt.savefig
+    _orig_fig_savefig = Figure.savefig
+
+    def _savefig(*args: Any, **kwargs: Any) -> Any:
+        _ensure_cjk()
+        return _orig_plt_savefig(*args, **kwargs)
+
+    def _fig_savefig(self: Any, *args: Any, **kwargs: Any) -> Any:
+        _ensure_cjk()
+        return _orig_fig_savefig(self, *args, **kwargs)
 
     def _show(*args: Any, **kwargs: Any) -> None:
         if not plt.get_fignums():
             return
         target = base / f"figure_{int(time.time() * 1000)}.png"
+        # Goes through wrapped savefig → re-applies CJK after script overrides.
         plt.savefig(target, dpi=150, bbox_inches="tight")
 
+    plt.savefig = _savefig  # type: ignore[assignment]
+    Figure.savefig = _fig_savefig  # type: ignore[assignment]
     plt.show = _show  # type: ignore[assignment]
 
 

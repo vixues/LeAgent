@@ -109,6 +109,12 @@ def suggest_canonical_key(wrong_key: str, schema: dict[str, Any]) -> str | None:
         return "data"
     if wrong_key in ("data", "text", "body", "markdown") and "content" in props and "data" not in props:
         return "content"
+    # Models sometimes invent a ``payload`` wrapper; GenUI tools use ``tree`` / ``patches``.
+    if wrong_key == "payload":
+        if "tree" in props:
+            return "tree"
+        if "patches" in props:
+            return "patches"
 
     return None
 

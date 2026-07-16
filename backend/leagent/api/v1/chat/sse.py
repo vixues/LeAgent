@@ -110,16 +110,21 @@ def companion_sse_events(etype: str, edata: dict[str, Any]) -> list[tuple[str, d
                 },
             )
         )
-    if name == "emit_ui_tree" and isinstance(td.get("payload"), dict):
-        payload = dict(td["payload"])
-        if tool_call_id:
-            payload["tool_call_id"] = tool_call_id
-        out.append(("ui_tree", payload))
-    if name == "emit_ui_patch" and isinstance(td.get("payload"), dict):
-        patch_payload = dict(td["payload"])
-        if tool_call_id:
-            patch_payload["tool_call_id"] = tool_call_id
-        out.append(("ui_patch", patch_payload))
+    if name == "emit_ui_tree":
+        # Flat result `{tree, canvas_id?}` matches tool args; unwrap legacy `{payload: …}`.
+        tree_body = _genui_tool_result_body(td, primary_key="tree")
+        if tree_body is not None:
+            event = dict(tree_body)
+            if tool_call_id:
+                event["tool_call_id"] = tool_call_id
+            out.append(("ui_tree", event))
+    if name == "emit_ui_patch":
+        patch_body = _genui_tool_result_body(td, primary_key="patches")
+        if patch_body is not None:
+            event = dict(patch_body)
+            if tool_call_id:
+                event["tool_call_id"] = tool_call_id
+            out.append(("ui_patch", event))
     if name == "emit_pet_bubble":
         text = str(td.get("text") or "").strip()
         if text:
@@ -132,6 +137,16 @@ def companion_sse_events(etype: str, edata: dict[str, Any]) -> list[tuple[str, d
             out.append(("pet_bubble", bubble))
 
     return out
+
+
+def _genui_tool_result_body(td: dict[str, Any], *, primary_key: str) -> dict[str, Any] | None:
+    """Return the GenUI event body from a flat or legacy-wrapped tool result."""
+    if primary_key in td:
+        return td
+    nested = td.get("payload")
+    if isinstance(nested, dict) and primary_key in nested:
+        return nested
+    return None
 
 
 def openai_tool_call_from_stream_edata(edata: dict[str, Any]) -> dict[str, Any] | None:

@@ -904,20 +904,6 @@ def validate_ui_patch(payload: dict[str, Any]) -> None:
     jsonschema.validate(instance=normalized, schema=UI_PATCH_SCHEMA)
 
 
-def coerce_ui_patch_tool_params(params: dict[str, Any]) -> dict[str, Any]:
-    """Deprecated: nested ``payload`` unwrapping removed; use top-level ``patches``."""
-    data = dict(params or {})
-    if not isinstance(data.get("patches"), list):
-        raise ValueError(
-            "Invalid parameters: 'patches' is required at the top level (do not nest under 'payload')"
-        )
-    return {
-        k: v
-        for k, v in data.items()
-        if k in ("patches", "canvas_id", "seq") and v is not None
-    }
-
-
 def ui_tree_from_json_bytes(raw: bytes | str) -> dict[str, Any]:
     if isinstance(raw, bytes):
         raw = raw.decode("utf-8")

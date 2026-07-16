@@ -38,12 +38,14 @@ _GUIDE_PAYLOAD: dict[str, Any] = {
         "**SlideDeck:** You may put slide specs in `props.slides` **or** real `Slide` children; if both are missing "
         "structure, prefer explicit `Slide` children for clarity.",
         "**Root slot:** If you set `root.props.uiSlot`, it must be exactly one of: `weather`, `calendar`, `generic`.",
+        "**Tool args / result:** `emit_ui_tree({ \"tree\": <envelope or bare root>, \"canvas_id\"?: \"…\" })` "
+        "— args and tool result use the same top-level keys (never wrap in `payload`).",
         "**Strict JSON in tool arguments:** One JSON object per tool call — no markdown fences or commentary. "
         "Pass **`tree` as a nested JSON object** when possible (not a giant escaped string). Inside strings, escape "
         "`\"` as `\\\"` and newlines as `\\n`.",
-        "**`emit_ui_patch`:** Payload `{ \"patches\": [ {\"op\":\"add|replace|remove\", \"path\":\"/json/pointer\", "
-        "\"value\": ... } ] }` — paths use RFC 6901 pointers into the normalized tree (e.g. `/root/children/0/props/value`). "
-        "`remove` has no `value`. Keep patches small.",
+        "**`emit_ui_patch`:** Top-level `{ \"patches\": [ {\"op\":\"add|replace|remove\", \"path\":\"/json/pointer\", "
+        "\"value\": ... } ] }` — same keys on the tool result. Paths use RFC 6901 pointers into the normalized tree "
+        "(e.g. `/root/children/0/props/value`). `remove` has no `value`. Keep patches small.",
     ],
     "when_to_call": [
         "Do **not** open this guide just to polish a normal chat answer — onboarding, feature lists, "
