@@ -1006,33 +1006,23 @@ function toolCallStatusPresentation(status: ToolCall['status']) {
       icon: (
         <Loader2 className="h-3.5 w-3.5 text-muted-foreground-tertiary animate-spin" />
       ),
-      border: 'border-border-subtle',
-      bg: '',
     },
     running: {
-      icon: <Loader2 className="h-3.5 w-3.5 text-sky-500 animate-spin" />,
-      border: 'border-sky-200 dark:border-sky-800',
-      bg: 'bg-sky-50/40 dark:bg-sky-900/10',
+      icon: <Loader2 className="h-3.5 w-3.5 text-muted-foreground animate-spin" />,
     },
     awaiting_user: {
       icon: (
         <MessageCircleQuestion
-          className="h-3.5 w-3.5 text-amber-600 dark:text-amber-400"
+          className="h-3.5 w-3.5 text-muted-foreground"
           aria-hidden
         />
       ),
-      border: 'border-amber-200 dark:border-amber-800',
-      bg: 'bg-amber-50/40 dark:bg-amber-900/10',
     },
     success: {
-      icon: <Check className="h-3.5 w-3.5 text-mint-500" />,
-      border: 'border-mint-200 dark:border-mint-800',
-      bg: 'bg-mint-50/40 dark:bg-mint-900/10',
+      icon: <Check className="h-3.5 w-3.5 text-muted-foreground-tertiary" />,
     },
     error: {
-      icon: <AlertCircle className="h-3.5 w-3.5 text-red-500" />,
-      border: 'border-red-200 dark:border-red-800',
-      bg: 'bg-red-50/40 dark:bg-red-900/10',
+      icon: <AlertCircle className="h-3.5 w-3.5 text-muted-foreground" />,
     },
   };
   return statusConfig[status];
@@ -1235,49 +1225,27 @@ function ToolCallChip({ sequenceIndex, toolCall, expanded, onToggle }: ToolCallC
   const config = toolCallStatusPresentation(toolCall.status);
 
   return (
-    <div
-      className={cn(
-        'flex-shrink-0 text-xs transition-colors rounded-lg border max-w-[14rem] min-w-[8.25rem]',
-        expanded
-          ? 'border-primary-300/80 bg-primary-50/90 dark:border-primary-600/45 dark:bg-primary-950/35'
-          : cn(config.border, config.bg),
-      )}
-    >
+    <div className="max-w-[14rem] min-w-[8.25rem] flex-shrink-0 text-xs">
       <button
         type="button"
         className={cn(
           'flex h-7 w-full max-w-[14rem] items-center gap-1 rounded-md px-1.5 py-1 text-left outline-none transition-colors',
+          'text-muted-foreground hover:text-foreground hover:bg-muted/40',
           'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-400/50 focus-visible:ring-offset-2 focus-visible:ring-offset-background',
-          expanded && 'text-primary-800 dark:text-primary-200',
+          expanded && 'bg-muted/50 text-foreground',
         )}
         onClick={onToggle}
         aria-expanded={expanded}
         aria-pressed={expanded}
       >
         <span
-          className={cn(
-            'flex h-4 min-w-[1.125rem] shrink-0 items-center justify-center rounded px-0.5 font-mono text-[10px] font-semibold tabular-nums leading-none',
-            expanded
-              ? 'bg-primary-200/70 text-primary-900 dark:bg-primary-800/60 dark:text-primary-100'
-              : 'bg-muted/60 text-muted-foreground-tertiary dark:bg-muted/40',
-          )}
+          className="flex h-4 min-w-[1.125rem] shrink-0 items-center justify-center px-0.5 font-mono text-[10px] font-semibold tabular-nums leading-none text-muted-foreground-tertiary"
           aria-hidden
         >
           {sequenceIndex}
         </span>
-        <Wrench
-          className={cn(
-            'h-3 w-3 flex-shrink-0',
-            expanded ? 'text-primary-600 dark:text-primary-400' : 'text-muted-foreground',
-          )}
-          aria-hidden
-        />
-        <span
-          className={cn(
-            'min-w-0 flex-1 truncate font-medium',
-            expanded ? 'text-primary-800 dark:text-primary-200' : 'text-foreground',
-          )}
-        >
+        <Wrench className="h-3 w-3 flex-shrink-0 text-muted-foreground" aria-hidden />
+        <span className="min-w-0 flex-1 truncate font-medium text-foreground">
           {toolDisplayName}
         </span>
         {toolCall.duration_ms !== undefined &&
@@ -1338,14 +1306,14 @@ function ToolCallStrip({ tools }: { tools: ToolCall[] }) {
   const showDetails = Boolean(activeTool && panelExpanded);
 
   return (
-    <div className="space-y-1.5 rounded-lg border border-border-subtle bg-muted/25 px-1.5 py-1.5 dark:bg-muted/15">
-      <div className="flex min-h-7 min-w-0 items-center gap-1.5">
+    <div className="space-y-1.5">
+      <div className="flex min-h-7 min-w-0 items-center gap-1">
         <button
           type="button"
           disabled={!activeTool}
           className={cn(
-            'flex h-7 w-8 shrink-0 items-center justify-center rounded-md border-0',
-            'bg-background/60 text-muted-foreground transition-colors',
+            'flex h-7 w-7 shrink-0 items-center justify-center rounded-md',
+            'text-muted-foreground transition-colors',
             'hover:bg-muted/40 hover:text-foreground',
             'disabled:pointer-events-none disabled:opacity-40',
             'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/40 focus-visible:ring-offset-2 focus-visible:ring-offset-background',
@@ -1362,7 +1330,7 @@ function ToolCallStrip({ tools }: { tools: ToolCall[] }) {
         </button>
         <div
           ref={scrollRef}
-          className="no-scrollbar flex min-h-7 min-w-0 flex-1 items-stretch gap-1.5 overflow-x-auto overflow-y-visible"
+          className="no-scrollbar flex min-h-7 min-w-0 flex-1 items-stretch gap-0.5 overflow-x-auto overflow-y-visible"
         >
           {tools.map((tc, index) => (
             <ToolCallChip
@@ -1377,12 +1345,7 @@ function ToolCallStrip({ tools }: { tools: ToolCall[] }) {
       </div>
 
       {showDetails && activeTool ? (
-        <div
-          className={cn(
-            'no-scrollbar max-h-[min(50vh,22rem)] overflow-y-auto overscroll-contain rounded-md border border-border-subtle/80',
-            'bg-surface-sunken/40 px-2 py-2 dark:bg-muted/10',
-          )}
-        >
+        <div className="no-scrollbar max-h-[min(50vh,22rem)] overflow-y-auto overscroll-contain px-1 py-1.5">
           <ToolCallDetailsPane toolCall={activeTool} />
         </div>
       ) : null}

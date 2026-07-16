@@ -266,6 +266,7 @@
     "generating": "Generating...",
     "genUiBuildingUi": "Building UI…",
     "genUiPublishingCanvas": "Publishing canvas…",
+    "genUiOpenWebpage": "Open page",
     "genUiAttribution": "Generated with LeAgent GenUI",
     "skillsBadge": "{{count}} skills available",
     "skillsBadge_one": "{{count}} skill available",

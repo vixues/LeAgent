@@ -10,7 +10,7 @@ export function GenUiInlineToolbar({
   onScreenshot,
   screenshotting,
   onCameraOpen,
-  expanded = false,
+  expanded = true,
   onToggleExpanded = () => {},
   expandAriaLabel,
 }: {

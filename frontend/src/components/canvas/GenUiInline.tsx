@@ -38,7 +38,7 @@ export function GenUiInline({
   const { toast } = useToast();
   const key = genUiTreeKey(sessionId, messageId);
   const tree = useGenUiStore((s) => s.trees[key]);
-  const [expanded, setExpanded] = useState(false);
+  const [expanded, setExpanded] = useState(true);
   const [jsEnabled, setJsEnabled] = useState(true);
   const [screenshotting, setScreenshotting] = useState(false);
   const [cameraOpen, setCameraOpen] = useState(false);
@@ -123,22 +123,16 @@ export function GenUiInline({
   if (!tree) return null;
 
   const isDeck = tree.root?.kind === 'SlideDeck';
-  const maxH = isDeck
-    ? expanded
-      ? 'max-h-[min(90vh,900px)]'
-      : 'max-h-[min(70vh,640px)]'
-    : expanded
-      ? 'max-h-[600px]'
+  // Collapsed: capped height with scroll. Expanded: full height, no scrollbar.
+  const bodyMaxH = expanded
+    ? undefined
+    : isDeck
+      ? 'max-h-[min(70vh,640px)]'
       : 'max-h-96';
 
   return (
-    <div
-      className={cn(
-        'mt-3 rounded-xl border border-border bg-surface-elevated/50 overflow-hidden transition-all duration-300',
-        className,
-      )}
-    >
-      <div className="flex items-center justify-between px-3 py-1.5 border-b border-border bg-surface-sunken/50">
+    <div className={cn('mt-3 transition-all duration-300', className)}>
+      <div className="mb-1.5 flex items-center justify-between gap-2">
         <div className="flex items-center gap-1.5">
           <Sparkles className="w-3 h-3 text-primary-500" />
           <span className="text-[10px] uppercase tracking-wider font-semibold text-muted-foreground">
@@ -174,13 +168,20 @@ export function GenUiInline({
           />
         </div>
       </div>
-      <div className={cn('overflow-auto transition-all duration-300', maxH)}>
+      <div
+        className={cn(
+          'transition-all duration-300',
+          expanded ? 'overflow-visible' : 'overflow-auto',
+          bodyMaxH,
+        )}
+      >
         <GenUiTreeView
           tree={tree}
           contentRef={treeBodyRef}
           sessionId={sessionId}
           messageId={messageId}
           jsEnabled={jsEnabled}
+          variant="inline"
         />
       </div>
       <CameraCaptureModal open={cameraOpen} onOpenChange={setCameraOpen} />

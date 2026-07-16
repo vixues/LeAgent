@@ -1204,6 +1204,7 @@ export function GenUiTreeView({
   sessionId,
   messageId,
   jsEnabled = true,
+  variant = 'default',
 }: {
   tree: GenUiTreeV1 | null | undefined;
   /** When set (e.g. GenUiInline screenshot), points at the scrollable tree body only. */
@@ -1214,6 +1215,8 @@ export function GenUiTreeView({
   messageId?: string;
   /** When true, ``HtmlFrame`` nodes may run scripts in sandboxed iframes. */
   jsEnabled?: boolean;
+  /** ``inline`` blends into chat (no card chrome / solid background block). */
+  variant?: 'default' | 'inline';
 }) {
   const { t } = useTranslation();
   const root = tree?.root;
@@ -1223,17 +1226,26 @@ export function GenUiTreeView({
   );
   const el = useMemo(() => (root ? renderNode(root, 0, renderCtx) : null), [root, renderCtx]);
   /** Outer scroll (GenUiInline, CanvasPanel) supplies scrolling; slot frames use overflow-hidden so body scrolls here. */
-  const bodyClass = 'px-4 py-3 min-h-0 text-foreground bg-background';
+  const bodyClass =
+    variant === 'inline'
+      ? 'min-h-0 text-foreground'
+      : 'px-4 py-3 min-h-0 text-foreground bg-background';
   if (!root || !el) {
     return (
-      <div className="text-sm text-muted-foreground p-4 bg-background">
+      <div
+        className={cn(
+          'text-sm text-muted-foreground',
+          variant === 'inline' ? 'py-2' : 'p-4 bg-background',
+        )}
+      >
         No generative UI tree for this message yet.
       </div>
     );
   }
   const rawSlot = root.props && (root.props as Record<string, unknown>).uiSlot;
   const slotKey = typeof rawSlot === 'string' ? rawSlot : null;
-  const frame = slotKey ? UI_SLOT_FRAME[slotKey] : null;
+  // Chat inline uses a fused layout — skip bordered slot chrome so GenUI blends with the message.
+  const frame = variant === 'inline' ? null : slotKey ? UI_SLOT_FRAME[slotKey] : null;
   const attribution = t('chat.genUiAttribution');
   const attributionRow = (
     <div

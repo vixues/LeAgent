@@ -266,6 +266,7 @@
     "generating": "正在生成...",
     "genUiBuildingUi": "正在构建界面…",
     "genUiPublishingCanvas": "正在发布画布…",
+    "genUiOpenWebpage": "打开网页",
     "genUiAttribution": "LeAgent GenUI 生成",
     "skillsBadge": "{{count}} 个可用技能",
     "skillsBadge_one": "{{count}} 个可用技能",

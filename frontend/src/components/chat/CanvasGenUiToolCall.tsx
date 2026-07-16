@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { redactLargeRawToolArguments } from '@/lib/toolCallArgsDisplay';
+import { resolveCanvasPreviewUrl } from '@/lib/previewUrl';
 import type { ToolCall } from '@/types/chat';
 import { useArtifactStore } from '@/stores/artifact';
 import { GenUiInline } from '@/components/canvas/GenUiInline';
@@ -57,6 +58,28 @@ function summarizeEmitUiTreeResult(result: unknown): { nodeCount?: number } {
   return { nodeCount: countGenUiNodes(root as { children?: unknown[] }) };
 }
 
+function genUiToolStatusIcon(status: ToolCall['status']) {
+  switch (status) {
+    case 'pending':
+      return (
+        <Loader2 className="h-3.5 w-3.5 text-muted-foreground-tertiary animate-spin" />
+      );
+    case 'running':
+      return <Loader2 className="h-3.5 w-3.5 text-sky-500 animate-spin" />;
+    case 'awaiting_user':
+      return (
+        <MessageCircleQuestion
+          className="h-3.5 w-3.5 text-amber-600 dark:text-amber-400"
+          aria-hidden
+        />
+      );
+    case 'success':
+      return <Check className="h-3.5 w-3.5 text-mint-500" />;
+    case 'error':
+      return <AlertCircle className="h-3.5 w-3.5 text-red-500" />;
+  }
+}
+
 export function isGenerativeCanvasTool(name: string): boolean {
   return GEN_UI_TOOL_NAMES.has(name);
 }
@@ -83,37 +106,6 @@ export function CanvasGenUiToolCall({
     [toolCall.arguments, t],
   );
 
-  const statusConfig = {
-    pending: {
-      icon: <Loader2 className="h-4 w-4 text-muted-foreground-tertiary animate-spin" />,
-      border: 'border-border-subtle',
-      bg: '',
-    },
-    running: {
-      icon: <Loader2 className="h-4 w-4 text-sky-500 animate-spin" />,
-      border: 'border-sky-200 dark:border-sky-800',
-      bg: 'bg-sky-50/40 dark:bg-sky-900/10',
-    },
-    awaiting_user: {
-      icon: (
-        <MessageCircleQuestion className="h-4 w-4 text-amber-600 dark:text-amber-400" aria-hidden />
-      ),
-      border: 'border-amber-200 dark:border-amber-800',
-      bg: 'bg-amber-50/40 dark:bg-amber-900/10',
-    },
-    success: {
-      icon: <Check className="h-4 w-4 text-mint-500" />,
-      border: 'border-mint-200 dark:border-mint-800',
-      bg: 'bg-mint-50/40 dark:bg-mint-900/10',
-    },
-    error: {
-      icon: <AlertCircle className="h-4 w-4 text-red-500" />,
-      border: 'border-red-200 dark:border-red-800',
-      bg: 'bg-red-50/40 dark:bg-red-900/10',
-    },
-  };
-
-  const config = statusConfig[toolCall.status];
   const formatValue = (value: unknown): string =>
     typeof value === 'string' ? value : JSON.stringify(value, null, 2);
 
@@ -159,7 +151,19 @@ export function CanvasGenUiToolCall({
     return null;
   }, [toolCall.name, toolCall.status, toolCall.result, t]);
 
-  const openCanvasPanel = () => {
+  const publishPreviewPath = useMemo(() => {
+    if (toolCall.name !== 'canvas_publish') return undefined;
+    return summarizeCanvasPublishResult(toolCall.result).previewPath;
+  }, [toolCall.name, toolCall.result]);
+
+  const canOpenWebpage =
+    toolCall.name === 'canvas_publish' &&
+    toolCall.status === 'success' &&
+    Boolean(publishPreviewPath);
+
+  const openWebpageLabel = t('chat.genUiOpenWebpage', { defaultValue: 'Open page' });
+
+  const openWebpage = () => {
     const artifacts = useArtifactStore.getState().artifacts;
     const match = Object.values(artifacts).find(
       (a) => a.messageId === messageId && a.type === 'html',
@@ -167,147 +171,183 @@ export function CanvasGenUiToolCall({
     if (match) {
       useArtifactStore.getState().openTab(match.id);
     }
+    if (publishPreviewPath) {
+      window.open(resolveCanvasPreviewUrl(publishPreviewPath), '_blank', 'noopener');
+    }
   };
 
-  const canOpenCanvas =
-    toolCall.name === 'canvas_publish' &&
-    toolCall.status === 'success' &&
-    summarizeCanvasPublishResult(toolCall.result).previewPath;
+  const statusIcon = genUiToolStatusIcon(toolCall.status);
+  const showMeta =
+    (toolCall.status === 'pending' || toolCall.status === 'running') ||
+    (toolCall.status === 'success' && successSummary) ||
+    (toolCall.status === 'error' && toolCall.error);
+
+  const iconButtonClass = cn(
+    'flex h-7 w-7 shrink-0 items-center justify-center rounded-md',
+    'text-muted-foreground transition-colors',
+    'hover:bg-muted/40 hover:text-foreground',
+    'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/40 focus-visible:ring-offset-2 focus-visible:ring-offset-background',
+  );
 
   return (
-    <div>
-      <div
-        className={cn(
-          'rounded-xl border text-sm transition-colors',
-          config.border,
-          config.bg,
-        )}
-      >
+    <div className="space-y-1.5">
+      <div className="flex min-h-7 min-w-0 items-center gap-1">
         <button
           type="button"
-          className="w-full flex items-center gap-2.5 px-3 py-2.5 text-left"
+          className={cn(iconButtonClass, !expanded && 'opacity-40')}
+          onClick={() => setExpanded((v) => !v)}
           aria-expanded={expanded}
-          onClick={() => setExpanded(!expanded)}
+          aria-label={t('chat.toolStrip.toggleDetailsAria')}
         >
           {expanded ? (
-            <ChevronDown className="h-4 w-4 text-muted-foreground-tertiary flex-shrink-0" />
+            <ChevronDown
+              className="h-3.5 w-3.5 text-muted-foreground-tertiary flex-shrink-0"
+              aria-hidden
+            />
           ) : (
-            <ChevronRight className="h-4 w-4 text-muted-foreground-tertiary flex-shrink-0" />
+            <ChevronRight
+              className="h-3.5 w-3.5 text-muted-foreground-tertiary flex-shrink-0"
+              aria-hidden
+            />
           )}
-          <Sparkles className="h-4 w-4 text-sky-500 flex-shrink-0" aria-hidden />
-          <span className="flex-1 font-medium text-foreground text-sm">{toolCall.name}</span>
+        </button>
+
+        <button
+          type="button"
+          className={cn(
+            'flex h-7 min-w-0 max-w-[14rem] items-center gap-1 rounded-md px-1.5 py-1 text-left text-xs outline-none transition-colors',
+            'text-muted-foreground hover:text-foreground hover:bg-muted/40',
+            'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-400/50 focus-visible:ring-offset-2 focus-visible:ring-offset-background',
+            expanded && 'bg-muted/50 text-foreground',
+          )}
+          onClick={() => setExpanded((v) => !v)}
+          aria-expanded={expanded}
+          aria-pressed={expanded}
+        >
+          <Sparkles className="h-3 w-3 flex-shrink-0 text-sky-500" aria-hidden />
+          <span className="min-w-0 flex-1 truncate font-medium text-foreground">
+            {toolCall.name}
+          </span>
           {toolCall.duration_ms !== undefined &&
             toolCall.status !== 'running' &&
             toolCall.status !== 'awaiting_user' && (
-            <span className="text-xs text-muted-foreground-tertiary mr-1 tabular-nums">
-              {toolCall.duration_ms}ms
-            </span>
-          )}
-          {config.icon}
+              <span className="mr-0.5 shrink-0 tabular-nums text-[10px] text-muted-foreground-tertiary">
+                {toolCall.duration_ms}ms
+              </span>
+            )}
+          {statusIcon}
         </button>
 
-        {(toolCall.status === 'pending' || toolCall.status === 'running') && (
-          <div className="px-3 pb-2.5 -mt-1 flex items-center gap-2 text-xs text-muted-foreground">
-            <LayoutGrid className="h-3.5 w-3.5 flex-shrink-0 opacity-70" />
-            <span>{runningLabel}</span>
-          </div>
-        )}
-
-        {toolCall.status === 'success' && successSummary && (
-          <div className="px-3 pb-2.5 -mt-1 space-y-1.5">
-            <p className="text-xs text-foreground font-medium">{successSummary.line}</p>
-            {successSummary.mode && (
-              <p className="text-[11px] text-muted-foreground">
-                {t('chat.genUiMode', { defaultValue: 'Mode' })}: {successSummary.mode}
-              </p>
-            )}
-            <div className="flex flex-wrap gap-2">
-              {canOpenCanvas && (
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    openCanvasPanel();
-                  }}
-                  className="inline-flex items-center gap-1 text-[11px] font-medium text-sky-600 dark:text-sky-400 hover:underline"
-                >
-                  <ExternalLink className="h-3 w-3" />
-                  {t('chat.genUiOpenInPanel', { defaultValue: 'Open in panel' })}
-                </button>
-              )}
-            </div>
-          </div>
-        )}
-
-        {toolCall.status === 'error' && toolCall.error && (
-          <div className="px-3 pb-2.5 -mt-1">
-            {expanded ? (
-              <div
-                role="alert"
-                className="rounded-lg border border-red-200 dark:border-red-800 bg-red-50/80 dark:bg-red-950/30 px-2.5 py-2 text-xs text-red-800 dark:text-red-200 max-h-64 overflow-y-auto whitespace-pre-wrap break-words"
-              >
-                {toolCall.error}
-              </div>
-            ) : (
-              <p
-                className="rounded-lg border border-red-200/80 dark:border-red-800/80 bg-red-50/50 dark:bg-red-950/20 px-2.5 py-1.5 text-xs text-red-800 dark:text-red-200 line-clamp-2 break-all"
-                title={toolCall.error}
-              >
-                {toolCall.error}
-              </p>
-            )}
-          </div>
-        )}
-
-        {expanded && (
-          <div className="px-3 pb-3 space-y-2.5 border-t border-border-subtle/60 pt-2.5">
-            <div>
-              <div className="text-xs font-semibold text-muted-foreground mb-1.5">
-                {t('chat.toolParameters')}
-              </div>
-              {displayArguments === undefined ? (
-                <div className="rounded-lg bg-surface-sunken p-2.5 text-xs text-muted-foreground">
-                  {t('chat.toolArgsRawHidden', {
-                    defaultValue: 'Large raw tool arguments omitted from display.',
-                  })}
-                </div>
-              ) : (
-                <div className="bg-surface-sunken rounded-lg p-2.5 overflow-x-auto">
-                  <pre className="text-xs text-foreground whitespace-pre-wrap font-mono">
-                    {formatValue(displayArguments)}
-                  </pre>
-                </div>
-              )}
-            </div>
-
-            {toolCall.result !== undefined && (
-              <div>
-                <div className="text-xs font-semibold text-muted-foreground mb-1.5">
-                  {t('chat.toolResult')}
-                </div>
-                <div className="bg-surface-sunken rounded-lg p-2.5 overflow-x-auto max-h-48 overflow-y-auto">
-                  <pre className="text-xs text-foreground whitespace-pre-wrap font-mono">
-                    {formatValue(toolCall.result)}
-                  </pre>
-                </div>
-              </div>
-            )}
-
-            {toolCall.error && toolCall.status !== 'error' && (
-              <div>
-                <div className="text-xs font-semibold text-red-500 mb-1.5">
-                  {t('chat.toolError')}
-                </div>
-                <div className="bg-red-50 dark:bg-red-900/20 rounded-lg p-2.5">
-                  <pre className="text-xs text-red-600 dark:text-red-400 whitespace-pre-wrap font-mono">
-                    {toolCall.error}
-                  </pre>
-                </div>
-              </div>
-            )}
-          </div>
+        {canOpenWebpage && (
+          <button
+            type="button"
+            className={iconButtonClass}
+            onClick={openWebpage}
+            aria-label={openWebpageLabel}
+            title={openWebpageLabel}
+          >
+            <ExternalLink className="h-3.5 w-3.5 text-sky-500" aria-hidden />
+          </button>
         )}
       </div>
+
+      {showMeta && !expanded && (
+        <div className="pl-8 space-y-1">
+          {(toolCall.status === 'pending' || toolCall.status === 'running') && (
+            <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+              <LayoutGrid className="h-3 w-3 flex-shrink-0 opacity-70" />
+              <span>{runningLabel}</span>
+            </div>
+          )}
+
+          {toolCall.status === 'success' && successSummary && (
+            <div className="space-y-0.5">
+              <p className="text-[11px] font-medium text-foreground">{successSummary.line}</p>
+              {successSummary.mode && (
+                <p className="text-[10px] text-muted-foreground">
+                  {t('chat.genUiMode', { defaultValue: 'Mode' })}: {successSummary.mode}
+                </p>
+              )}
+            </div>
+          )}
+
+          {toolCall.status === 'error' && toolCall.error && (
+            <p
+              className="text-[11px] text-red-800 dark:text-red-200 line-clamp-2 break-all"
+              title={toolCall.error}
+            >
+              {toolCall.error}
+            </p>
+          )}
+        </div>
+      )}
+
+      {expanded && (
+        <div className="no-scrollbar max-h-[min(50vh,22rem)] overflow-y-auto overscroll-contain space-y-2 px-1 py-1.5 pl-8">
+          {(toolCall.status === 'pending' || toolCall.status === 'running') && (
+            <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+              <LayoutGrid className="h-3 w-3 flex-shrink-0 opacity-70" />
+              <span>{runningLabel}</span>
+            </div>
+          )}
+
+          {toolCall.status === 'success' && successSummary && (
+            <div className="space-y-0.5">
+              <p className="text-[11px] font-medium text-foreground">{successSummary.line}</p>
+              {successSummary.mode && (
+                <p className="text-[10px] text-muted-foreground">
+                  {t('chat.genUiMode', { defaultValue: 'Mode' })}: {successSummary.mode}
+                </p>
+              )}
+            </div>
+          )}
+
+          <div>
+            <div className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+              {t('chat.toolParameters')}
+            </div>
+            {displayArguments === undefined ? (
+              <div className="rounded-md bg-surface-sunken p-2 text-[11px] text-muted-foreground">
+                {t('chat.toolArgsRawHidden', {
+                  defaultValue: 'Large raw tool arguments omitted from display.',
+                })}
+              </div>
+            ) : (
+              <div className="no-scrollbar overflow-x-auto rounded-md bg-surface-sunken p-2">
+                <pre className="whitespace-pre-wrap font-mono text-[11px] text-foreground">
+                  {formatValue(displayArguments)}
+                </pre>
+              </div>
+            )}
+          </div>
+
+          {toolCall.result !== undefined && (
+            <div>
+              <div className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                {t('chat.toolResult')}
+              </div>
+              <div className="no-scrollbar max-h-48 overflow-x-auto overflow-y-auto rounded-md bg-surface-sunken p-2">
+                <pre className="whitespace-pre-wrap font-mono text-[11px] text-foreground">
+                  {formatValue(toolCall.result)}
+                </pre>
+              </div>
+            </div>
+          )}
+
+          {toolCall.error && (
+            <div>
+              <div className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-red-500">
+                {t('chat.toolError')}
+              </div>
+              <div className="rounded-md bg-red-50 p-2 dark:bg-red-900/20">
+                <pre className="whitespace-pre-wrap font-mono text-[11px] text-red-600 dark:text-red-400">
+                  {toolCall.error}
+                </pre>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       {showGenUiInline && sessionId && (
         <GenUiInline sessionId={sessionId} messageId={messageId} className="mt-2" />
