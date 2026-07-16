@@ -4,7 +4,6 @@ import {
   Check,
   ChevronDown,
   ChevronRight,
-  ExternalLink,
   LayoutGrid,
   Loader2,
   AlertCircle,
@@ -13,7 +12,9 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { redactLargeRawToolArguments } from '@/lib/toolCallArgsDisplay';
-import { resolveCanvasPreviewUrl } from '@/lib/previewUrl';
+import {
+  pickCanvasPreviewPathFromMetadata,
+} from '@/lib/previewUrl';
 import type { ToolCall } from '@/types/chat';
 import { useArtifactStore } from '@/stores/artifact';
 import { GenUiInline } from '@/components/canvas/GenUiInline';
@@ -32,17 +33,47 @@ function countGenUiNodes(node: { children?: unknown[] } | null | undefined): num
   return n;
 }
 
+function asRecord(value: unknown): Record<string, unknown> | null {
+  if (value && typeof value === 'object' && !Array.isArray(value)) {
+    return value as Record<string, unknown>;
+  }
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (!trimmed.startsWith('{') && !trimmed.startsWith('[')) return null;
+    try {
+      const parsed = JSON.parse(trimmed) as unknown;
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        return parsed as Record<string, unknown>;
+      }
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
+
 function summarizeCanvasPublishResult(result: unknown): {
   title?: string;
   mode?: string;
   previewPath?: string;
+  canvasId?: string;
 } {
-  if (!result || typeof result !== 'object') return {};
-  const d = result as Record<string, unknown>;
+  const d = asRecord(result);
+  if (!d) return {};
+  // Live SSE stores structured `data`; history may nest under `data` or use camelCase.
+  const nested = asRecord(d.data);
+  const source = nested ?? d;
+  const canvasIdRaw = source.canvas_id ?? source.canvasId;
   return {
-    title: typeof d.title === 'string' ? d.title : undefined,
-    mode: typeof d.content_type === 'string' ? d.content_type : undefined,
-    previewPath: typeof d.preview_path === 'string' ? d.preview_path : undefined,
+    title: typeof source.title === 'string' ? source.title : undefined,
+    mode:
+      typeof source.content_type === 'string'
+        ? source.content_type
+        : typeof source.contentType === 'string'
+          ? source.contentType
+          : undefined,
+    previewPath: pickCanvasPreviewPathFromMetadata(source) ?? undefined,
+    canvasId: typeof canvasIdRaw === 'string' && canvasIdRaw ? canvasIdRaw : undefined,
   };
 }
 
@@ -151,28 +182,94 @@ export function CanvasGenUiToolCall({
     return null;
   }, [toolCall.name, toolCall.status, toolCall.result, t]);
 
-  const publishPreviewPath = useMemo(() => {
-    if (toolCall.name !== 'canvas_publish') return undefined;
-    return summarizeCanvasPublishResult(toolCall.result).previewPath;
-  }, [toolCall.name, toolCall.result]);
+  const publishSummary = useMemo(
+    () =>
+      toolCall.name === 'canvas_publish'
+        ? summarizeCanvasPublishResult(toolCall.result)
+        : {},
+    [toolCall.name, toolCall.result],
+  );
 
-  const canOpenWebpage =
-    toolCall.name === 'canvas_publish' &&
-    toolCall.status === 'success' &&
-    Boolean(publishPreviewPath);
+  // Canvas companion SSE stores preview on the artifact; tool result may be a
+  // truncated JSON string without a top-level preview_path after reload.
+  const htmlArtifact = useArtifactStore((s) => {
+    const htmlArts = Object.values(s.artifacts).filter((a) => a.type === 'html');
+    const byMessage = htmlArts.find((a) => a.messageId === messageId);
+    if (byMessage) return byMessage;
+    const canvasId = publishSummary.canvasId;
+    if (canvasId) {
+      const byCanvas = htmlArts.find(
+        (a) =>
+          a.metadata?.canvasId === canvasId ||
+          a.metadata?.canvas_id === canvasId,
+      );
+      if (byCanvas) return byCanvas;
+    }
+    if (sessionId) {
+      const inSession = htmlArts.filter((a) => a.sessionId === sessionId);
+      if (inSession.length === 1) return inSession[0];
+    }
+    return undefined;
+  });
 
-  const openWebpageLabel = t('chat.genUiOpenWebpage', { defaultValue: 'Open page' });
+  const artifactPreviewPath = htmlArtifact
+    ? pickCanvasPreviewPathFromMetadata(
+        htmlArtifact.metadata as Record<string, unknown> | undefined,
+      )
+    : null;
 
-  const openWebpage = () => {
-    const artifacts = useArtifactStore.getState().artifacts;
-    const match = Object.values(artifacts).find(
+  const publishPreviewPath = publishSummary.previewPath ?? artifactPreviewPath ?? undefined;
+
+  const canvasTitle =
+    (typeof htmlArtifact?.title === 'string' && htmlArtifact.title.trim()) ||
+    (typeof publishSummary.title === 'string' && publishSummary.title.trim()) ||
+    '';
+
+  const canOpenCanvas =
+    toolCall.name === 'canvas_publish' && Boolean(htmlArtifact || publishPreviewPath);
+
+  const openCanvasLabel = canvasTitle
+    ? t('chat.genUiOpenCanvasNamed', {
+        defaultValue: 'Open canvas: {{title}}',
+        title: canvasTitle,
+      })
+    : t('chat.genUiOpenCanvas', { defaultValue: 'Open canvas' });
+
+  const openCanvas = () => {
+    if (htmlArtifact) {
+      useArtifactStore.getState().openTab(htmlArtifact.id);
+      return;
+    }
+    const store = useArtifactStore.getState();
+    const match = Object.values(store.artifacts).find(
       (a) => a.messageId === messageId && a.type === 'html',
     );
     if (match) {
-      useArtifactStore.getState().openTab(match.id);
+      store.openTab(match.id);
+      return;
     }
+    // Recreate a panel tab from the tool result when the in-memory artifact is gone.
     if (publishPreviewPath) {
-      window.open(resolveCanvasPreviewUrl(publishPreviewPath), '_blank', 'noopener');
+      const id =
+        publishSummary.canvasId && publishSummary.canvasId.length > 0
+          ? `canvas-${publishSummary.canvasId}`
+          : `canvas-${messageId}`;
+      store.addArtifact({
+        id,
+        type: 'html',
+        title: canvasTitle || 'Canvas',
+        content: '',
+        createdAt: new Date().toISOString(),
+        sessionId: sessionId ?? undefined,
+        messageId,
+        metadata: {
+          previewPath: publishPreviewPath,
+          canvasId: publishSummary.canvasId,
+          trust: 'hosted',
+          contentType: publishSummary.mode ?? 'html',
+        },
+      });
+      store.openTab(id);
     }
   };
 
@@ -238,15 +335,24 @@ export function CanvasGenUiToolCall({
           {statusIcon}
         </button>
 
-        {canOpenWebpage && (
+        {canOpenCanvas && (
           <button
             type="button"
-            className={iconButtonClass}
-            onClick={openWebpage}
-            aria-label={openWebpageLabel}
-            title={openWebpageLabel}
+            className={cn(
+              'flex h-7 min-w-0 max-w-[16rem] items-center gap-1.5 rounded-md px-1.5 py-1 text-left text-xs outline-none transition-colors',
+              'text-muted-foreground hover:text-foreground hover:bg-muted/40',
+              'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/40 focus-visible:ring-offset-2 focus-visible:ring-offset-background',
+            )}
+            onClick={openCanvas}
+            aria-label={openCanvasLabel}
+            title={openCanvasLabel}
           >
-            <ExternalLink className="h-3.5 w-3.5 text-sky-500" aria-hidden />
+            {canvasTitle ? (
+              <span className="min-w-0 truncate font-medium text-foreground">{canvasTitle}</span>
+            ) : null}
+            <span className="shrink-0 text-sky-600 dark:text-sky-400">
+              {t('chat.genUiOpenCanvasAction', { defaultValue: 'Open' })}
+            </span>
           </button>
         )}
       </div>

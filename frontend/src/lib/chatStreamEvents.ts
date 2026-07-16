@@ -375,16 +375,34 @@ export function applyChatStreamEvent(
       const tr = event.data as {
         id?: string;
         tool_call_id?: string;
+        tool_use_id?: string;
         name?: string;
         data?: unknown;
         result?: unknown;
         content?: unknown;
+        envelope?: { data?: unknown };
         error?: string;
         success?: boolean;
         duration_ms?: number;
       };
-      const toolCallId = tr.id || tr.tool_call_id || '';
-      const structured = tr.data !== undefined && tr.data !== null ? tr.data : tr.result ?? tr.content;
+      const toolCallId = tr.id || tr.tool_call_id || tr.tool_use_id || '';
+      let structured: unknown =
+        tr.data !== undefined && tr.data !== null
+          ? tr.data
+          : tr.envelope?.data !== undefined && tr.envelope?.data !== null
+            ? tr.envelope.data
+            : tr.result ?? tr.content;
+      // History / truncated SSE often leave a JSON string — normalize to object.
+      if (typeof structured === 'string') {
+        const trimmed = structured.trim();
+        if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
+          try {
+            structured = JSON.parse(trimmed) as unknown;
+          } catch {
+            /* keep string */
+          }
+        }
+      }
       const toolNameTr = typeof tr.name === 'string' ? tr.name : '';
       s.updateToolCall(sessionId, assistantMsgId, toolCallId, {
         result: structured,
