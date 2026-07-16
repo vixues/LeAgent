@@ -27,7 +27,7 @@
 </p>
 
 <p align="center">
-  <img src="docs/assets/screenshots/hero.jpg" alt="LeAgent 之概貌" width="720">
+  <img src="docs/assets/screenshots/hero.png" alt="LeAgent 之概貌" width="720">
 </p>
 
 ---
