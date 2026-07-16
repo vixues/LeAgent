@@ -26,16 +26,28 @@ export interface InstalledMarker {
   appVersion?: string;
 }
 
+export class PayloadHashError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'PayloadHashError';
+  }
+}
+
 function dependencyPayloadHash(): string {
   const hash = crypto.createHash('sha256');
   const payload = backendPayloadDir();
 
   for (const file of ['pyproject.toml', 'uv.lock']) {
     const filePath = path.join(payload, file);
-    hash.update(file);
-    hash.update('\0');
-    hash.update(fs.readFileSync(filePath));
-    hash.update('\0');
+    try {
+      hash.update(file);
+      hash.update('\0');
+      hash.update(fs.readFileSync(filePath));
+      hash.update('\0');
+    } catch (err: unknown) {
+      const detail = err instanceof Error ? err.message : String(err);
+      throw new PayloadHashError(`Cannot read backend payload file ${file}: ${detail}`);
+    }
   }
 
   return hash.digest('hex');
@@ -103,12 +115,25 @@ export function getPayloadHash(): string {
   return dependencyPayloadHash();
 }
 
+/** Safe hash read for validation — returns null when payload files are missing/unreadable. */
+export function tryGetPayloadHash(): string | null {
+  try {
+    return dependencyPayloadHash();
+  } catch {
+    return null;
+  }
+}
+
 export function needsRuntimeUpgrade(): boolean {
   if (!app.isPackaged) return false;
   const marker = readInstalledMarker();
   if (!marker) return true;
   if (marker.appVersion !== APP_VERSION || marker.version !== APP_VERSION) return true;
-  if (marker.payloadHash !== dependencyPayloadHash()) return true;
+  try {
+    if (marker.payloadHash !== dependencyPayloadHash()) return true;
+  } catch {
+    return true;
+  }
   return !fs.existsSync(runtimeVenvPython());
 }
 

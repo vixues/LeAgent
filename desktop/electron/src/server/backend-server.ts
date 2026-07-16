@@ -172,7 +172,13 @@ export class BackendServer {
     this.process.on('error', (err) => {
       mainLog.error('Backend spawn error:', err);
       this.process = null;
+      this.backendExit = { code: null, signal: null };
       this.setStatus('failed');
+      if (!this.shuttingDown) {
+        this.crashCount = MAX_BACKEND_RESTARTS;
+        sendRuntimeStatus('Backend failed to start — open maintenance to repair.');
+        this.onCrashLimit?.();
+      }
     });
   }
 
@@ -192,13 +198,16 @@ export class BackendServer {
       try {
         const controller = new AbortController();
         const timeout = setTimeout(() => controller.abort(), 2000);
-        const res = await fetch(healthUrl, { signal: controller.signal });
-        clearTimeout(timeout);
-        if (res.ok) {
-          mainLog.info('Backend health check passed');
-          this.setStatus('running');
-          sendRuntimeStatus('Backend ready');
-          return;
+        try {
+          const res = await fetch(healthUrl, { signal: controller.signal });
+          if (res.ok) {
+            mainLog.info('Backend health check passed');
+            this.setStatus('running');
+            sendRuntimeStatus('Backend ready');
+            return;
+          }
+        } finally {
+          clearTimeout(timeout);
         }
       } catch {
         /* not ready */

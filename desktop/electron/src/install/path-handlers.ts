@@ -2,12 +2,27 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { app } from 'electron';
 
+/** True when `target` resolves inside `root` (or equals root). */
+export function isPathInside(root: string, target: string): boolean {
+  const resolvedRoot = path.resolve(root);
+  const resolvedTarget = path.resolve(target);
+  const relative = path.relative(resolvedRoot, resolvedTarget);
+  return relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative));
+}
+
+/** Application install root used for LEAGENT_HOME containment checks. */
+export function getAppInstallRoot(): string {
+  if (app.isPackaged) {
+    // Packaged: resourcesPath is …/App.app/Contents/Resources or …/resources
+    // Use parent of resources so the whole app bundle / install dir is covered.
+    return path.resolve(process.resourcesPath, '..');
+  }
+  return path.dirname(app.getPath('exe'));
+}
+
 /** True when path is inside the application install directory. */
 export function isInsideAppInstallDir(targetPath: string): boolean {
-  const exe = path.dirname(app.getPath('exe'));
-  const resolved = path.resolve(targetPath);
-  const relative = path.relative(exe, resolved);
-  return relative !== '' && !relative.startsWith('..') && !path.isAbsolute(relative);
+  return isPathInside(getAppInstallRoot(), targetPath);
 }
 
 /** True when path is under a known cloud-sync folder (OneDrive, iCloud Drive). */

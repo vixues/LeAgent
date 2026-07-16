@@ -6,9 +6,22 @@ import { log } from '../logger.js';
 import { setRuntimeWindows } from '../ipc/runtime.js';
 import { applySavedWindowBounds, getDefaultWindowSize, persistWindowBounds } from './window-state.js';
 import { closeSplash, createSplashWindow, getSplashWindow } from './splash-window.js';
+import { isAllowedNavigationUrl } from './navigation.js';
+
+export { isAllowedNavigationUrl } from './navigation.js';
 
 let mainWindow: BrowserWindow | null = null;
 let currentPage: AppPage = 'splash';
+
+function hardenWebContents(win: BrowserWindow): void {
+  win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+  win.webContents.on('will-navigate', (event, url) => {
+    if (!isAllowedNavigationUrl(url)) {
+      event.preventDefault();
+      log.warn(`Blocked navigation to ${url}`);
+    }
+  });
+}
 
 /**
  * Platform-specific frameless title-bar config so the renderer can paint its own
@@ -57,6 +70,7 @@ export function createMainWindow(preloadPath: string): BrowserWindow {
     },
   });
 
+  hardenWebContents(mainWindow);
   applySavedWindowBounds(mainWindow);
 
   mainWindow.on('close', () => {

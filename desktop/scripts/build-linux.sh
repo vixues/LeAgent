@@ -103,11 +103,12 @@ if [ "$SKIP_FRONTEND" = false ]; then
   echo ""
   echo "==> Frontend build (Vite)"
   pushd "$REPO/frontend" > /dev/null
+  # Relative /api/v1 — same-origin with backend-served SPA (any serverPort).
   export VITE_DESKTOP=true
-  export VITE_API_BASE_URL="http://127.0.0.1:7860/api/v1"
+  unset VITE_API_BASE_URL
   npm ci
   npm run build
-  unset VITE_DESKTOP VITE_API_BASE_URL
+  unset VITE_DESKTOP
   popd > /dev/null
 else
   echo "  ⚠ SkipFrontend: frontend/dist not rebuilt."

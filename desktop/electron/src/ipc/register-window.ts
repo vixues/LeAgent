@@ -1,5 +1,6 @@
-import { BrowserWindow, ipcMain } from 'electron';
+import { BrowserWindow } from 'electron';
 import { IPC, TITLE_BAR_HEIGHT } from '../constants.js';
+import { safeRegisterHandle } from './safe-register.js';
 
 interface OverlayOptions {
   color?: string;
@@ -12,11 +13,11 @@ interface OverlayOptions {
  * if multiple windows ever exist.
  */
 export function registerWindowIPC(): void {
-  ipcMain.handle(IPC.WINDOW_MINIMIZE, (event) => {
+  safeRegisterHandle(IPC.WINDOW_MINIMIZE, (event) => {
     BrowserWindow.fromWebContents(event.sender)?.minimize();
   });
 
-  ipcMain.handle(IPC.WINDOW_MAXIMIZE_TOGGLE, (event) => {
+  safeRegisterHandle(IPC.WINDOW_MAXIMIZE_TOGGLE, (event) => {
     const win = BrowserWindow.fromWebContents(event.sender);
     if (!win) return false;
     if (win.isMaximized()) {
@@ -27,22 +28,23 @@ export function registerWindowIPC(): void {
     return true;
   });
 
-  ipcMain.handle(IPC.WINDOW_CLOSE, (event) => {
+  safeRegisterHandle(IPC.WINDOW_CLOSE, (event) => {
     BrowserWindow.fromWebContents(event.sender)?.close();
   });
 
-  ipcMain.handle(IPC.WINDOW_IS_MAXIMIZED, (event) => {
+  safeRegisterHandle(IPC.WINDOW_IS_MAXIMIZED, (event) => {
     return BrowserWindow.fromWebContents(event.sender)?.isMaximized() ?? false;
   });
 
-  ipcMain.handle(IPC.WINDOW_SET_OVERLAY, (event, options: OverlayOptions) => {
+  safeRegisterHandle(IPC.WINDOW_SET_OVERLAY, (event, options: unknown) => {
     if (process.platform !== 'win32') return;
     const win = BrowserWindow.fromWebContents(event.sender);
     if (!win) return;
+    const opts = (options ?? {}) as OverlayOptions;
     try {
       win.setTitleBarOverlay({
-        color: options?.color ?? '#00000000',
-        symbolColor: options?.symbolColor ?? '#9aa0a6',
+        color: opts.color ?? '#00000000',
+        symbolColor: opts.symbolColor ?? '#9aa0a6',
         height: TITLE_BAR_HEIGHT,
       });
     } catch {

@@ -1,6 +1,7 @@
 import path from 'node:path';
 import { app, BrowserWindow } from 'electron';
 import { log } from '../logger.js';
+import { isAllowedNavigationUrl } from './navigation.js';
 
 let splashWindow: BrowserWindow | null = null;
 
@@ -28,6 +29,14 @@ export function createSplashWindow(preloadPath: string): BrowserWindow {
       sandbox: true,
       nodeIntegration: false,
     },
+  });
+
+  splashWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+  splashWindow.webContents.on('will-navigate', (event, url) => {
+    if (!isAllowedNavigationUrl(url)) {
+      event.preventDefault();
+      log.warn(`Blocked splash navigation to ${url}`);
+    }
   });
 
   const splashHtml = path.join(app.getAppPath(), 'splash', 'index.html');

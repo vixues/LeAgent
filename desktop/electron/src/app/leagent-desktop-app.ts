@@ -21,11 +21,14 @@ import { buildMenu } from '../menu.js';
 import type { BrowserWindow } from 'electron';
 import { setRetryBootHandler } from './boot-actions.js';
 import { preloadPath as resolvePreloadPathFromDist } from '../paths/app-paths.js';
+
 export class LeAgentDesktopApp {
   private readonly preloadPath: string;
   private readonly installManager = new InstallationManager();
   private mainWindow: BrowserWindow | null = null;
   private bootFailed = false;
+  private ipcRegistered = false;
+  private bootCompleted = false;
 
   constructor(preloadPath: string) {
     this.preloadPath = preloadPath;
@@ -39,10 +42,7 @@ export class LeAgentDesktopApp {
     this.mainWindow = createMainWindow(this.preloadPath);
     setRuntimeWindows(null, this.mainWindow);
 
-    registerAppIPC();
-    registerServerIPC();
-    registerWindowIPC();
-    registerUpdaterIPC(this.mainWindow);
+    this.registerIpcOnce();
     buildMenu(this.mainWindow);
     setRetryBootHandler(() => this.retryBoot());
 
@@ -68,6 +68,8 @@ export class LeAgentDesktopApp {
       }
 
       server.setWindows(getAllWindows());
+      this.bootCompleted = true;
+      this.bootFailed = false;
       this.showApp();
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
@@ -75,6 +77,50 @@ export class LeAgentDesktopApp {
       this.bootFailed = true;
       await this.enterMaintenance(message);
     }
+  }
+
+  /**
+   * macOS Dock / activate path after all windows were closed.
+   * Does not re-run install or re-register IPC.
+   */
+  async reopenMainWindow(): Promise<void> {
+    const existing = getMainWindow();
+    if (existing && !existing.isDestroyed()) {
+      showMainWindow();
+      return;
+    }
+
+    log.info('Reopening main window after activate');
+    this.mainWindow = createMainWindow(this.preloadPath);
+    setRuntimeWindows(null, this.mainWindow);
+    buildMenu(this.mainWindow);
+
+    const server = getBackendServer();
+    server.setWindows(getAllWindows());
+
+    if (server.getStatus() === 'running' && server.isRunning()) {
+      this.showApp();
+      return;
+    }
+
+    if (this.bootFailed || !this.bootCompleted) {
+      await this.enterMaintenance('Application was not fully started.');
+      return;
+    }
+
+    const result = await this.retryBoot();
+    if (!result.ok) {
+      await this.enterMaintenance(result.message ?? 'Failed to restore application.');
+    }
+  }
+
+  private registerIpcOnce(): void {
+    if (this.ipcRegistered) return;
+    this.ipcRegistered = true;
+    registerAppIPC();
+    registerServerIPC();
+    registerWindowIPC();
+    registerUpdaterIPC(this.mainWindow!);
   }
 
   private async enterMaintenance(reason: string): Promise<void> {
@@ -131,10 +177,12 @@ export class LeAgentDesktopApp {
         await server.waitForFrontendReady();
       }
 
+      this.bootCompleted = true;
       this.showApp();
       return { ok: true };
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
+      this.bootFailed = true;
       return { ok: false, message };
     }
   }

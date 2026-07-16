@@ -40,7 +40,7 @@ interface LeAgentDesktopBridge {
 
   app: {
     getVersion: () => Promise<string>;
-    getPaths: () => Promise<{ userData: string; logs: string; home: string }>;
+    getPaths: () => Promise<{ userData: string; logs: string; home: string; leagentHome: string }>;
     getMachineFingerprint: () => Promise<string>;
     openExternal: (url: string) => Promise<void>;
     openLogsDir: () => Promise<void>;
@@ -66,7 +66,7 @@ interface LeAgentDesktopBridge {
   };
 
   updater: {
-    check: () => Promise<{ ok: boolean; version?: string; message?: string }>;
+    check: () => Promise<{ ok: boolean; updateAvailable?: boolean; version?: string; message?: string }>;
     download: () => Promise<{ ok: boolean; message?: string }>;
     install: () => void;
     onUpdateAvailable: (cb: (info: { version: string; releaseNotes?: string }) => void) => () => void;

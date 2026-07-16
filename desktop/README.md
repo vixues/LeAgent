@@ -30,15 +30,17 @@ desktop/
 4. `BackendServer` starts `python -m leagent.server` on `127.0.0.1:7860`, polls `/health`, then loads the SPA.
 5. Backend crash auto-restart is limited to **3 attempts** before maintenance mode.
 
+On **macOS**, closing all windows does not quit the app (backend keeps running). Dock `activate` calls `reopenMainWindow()` — it recreates the window and reuses the running backend; IPC handlers are registered only once at cold boot.
+
 ### Desktop bridge (`window.leagent`)
 
 | Namespace | Methods |
 |-----------|---------|
-| `app` | `getVersion`, `getPaths`, `getMachineFingerprint`, `getDiagnostics`, `copyDiagnostics`, `openLogsDir`, `openApp` |
+| `app` | `getVersion`, `getPaths` (includes `leagentHome`), `getMachineFingerprint`, `getDiagnostics`, `copyDiagnostics`, `openLogsDir`, `openApp` |
 | `runtime` | `onProgress`, `onStatus` |
 | `install` | `validate`, `repair`, `reinstall`, `retryBoot` |
 | `server` | `restart`, `getStatus`, `onLog`, `onStatus` |
-| `updater` | `check`, `download`, `install` + event listeners |
+| `updater` | `check` → `{ ok, updateAvailable, version? }`, `download`, `install` + event listeners |
 
 ## Prerequisites
 
@@ -87,11 +89,17 @@ cd desktop/scripts && .\build-win.ps1
 
 Outputs land in `desktop/electron/dist-pack/`.
 
+Desktop frontend builds set `VITE_DESKTOP=true` only — they **do not** bake `VITE_API_BASE_URL`, so the SPA uses relative `/api/v1` against the backend that serves it (works with any `serverPort`).
+
+### macOS notarization
+
+`electron-builder.yml` runs `afterSign: build/notarize.mjs`. When `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD`, and `APPLE_TEAM_ID` are set during `pack:mac` / `build-mac.sh`, the app is notarized; otherwise the hook skips with a warning. Built-in `mac.notarize` stays `false` to avoid double-notarization.
+
 ## Releases (CI)
 
 Push a tag `desktop-v*` (e.g. `desktop-v1.1.4`) to trigger [`.github/workflows/desktop-release.yml`](../.github/workflows/desktop-release.yml). Builds macOS (arm64+x64), Windows (NSIS), and Linux (AppImage + deb), uploading artifacts to GitHub Releases via `electron-updater`.
 
-Set `GH_TOKEN` in CI; optional macOS notarization via `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD`, `APPLE_TEAM_ID`.
+Set `GH_TOKEN` in CI; optional macOS notarization via `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD`, `APPLE_TEAM_ID` (consumed by the afterSign hook).
 
 ## User data
 

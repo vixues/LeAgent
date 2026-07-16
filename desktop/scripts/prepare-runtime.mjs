@@ -113,10 +113,16 @@ async function prepareTarget(target) {
     await download(`${UV_BASE_URL}/${spec.uvArchive}`, uvArchive);
     await extract(uvArchive, tmpDir);
     // uv archives extract a single binary (or a dir with one)
+    const uvDirByTarget = {
+      'mac-arm64': 'uv-aarch64-apple-darwin',
+      'mac-x64': 'uv-x86_64-apple-darwin',
+      'win-x64': 'uv-x86_64-pc-windows-msvc',
+      'linux-x64': 'uv-x86_64-unknown-linux-gnu',
+    };
     const candidates = [
       path.join(tmpDir, spec.uvBin),
       path.join(tmpDir, 'uv', spec.uvBin),
-      path.join(tmpDir, `uv-${target.replace('mac', 'aarch64-apple-darwin').replace('win', 'x86_64-pc-windows-msvc')}`, spec.uvBin),
+      path.join(tmpDir, uvDirByTarget[target] ?? '', spec.uvBin),
     ];
     const found = candidates.find((c) => fs.existsSync(c));
     if (found) {

@@ -33,7 +33,10 @@
       badge.className = 'badge ' + item.level;
       badge.textContent = item.level;
       const text = document.createElement('span');
-      text.innerHTML = '<strong>' + item.label + '</strong>: ' + item.message;
+      const labelEl = document.createElement('strong');
+      labelEl.textContent = item.label;
+      text.appendChild(labelEl);
+      text.appendChild(document.createTextNode(': ' + String(item.message ?? '')));
       li.appendChild(badge);
       li.appendChild(text);
       checksEl.appendChild(li);

@@ -110,8 +110,9 @@ if (-not $SkipFrontend) {
   $frontendDir = Join-Path $Repo "frontend"
   Push-Location $frontendDir
   try {
+    # Relative /api/v1 — same-origin with backend-served SPA (any serverPort).
     $env:VITE_DESKTOP = "true"
-    $env:VITE_API_BASE_URL = "http://127.0.0.1:7860/api/v1"
+    Remove-Item Env:\VITE_API_BASE_URL -ErrorAction SilentlyContinue
     npm ci
     if ($LASTEXITCODE -ne 0) { throw "npm ci failed in frontend (exit $LASTEXITCODE)" }
     npm run build

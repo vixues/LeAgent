@@ -82,11 +82,12 @@ if [ "$SKIP_FRONTEND" = false ]; then
   echo ""
   echo "==> Frontend build (Vite)"
   pushd "$REPO/frontend" > /dev/null
+  # Relative /api/v1 — same-origin with backend-served SPA (any serverPort).
   export VITE_DESKTOP=true
-  export VITE_API_BASE_URL="http://127.0.0.1:7860/api/v1"
+  unset VITE_API_BASE_URL
   npm ci
   npm run build
-  unset VITE_DESKTOP VITE_API_BASE_URL
+  unset VITE_DESKTOP
   popd > /dev/null
 else
   echo "  ⚠ SkipFrontend: frontend/dist not rebuilt."
@@ -132,20 +133,9 @@ npx electron-builder --mac $ARCH_FLAGS --config electron-builder.yml --c.extraMe
 
 popd > /dev/null
 
-# ── 7. Notarize (if signing env is set) ──
-if [ -n "${APPLE_ID:-}" ] && [ -n "${APPLE_APP_SPECIFIC_PASSWORD:-}" ] && [ -n "${APPLE_TEAM_ID:-}" ]; then
-  echo ""
-  echo "==> Notarization"
-  NOTARIZE_SCRIPT="$DESKTOP_ELECTRON/build/notarize.mjs"
-  if [ -f "$NOTARIZE_SCRIPT" ]; then
-    node "$NOTARIZE_SCRIPT"
-  else
-    echo "  ⚠ notarize.mjs not found — skipping notarization."
-  fi
-else
-  echo ""
-  echo "  ℹ  Skipping notarization (APPLE_ID / APPLE_APP_SPECIFIC_PASSWORD / APPLE_TEAM_ID not set)"
-fi
+# ── 7. Notarization ──
+# Handled by electron-builder afterSign → build/notarize.mjs when
+# APPLE_ID / APPLE_APP_SPECIFIC_PASSWORD / APPLE_TEAM_ID are set during pack.
 
 # ── 8. Report ──
 echo ""

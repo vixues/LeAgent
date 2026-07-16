@@ -1,11 +1,11 @@
-import { ipcMain } from 'electron';
 import { IPC } from '../constants.js';
 import { getBackendServer } from '../server/backend-server.js';
+import { safeRegisterHandle } from './safe-register.js';
 
 export function registerServerIPC(): void {
   const server = getBackendServer();
 
-  ipcMain.handle(IPC.SERVER_RESTART, async () => {
+  safeRegisterHandle(IPC.SERVER_RESTART, async () => {
     try {
       await server.restart();
       return { ok: true };
@@ -15,5 +15,5 @@ export function registerServerIPC(): void {
     }
   });
 
-  ipcMain.handle(IPC.SERVER_STATUS, () => server.getStatus());
+  safeRegisterHandle(IPC.SERVER_STATUS, () => server.getStatus());
 }

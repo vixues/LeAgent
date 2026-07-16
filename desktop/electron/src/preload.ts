@@ -47,6 +47,7 @@ const leagentBridge = {
         userData: string;
         logs: string;
         home: string;
+        leagentHome: string;
       }>,
     getMachineFingerprint: () => ipcRenderer.invoke('app:getMachineFingerprint') as Promise<string>,
     openExternal: (url: string) => ipcRenderer.invoke('app:openExternal', url),
@@ -85,7 +86,13 @@ const leagentBridge = {
   },
 
   updater: {
-    check: () => ipcRenderer.invoke('updater:check'),
+    check: () =>
+      ipcRenderer.invoke('updater:check') as Promise<{
+        ok: boolean;
+        updateAvailable?: boolean;
+        version?: string;
+        message?: string;
+      }>,
     download: () => ipcRenderer.invoke('updater:download'),
     install: () => ipcRenderer.invoke('updater:install'),
     onUpdateAvailable: (cb: Callback<{ version: string; releaseNotes?: string }>) => {

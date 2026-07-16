@@ -3,9 +3,7 @@ productName: LeAgent
 copyright: Copyright © 2024–2026 LeAgent Team
 
 asar: true
-asarUnpack:
-  - "resources/runtime/**"
-  - "resources/backend-payload/**"
+afterSign: build/notarize.mjs
 
 extraResources:
   - from: "../../frontend/dist"

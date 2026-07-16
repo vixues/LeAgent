@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.6] - 2026-07-16
+
+Patch release: **desktop usability** — macOS reopen without IPC crash, notarization hook, relative API base URL, correct About update semantics, and install/backend hardening.
+
+### Fixed
+
+- **macOS Dock reopen** — Closing all windows then activating no longer re-runs full `start()` / double-registers IPC; `reopenMainWindow()` reuses a running backend.
+- **About “Check for updates”** — Distinguishes “update available” vs “up to date” via `updateAvailable` (previously treated any successful check as an update).
+- **Desktop API base URL** — Packaged builds no longer bake `http://127.0.0.1:7860/api/v1`; SPA uses relative `/api/v1` so custom `serverPort` keeps working.
+- **Backend health / spawn** — Health poll timeout cleared in `finally`; spawn errors surface as `backendExit` for maintenance.
+- **Install paths** — Clearer payload hash failures; LEAGENT_HOME containment and cloud-sync path checks; macOS `uv` uses `aarch64-apple-darwin` archive name.
+
+### Changed
+
+- **macOS notarization** — Wired through electron-builder `afterSign` (`build/notarize.mjs`); removed fragile standalone notarize step from `build-mac.sh`.
+- **Window navigation** — Restrict in-app navigation to local backend / Vite / file URLs used by splash and maintenance.
+
 ## [1.2.5] - 2026-07-14
 
 Patch release: **Weixin (personal WeChat) agent channel** with QR hot-start, native outbound files/images, and a lighter stop/status path.
@@ -1361,7 +1378,8 @@ _Subsections below keep `— YYYY-MM-DD` on each heading for maintainers (commit
 - **Minor (0.X.0)**: New features, backward compatible
 - **Patch (0.0.X)**: Bug fixes, security patches
 
-[Unreleased]: https://github.com/vixues/LeAgent/compare/v1.2.5...HEAD
+[Unreleased]: https://github.com/vixues/LeAgent/compare/v1.2.6...HEAD
+[1.2.6]: https://github.com/vixues/LeAgent/compare/v1.2.5...v1.2.6
 [1.2.5]: https://github.com/vixues/LeAgent/compare/v1.2.4...v1.2.5
 [1.2.4]: https://github.com/vixues/LeAgent/compare/v1.2.3...v1.2.4
 [1.2.3]: https://github.com/vixues/LeAgent/compare/v1.2.2...v1.2.3

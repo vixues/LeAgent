@@ -35,9 +35,13 @@ export function AboutDialog({ open, onOpenChange }: AboutDialogProps) {
     setUpdateMsg(null);
     try {
       const r = await updater.check();
-      setUpdateMsg(
-        r?.ok ? t('about.updateAvailable') : r?.message || t('about.updateError'),
-      );
+      if (!r?.ok) {
+        setUpdateMsg(r?.message || t('about.updateError'));
+      } else if (r.updateAvailable) {
+        setUpdateMsg(t('about.updateAvailable'));
+      } else {
+        setUpdateMsg(t('about.updateNone'));
+      }
     } catch {
       setUpdateMsg(t('about.updateError'));
     } finally {

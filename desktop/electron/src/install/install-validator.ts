@@ -9,8 +9,8 @@ import {
   isInsideAppInstallDir,
 } from './path-handlers.js';
 import {
-  getPayloadHash,
   readInstalledMarker,
+  tryGetPayloadHash,
 } from './runtime-installer.js';
 import { resolveLeagentHome, runtimeVenvPython } from '../paths/runtime-paths.js';
 import { MIN_DISK_SPACE_BYTES } from '../constants.js';
@@ -66,8 +66,16 @@ export async function validateInstallation(): Promise<ValidationResult> {
 
   if (app.isPackaged) {
     const marker = readInstalledMarker();
-    const currentHash = getPayloadHash();
-    if (!marker || marker.payloadHash !== currentHash) {
+    const currentHash = tryGetPayloadHash();
+    if (currentHash === null) {
+      items.push({
+        id: 'payload',
+        label: 'Backend dependencies',
+        level: 'error',
+        message: 'Bundled backend payload is missing or unreadable.',
+        repairAction: 'reinstall',
+      });
+    } else if (!marker || marker.payloadHash !== currentHash) {
       items.push({
         id: 'payload',
         label: 'Backend dependencies',

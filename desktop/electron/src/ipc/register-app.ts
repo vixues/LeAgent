@@ -1,6 +1,6 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs';
-import { app, clipboard, ipcMain, shell } from 'electron';
+import { app, clipboard, shell } from 'electron';
 import path from 'node:path';
 import { IPC } from '../constants.js';
 import { getInstallState } from '../config/desktop-config.js';
@@ -10,6 +10,8 @@ import { validateInstallation } from '../install/install-validator.js';
 import { userDataDir, resolveLeagentHome } from '../paths/runtime-paths.js';
 import { forceOpenApp, retryBootFromMaintenance } from '../app/boot-actions.js';
 import { log } from '../logger.js';
+import { isPathInside } from '../install/path-handlers.js';
+import { safeRegisterHandle } from './safe-register.js';
 
 const FINGERPRINT_FILE = 'machine-fingerprint';
 const installManager = new InstallationManager();
@@ -52,36 +54,38 @@ export async function collectDiagnostics(): Promise<Record<string, unknown>> {
 }
 
 export function registerAppIPC(): void {
-  ipcMain.handle(IPC.APP_GET_VERSION, () => app.getVersion());
+  safeRegisterHandle(IPC.APP_GET_VERSION, () => app.getVersion());
 
-  ipcMain.handle(IPC.APP_GET_PATHS, () => ({
+  safeRegisterHandle(IPC.APP_GET_PATHS, () => ({
     userData: app.getPath('userData'),
     logs: path.join(app.getPath('userData'), 'logs'),
     home: app.getPath('home'),
     leagentHome: resolveLeagentHome(),
   }));
 
-  ipcMain.handle(IPC.APP_OPEN_EXTERNAL, (_event, url: string) => {
+  safeRegisterHandle(IPC.APP_OPEN_EXTERNAL, (_event, url: unknown) => {
     if (typeof url === 'string' && (url.startsWith('https://') || url.startsWith('http://'))) {
       return shell.openExternal(url);
     }
   });
 
-  ipcMain.handle(IPC.APP_OPEN_LOGS_DIR, () => {
+  safeRegisterHandle(IPC.APP_OPEN_LOGS_DIR, () => {
     return shell.openPath(path.join(app.getPath('userData'), 'logs'));
   });
 
-  ipcMain.handle(IPC.APP_SHOW_ITEM_IN_FOLDER, (_event, itemPath: string) => {
-    if (typeof itemPath === 'string') {
-      shell.showItemInFolder(itemPath);
-    }
+  safeRegisterHandle(IPC.APP_SHOW_ITEM_IN_FOLDER, (_event, itemPath: unknown) => {
+    if (typeof itemPath !== 'string') return;
+    const resolved = path.resolve(itemPath);
+    const allowedRoots = [app.getPath('userData'), resolveLeagentHome()];
+    if (!allowedRoots.some((root) => isPathInside(root, resolved))) return;
+    shell.showItemInFolder(resolved);
   });
 
-  ipcMain.handle(IPC.APP_GET_MACHINE_FINGERPRINT, () => readOrCreateMachineFingerprint());
+  safeRegisterHandle(IPC.APP_GET_MACHINE_FINGERPRINT, () => readOrCreateMachineFingerprint());
 
-  ipcMain.handle(IPC.APP_GET_DIAGNOSTICS, () => collectDiagnostics());
+  safeRegisterHandle(IPC.APP_GET_DIAGNOSTICS, () => collectDiagnostics());
 
-  ipcMain.handle(IPC.APP_COPY_DIAGNOSTICS, async () => {
+  safeRegisterHandle(IPC.APP_COPY_DIAGNOSTICS, async () => {
     try {
       const diagnostics = await collectDiagnostics();
       clipboard.writeText(JSON.stringify(diagnostics, null, 2));
@@ -92,17 +96,17 @@ export function registerAppIPC(): void {
     }
   });
 
-  ipcMain.handle(IPC.INSTALL_VALIDATE, () => validateInstallation());
+  safeRegisterHandle(IPC.INSTALL_VALIDATE, () => validateInstallation());
 
-  ipcMain.handle(IPC.INSTALL_REPAIR, async (_event, action: string) => {
+  safeRegisterHandle(IPC.INSTALL_REPAIR, async (_event, action: unknown) => {
     return installManager.repair(typeof action === 'string' ? action : '');
   });
 
-  ipcMain.handle(IPC.INSTALL_REINSTALL, async () => installManager.repair('reinstall'));
+  safeRegisterHandle(IPC.INSTALL_REINSTALL, async () => installManager.repair('reinstall'));
 
-  ipcMain.handle(IPC.INSTALL_RETRY_BOOT, () => retryBootFromMaintenance());
+  safeRegisterHandle(IPC.INSTALL_RETRY_BOOT, () => retryBootFromMaintenance());
 
-  ipcMain.handle(IPC.APP_OPEN_APP, () => {
+  safeRegisterHandle(IPC.APP_OPEN_APP, () => {
     forceOpenApp();
   });
 }

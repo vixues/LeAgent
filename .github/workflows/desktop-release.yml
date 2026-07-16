@@ -56,7 +56,6 @@ jobs:
         working-directory: frontend
         env:
           VITE_DESKTOP: 'true'
-          VITE_API_BASE_URL: http://127.0.0.1:7860/api/v1
         run: |
           npm ci
           npm run build
