@@ -398,3 +398,81 @@ def test_render_pptx_autofit_never_overflows_region(tmp_path: Path) -> None:
     sparse_sizes = _body_sizes(prs.slides[2])
     assert dense_sizes and sparse_sizes
     assert max(dense_sizes) < max(sparse_sizes)
+
+
+def test_render_pptx_background_image_with_overlay_only(tmp_path: Path) -> None:
+    """overlay-only background must not block image.position=background."""
+    pptx = pytest.importorskip("pptx")
+    from pptx.enum.shapes import MSO_SHAPE_TYPE
+
+    from leagent.docgen.renderers.pptx import render_pptx
+
+    spec = DeckSpec.model_validate(
+        {
+            "title": "封面",
+            "slides": [
+                {
+                    "layout": "title",
+                    "title": "LeAgent",
+                    "subtitle": "AI 助手",
+                    "image": {"base64_data": _PX, "position": "background"},
+                    "background": {"overlay": 0.35},
+                },
+                {
+                    "layout": "closing",
+                    "title": "Thank You",
+                    "image": {"base64_data": _PX, "position": "background"},
+                    "background": {"overlay": 0.25},
+                },
+            ],
+        }
+    )
+    out = tmp_path / "overlay.pptx"
+    result = render_pptx(spec, out)
+    assert result["success"] is True
+    assert result["content_stats"]["images"] == 2
+    assert result["warnings"] == []
+
+    prs = pptx.Presentation(str(out))
+    for slide in prs.slides:
+        pics = [s for s in slide.shapes if s.shape_type == MSO_SHAPE_TYPE.PICTURE]
+        assert len(pics) == 1
+
+
+def test_render_pptx_two_column_with_side_image(tmp_path: Path) -> None:
+    """two_column + image.position=right places media beside left text."""
+    pptx = pytest.importorskip("pptx")
+    from pptx.enum.shapes import MSO_SHAPE_TYPE
+
+    from leagent.docgen.renderers.pptx import render_pptx
+
+    spec = DeckSpec.model_validate(
+        {
+            "title": "关于",
+            "slides": [
+                {"layout": "title", "title": "关于"},
+                {
+                    "layout": "two_column",
+                    "title": "产品亮点",
+                    "left": "- 智能推理\n- 专业工具",
+                    "image": {"base64_data": _PX, "position": "right", "ratio": 0.45},
+                    "takeaway": "不止于聊天",
+                },
+            ],
+        }
+    )
+    out = tmp_path / "two_col.pptx"
+    result = render_pptx(spec, out)
+    assert result["success"] is True
+    assert result["content_stats"]["images"] == 1
+    assert result["warnings"] == []
+
+    prs = pptx.Presentation(str(out))
+    slide = prs.slides[1]
+    pics = [s for s in slide.shapes if s.shape_type == MSO_SHAPE_TYPE.PICTURE]
+    assert len(pics) == 1
+    body_boxes = [
+        s for s in slide.shapes if s.has_text_frame and "智能推理" in s.text_frame.text
+    ]
+    assert len(body_boxes) == 1
+    assert body_boxes[0].left < pics[0].left

@@ -216,7 +216,8 @@ export default function FolderPage() {
     <PageShell
       title={t('folders.title')}
       description={t('folders.description')}
-      contentClassName="flex min-h-0 flex-1 flex-col"
+      className="min-h-0 overflow-hidden"
+      contentClassName="min-h-0 overflow-hidden"
       actions={
         <>
           {/* Mobile-only trigger that opens the tree in a Sheet */}
@@ -279,7 +280,7 @@ export default function FolderPage() {
             Otherwise render the detail strip + full-width file list.
           */}
           {selectedFolderId && folderDetail?.is_project ? (
-            <Tabs defaultValue="code" className="flex min-h-0 flex-1 flex-col">
+            <Tabs defaultValue="code" className="flex min-h-0 flex-1 flex-col overflow-hidden">
               <div className="flex flex-wrap items-center gap-3 px-4 sm:px-5 py-2 border-b border-border bg-surface-sunken/40 text-xs text-muted-foreground">
                 <span className="flex items-center gap-1.5">
                   <span aria-hidden>{folderDetail.icon ?? '📁'}</span>
@@ -334,7 +335,7 @@ export default function FolderPage() {
                   )}
                 </div>
               </div>
-              <TabsContent value="files" className="flex min-h-0 flex-1 flex-col">
+              <TabsContent value="files" className="flex min-h-0 flex-1 flex-col overflow-hidden">
                 <FileListView
                   files={fileList}
                   isLoading={itemsLoading}
@@ -343,7 +344,7 @@ export default function FolderPage() {
                   onUpload={handleUpload}
                 />
               </TabsContent>
-              <TabsContent value="code" className="flex min-h-0 flex-1 flex-col">
+              <TabsContent value="code" className="flex min-h-0 flex-1 flex-col overflow-hidden">
                 <ProjectPanel
                   folderId={selectedFolderId}
                   folderName={folderDetail.name}
@@ -351,7 +352,7 @@ export default function FolderPage() {
                   mode="code"
                 />
               </TabsContent>
-              <TabsContent value="git" className="flex min-h-0 flex-1 flex-col">
+              <TabsContent value="git" className="flex min-h-0 flex-1 flex-col overflow-hidden">
                 <ProjectPanel
                   folderId={selectedFolderId}
                   folderName={folderDetail.name}
@@ -359,7 +360,7 @@ export default function FolderPage() {
                   mode="git"
                 />
               </TabsContent>
-              <TabsContent value="run" className="flex min-h-0 flex-1 flex-col">
+              <TabsContent value="run" className="flex min-h-0 flex-1 flex-col overflow-hidden">
                 <FolderProjectRunPanel
                   folderId={selectedFolderId}
                   folderName={folderDetail.name}

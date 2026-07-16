@@ -334,9 +334,18 @@ class ProgressiveCompressor:
                 for m in messages
             ]
 
-        protected_count = self._config.min_recent_turns * 2
-        old_messages = messages[:-protected_count] if len(messages) > protected_count else []
-        recent_messages = messages[-protected_count:] if len(messages) > protected_count else messages
+        # Snap so the protected suffix never starts mid tool-block (orphan
+        # ``tool`` rows after a rolled summary → OpenAI/DeepSeek HTTP 400).
+        from leagent.memory.compact import snap_autocompact_split
+
+        raw_split = (
+            len(messages) - self._config.min_recent_turns * 2
+            if len(messages) > self._config.min_recent_turns * 2
+            else 0
+        )
+        split = snap_autocompact_split(messages, raw_split)
+        old_messages = messages[:split]
+        recent_messages = messages[split:]
 
         result: list[CompressedMessage] = []
 

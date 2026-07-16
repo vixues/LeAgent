@@ -77,7 +77,7 @@ class DocumentGenerateTool(SyncTool):
         "`content` for fine-grained control."
     )
     category = ToolCategory.GEN
-    version = "1.0.0"
+    version = "1.1.0"
     timeout_sec = 240
     aliases = ["create_document", "create_pdf", "create_docx", "pdf_generator", "word_generator"]
     search_hint = (
@@ -122,7 +122,11 @@ class DocumentGenerateTool(SyncTool):
                         "matter (--- title: … ---) for metadata, "
                         "`::: info|note|tip|success|warning|danger Title` "
                         "callout containers, ```chart / ```metrics / "
-                        "```checklist JSON fences, `[TOC]`, and `\\newpage`."
+                        "```checklist JSON fences, `[TOC]`, and `\\newpage`. "
+                        "Images: `![alt](local/path.png)`, "
+                        "`![alt](/api/v1/files/{file_id}/preview)`, or a typed "
+                        "`image` block with `path` / `file_id` / `url` "
+                        "(prefer path/file_id over base64)."
                     ),
                 },
                 "blocks": {
@@ -135,7 +139,7 @@ class DocumentGenerateTool(SyncTool):
                         "table{columns,rows,align,caption,style,total_row,zebra,"
                         "widths,number_format} (numeric columns auto right-align; "
                         "合计/Total rows and +/- deltas are auto-styled), "
-                        "image{path|url|base64_data,caption,width_pct}, "
+                        "image{path|url|file_id|base64_data,caption,width_pct}, "
                         "code{code,language}, quote{text,attribution}, "
                         "callout{variant,title,text}, chart{chart_type,categories,"
                         "series,title}, metrics{items}, checklist{title,groups|"

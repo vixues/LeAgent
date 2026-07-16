@@ -108,7 +108,7 @@ export default function ProjectFileViewer({
         </div>
       </div>
 
-      <div className="flex-1 min-h-0 overflow-auto">
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
         {isLoading && (
           <div className="p-4 text-sm text-muted-foreground">
             {t('common.loading', { defaultValue: 'Loading…' })}
@@ -127,23 +127,26 @@ export default function ProjectFileViewer({
             })}
           </div>
         )}
-        {data && data.truncated && (
-          <div className="p-4 text-sm text-muted-foreground">
-            {t('folders.project.viewer.truncatedNotice', {
-              defaultValue:
-                'File is too large to preview in full. Use the coding agent to grep specific lines.',
-            })}
-          </div>
-        )}
-        {data && !data.is_binary && !data.truncated && (
-          <CodeBlock
-            code={data.content}
-            language={extToLanguage(filePath)}
-            showLineNumbers
-            showLanguage
-            showCopyButton
-            className="border-0 rounded-none"
-          />
+        {data && !data.is_binary && (
+          <>
+            {data.truncated && (
+              <p className="shrink-0 border-b border-amber-500/30 bg-amber-500/10 px-4 py-2 text-xs text-amber-800 dark:text-amber-200">
+                {t('folders.project.viewer.truncatedNotice', {
+                  defaultValue:
+                    'File is too large to preview in full. Content below may be truncated.',
+                })}
+              </p>
+            )}
+            <CodeBlock
+              code={data.content}
+              language={extToLanguage(filePath)}
+              showLineNumbers
+              showLanguage
+              showCopyButton
+              fill
+              className="border-0 rounded-none"
+            />
+          </>
         )}
       </div>
     </div>

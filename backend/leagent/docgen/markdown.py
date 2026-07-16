@@ -411,6 +411,11 @@ class _TokenWalker:
             img = non_ws[0]
             src = img.attrGet("src") or ""
             alt = img.content or ""
+            from leagent.docgen.images import extract_file_id
+
+            fid = extract_file_id(src)
+            if fid:
+                return ImageBlock(file_id=fid, caption=alt or None)
             if src.startswith(("http://", "https://")):
                 return ImageBlock(url=src, caption=alt or None)
             if src.startswith("data:"):

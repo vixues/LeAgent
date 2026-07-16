@@ -334,11 +334,15 @@ def render_docx(spec: DocumentSpec, output_path: Path) -> dict[str, Any]:
 
     def _add_image(block: ImageBlock) -> None:
         resolved = resolve_image(
-            path=block.path, base64_data=block.base64_data, url=block.url
+            path=block.path,
+            base64_data=block.base64_data,
+            url=block.url,
+            file_id=block.file_id,
         )
         if resolved is None:
             warnings.append(
-                f"Image could not be resolved: {block.path or block.url or 'base64'}"
+                f"Image could not be resolved: "
+                f"{block.file_id or block.path or block.url or 'base64'}"
             )
             return
         _add_picture_bytes(resolved.data, width_pct=block.width_pct, caption=block.caption)

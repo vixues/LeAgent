@@ -45,6 +45,7 @@ from leagent.agent.query import (
     ASK_USER_PENDING_TOOL_JSON,
     ASK_USER_TOOL_NAME,
     _inject_pending_ask_user_tool_stubs,
+    drop_orphan_tool_messages,
     inject_missing_tool_result_stubs,
 )
 
@@ -670,6 +671,7 @@ class AgentController:
             from leagent.services.session import SessionMessage
 
             _dict_msgs = [m.to_openai_format() for m in conversation.messages]
+            drop_orphan_tool_messages(_dict_msgs)
             _inject_pending_ask_user_tool_stubs(_dict_msgs)
             inject_missing_tool_result_stubs(_dict_msgs)
             conversation.messages = [

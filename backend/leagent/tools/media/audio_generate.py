@@ -63,6 +63,14 @@ class AudioGenerateTool(BaseTool):
                     "type": "string",
                     "description": "Optional voice id / name (provider-dependent).",
                 },
+                "filename": {
+                    "type": "string",
+                    "description": (
+                        "Optional display filename (e.g. 'narration.mp3'). "
+                        "When omitted, a short name is derived from the prompt "
+                        "with a unique suffix to avoid collisions."
+                    ),
+                },
                 "output_path": {
                     "type": "string",
                     "description": "Optional path to save the generated audio.",
@@ -83,6 +91,7 @@ class AudioGenerateTool(BaseTool):
             preset_id=params.get("preset"),
             provider=params.get("provider"),
             model=params.get("model"),
+            filename=params.get("filename"),
             output_path=params.get("output_path"),
             extra_params={"voice": params.get("voice")},
         )

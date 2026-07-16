@@ -29,6 +29,8 @@ const WorkPanel = ({ className, isMobile = false, onMobileMenuOpen, children }: 
     isHome ||
     location.pathname === '/coding-projects' ||
     location.pathname.startsWith('/coding-projects/') ||
+    location.pathname === '/folders' ||
+    location.pathname.startsWith('/folders/') ||
     isWorkflowFlowEditor;
   const {
     previewUrl,

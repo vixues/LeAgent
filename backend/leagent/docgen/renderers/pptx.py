@@ -428,9 +428,12 @@ def render_pptx(deck: DeckSpec, output_path: Path) -> dict[str, Any]:
             lum = sum(relative_luminance(c) for c in bg.gradient[:2]) / 2
             return lum < 0.35
 
-        if bg.image_path or bg.image_url or bg.image_base64:
+        if bg.image_path or bg.image_url or bg.image_file_id or bg.image_base64:
             resolved = resolve_image(
-                path=bg.image_path, url=bg.image_url, base64_data=bg.image_base64
+                path=bg.image_path,
+                url=bg.image_url,
+                file_id=bg.image_file_id,
+                base64_data=bg.image_base64,
             )
             if resolved is not None:
                 cropped = _cover_crop(resolved.data, geom.slide_w, geom.slide_h) or resolved.data
@@ -438,6 +441,7 @@ def render_pptx(deck: DeckSpec, output_path: Path) -> dict[str, Any]:
                     io.BytesIO(cropped), 0, 0,
                     width=Emu(geom.slide_w), height=Emu(geom.slide_h),
                 )
+                stats["images"] += 1
                 overlay = bg.overlay if bg.overlay > 0 else 0.0
                 if overlay > 0:
                     from pptx.enum.shapes import MSO_SHAPE
@@ -584,7 +588,10 @@ def render_pptx(deck: DeckSpec, output_path: Path) -> dict[str, Any]:
         slide: Any, sl_image: SlideImage, region: Region, idx: int
     ) -> bool:
         resolved = resolve_image(
-            path=sl_image.path, base64_data=sl_image.base64_data, url=sl_image.url
+            path=sl_image.path,
+            base64_data=sl_image.base64_data,
+            url=sl_image.url,
+            file_id=sl_image.file_id,
         )
         if resolved is None:
             warnings.append(f"Slide {idx}: image could not be resolved")
@@ -740,22 +747,47 @@ def render_pptx(deck: DeckSpec, output_path: Path) -> dict[str, Any]:
         )
     total = len(slides)
 
+    def _promote_background_image(
+        sl: SlideSpec, bg_spec: SlideBackground | None
+    ) -> SlideBackground | None:
+        """Fold ``image.position=background`` into the slide background.
+
+        Agents often pass ``background: {overlay: 0.35}`` together with
+        ``image: {path, position: background}``. The overlay-only background
+        must not block promotion of the slide image.
+        """
+        if sl.image is None or sl.image.position != "background":
+            return bg_spec
+        if bg_spec is not None and bg_spec.has_image:
+            return bg_spec
+        overlay = 0.45
+        overlay_color = "#000000"
+        color = None
+        gradient = None
+        gradient_angle = 90.0
+        if bg_spec is not None:
+            if bg_spec.overlay > 0:
+                overlay = bg_spec.overlay
+            overlay_color = bg_spec.overlay_color or overlay_color
+            color = bg_spec.color
+            gradient = bg_spec.gradient
+            gradient_angle = bg_spec.gradient_angle
+        return SlideBackground(
+            color=color,
+            gradient=gradient,
+            gradient_angle=gradient_angle,
+            image_path=sl.image.path,
+            image_url=sl.image.url,
+            image_file_id=sl.image.file_id,
+            image_base64=sl.image.base64_data,
+            overlay=overlay,
+            overlay_color=overlay_color,
+        )
+
     for idx, sl in enumerate(slides, start=1):
         slide = prs.slides.add_slide(blank)
         layout = sl.layout
-        bg_spec = sl.background or deck.background
-        # An `image.position == "background"` promotes the slide image.
-        if (
-            bg_spec is None
-            and sl.image is not None
-            and sl.image.position == "background"
-        ):
-            bg_spec = SlideBackground(
-                image_path=sl.image.path,
-                image_url=sl.image.url,
-                image_base64=sl.image.base64_data,
-                overlay=0.45,
-            )
+        bg_spec = _promote_background_image(sl, sl.background or deck.background)
         if layout == "section" and bg_spec is None:
             # Section dividers keep their signature primary/surface band.
             section_fill = theme.colors.surface if theme.deck.dark else theme.colors.primary
@@ -886,10 +918,35 @@ def render_pptx(deck: DeckSpec, output_path: Path) -> dict[str, Any]:
         elif layout == "two_column":
             top = _slide_header(slide, sl, palette)
             region = geom.content_region(top, has_takeaway=has_takeaway)
-            cols = geom.columns(region, 2)
-            for col_region, text in zip(cols, (sl.left, sl.right), strict=False):
-                if text:
-                    _render_body(slide, text, col_region, palette)
+            # Image + text: same split semantics as content/image layouts.
+            # Common agent pattern: left markdown + image.position=right.
+            if (
+                sl.image is not None
+                and sl.image.position != "background"
+                and (sl.left or sl.right or sl.body)
+            ):
+                side = (
+                    sl.image.position
+                    if sl.image.position in ("left", "right", "top")
+                    else "right"
+                )
+                text_region, media_region = geom.split(region, sl.image.ratio, side=side)
+                _place_slide_image(slide, sl.image, media_region, idx)
+                body_text = sl.body or sl.left or sl.right or ""
+                if sl.left and sl.right and not sl.body:
+                    # Keep both columns of text stacked in the text pane.
+                    body_text = f"{sl.left}\n\n{sl.right}"
+                elif sl.left and not sl.body:
+                    body_text = sl.left
+                elif sl.right and not sl.left and not sl.body:
+                    body_text = sl.right
+                if body_text:
+                    _render_body(slide, body_text, text_region, palette)
+            else:
+                cols = geom.columns(region, 2)
+                for col_region, text in zip(cols, (sl.left, sl.right), strict=False):
+                    if text:
+                        _render_body(slide, text, col_region, palette)
             if has_takeaway:
                 _takeaway_bar(slide, sl.takeaway or "")
             _slide_chrome(slide, idx, total, palette, skip=False)

@@ -281,6 +281,58 @@ def test_compress_tool_result_preserves_source_echo() -> None:
     assert "import IPython" in out
 
 
+def test_progressive_rolling_summary_does_not_orphan_tool_rows() -> None:
+    """Protected suffix must include the owning assistant when it would start on tool."""
+    from leagent.context.compression import CompressionConfig, ProgressiveCompressor
+    from leagent.context.session_compression import _progressive_output_dicts
+
+    # Build a long transcript so rolling summary fires; place a tool block
+    # just before the naive protected window so an unsnapped split orphans it.
+    messages: list[dict[str, Any]] = []
+    for i in range(12):
+        messages.append({"role": "user", "content": f"u{i} " + ("x" * 400)})
+        messages.append({"role": "assistant", "content": f"a{i} " + ("y" * 400)})
+    messages.append(
+        {
+            "role": "assistant",
+            "content": "",
+            "tool_calls": [
+                {
+                    "id": "call-keep",
+                    "type": "function",
+                    "function": {"name": "echo", "arguments": "{}"},
+                },
+            ],
+        }
+    )
+    messages.append({"role": "tool", "tool_call_id": "call-keep", "content": "z" * 800})
+    for i in range(3):
+        messages.append({"role": "user", "content": f"follow-{i}"})
+        messages.append({"role": "assistant", "content": f"ack-{i}"})
+    messages.append({"role": "user", "content": "final"})
+    # Naive keep = last 8 → starts at the tool row (owning assistant is older).
+    protected = CompressionConfig().min_recent_turns * 2
+    assert messages[-protected]["role"] == "tool"
+
+    cfg = CompressionConfig(min_recent_turns=4)
+    pc = ProgressiveCompressor(cfg)
+    cms = pc.compress(messages, budget_tokens=500)
+    out = _progressive_output_dicts(messages, cfg, cms)
+
+    for i, m in enumerate(out):
+        if m.get("role") != "tool":
+            continue
+        assert i > 0, "tool at head of compressed transcript"
+        prev = out[i - 1]
+        assert prev.get("role") == "assistant", f"tool preceded by {prev.get('role')!r}"
+        tcs = prev.get("tool_calls") or []
+        ids = {
+            (tc.get("id") if isinstance(tc, dict) else None) for tc in tcs
+        }
+        assert m.get("tool_call_id") in ids
+        assert "tool_calls" in prev
+
+
 @pytest.mark.asyncio
 async def test_token_usage_to_api_dict_includes_cache_when_set() -> None:
     from leagent.llm.base import TokenUsage, token_usage_to_api_dict

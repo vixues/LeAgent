@@ -84,14 +84,16 @@ export default function ProjectPanel({
         </div>
       ) : (
         <div className="grid min-h-0 flex-1 grid-cols-1 md:grid-cols-[260px_1fr]">
-          <div className="overflow-auto border-r border-border p-2">
-            <ProjectFileTree
-              folderId={folderId}
-              selectedPath={selectedPath}
-              onSelectFile={setSelectedPath}
-            />
+          <div className="flex max-h-52 min-h-0 flex-col overflow-hidden border-b border-border md:max-h-none md:h-full md:border-b-0 md:border-r">
+            <div className="min-h-0 flex-1 overflow-y-auto p-2">
+              <ProjectFileTree
+                folderId={folderId}
+                selectedPath={selectedPath}
+                onSelectFile={setSelectedPath}
+              />
+            </div>
           </div>
-          <div className="flex min-h-0 flex-col">
+          <div className="flex min-h-0 min-w-0 flex-col overflow-hidden">
             <ProjectFileViewer
               folderId={folderId}
               folderName={folderName}

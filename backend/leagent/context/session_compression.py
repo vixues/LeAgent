@@ -69,23 +69,35 @@ def _progressive_output_dicts(
     pc_cfg: CompressionConfig,
     cms: list[Any],
 ) -> list[dict[str, Any]]:
-    """Map ProgressiveCompressor output back to LLM dicts; preserve tool tail from ``mc``."""
+    """Map ProgressiveCompressor output back to LLM dicts; preserve tool tail from ``mc``.
+
+    The protected window is snapped with :func:`snap_autocompact_split` so a
+    rolling-summary head never leaves orphan ``tool`` rows at the start of the
+    kept suffix (providers reject ``tool`` without a preceding ``tool_calls``).
+    """
+    from leagent.memory.compact import snap_autocompact_split
+
     protected = pc_cfg.min_recent_turns * 2
     if len(mc) <= protected:
         return list(mc)
+    split = snap_autocompact_split(mc, len(mc) - protected)
+    n_recent = len(mc) - split
     # ProgressiveCompressor only carries role + text body on ``CompressedMessage``.
     # When output is 1:1 with ``mc``, merge compressed ``content`` onto the original
     # wire dicts so OpenAI-compatible APIs still receive ``tool_call_id`` / ``tool_calls``
     # / ``name`` / ``reasoning_content`` (dropping them yields 400 on ``role: tool``).
     if len(cms) == len(mc):
         head: list[dict[str, Any]] = []
-        for i in range(len(mc) - protected):
+        for i in range(split):
             merged = dict(mc[i])
             merged["content"] = cms[i].content
             head.append(merged)
-        return head + mc[-protected:]
-    head = [{"role": c.role, "content": c.content} for c in cms[:-protected]]
-    return head + mc[-protected:]
+        return head + mc[split:]
+    if n_recent and len(cms) >= n_recent:
+        head = [{"role": c.role, "content": c.content} for c in cms[:-n_recent]]
+    else:
+        head = [{"role": c.role, "content": c.content} for c in cms]
+    return head + mc[split:]
 
 
 def apply_progressive_transcript_compress(

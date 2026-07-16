@@ -758,11 +758,15 @@ def render_pdf(spec: DocumentSpec, output_path: Path) -> dict[str, Any]:
     def _image_flowables(block: ImageBlock, avail: float | None = None) -> list[Any]:
         frame_w = avail if avail is not None else content_width
         resolved = resolve_image(
-            path=block.path, base64_data=block.base64_data, url=block.url
+            path=block.path,
+            base64_data=block.base64_data,
+            url=block.url,
+            file_id=block.file_id,
         )
         if resolved is None:
             warnings.append(
-                f"Image could not be resolved: {block.path or block.url or 'base64'}"
+                f"Image could not be resolved: "
+                f"{block.file_id or block.path or block.url or 'base64'}"
             )
             return []
         max_w = frame_w * ((block.width_pct or 88.0) / 100.0)

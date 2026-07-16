@@ -33,9 +33,25 @@ def _background_schema(desc: str) -> dict[str, Any]:
                 "type": "number",
                 "description": "Gradient angle in degrees (90 = top to bottom).",
             },
-            "image_path": {"type": "string", "description": "Local image path (cover-cropped full-bleed)."},
-            "image_url": {"type": "string", "description": "Image URL (cover-cropped full-bleed)."},
-            "image_base64": {"type": "string", "description": "Base64-encoded image data (cover-cropped full-bleed)."},
+            "image_path": {
+                "type": "string",
+                "description": "Local image path (cover-cropped full-bleed).",
+            },
+            "image_url": {
+                "type": "string",
+                "description": "Image URL (cover-cropped full-bleed).",
+            },
+            "image_file_id": {
+                "type": "string",
+                "description": (
+                    "Managed file UUID from image_generate / code_execution "
+                    "(preferred over base64)."
+                ),
+            },
+            "image_base64": {
+                "type": "string",
+                "description": "Base64-encoded image data (cover-cropped full-bleed). Prefer path/file_id.",
+            },
             "overlay": {
                 "type": "number",
                 "description": "0-1 scrim opacity over a background image for text legibility (0.4-0.6 typical).",
@@ -50,9 +66,25 @@ def _image_schema(desc: str) -> dict[str, Any]:
     return {
         "type": "object",
         "properties": {
-            "path": {"type": "string"},
-            "url": {"type": "string"},
-            "base64_data": {"type": "string"},
+            "path": {
+                "type": "string",
+                "description": "Local filesystem path to a PNG/JPEG (e.g. code-exec output).",
+            },
+            "url": {
+                "type": "string",
+                "description": "http(s) URL or /api/v1/files/{id}/preview preview path.",
+            },
+            "file_id": {
+                "type": "string",
+                "description": (
+                    "Managed artifact UUID returned by image_generate / "
+                    "code_execution. Preferred over embedding base64."
+                ),
+            },
+            "base64_data": {
+                "type": "string",
+                "description": "Base64 image bytes. Avoid for large images — use path or file_id.",
+            },
             "caption": {"type": "string"},
             "position": {
                 "type": "string",
@@ -61,7 +93,8 @@ def _image_schema(desc: str) -> dict[str, Any]:
                     "Where the image sits relative to body text: right/left/top "
                     "split the slide with the text, full fills the content "
                     "area, background makes it a full-bleed backdrop with a "
-                    "dark scrim. Default full."
+                    "dark scrim. Works on title/closing/content/image/"
+                    "two_column layouts. Default full."
                 ),
             },
             "ratio": {
@@ -85,15 +118,18 @@ class SlidesGenerateTool(SyncTool):
         "controls: per-slide `kicker` (eyebrow label), action `title`, "
         "`takeaway` (bottom so-what bar), `background` (solid/gradient/image "
         "with scrim), image placement (`image.position` right/left/top/full/"
-        "background + `ratio`), and 2-4 headed `columns` with optional card "
-        "emphasis. Body text auto-shrinks to fit — no overflow. Charts render "
+        "background + `ratio` on title/closing/content/image/two_column), and "
+        "2-4 headed `columns` with optional card emphasis. Images accept "
+        "`path`, `file_id` (from image_generate / code_execution), preview URL, "
+        "or base64 — prefer path/file_id, never hand-encode base64 via code. "
+        "Body text auto-shrinks to fit — no overflow. Charts render "
         "server-side with CJK-safe fonts; 15 curated themes; speaker notes and "
         "slide numbers supported. Rule of thumb: one idea per slide, action "
         "titles that state the conclusion, and a visual on data slides. "
         "Chinese text is safe: every run carries an east-Asian font."
     )
     category = ToolCategory.GEN
-    version = "1.0.0"
+    version = "1.1.0"
     timeout_sec = 240
     aliases = ["create_pptx", "create_slides", "presentation_generate", "pptx_generator"]
     search_hint = (

@@ -75,8 +75,20 @@ Consulting-grade slide anatomy (all optional, all layouts):
 - `title` — the **action title**: state the conclusion, not the topic.
 - `takeaway` — one-sentence so-what shown in an accent bar at the bottom. Use it on every evidence slide.
 - `body` markdown supports multi-level bullets (indent 2 spaces per level), numbered lists, task lists (`- [x]`), `#### run-in headings`, and **bold** — levels get proper consulting typography automatically.
-- Image + text: set `image.position` (`right`/`left`/`top` split with `ratio`, `full`, or `background` for a full-bleed backdrop with a legibility scrim) on `content` or `image` slides.
-- `background` (per slide or deck-wide): `{color}`, `{gradient: [from, to]}`, or `{image_url|image_path, overlay: 0.5}` — text colors adapt to background darkness automatically.
+- Image + text: set `image.position` (`right`/`left`/`top` split with `ratio`, `full`, or `background` for a full-bleed backdrop with a legibility scrim) on `title` / `closing` / `content` / `image` / `two_column` slides.
+- `background` (per slide or deck-wide): `{color}`, `{gradient: [from, to]}`, or `{image_path|image_url|image_file_id, overlay: 0.5}` — text colors adapt to background darkness automatically. You may combine `image: {position: background, path|file_id}` with `background: {overlay: 0.35}` — the overlay is applied on top of the image.
+
+### Image insertion (documents + decks)
+
+Never hand-write base64 via `code_execution` / PIL just to embed a picture. Prefer this order:
+
+1. **Generate or locate** the asset (`image_generate`, `code_execution` plot, session upload). Note the returned `file_id` and/or absolute `path`.
+2. **Pass it directly** into the docgen tool:
+   - Decks: `image: {file_id: "…", position: "right", ratio: 0.45}` or `{path: "/…/cover.png", position: "background"}`.
+   - Documents: markdown `![caption](/api/v1/files/{file_id}/preview)` / `![caption](/abs/or/rel/path.png)`, or a typed `blocks` item `{type: "image", file_id|path|url, caption}`.
+3. Check the tool result: `content_stats.images` should be > 0 and `warnings` empty. If an image failed to resolve, fix the path/`file_id` and regenerate — do not silently ship a text-only deck.
+
+`file_id`, `/api/v1/files/{id}/preview`, and `{uuid}_{filename}` storage names all resolve to the managed blob. Base64 is a last resort for tiny inline icons only.
 
 Deck themes are curated palettes. The default is `executive_light` (clean white background, professional blue). Others include `midnight_executive` (dark blue), `forest_moss`, `coral_energy`, `charcoal_minimal`, … Match tone: light themes for most business/training decks, dark themes (`midnight_executive`, `ocean_gradient`, `teal_trust`) for executive/keynote drama.
 

@@ -126,6 +126,7 @@ class ImageBlock(_Model):
     type: Literal["image"] = "image"
     path: str | None = None
     url: str | None = None
+    file_id: str | None = None
     base64_data: str | None = None
     caption: str | None = None
     width_pct: float | None = Field(default=None, gt=0, le=100)
@@ -476,6 +477,7 @@ ImagePosition = Literal["right", "left", "top", "full", "background"]
 class SlideImage(_Model):
     path: str | None = None
     url: str | None = None
+    file_id: str | None = None
     base64_data: str | None = None
     caption: str | None = None
     position: ImagePosition = "full"
@@ -496,9 +498,16 @@ class SlideBackground(_Model):
     gradient_angle: float = 90.0             # degrees, 90 = top->bottom
     image_path: str | None = None
     image_url: str | None = None
+    image_file_id: str | None = None
     image_base64: str | None = None
     overlay: float = 0.0                     # 0-1 scrim opacity over image
     overlay_color: str = "#000000"
+
+    @property
+    def has_image(self) -> bool:
+        return bool(
+            self.image_path or self.image_url or self.image_file_id or self.image_base64
+        )
 
 
 class SlideColumn(_Model):

@@ -332,6 +332,34 @@ class TestConversationContext:
         # Should have at most 4 messages (2 pairs)
         assert len(ctx.messages) <= 4
 
+    def test_trim_snaps_before_tool_block(self) -> None:
+        from leagent.agent.base import ConversationMessage
+
+        ctx = ConversationContext(max_turns=2)
+        ctx.messages = [
+            ConversationMessage(role="user", content="u0"),
+            ConversationMessage(role="assistant", content="a0"),
+            ConversationMessage(
+                role="assistant",
+                content="",
+                tool_calls=[
+                    {
+                        "id": "call-1",
+                        "type": "function",
+                        "function": {"name": "echo", "arguments": "{}"},
+                    },
+                ],
+            ),
+            ConversationMessage(role="tool", content="{}", tool_call_id="call-1"),
+            ConversationMessage(role="user", content="u1"),
+            ConversationMessage(role="assistant", content="a1"),
+        ]
+        # Naive keep last 4 would start at tool; snap must include owning assistant.
+        ctx.trim(max_turns=2)
+        assert ctx.messages[0].role == "assistant"
+        assert ctx.messages[0].tool_calls
+        assert ctx.messages[1].role == "tool"
+
     def test_serialize_deserialize_roundtrip(self) -> None:
         ctx = ConversationContext(system_prompt="test prompt", max_turns=10)
         ctx.append_user_message("Hello")

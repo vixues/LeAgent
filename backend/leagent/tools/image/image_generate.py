@@ -30,9 +30,13 @@ class ImageGenerateTool(BaseTool):
         "Generate an image from a text prompt using a configured image model. "
         "Routes through locally configured providers/presets (admin-managed). "
         "In chat sessions, registers the image for preview and returns `preview_path` "
-        "(`/api/v1/files/{id}/preview`), which can be used in Markdown image syntax "
-        "or as the source of an `emit_ui_tree` Image node. Choose the presentation "
+        "(`/api/v1/files/{id}/preview`) plus `file_id`. Pass `file_id` or "
+        "`preview_path` straight into `document_generate` / `slides_generate` "
+        "(or Markdown `![…](/api/v1/files/{id}/preview)`) — do not re-encode "
+        "the bytes as base64. Choose the presentation "
         "format that best fits the user's request and the response context. "
+        "Optional `filename` sets a display name; otherwise a short name is derived "
+        "from the prompt with a unique suffix. "
         "Use for creating illustrations, diagrams, icons, photos, artwork, "
         "or any visual content described in natural language."
     )
@@ -86,6 +90,14 @@ class ImageGenerateTool(BaseTool):
                     "type": "string",
                     "description": "Optional image generation provider override (e.g. siliconflow, offline).",
                 },
+                "filename": {
+                    "type": "string",
+                    "description": (
+                        "Optional display filename (e.g. 'sunset_cat.png'). "
+                        "When omitted, a short name is derived from the prompt "
+                        "with a unique suffix to avoid collisions."
+                    ),
+                },
                 "output_path": {
                     "type": "string",
                     "description": "Optional path to save the generated image.",
@@ -122,6 +134,7 @@ class ImageGenerateTool(BaseTool):
             preset_id=params.get("preset"),
             provider=params.get("provider"),
             model=params.get("model"),
+            filename=params.get("filename"),
             output_path=params.get("output_path"),
             extra_params=extra,
         )

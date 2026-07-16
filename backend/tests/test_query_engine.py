@@ -28,6 +28,7 @@ from leagent.agent.query import (
     _inject_pending_ask_user_tool_stubs,
     _normalize_ask_user_questions,
     _prepare_canvas_length_salvage,
+    drop_orphan_tool_messages,
     inject_missing_tool_result_stubs,
     query,
 )
@@ -794,6 +795,63 @@ class TestInterruptedToolStubInject:
         inject_missing_tool_result_stubs(messages)
         assert len(messages) == 3
         assert messages[2]["content"] == ASK_USER_PENDING_TOOL_JSON
+
+
+class TestDropOrphanToolMessages:
+    """Providers reject ``tool`` without a preceding assistant ``tool_calls``."""
+
+    def test_drops_head_orphans(self) -> None:
+        messages: list[dict[str, Any]] = [
+            {"role": "tool", "tool_call_id": "orphan", "content": "{}"},
+            {"role": "user", "content": "hi"},
+            {"role": "assistant", "content": "ok"},
+        ]
+        drop_orphan_tool_messages(messages)
+        assert [m["role"] for m in messages] == ["user", "assistant"]
+
+    def test_drops_mid_history_orphans_after_summary(self) -> None:
+        messages: list[dict[str, Any]] = [
+            {"role": "system", "content": "[Summary of earlier messages]"},
+            {"role": "tool", "tool_call_id": "call-1", "content": "{}"},
+            {"role": "tool", "tool_call_id": "call-2", "content": "{}"},
+            {"role": "user", "content": "continue"},
+            {"role": "assistant", "content": "ok"},
+        ]
+        drop_orphan_tool_messages(messages)
+        assert [m["role"] for m in messages] == ["system", "user", "assistant"]
+
+    def test_keeps_valid_tool_block(self) -> None:
+        messages: list[dict[str, Any]] = [
+            {"role": "user", "content": "hi"},
+            {
+                "role": "assistant",
+                "content": "",
+                "tool_calls": [
+                    {"id": "call-a", "name": "echo", "arguments": "{}"},
+                ],
+            },
+            {"role": "tool", "tool_call_id": "call-a", "content": "{}"},
+            {"role": "assistant", "content": "done"},
+        ]
+        drop_orphan_tool_messages(messages)
+        assert len(messages) == 4
+        assert messages[2]["tool_call_id"] == "call-a"
+
+    def test_drops_tool_with_unknown_call_id(self) -> None:
+        messages: list[dict[str, Any]] = [
+            {
+                "role": "assistant",
+                "content": "",
+                "tool_calls": [
+                    {"id": "call-a", "name": "echo", "arguments": "{}"},
+                ],
+            },
+            {"role": "tool", "tool_call_id": "call-a", "content": "ok"},
+            {"role": "tool", "tool_call_id": "call-zombie", "content": "bad"},
+        ]
+        drop_orphan_tool_messages(messages)
+        assert len(messages) == 2
+        assert messages[1]["tool_call_id"] == "call-a"
 
 
 # ---------------------------------------------------------------------------

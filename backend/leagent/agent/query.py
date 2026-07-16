@@ -382,6 +382,49 @@ INTERRUPTED_TOOL_RESULT_JSON = json.dumps(
 )
 
 
+def drop_orphan_tool_messages(messages: list[dict[str, Any]]) -> None:
+    """Drop ``tool`` rows that are not responses to a preceding ``tool_calls`` block.
+
+    OpenAI-compatible APIs (DeepSeek, OpenAI, …) reject histories where a
+    ``role: tool`` message does not immediately follow an assistant message that
+    declared matching ``tool_calls``. Progressive/rolling compression, naive
+    trim, or a corrupt session can leave such orphans mid-history (not only at
+    index 0). Mutates ``messages`` in place.
+    """
+    if not messages:
+        return
+
+    kept: list[dict[str, Any]] = []
+    pending_ids: set[str] | None = None
+
+    for msg in messages:
+        role = msg.get("role")
+        if role == "assistant":
+            tcs = msg.get("tool_calls")
+            if isinstance(tcs, list) and tcs:
+                pending_ids = {
+                    tid for tid, _ in _tool_call_id_name_pairs(tcs) if tid
+                }
+            else:
+                pending_ids = None
+            kept.append(msg)
+            continue
+        if role == "tool":
+            tcid = msg.get("tool_call_id")
+            if not isinstance(tcid, str) or not tcid.strip():
+                continue
+            tcid = tcid.strip()
+            if pending_ids is None or tcid not in pending_ids:
+                continue
+            kept.append(msg)
+            continue
+        pending_ids = None
+        kept.append(msg)
+
+    if len(kept) != len(messages):
+        messages[:] = kept
+
+
 def inject_missing_tool_result_stubs(messages: list[dict[str, Any]]) -> None:
     """Ensure every ``tool_calls`` id on an assistant has a following ``tool`` row.
 
@@ -718,11 +761,10 @@ async def _query_loop(params: QueryParams) -> AsyncIterator[Any]:
             except Exception:
                 logger.debug("autocompact_metrics_failed", exc_info=True)
 
-        # Drop orphan tool rows at the head (e.g. corrupted session or a prior
-        # compaction bug). OpenAI rejects ``tool`` without a preceding assistant
-        # ``tool_calls`` block.
-        while messages_for_query and messages_for_query[0].get("role") == "tool":
-            messages_for_query.pop(0)
+        # Drop orphan tool rows anywhere in history (e.g. progressive compress
+        # split mid tool-block, corrupt session). OpenAI/DeepSeek reject ``tool``
+        # without a preceding assistant ``tool_calls`` block (HTTP 400).
+        drop_orphan_tool_messages(messages_for_query)
 
         _inject_pending_ask_user_tool_stubs(messages_for_query)
         inject_missing_tool_result_stubs(messages_for_query)

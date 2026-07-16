@@ -758,17 +758,22 @@ class ConversationContext(BaseModel):
         if len(self.messages) <= max_turns * 2:
             return
 
-        pairs_to_keep = max_turns
-        kept: list[ConversationMessage] = []
-        i = len(self.messages) - 1
-        count = 0
+        # Keep the last N messages, but snap left so we never start mid tool-block
+        # (orphan ``tool`` without its owning ``assistant.tool_calls``).
+        from leagent.memory.compact import snap_autocompact_split
 
-        while i >= 0 and count < pairs_to_keep * 2:
-            kept.insert(0, self.messages[i])
-            i -= 1
-            count += 1
-
-        self.messages = kept
+        raw_split = len(self.messages) - max_turns * 2
+        wire = [
+            {
+                "role": m.role,
+                "content": m.content or "",
+                **({"tool_calls": m.tool_calls} if m.tool_calls else {}),
+                **({"tool_call_id": m.tool_call_id} if m.tool_call_id else {}),
+            }
+            for m in self.messages
+        ]
+        split = snap_autocompact_split(wire, max(0, raw_split))
+        self.messages = self.messages[split:]
 
     @property
     def token_estimate(self) -> int:

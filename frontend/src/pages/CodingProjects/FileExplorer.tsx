@@ -151,9 +151,9 @@ function FilePreview({
           </Button>
         </div>
       </div>
-      <div className="min-h-0 flex-1 overflow-auto">
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
         {data?.truncated && (
-          <p className="border-b border-amber-500/30 bg-amber-500/10 px-4 py-2 text-xs text-amber-800 dark:text-amber-200">
+          <p className="shrink-0 border-b border-amber-500/30 bg-amber-500/10 px-4 py-2 text-xs text-amber-800 dark:text-amber-200">
             {t('folders.project.viewer.truncatedNotice', {
               defaultValue:
                 'File is too large to preview in full. Content below may be truncated.',
@@ -166,6 +166,7 @@ function FilePreview({
           showLineNumbers
           showLanguage={false}
           showCopyButton={false}
+          fill
           className="border-0 rounded-none"
         />
       </div>

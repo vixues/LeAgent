@@ -62,6 +62,14 @@ class VideoGenerateTool(BaseTool):
                     "type": "number",
                     "description": "Target clip duration in seconds (provider-dependent).",
                 },
+                "filename": {
+                    "type": "string",
+                    "description": (
+                        "Optional display filename (e.g. 'ocean_wave.mp4'). "
+                        "When omitted, a short name is derived from the prompt "
+                        "with a unique suffix to avoid collisions."
+                    ),
+                },
                 "output_path": {
                     "type": "string",
                     "description": "Optional path to save the generated video.",
@@ -82,6 +90,7 @@ class VideoGenerateTool(BaseTool):
             preset_id=params.get("preset"),
             provider=params.get("provider"),
             model=params.get("model"),
+            filename=params.get("filename"),
             output_path=params.get("output_path"),
             extra_params={"duration": params.get("duration")},
         )

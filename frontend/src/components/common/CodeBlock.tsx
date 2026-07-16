@@ -1,9 +1,12 @@
-import { forwardRef, useState, type HTMLAttributes, useEffect } from 'react';
+import { forwardRef, useState, type HTMLAttributes, useEffect, useMemo } from 'react';
 import { cn } from '@/lib/utils';
 import { Copy, Check, ChevronDown, ChevronUp } from 'lucide-react';
 import hljs from 'highlight.js';
 import 'highlight.js/styles/github-dark.css';
 import { useTranslation } from 'react-i18next';
+
+/** Above this line count, skip per-line highlight table (keeps large files responsive). */
+const PER_LINE_HIGHLIGHT_MAX = 400;
 
 interface CodeBlockProps extends HTMLAttributes<HTMLDivElement> {
   code: string;
@@ -12,6 +15,8 @@ interface CodeBlockProps extends HTMLAttributes<HTMLDivElement> {
   showCopyButton?: boolean;
   showLanguage?: boolean;
   maxHeight?: number | string;
+  /** Fill parent height and scroll internally (IDE-style file viewers). */
+  fill?: boolean;
   collapsible?: boolean;
   defaultCollapsed?: boolean;
   highlightLines?: number[];
@@ -27,6 +32,7 @@ const CodeBlock = forwardRef<HTMLDivElement, CodeBlockProps>(
       showCopyButton = true,
       showLanguage = true,
       maxHeight,
+      fill = false,
       collapsible = false,
       defaultCollapsed = false,
       highlightLines = [],
@@ -60,8 +66,17 @@ const CodeBlock = forwardRef<HTMLDivElement, CodeBlockProps>(
       }
     };
 
-    const lines = code.split('\n');
+    const lines = useMemo(() => code.split('\n'), [code]);
+    const lineCount = lines.length;
     const displayLanguage = language === 'plaintext' ? 'text' : language;
+    const useTableHighlight =
+      showLineNumbers &&
+      highlightLines.length > 0 &&
+      lineCount <= PER_LINE_HIGHLIGHT_MAX;
+    const lineNumberText = useMemo(
+      () => (showLineNumbers && !useTableHighlight ? lines.map((_, i) => i + 1).join('\n') : ''),
+      [lines, showLineNumbers, useTableHighlight],
+    );
 
     return (
       <div
@@ -70,6 +85,7 @@ const CodeBlock = forwardRef<HTMLDivElement, CodeBlockProps>(
           'rounded-lg overflow-hidden',
           'border border-gray-200 dark:border-gray-700',
           'bg-gray-50 dark:bg-surface',
+          fill && 'flex min-h-0 flex-1 flex-col',
           className
         )}
         {...props}
@@ -77,7 +93,7 @@ const CodeBlock = forwardRef<HTMLDivElement, CodeBlockProps>(
         {(showLanguage || showCopyButton || collapsible) && (
           <div
             className={cn(
-              'flex items-center justify-between px-4 py-2',
+              'flex shrink-0 items-center justify-between px-4 py-2',
               'bg-gray-100 dark:bg-surface',
               'border-b border-gray-200 dark:border-gray-700'
             )}
@@ -135,17 +151,23 @@ const CodeBlock = forwardRef<HTMLDivElement, CodeBlockProps>(
 
         {!collapsed && (
           <div
-            className="overflow-auto"
+            className={cn('overflow-auto', fill && 'min-h-0 flex-1')}
             style={maxHeight ? { maxHeight } : undefined}
           >
             <pre className="p-4 m-0 text-sm leading-relaxed">
               <code className={cn('hljs', `language-${language}`)}>
-                {showLineNumbers ? (
+                {useTableHighlight ? (
                   <table className="border-collapse w-full">
                     <tbody>
                       {lines.map((line, index) => {
                         const lineNumber = index + 1;
                         const isHighlighted = highlightLines.includes(lineNumber);
+                        let html = line || ' ';
+                        try {
+                          html = hljs.highlight(line || ' ', { language }).value;
+                        } catch {
+                          /* keep plain */
+                        }
                         return (
                           <tr
                             key={index}
@@ -164,19 +186,36 @@ const CodeBlock = forwardRef<HTMLDivElement, CodeBlockProps>(
                               {lineNumber}
                             </td>
                             <td className="pl-4">
-                              <span
-                                dangerouslySetInnerHTML={{
-                                  __html: hljs.highlight(line || ' ', { language }).value,
-                                }}
-                              />
+                              <span dangerouslySetInnerHTML={{ __html: html }} />
                             </td>
                           </tr>
                         );
                       })}
                     </tbody>
                   </table>
+                ) : showLineNumbers ? (
+                  <span className="flex min-w-0">
+                    <span
+                      aria-hidden
+                      className={cn(
+                        'select-none pr-4 text-right',
+                        'text-gray-400 dark:text-gray-600',
+                        'border-r border-gray-200 dark:border-gray-700',
+                        'shrink-0'
+                      )}
+                      style={{ minWidth: '2.5rem' }}
+                    >
+                      {lineNumberText}
+                    </span>
+                    <span
+                      className="min-w-0 flex-1 overflow-x-auto pl-4"
+                      dangerouslySetInnerHTML={{
+                        __html: highlightedCode || code,
+                      }}
+                    />
+                  </span>
                 ) : (
-                  <span dangerouslySetInnerHTML={{ __html: highlightedCode }} />
+                  <span dangerouslySetInnerHTML={{ __html: highlightedCode || code }} />
                 )}
               </code>
             </pre>
