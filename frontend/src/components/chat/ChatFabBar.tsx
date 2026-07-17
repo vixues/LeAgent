@@ -10,8 +10,7 @@ import {
   Trash2,
   Edit2,
   Command,
-  Maximize2,
-  Minimize2,
+  Focus,
 } from 'lucide-react';
 import { useChatStore } from '@/stores/chat';
 import { useLayoutStore } from '@/stores/layout';
@@ -216,11 +215,8 @@ export function ChatFabBar({
             })}
             aria-keyshortcuts="Meta+Backslash"
           >
-            {focusMode ? (
-              <Minimize2 className="w-4 h-4" />
-            ) : (
-              <Maximize2 className="w-4 h-4" />
-            )}
+            {/* Focus glyph (not Maximize2) so it can't be mistaken for the window controls above. */}
+            <Focus className="w-4 h-4" />
           </button>
         )}
         <button

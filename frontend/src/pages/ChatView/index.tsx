@@ -517,7 +517,7 @@ export default function ChatView() {
             }}
             aria-hidden="true"
           />
-          <div className="fixed left-auto top-[10px] bottom-2 right-2 z-50 flex h-auto min-h-0 w-[min(92vw,28rem)] max-w-md flex-col animate-fade-in">
+          <div className="fixed left-auto top-[calc(var(--titlebar-height,0px)+10px)] bottom-2 right-2 z-50 flex h-auto min-h-0 w-[min(92vw,28rem)] max-w-md flex-col animate-fade-in">
             <RightPanel />
           </div>
         </>

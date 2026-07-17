@@ -9,7 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [1.2.7] - 2026-07-17
 
-Patch release: **toolchain refresh** — CI/build pipeline moved to Node 24 with current GitHub Actions majors, plus frontend dependency updates.
+Patch release: **toolchain refresh** plus desktop chat chrome clearance so title-bar window controls no longer collide with focus FABs and the right panel.
+
+### Fixed
+
+- **Desktop title bar / chat chrome** — Reserve `--titlebar-height`, `--titlebar-controls-width`, and `--titlebar-content-gap` so chat FABs, the right panel, and skip-to-content sit clear of min/max/close; use a distinct Focus glyph so focus mode is not mistaken for window maximize.
 
 ### Changed
 

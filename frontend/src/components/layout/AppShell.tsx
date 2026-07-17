@@ -63,7 +63,7 @@ export function AppShell() {
         onClick={focusMainContent}
         className={cn(
           'sr-only focus:not-sr-only',
-          'focus:fixed focus:left-3 focus:top-3 focus:z-[100]',
+          'focus:fixed focus:left-3 focus:top-[calc(var(--titlebar-height,0px)+0.75rem)] focus:z-[100]',
           'focus:rounded-lg focus:bg-primary-600 focus:px-4 focus:py-2',
           'focus:text-sm focus:font-medium focus:text-white focus:shadow-lg',
           'focus:outline-none focus:ring-2 focus:ring-primary-400/60'

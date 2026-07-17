@@ -75,7 +75,9 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 10px 12px;
+  /* Desktop shell: --titlebar-content-gap pushes the FABs clear of the
+     window-control strip; resolves to 0px in the browser. */
+  padding: calc(10px + var(--titlebar-content-gap, 0px)) 12px 10px;
   background: linear-gradient(
     to bottom,
     rgb(var(--chat-bg)) 0%,

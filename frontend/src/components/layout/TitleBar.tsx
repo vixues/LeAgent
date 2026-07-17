@@ -87,15 +87,26 @@ export function TitleBar() {
   const theme = useThemeStore((s) => s.theme);
   const [maximized, setMaximized] = useState(false);
 
-  // Reserve vertical space for the floating NavRail and page content.
+  // Reserve space for the floating NavRail, page content, and the window
+  // control strip so top-of-page UI can stay clear of min/max/close.
   useEffect(() => {
     if (!isDesktop) return;
     const root = document.documentElement;
     root.style.setProperty('--titlebar-height', '36px');
+    // Native traffic lights live inside the bar on macOS; Windows overlay and
+    // the Linux custom controls both occupy ~138px on the right.
+    root.style.setProperty(
+      '--titlebar-controls-width',
+      titleBarStyle === 'mac' ? '0px' : '138px',
+    );
+    // Extra breathing room between the title bar and the first content row.
+    root.style.setProperty('--titlebar-content-gap', '8px');
     return () => {
       root.style.removeProperty('--titlebar-height');
+      root.style.removeProperty('--titlebar-controls-width');
+      root.style.removeProperty('--titlebar-content-gap');
     };
-  }, [isDesktop]);
+  }, [isDesktop, titleBarStyle]);
 
   // Track maximize state for the restore/maximize glyph (custom controls).
   useEffect(() => {
@@ -146,7 +157,7 @@ export function TitleBar() {
       className={cn(
         DRAG,
         'flex h-9 flex-shrink-0 select-none items-center justify-between',
-        'border-b border-border/60 bg-background/95 backdrop-blur',
+        'border-b border-border bg-background/95 backdrop-blur',
         isMac ? 'pl-[78px] pr-3' : 'pl-3 pr-0',
       )}
     >
