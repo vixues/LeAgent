@@ -4,7 +4,8 @@ import { Search, X, Loader2 } from 'lucide-react';
 import { debounce } from '@/lib/utils';
 import { useTranslation } from 'react-i18next';
 
-interface SearchInputProps extends Omit<InputHTMLAttributes<HTMLInputElement>, 'onChange' | 'size'> {
+interface SearchInputProps
+  extends Omit<InputHTMLAttributes<HTMLInputElement>, 'onChange' | 'size' | 'onSubmit'> {
   value?: string;
   onChange?: (value: string) => void;
   /** Debounced commit (typing settled). */

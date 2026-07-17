@@ -59,6 +59,7 @@ function seedEmbedMessage(): void {
         id: 'att-1',
         name: 'data.csv',
         type: 'text/csv',
+        size: 1024,
         localPath: '/uploads/data.csv',
       },
     ],

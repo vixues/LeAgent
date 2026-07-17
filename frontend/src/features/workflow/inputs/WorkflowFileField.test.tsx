@@ -11,6 +11,7 @@ const ATTACHMENTS: Attachment[] = [
     id: 'att-1',
     name: 'report.csv',
     type: 'text/csv',
+    size: 1024,
     localPath: '/uploads/report.csv',
   },
 ];

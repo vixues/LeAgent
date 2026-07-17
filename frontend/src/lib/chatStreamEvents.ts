@@ -26,7 +26,6 @@ import { useExecutionOverlay } from '@/features/workflow/store/executionOverlay'
 import type {
   GenUiTreeV1,
   UiPatchStreamPayload,
-  UiStreamStreamPayload,
   UiTreeStreamPayload,
 } from '@/types/genUi';
 import { isDocProcessorWriteStream } from '@/lib/docProcessorStreamPreview';
@@ -773,14 +772,6 @@ export function applyChatStreamEvent(
           assistantMsgId,
           data,
         );
-      }
-      break;
-    }
-
-    case 'ui_stream': {
-      const data = event.data as UiStreamStreamPayload;
-      if (data?.ops && Array.isArray(data.ops)) {
-        useGenUiStore.getState().applyStream(sessionId, assistantMsgId, data);
       }
       break;
     }
