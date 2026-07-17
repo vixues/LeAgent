@@ -14,6 +14,7 @@ Patch release: **toolchain refresh** plus desktop chat chrome clearance so title
 ### Fixed
 
 - **Desktop title bar / chat chrome** — Reserve `--titlebar-height`, `--titlebar-controls-width`, and `--titlebar-content-gap` so chat FABs, the right panel, and skip-to-content sit clear of min/max/close; use a distinct Focus glyph so focus mode is not mistaken for window maximize.
+- **Desktop tagged CI pack** — `build-{win,mac,linux}` pass `--publish never` so electron-builder does not require `GH_TOKEN` on `v*` tags; `release.yml` still attaches installers via softprops.
 
 ### Changed
 

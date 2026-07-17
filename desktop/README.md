@@ -99,7 +99,7 @@ Desktop frontend builds set `VITE_DESKTOP=true` only — they **do not** bake `V
 
 Push a tag `desktop-v*` (e.g. `desktop-v1.1.4`) to trigger [`.github/workflows/desktop-release.yml`](../.github/workflows/desktop-release.yml). Builds macOS (arm64+x64), Windows (NSIS), and Linux (AppImage + deb), uploading artifacts to GitHub Releases via `electron-updater`.
 
-Set `GH_TOKEN` in CI; optional macOS notarization via `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD`, `APPLE_TEAM_ID` (consumed by the afterSign hook).
+`desktop-release.yml` sets `GH_TOKEN` so electron-builder can publish; `release.yml` build scripts pass `--publish never` and attach installers with softprops instead. Optional macOS notarization via `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD`, `APPLE_TEAM_ID` (consumed by the afterSign hook).
 
 ## User data
 

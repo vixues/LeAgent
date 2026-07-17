@@ -152,15 +152,18 @@ for a in "${ARCHES[@]}"; do
 done
 
 EB_VERSION_FLAG="--c.extraMetadata.version=$VERSION"
+# --publish never: release.yml attaches installers via softprops; without this,
+# a git tag triggers implicit GitHub publish and fails when GH_TOKEN is unset.
+EB_PUBLISH_FLAG="--publish never"
 
 if [ -n "$TARGET" ]; then
   # Build specific target only by creating a temporary override
   case "$TARGET" in
     appimage|AppImage)
-      npx electron-builder --linux AppImage $ARCH_FLAGS --config electron-builder.yml $EB_VERSION_FLAG
+      npx electron-builder --linux AppImage $ARCH_FLAGS --config electron-builder.yml $EB_PUBLISH_FLAG $EB_VERSION_FLAG
       ;;
     deb)
-      npx electron-builder --linux deb $ARCH_FLAGS --config electron-builder.yml $EB_VERSION_FLAG
+      npx electron-builder --linux deb $ARCH_FLAGS --config electron-builder.yml $EB_PUBLISH_FLAG $EB_VERSION_FLAG
       ;;
     *)
       echo "Unknown target: $TARGET (use appimage or deb)"
@@ -168,7 +171,7 @@ if [ -n "$TARGET" ]; then
       ;;
   esac
 else
-  npx electron-builder --linux $ARCH_FLAGS --config electron-builder.yml $EB_VERSION_FLAG
+  npx electron-builder --linux $ARCH_FLAGS --config electron-builder.yml $EB_PUBLISH_FLAG $EB_VERSION_FLAG
 fi
 
 popd > /dev/null

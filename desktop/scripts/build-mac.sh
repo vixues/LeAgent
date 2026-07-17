@@ -130,7 +130,9 @@ for a in "${ARCHES[@]}"; do
 done
 
 export VERSION="$VERSION"
-npx electron-builder --mac $ARCH_FLAGS --config electron-builder.yml --c.extraMetadata.version="$VERSION"
+# --publish never: release.yml attaches installers via softprops; without this,
+# a git tag triggers implicit GitHub publish and fails when GH_TOKEN is unset.
+npx electron-builder --mac $ARCH_FLAGS --publish never --config electron-builder.yml --c.extraMetadata.version="$VERSION"
 
 popd > /dev/null
 

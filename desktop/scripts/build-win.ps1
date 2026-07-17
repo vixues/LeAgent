@@ -169,7 +169,9 @@ try {
 
   $maxBuildAttempts = 2
   for ($attempt = 1; $attempt -le $maxBuildAttempts; $attempt++) {
-    npx electron-builder --win --x64 --config electron-builder.yml "--c.extraMetadata.version=$Version"
+    # --publish never: release.yml attaches installers via softprops; without this,
+    # a git tag triggers implicit GitHub publish and fails when GH_TOKEN is unset.
+    npx electron-builder --win --x64 --publish never --config electron-builder.yml "--c.extraMetadata.version=$Version"
     if ($LASTEXITCODE -eq 0) { break }
     if ($attempt -eq $maxBuildAttempts) { throw "electron-builder failed (exit $LASTEXITCODE)" }
 
