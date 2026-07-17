@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from uuid import uuid4
 
 import pytest
@@ -16,6 +17,20 @@ def _reset_plans() -> None:
     reset_settings_plan_registry()
     yield
     reset_settings_plan_registry()
+
+
+@pytest.fixture(autouse=True)
+def _restore_applied_env() -> None:
+    """The tool's apply path mutates os.environ; restore keys touched by these tests
+    so later tests (e.g. WebSearchSettings defaults) see a clean environment."""
+    keys = ("WEB_SEARCH_PROVIDER",)
+    saved = {k: os.environ.get(k) for k in keys}
+    yield
+    for k, v in saved.items():
+        if v is None:
+            os.environ.pop(k, None)
+        else:
+            os.environ[k] = v
 
 
 def _ctx() -> ToolContext:
