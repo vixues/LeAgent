@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.7] - 2026-07-17
+
+Patch release: **toolchain refresh** — CI/build pipeline moved to Node 24 with current GitHub Actions majors, plus frontend dependency updates.
+
+### Changed
+
+- **CI / release pipelines on Node 24** — All `setup-node` steps build with Node 24 (Active LTS); GitHub Actions bumped to current majors running on the Node 24 runtime (`checkout` v7, `setup-node` v6, `upload-artifact` v7, `setup-python` v6, `setup-uv` v8, `codecov-action` v7, `setup-buildx-action` v4, `build-push-action` v7, `upload-pages-artifact` v5, `action-gh-release` v3), clearing the Node 20 deprecation warnings.
+- **Frontend dependencies** — `three` / `@types/three` 0.184 → 0.185.1, `@types/node` 25 → 26. TypeScript stays on 6.x until `@typescript-eslint` supports TS 7.
+
 ## [1.2.6] - 2026-07-16
 
 Patch release: **desktop usability** — macOS reopen without IPC crash, notarization hook, relative API base URL, correct About update semantics, and install/backend hardening.
@@ -1378,7 +1387,8 @@ _Subsections below keep `— YYYY-MM-DD` on each heading for maintainers (commit
 - **Minor (0.X.0)**: New features, backward compatible
 - **Patch (0.0.X)**: Bug fixes, security patches
 
-[Unreleased]: https://github.com/vixues/LeAgent/compare/v1.2.6...HEAD
+[Unreleased]: https://github.com/vixues/LeAgent/compare/v1.2.7...HEAD
+[1.2.7]: https://github.com/vixues/LeAgent/compare/v1.2.6...v1.2.7
 [1.2.6]: https://github.com/vixues/LeAgent/compare/v1.2.5...v1.2.6
 [1.2.5]: https://github.com/vixues/LeAgent/compare/v1.2.4...v1.2.5
 [1.2.4]: https://github.com/vixues/LeAgent/compare/v1.2.3...v1.2.4

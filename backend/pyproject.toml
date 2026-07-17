@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "leagent"
-version = "1.2.6"
+version = "1.2.7"
 description = "LeAgent — Intelligent Office Agent Platform"
 readme = "README.md"
 license = "Apache-2.0"
