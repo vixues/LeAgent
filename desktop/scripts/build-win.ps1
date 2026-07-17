@@ -77,16 +77,8 @@ Write-Host "  Version : $Version"
 Write-Host "  Channel : $Channel"
 Write-Host "============================================"
 
-# ── 1. Icons ──
-Write-Host "`n==> make-icons.mjs"
-$iconScript = Join-Path $PSScriptRoot "make-icons.mjs"
-try {
-  node $iconScript
-} catch {
-  Write-Warning "Icon generation failed: $_  (non-fatal)"
-}
-
-# ── 2. Runtime (Python + uv) ──
+# ── 1. Runtime (Python + uv) ──
+# Icons run after Electron npm ci (sharp is a desktop/electron dep).
 if (-not $SkipRuntime) {
   Write-Host "`n==> prepare-runtime.mjs --platform win-x64"
   node (Join-Path $PSScriptRoot "prepare-runtime.mjs") --platform win-x64
@@ -95,7 +87,7 @@ if (-not $SkipRuntime) {
   Write-Warning "SkipRuntime: python-build-standalone + uv not refreshed."
 }
 
-# ── 3. Backend payload ──
+# ── 2. Backend payload ──
 if (-not $SkipBackendPayload) {
   Write-Host "`n==> prepare-backend-payload.mjs"
   node (Join-Path $PSScriptRoot "prepare-backend-payload.mjs")
@@ -104,7 +96,7 @@ if (-not $SkipBackendPayload) {
   Write-Warning "SkipBackendPayload: backend source tree not refreshed."
 }
 
-# ── 4. Frontend build ──
+# ── 3. Frontend build ──
 if (-not $SkipFrontend) {
   Write-Host "`n==> Frontend build (Vite)"
   $frontendDir = Join-Path $Repo "frontend"
@@ -126,7 +118,7 @@ if (-not $SkipFrontend) {
   Write-Warning "SkipFrontend: frontend/dist not rebuilt."
 }
 
-# ── 5. Compile bytecode ──
+# ── 4. Compile bytecode ──
 if (-not $SkipCompileall) {
   $payloadDir = Join-Path $DesktopElectron "resources\backend-payload"
   $runtimePy = Join-Path $DesktopElectron "resources\runtime\win-x64\python\python.exe"
@@ -154,12 +146,20 @@ if (-not $SkipCompileall) {
   Write-Warning "SkipCompileall: .pyc cache not refreshed."
 }
 
-# ── 6. Electron build + pack ──
+# ── 5. Electron build + pack ──
 Write-Host "`n==> Electron npm ci + build + pack"
 Push-Location $DesktopElectron
 try {
   npm ci
   if ($LASTEXITCODE -ne 0) { throw "npm ci failed in desktop/electron (exit $LASTEXITCODE)" }
+
+  Write-Host "`n==> make-icons.mjs"
+  $iconScript = Join-Path $PSScriptRoot "make-icons.mjs"
+  try {
+    node $iconScript
+  } catch {
+    Write-Warning "Icon generation failed: $_  (non-fatal)"
+  }
 
   npm run build
   if ($LASTEXITCODE -ne 0) { throw "npm run build (tsc) failed (exit $LASTEXITCODE)" }

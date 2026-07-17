@@ -64,7 +64,6 @@ jobs:
         if: runner.os != 'Windows'
         shell: bash
         run: |
-          node desktop/scripts/make-icons.mjs || true
           PLAT="${{ matrix.platform }}"
           if [ "$PLAT" = "mac" ]; then
             node desktop/scripts/prepare-runtime.mjs --platform mac-arm64,mac-x64
@@ -77,7 +76,6 @@ jobs:
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          node desktop/scripts/make-icons.mjs
           node desktop/scripts/prepare-runtime.mjs --platform win-x64
           node desktop/scripts/prepare-backend-payload.mjs
 
@@ -91,6 +89,8 @@ jobs:
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
           npm ci
+          # sharp is installed above — generate icons before pack
+          node ../scripts/make-icons.mjs || true
           npm version "${{ steps.ver.outputs.version }}" --no-git-tag-version --allow-same-version
           npm run build
           npm test
@@ -107,6 +107,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           npm ci
+          node ../scripts/make-icons.mjs
           npm version ${{ steps.ver.outputs.version }} --no-git-tag-version --allow-same-version
           npm run build
           npm test

@@ -78,6 +78,13 @@ class TestINV1_NoDirectWriteInBlobPaths:
         # Durable operational registries with their own file formats.
         "cron/repository.py": "atomic write of the cron jobs registry file",
         "extensions/manager.py": "persists the installed-extensions registry",
+        "mcp/manager.py": "persists the mcp_servers.yaml config file",
+        "channels/weixin/store.py": "atomic write of Weixin credential/context-token store",
+        # Security control plane: local secret + setup-state files (0600).
+        "services/auth/store.py": "atomic write of the security setup-state file",
+        "services/auth/secrets.py": "persists the generated signing secret file",
+        # Observability artifacts (debug payload capture, not session blobs).
+        "telemetry/trace/recorder.py": "writes trace payload JSON under LEAGENT_HOME traces dir",
         # Workflow definitions are documents, not managed blobs.
         "workflow/io/serializer.py": "serializes workflow definitions to yaml/json",
         "docgen/fonts.py": "caches sha256-verified font downloads under LEAGENT_HOME/fonts",

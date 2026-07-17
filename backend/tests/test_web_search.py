@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
@@ -482,5 +483,9 @@ async def test_web_fetch_tool_ssrf(monkeypatch: pytest.MonkeyPatch) -> None:
 
     tool = WebFetchTool()
     ctx = ToolContext(session_id="s", user_id="u")
-    with pytest.raises(ValueError, match="private|local|Refusing"):
-        await tool.execute({"url": "http://127.0.0.1/secret"}, ctx)
+    # SSRF violations return a structured error envelope (agent-friendly)
+    # instead of raising; the raise path is covered by assert_public_http_url tests.
+    out = await tool.execute({"url": "http://127.0.0.1/secret"}, ctx)
+    assert out["ok"] is False
+    assert re.search(r"private|local|Refusing|non-public", out["error"], re.IGNORECASE)
+    assert "SSRF" in out["next_step"]

@@ -68,6 +68,10 @@ def upgrade() -> None:
             unique=False,
         )
 
+    if not _has_table("chat_sessions"):
+        # Fresh database: chat_sessions is created by SQLModel.metadata.create_all
+        # at app startup (with project_id already present); nothing to alter here.
+        return
     if not _has_column("chat_sessions", "project_id"):
         if _dialect_name() == "sqlite":
             op.add_column(

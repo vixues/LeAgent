@@ -12,6 +12,7 @@ and assert on the final order.
 
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from typing import Any
@@ -304,6 +305,12 @@ class TestRecallPipeline:
             embeddings=_StaticEmbeddings(),  # type: ignore[arg-type]
         )
         await pipeline.recall(RecallOptions(query="remember"))
+        # note_recall is fired as a background task off the per-turn critical
+        # path; drain pending tasks before asserting bookkeeping.
+        from leagent.memory import recall as recall_module
+
+        if recall_module._BACKGROUND_NOTE_TASKS:
+            await asyncio.gather(*recall_module._BACKGROUND_NOTE_TASKS)
         assert ep_store.recall_notes == [ep_id]
 
     async def test_vector_search_precedes_lexical_fallback(self) -> None:

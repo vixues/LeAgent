@@ -64,6 +64,28 @@ class _FakeSessionManager:
             "download_url": f"/api/v1/files/{file_id}/download?token=signed",
         }
 
+    async def promote_tool_output(
+        self,
+        session_id,
+        user_id,
+        *,
+        path=None,
+        data=None,
+        filename: str | None = None,
+        content_type: str | None = None,
+        source_tool_path: str | None = None,
+        allowed_roots=None,
+        origin_ref: str | None = None,
+    ) -> dict[str, Any] | None:
+        assert path is not None, "fake only supports path promotion"
+        return await self.register_external_file(
+            session_id,
+            user_id,
+            str(path),
+            display_name=filename,
+            allowed_roots=allowed_roots,
+        )
+
     def __init__(self, storage_dir: Path | None = None) -> None:
         self.calls: list[dict[str, Any]] = []
         self.storage_dir = storage_dir or Path("/tmp/fake-uploads")
@@ -95,8 +117,12 @@ def test_is_previewable_produced_file(tmp_path: Path) -> None:
     gif.write_bytes(b"GIF89a")
     csv = tmp_path / "data.csv"
     csv.write_text("a,b", encoding="utf-8")
+    blob = tmp_path / "weights.bin"
+    blob.write_bytes(b"\x00\x01")
     assert is_previewable_produced_file(gif)
-    assert not is_previewable_produced_file(csv)
+    # CSV is a managed download since tool-output promotion unification.
+    assert is_previewable_produced_file(csv)
+    assert not is_previewable_produced_file(blob)
 
 
 def test_extract_skips_already_managed_produced_files(tmp_path: Path) -> None:

@@ -50,6 +50,28 @@ class _FakeSessionManager:
             "download_url": "/download",
         }
 
+    async def promote_tool_output(
+        self,
+        session_id,
+        user_id,
+        *,
+        path: str | None = None,
+        data: bytes | None = None,
+        filename: str | None = None,
+        content_type: str | None = None,
+        source_tool_path: str | None = None,
+        allowed_roots=None,
+        origin_ref: str | None = None,
+    ) -> dict[str, Any] | None:
+        assert path is not None and data is None
+        return await self.register_external_file(
+            session_id,
+            user_id,
+            str(path),
+            display_name=filename,
+            allowed_roots=allowed_roots,
+        )
+
 
 class _CaptureHandler:
     def __init__(self) -> None:

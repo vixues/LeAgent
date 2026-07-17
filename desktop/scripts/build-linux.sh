@@ -71,12 +71,8 @@ if ! command -v dpkg &>/dev/null; then
   echo "  ⚠ dpkg not found — .deb target may fail. Install: sudo apt-get install dpkg fakeroot"
 fi
 
-# ── 1. Icons ──
-echo ""
-echo "==> make-icons.mjs"
-node "$SCRIPT_DIR/make-icons.mjs" || echo "  ⚠ Icon generation failed (non-fatal)"
-
-# ── 2. Runtime (Python + uv) ──
+# ── 1. Runtime (Python + uv) ──
+# Icons run after Electron npm ci (sharp is a desktop/electron dep).
 if [ "$SKIP_RUNTIME" = false ]; then
   PLATFORM=""
   for a in "${ARCHES[@]}"; do
@@ -89,7 +85,7 @@ else
   echo "  ⚠ SkipRuntime: python-build-standalone + uv not refreshed."
 fi
 
-# ── 3. Backend payload ──
+# ── 2. Backend payload ──
 if [ "$SKIP_BACKEND" = false ]; then
   echo ""
   echo "==> prepare-backend-payload.mjs"
@@ -98,7 +94,7 @@ else
   echo "  ⚠ SkipBackend: backend source tree not refreshed."
 fi
 
-# ── 4. Frontend build ──
+# ── 3. Frontend build ──
 if [ "$SKIP_FRONTEND" = false ]; then
   echo ""
   echo "==> Frontend build (Vite)"
@@ -114,7 +110,7 @@ else
   echo "  ⚠ SkipFrontend: frontend/dist not rebuilt."
 fi
 
-# ── 5. Compile bytecode ──
+# ── 4. Compile bytecode ──
 if [ "$SKIP_COMPILEALL" = false ]; then
   PAYLOAD_DIR="$DESKTOP_ELECTRON/resources/backend-payload"
   RUNTIME_PY=""
@@ -136,12 +132,17 @@ else
   echo "  ⚠ SkipCompileall: .pyc cache not refreshed."
 fi
 
-# ── 6. Electron build + pack ──
+# ── 5. Electron build + pack ──
 echo ""
 echo "==> Electron npm ci + build + pack"
 pushd "$DESKTOP_ELECTRON" > /dev/null
 
 npm ci
+
+echo ""
+echo "==> make-icons.mjs"
+node "$SCRIPT_DIR/make-icons.mjs" || echo "  ⚠ Icon generation failed (non-fatal)"
+
 npm run build
 
 export VERSION="$VERSION"

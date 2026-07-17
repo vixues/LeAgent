@@ -299,6 +299,7 @@ describe('fetchMessages stream guard', () => {
     expect(apiClient.patch).toHaveBeenCalledWith(
       `/chat/sessions/${session.id}/todos/t1`,
       { status: 'in_progress' },
+      { headers: undefined },
     );
     expect(useChatStore.getState().sessions[0]?.todos?.[0]?.status).toBe('in_progress');
     expect(useChatStore.getState().sessions[0]?.todos?.[1]?.status).toBe('pending');

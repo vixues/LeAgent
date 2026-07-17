@@ -20,6 +20,7 @@ from leagent.agent.base import AgentResponse
 from leagent.agent.deps import ModelStreamEvent, QueryDeps
 from leagent.agent.query import (
     ASK_USER_PENDING_TOOL_JSON,
+    _TRUNCATION_RECOVERY_HINT,
     AssistantMessage,
     QueryParams,
     ToolResultMessage,
@@ -1249,7 +1250,7 @@ class TestLengthTruncationRecovery:
             for m in retry_msgs
             if m.get("role") == "user"
             and "tool_argument_blob" in str(m.get("content", ""))
-            and "create_and_finalize" in str(m.get("content", ""))
+            and str(m.get("content", "")) == _TRUNCATION_RECOVERY_HINT
         ]
         assert hint_msgs, "expected chunked-staging hint on recovery retry"
 

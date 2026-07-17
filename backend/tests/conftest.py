@@ -22,6 +22,13 @@ _backend_root = Path(__file__).resolve().parent.parent
 _wa_pytest = _backend_root / ".pytest_leagent_home"
 _wa_pytest.mkdir(parents=True, exist_ok=True)
 os.environ.setdefault("LEAGENT_HOME", str(_wa_pytest.resolve()))
+# Pin the permissive test profile (loopback + auth off) at the env level so a
+# ``get_settings.cache_clear()`` inside a test (e.g. to pick up monkeypatched
+# SMTP vars) rebuilds Settings without flipping auth enforcement to on
+# (fresh defaults bind 0.0.0.0 → effective_enforce_auth() → 401 everywhere).
+os.environ.setdefault("LEAGENT_HOST", "127.0.0.1")
+os.environ.setdefault("LEAGENT_SECURITY_ENFORCE_AUTH", "false")
+os.environ.setdefault("LEAGENT_SECURITY_RATE_LIMIT_ENABLED", "false")
 # Deterministic routing: a developer ``LEAGENT_FRONTEND_DIST`` would mount StaticFiles
 # before API routes (405/404). Tests mount SPA last via ``mount_frontend_spa_if_configured``.
 os.environ.pop("LEAGENT_FRONTEND_DIST", None)

@@ -46,7 +46,7 @@ def _tokenizer() -> Any | None:
 
         try:
             return tiktoken.encoding_for_model("gpt-4o")
-        except KeyError:
+        except Exception:  # noqa: BLE001 - e.g. offline BPE download failure
             return tiktoken.get_encoding("cl100k_base")
     except Exception as exc:  # noqa: BLE001 - token counting must degrade safely
         logger.debug("tiktoken_unavailable_for_deepseek_context", exc_info=exc)

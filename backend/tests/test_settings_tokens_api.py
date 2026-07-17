@@ -3,9 +3,27 @@
 from __future__ import annotations
 
 import os
+from collections.abc import Iterator
 
 import pytest
 from fastapi.testclient import TestClient
+
+
+@pytest.fixture()
+def _restore_web_search_env() -> Iterator[None]:
+    """Undo process-env writes made by the tokens endpoint (PUT applies values
+    to ``os.environ``), so later tests see the default web-search provider."""
+    keys = ("WEB_SEARCH_PROVIDER", "WEB_SEARCH_BRAVE_API_KEY")
+    before = {k: os.environ.get(k) for k in keys}
+    yield
+    for k, v in before.items():
+        if v is None:
+            os.environ.pop(k, None)
+        else:
+            os.environ[k] = v
+    from leagent.config.settings import get_settings
+
+    get_settings.cache_clear()
 
 
 def test_get_tokens_status(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -91,6 +109,7 @@ def test_put_rejects_invalid_web_fetch_enabled(client: TestClient) -> None:
     assert r.status_code == 400
 
 
+@pytest.mark.usefixtures("_restore_web_search_env")
 def test_put_accepts_web_search_provider_and_clears_cache(
     client: TestClient, monkeypatch: pytest.MonkeyPatch, tmp_path
 ) -> None:
@@ -111,6 +130,7 @@ def test_put_accepts_web_search_provider_and_clears_cache(
     assert cleared == [True]
 
 
+@pytest.mark.usefixtures("_restore_web_search_env")
 def test_put_accepts_brave_provider(
     client: TestClient, monkeypatch: pytest.MonkeyPatch, tmp_path
 ) -> None:

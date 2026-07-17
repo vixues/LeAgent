@@ -15,8 +15,7 @@ const DEST = path.join(REPO, 'desktop', 'electron', 'resources', 'backend-payloa
 const ROOT_CONFIG = path.join(REPO, 'config');
 
 const INCLUDE = [
-  'leagent',
-  'alembic',
+  'leagent', // includes leagent/alembic migrations
   'pyproject.toml',
   'uv.lock',
   'alembic.ini',
