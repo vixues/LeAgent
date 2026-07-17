@@ -60,20 +60,29 @@ class Template:
         *,
         host: str,
         port: int,
+        preview_base: str = "/",
     ) -> tuple[str, ...]:
-        """Replace ``$PORT`` / ``$HOST`` tokens in ``argv``.
+        """Replace ``$PORT`` / ``$HOST`` / ``$PREVIEW_BASE`` tokens in ``argv``.
 
-        Only those two tokens are recognised; any other unsupported
-        placeholder is left as-is (which usually surfaces as the
-        child failing to parse its CLI, making the bug obvious).
+        ``$PREVIEW_BASE`` is the URL prefix of the token-gated reverse
+        proxy (e.g. ``/api/v1/coding-projects/{id}/preview/``); dev
+        servers that support a base path (Vite) mount there so the HTML
+        they emit references assets *inside* the proxy prefix. Any other
+        unsupported placeholder is left as-is (which usually surfaces as
+        the child failing to parse its CLI, making the bug obvious).
         """
         out: list[str] = []
         for raw in argv:
             tok = str(raw)
             tok = tok.replace("$PORT", str(port))
             tok = tok.replace("$HOST", str(host))
+            tok = tok.replace("$PREVIEW_BASE", preview_base)
             out.append(tok)
         return tuple(out)
+
+    def uses_preview_base(self) -> bool:
+        """True when the dev server is started with the proxy prefix as base."""
+        return any("$PREVIEW_BASE" in str(a) for a in self.start_argv)
 
 
 def _coerce_str_tuple(value: object) -> tuple[str, ...]:

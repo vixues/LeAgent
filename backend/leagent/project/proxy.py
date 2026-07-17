@@ -23,9 +23,12 @@ Implementation notes:
 * WebSocket forwarding uses the ``websockets`` library which is
   already a dependency. We pump frames in both directions and close
   the proxy side as soon as either side finishes.
-* The hop-by-hop and ``host`` headers are stripped on both legs so
-  the upstream sees a clean request and the browser doesn't get
-  confused by ``Transfer-Encoding`` collisions.
+* The hop-by-hop headers are stripped on both legs so the upstream
+  sees a clean request and the browser doesn't get confused by
+  ``Transfer-Encoding`` collisions. The browser-facing ``Host`` is
+  replaced with the loopback authority of the dev server
+  (``127.0.0.1:<port>``) so host-checking dev servers (e.g. Vite's
+  ``server.allowedHosts``) accept the proxied request.
 """
 
 from __future__ import annotations
@@ -107,6 +110,11 @@ async def _open_loopback_http(
     browser-to-LeAgent hop, not the LeAgent-to-dev-server hop.
     A raw loopback request keeps that contract exact and still lets us
     stream the response body back to Starlette.
+
+    The upstream leg carries its own loopback ``Host`` (e.g.
+    ``127.0.0.1:39042``): dev servers with host checking (Vite's
+    ``server.allowedHosts``) reject requests whose Host is missing or
+    unknown, and loopback authorities are always in their allowlist.
     """
     parsed = urlsplit(target_url)
     if parsed.scheme != "http":
@@ -119,6 +127,7 @@ async def _open_loopback_http(
 
     request_head = [
         f"{method.upper()} {_path_and_query(target_url)} HTTP/1.0\r\n".encode("ascii"),
+        _encode_header_line("host", f"{parsed.hostname}:{port}"),
     ]
     for key, value in headers.items():
         if key.lower() in _HOP_BY_HOP:

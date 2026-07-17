@@ -80,6 +80,10 @@ class RunningServer:
     started_at: float
     cwd: Path
     argv: tuple[str, ...]
+    # URL prefix the child mounted itself under (e.g. Vite --base).
+    # Empty means the child serves from "/" and the proxy strips the
+    # preview prefix before forwarding.
+    path_prefix: str = ""
     last_activity: float = field(default_factory=time.time)
     ready: bool = False
 
@@ -199,6 +203,7 @@ class DevServerSupervisor:
         ready_regex: str | None = None,
         env: Mapping[str, str] | None = None,
         startup_timeout_sec: float | None = None,
+        path_prefix: str = "",
     ) -> RunningServer:
         """Spawn the child and wait for it to become ready."""
         async with self._lock:
@@ -257,6 +262,7 @@ class DevServerSupervisor:
                 started_at=time.time(),
                 cwd=cwd,
                 argv=checked_argv,
+                path_prefix=path_prefix,
             )
 
             ready_event = asyncio.Event()

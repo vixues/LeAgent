@@ -294,15 +294,22 @@ class CodingProjectManager:
             await self._maybe_install(project, tmpl)
 
         port = self._ports.allocate(str(project_id))
+        # Base-aware dev servers (Vite) mount at the proxy prefix so
+        # the HTML they emit references assets inside the token-gated
+        # preview path instead of root-absolute URLs that escape it.
+        preview_base = f"/api/v1/coding-projects/{project_id}/preview/"
+        path_prefix = preview_base if tmpl.uses_preview_base() else ""
         argv = tmpl.expand_argv(
             tmpl.start_argv,
             host=self._settings.coding_projects.bind_host,
             port=port,
+            preview_base=preview_base,
         )
 
         env = {
             "PORT": str(port),
             "HOST": self._settings.coding_projects.bind_host,
+            "LEAGENT_PREVIEW_BASE": preview_base,
             "PYTHONUNBUFFERED": "1",
             "NODE_OPTIONS": "--unhandled-rejections=warn",
         }
@@ -317,6 +324,7 @@ class CodingProjectManager:
                 ready_regex=tmpl.ready_regex or None,
                 env=env,
                 startup_timeout_sec=self._settings.coding_projects.dev_server_startup_timeout_sec,
+                path_prefix=path_prefix,
             )
         except Exception:
             self._ports.release(str(project_id))
@@ -561,8 +569,21 @@ class CodingProjectManager:
     def supervised_target_base(self, server: RunningServer) -> str:
         return f"http://{server.host}:{server.port}"
 
-    def supervised_ws_target(self, server: RunningServer, sub_path: str) -> str:
+    @staticmethod
+    def supervised_sub_path(server: RunningServer, sub_path: str) -> str:
+        """Upstream path for a proxied request.
+
+        Base-aware servers (Vite with ``--base``) expect the full
+        preview prefix on every request; others serve from ``/``.
+        """
         cleaned = sub_path.lstrip("/")
+        prefix = server.path_prefix.strip("/")
+        if prefix:
+            return f"{prefix}/{cleaned}" if cleaned else f"{prefix}/"
+        return cleaned
+
+    def supervised_ws_target(self, server: RunningServer, sub_path: str) -> str:
+        cleaned = self.supervised_sub_path(server, sub_path)
         return f"ws://{server.host}:{server.port}/{cleaned}"
 
     # -- log access ---------------------------------------------------

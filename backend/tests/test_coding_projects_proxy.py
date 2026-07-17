@@ -138,6 +138,9 @@ async def test_forward_http_strips_hop_by_hop_request_headers() -> None:
 
         echoed = json.loads(body)
         assert "connection" not in {k.lower() for k in echoed}
-        assert "host" not in {k.lower() for k in echoed}
+        # The browser-facing Host (leagent.local) must not leak through;
+        # the proxy substitutes the loopback authority so host-checking
+        # dev servers (e.g. Vite server.allowedHosts) accept the request.
+        assert echoed.get("host") == f"127.0.0.1:{port}"
         assert echoed.get("x-test") == "yes"
         assert echoed.get("x-forwarded-host") is not None

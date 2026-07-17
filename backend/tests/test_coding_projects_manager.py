@@ -130,6 +130,20 @@ def test_template_argv_expand_replaces_port_and_host() -> None:
     assert "$HOST" not in " ".join(expanded)
 
 
+def test_vite_template_mounts_at_preview_base() -> None:
+    tmpl = load_template("vite-react")
+    assert tmpl.uses_preview_base()
+    expanded = tmpl.expand_argv(
+        tmpl.start_argv,
+        host="127.0.0.1",
+        port=49321,
+        preview_base="/api/v1/coding-projects/x/preview/",
+    )
+    joined = " ".join(expanded)
+    assert "--base /api/v1/coding-projects/x/preview/" in joined
+    assert "$PREVIEW_BASE" not in joined
+
+
 # ---------------------------------------------------------------------------
 # Port allocator
 # ---------------------------------------------------------------------------

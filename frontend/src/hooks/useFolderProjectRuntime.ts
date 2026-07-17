@@ -27,6 +27,16 @@ export interface FolderProjectStatusResponse {
   is_running: boolean;
 }
 
+export interface FolderProjectPreviewResponse {
+  folder_id: string;
+  project_id: string;
+  port: number;
+  host: string;
+  preview_url: string;
+  preview_token: string;
+  expires_at: number;
+}
+
 const ROOT = ['folders', 'project-runtime'] as const;
 
 export function useFolderProjectStatus(folderId: string | null, enabled = true) {
@@ -37,7 +47,29 @@ export function useFolderProjectStatus(folderId: string | null, enabled = true) 
         `/folders/${folderId}/project/status`,
       ),
     enabled: Boolean(folderId) && enabled,
-    refetchInterval: (q) => (q.state.data?.is_running ? 3000 : false),
+    // Keep polling even while stopped so a run started from another
+    // tab / device shows up here without a manual refresh.
+    refetchInterval: (q) => (q.state.data?.is_running ? 3000 : 8000),
+    refetchOnWindowFocus: true,
+  });
+}
+
+/**
+ * Token-gated preview URL for the running dev server. Works for any
+ * client (not just the one that clicked Run) and after page reloads.
+ */
+export function useFolderProjectPreview(folderId: string | null, isRunning: boolean) {
+  return useQuery({
+    queryKey: [...ROOT, 'preview', folderId],
+    queryFn: () =>
+      apiClient.get<FolderProjectPreviewResponse>(
+        `/folders/${folderId}/project/preview`,
+      ),
+    enabled: Boolean(folderId) && isRunning,
+    // Backend token TTL is 30 min; re-mint well before expiry.
+    staleTime: 10 * 60 * 1000,
+    refetchInterval: 20 * 60 * 1000,
+    retry: false,
   });
 }
 
@@ -48,8 +80,20 @@ export function useRunFolderProject() {
       apiClient.post<FolderProjectRunResponse>(
         `/folders/${folderId}/project/run`,
       ),
-    onSuccess: (_data, folderId) => {
+    onSuccess: (data, folderId) => {
       qc.invalidateQueries({ queryKey: [...ROOT, 'status', folderId] });
+      qc.setQueryData<FolderProjectPreviewResponse>(
+        [...ROOT, 'preview', folderId],
+        {
+          folder_id: data.folder_id,
+          project_id: data.project_id,
+          port: data.port,
+          host: data.host,
+          preview_url: data.preview_url,
+          preview_token: data.preview_token,
+          expires_at: data.expires_at,
+        },
+      );
     },
   });
 }
@@ -63,6 +107,7 @@ export function useStopFolderProject() {
       ),
     onSuccess: (_data, folderId) => {
       qc.invalidateQueries({ queryKey: [...ROOT, 'status', folderId] });
+      qc.removeQueries({ queryKey: [...ROOT, 'preview', folderId] });
     },
   });
 }

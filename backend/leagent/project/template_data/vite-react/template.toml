@@ -4,6 +4,6 @@ description = "Modern frontend scaffold using Vite, React 18, and TypeScript. Th
 needs_install = true
 install_marker = "node_modules/.leagent_install.ok"
 install_argv = ["npm", "install", "--no-audit", "--no-fund"]
-start_argv = ["npm", "run", "dev", "--", "--host", "$HOST", "--port", "$PORT", "--strictPort"]
+start_argv = ["npm", "run", "dev", "--", "--host", "$HOST", "--port", "$PORT", "--strictPort", "--base", "$PREVIEW_BASE"]
 ready_regex = "(?:ready in|Local:.*http)"
 health_path = "/"

@@ -591,6 +591,10 @@ async def stream_project_logs(
 # ---------------------------------------------------------------------------
 
 
+def _preview_cookie_name(project_id: UUID) -> str:
+    return f"leagent_preview_{project_id.hex}"
+
+
 def _decode_token_or_401(
     settings: Settings,
     project_id: UUID,
@@ -628,7 +632,12 @@ async def preview_proxy(
     settings: Annotated[Settings, Depends(get_settings)],
     token: str = Query(default=""),
 ) -> Any:
-    _decode_token_or_401(settings, project_id, token)
+    # Sub-resource requests (JS modules, CSS, images, HMR pings) issued
+    # by the previewed page carry no ?token= query, so the first
+    # tokened request drops a path-scoped cookie the follow-ups ride on.
+    cookie_token = request.cookies.get(_preview_cookie_name(project_id), "")
+    effective_token = token or cookie_token
+    claims = _decode_token_or_401(settings, project_id, effective_token)
 
     server = manager.supervisor.get(project_id)
     if server is None or not manager.supervisor.is_running(project_id):
@@ -638,17 +647,35 @@ async def preview_proxy(
         )
 
     target_base = manager.supervised_target_base(server)
-    return await forward_http(request, target_base=target_base, sub_path=sub_path)
+    upstream_path = manager.supervised_sub_path(server, sub_path)
+    response = await forward_http(
+        request, target_base=target_base, sub_path=upstream_path
+    )
+    if token and token != cookie_token:
+        max_age = max(60, int(claims.get("exp", 0)) - int(datetime.now(timezone.utc).timestamp()))
+        response.set_cookie(
+            _preview_cookie_name(project_id),
+            token,
+            max_age=max_age,
+            path=f"/api/v1/coding-projects/{project_id}/",
+            httponly=True,
+            samesite="lax",
+        )
+    return response
 
 
 @router.websocket("/{project_id}/preview-ws/{sub_path:path}")
+@router.websocket("/{project_id}/preview/{sub_path:path}")
 async def preview_proxy_ws(
     websocket: WebSocket,
     project_id: UUID,
     sub_path: str,
 ) -> None:
+    """Bridge preview WebSockets (Vite HMR connects at the preview base path)."""
     settings = get_settings()
-    token = websocket.query_params.get("token", "")
+    token = websocket.query_params.get("token", "") or websocket.cookies.get(
+        _preview_cookie_name(project_id), ""
+    )
     try:
         _decode_token_or_401(settings, project_id, token)
     except HTTPException as exc:

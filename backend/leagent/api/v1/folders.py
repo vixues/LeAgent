@@ -1002,6 +1002,57 @@ async def folder_project_status(
     }
 
 
+@router.get("/{folder_id}/project/preview")
+async def folder_project_preview(
+    folder_id: UUID,
+    user_id: CurrentUserId,
+) -> dict:
+    """Mint a fresh preview URL for an already-running dev server.
+
+    Lets any client (another tab, another device, or a reloaded page)
+    obtain a token-gated preview link without restarting the server.
+    """
+    from datetime import timezone
+
+    from leagent.config.settings import get_settings
+    from leagent.project.manager import CodingProjectNotFoundError
+    from leagent.project.preview_tokens import mint_preview_token
+
+    manager = _get_coding_projects_manager()
+    try:
+        project = await manager.get_by_folder_for_user(folder_id, user_id)
+    except CodingProjectNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No coding project runtime bound to this folder.",
+        ) from exc
+
+    server = manager.supervisor.get(project.id)
+    if server is None or not manager.supervisor.is_running(project.id):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Dev server is not running.",
+        )
+
+    settings = get_settings()
+    token = mint_preview_token(
+        settings,
+        project_id=project.id,
+        run_seq=server.run_seq,
+        user_id=user_id,
+    )
+    return {
+        "folder_id": str(folder_id),
+        "project_id": str(project.id),
+        "port": server.port,
+        "host": server.host,
+        "preview_url": manager.build_preview_url(project.id, token, sub_path=""),
+        "preview_token": token,
+        "expires_at": datetime.now(timezone.utc).timestamp()
+        + settings.coding_projects.preview_token_ttl_seconds,
+    }
+
+
 @router.get("/{folder_id}/project/logs")
 async def stream_folder_project_logs(
     folder_id: UUID,
