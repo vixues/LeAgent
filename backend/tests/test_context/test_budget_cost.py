@@ -1,8 +1,6 @@
 from __future__ import annotations
 
-import pytest
-
-from leagent.context.budget import minimise, PINNED_THRESHOLD
+from leagent.context.budget import PINNED_THRESHOLD, minimise
 from leagent.context.types import ContextBlock, RenderTarget
 
 
@@ -26,6 +24,24 @@ def test_pinned_blocks_survive():
     r = minimise(blocks, max_chars=110)
     assert any(b.source_id == "id" for b in r.kept)
     assert "low" in r.dropped or "low" in r.truncated
+
+
+def test_pinned_block_drops_when_remaining_budget_cannot_fit_truncation_notice():
+    blocks = [_block("id", 100, PINNED_THRESHOLD)]
+    r = minimise(blocks, max_chars=10)
+    assert r.kept == []
+    assert r.truncated == []
+    assert r.dropped == ["id"]
+    assert r.rows[0].final_cost == 0
+
+
+def test_pinned_truncated_block_stays_within_remaining_budget():
+    blocks = [_block("id", 100, PINNED_THRESHOLD)]
+    r = minimise(blocks, max_chars=40)
+    assert len(r.kept) == 1
+    assert r.kept[0].source_id == "id"
+    assert r.kept[0].cost <= 40
+    assert r.truncated == ["id"]
 
 
 def test_deterministic_tiebreak():
@@ -93,4 +109,3 @@ def test_fragment_under_10k_tokens_after_hard_budget():
     for b in out:
         assert b.tokens <= (DEFAULT_SOURCE_HARD_CAP_CHARS // 3) + 50
         assert b.cost <= DEFAULT_SOURCE_HARD_CAP_CHARS
-
