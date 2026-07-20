@@ -173,19 +173,32 @@ def minimise(
                 dropped=False,
             ))
         else:
-            tb = _truncate_block(b, remaining - len(TRUNCATION_SUFFIX))
-            kept.append(tb)
-            used += tb.cost
-            truncated_ids.append(b.source_id)
-            rows.append(BudgetRow(
-                source_id=b.source_id,
-                original_cost=b.cost,
-                final_cost=tb.cost,
-                score=float(b.priority),
-                kept=True,
-                truncated=True,
-                dropped=False,
-            ))
+            max_body = remaining - len(TRUNCATION_SUFFIX)
+            if max_body > 0:
+                tb = _truncate_block(b, max_body)
+                kept.append(tb)
+                used += tb.cost
+                truncated_ids.append(b.source_id)
+                rows.append(BudgetRow(
+                    source_id=b.source_id,
+                    original_cost=b.cost,
+                    final_cost=tb.cost,
+                    score=float(b.priority),
+                    kept=True,
+                    truncated=True,
+                    dropped=False,
+                ))
+            else:
+                dropped_ids.append(b.source_id)
+                rows.append(BudgetRow(
+                    source_id=b.source_id,
+                    original_cost=b.cost,
+                    final_cost=0,
+                    score=float(b.priority),
+                    kept=False,
+                    truncated=False,
+                    dropped=True,
+                ))
 
     # --- candidate blocks (score / cost ratio) ---
     scored: list[tuple[float, str, ContextBlock]] = []
@@ -198,7 +211,7 @@ def minimise(
 
     scored.sort(key=lambda t: (-t[0], t[1]))
 
-    for ratio, _, b in scored:
+    for _ratio, _, b in scored:
         remaining = max_chars - used
         scope = ContextScope(b.metadata.get("scope", ContextScope.SESSION.value)) if "scope" in b.metadata else ContextScope.SESSION
         score = b.priority * b.weight * _freshness_decay(scope, freshness_half_life_seconds)
