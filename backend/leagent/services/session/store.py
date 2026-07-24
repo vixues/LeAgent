@@ -1,6 +1,4 @@
-"""Tiered persistence backend for :class:`SessionState`.
-
-Two-tier store: in-process LRU (L1) + database (durable).
+"""Database-backed persistence for :class:`SessionState`.
 
 **Single source of truth (SSOT).** The durable session state is the
 ``session_state_v1`` JSON blob stored on ``chat_sessions.session_metadata``.
@@ -16,13 +14,17 @@ authoritative transcript:
 * Only tool/system projection rows (which ``ChatService`` does not own) are
   written here, and only when missing (keyed on the stable message UUID).
 
-The LRU is a read-through cache; it never holds state the JSON blob does not.
+When a database is configured, every read/write goes straight to it. An earlier
+revision kept a process-local LRU in front of the database, which broke
+multi-worker deployments: a turn handled by worker A would not be visible to
+worker B, so a follow-up question in the same session could lose all prior
+context. Session state reads are cheap single-row lookups, so the LRU wasn't
+worth that correctness hazard.
 """
 
 from __future__ import annotations
 
 import json
-from collections import OrderedDict
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any
 from uuid import UUID
@@ -39,7 +41,6 @@ from leagent.db.sqlite_compat import (
 )
 from leagent.db.models.message import ChatSession, Message, MessageRole
 from leagent.services.session.state import (
-    SessionAttachment,
     SessionMessage,
     SessionState,
     SessionUsage,
@@ -92,34 +93,13 @@ def _role_to_enum(role: str) -> MessageRole:
         return MessageRole.USER
 
 
-class _LRUCache:
-    """Tiny async-friendly LRU for hot-path session reads."""
-
-    def __init__(self, max_size: int) -> None:
-        self._max_size = max(8, max_size)
-        self._data: OrderedDict[UUID, SessionState] = OrderedDict()
-
-    def get(self, session_id: UUID) -> SessionState | None:
-        state = self._data.get(session_id)
-        if state is not None:
-            self._data.move_to_end(session_id)
-        return state
-
-    def put(self, state: SessionState) -> None:
-        self._data[state.session_id] = state
-        self._data.move_to_end(state.session_id)
-        while len(self._data) > self._max_size:
-            self._data.popitem(last=False)
-
-    def drop(self, session_id: UUID) -> None:
-        self._data.pop(session_id, None)
-
-
 class TieredSessionStore:
-    """Two-tier read/write backend for :class:`SessionState`.
+    """Database-backed read/write store for :class:`SessionState`.
 
-    Reads consult the in-process LRU first, then the database.
-    Writes go to both tiers.
+    Named ``Tiered`` for historical/API-compatibility reasons (callers import
+    this class name). Runtime deployments with a database always use the
+    database as the single tier; a small in-memory fallback remains only for
+    database-less tests/local callers.
     """
 
     def __init__(
@@ -131,26 +111,25 @@ class TieredSessionStore:
     ) -> None:
         self._settings = settings
         self._database = database
-        self._lru = _LRUCache(settings.session.in_memory_lru_size)
+        self._memory_fallback: dict[UUID, SessionState] = {} if database is None else {}
 
     # -- public API -----------------------------------------------------
 
     async def load(self, session_id: UUID) -> SessionState | None:
-        cached = self._lru.get(session_id)
-        if cached is not None:
-            return cached
-
-        state = await self._load_from_database(session_id)
-        if state is not None:
-            self._lru.put(state)
-        return state
+        if self._database is None:
+            return self._memory_fallback.get(session_id)
+        return await self._load_from_database(session_id)
 
     async def save(self, state: SessionState) -> None:
-        self._lru.put(state)
+        if self._database is None:
+            self._memory_fallback[state.session_id] = state
+            return
         await self._save_to_database(state)
 
     async def delete(self, session_id: UUID) -> None:
-        self._lru.drop(session_id)
+        if self._database is None:
+            self._memory_fallback.pop(session_id, None)
+        return None
 
     # -- database (SQLite / Postgres) -----------------------------------
 
@@ -431,11 +410,3 @@ class TieredSessionStore:
                 )
             states.append(materialised)
         return states
-
-    # -- introspection --------------------------------------------------
-
-    def cached_attachments(self, session_id: UUID) -> list[SessionAttachment]:
-        state = self._lru.get(session_id)
-        if state is None:
-            return []
-        return list(state.attachments)
