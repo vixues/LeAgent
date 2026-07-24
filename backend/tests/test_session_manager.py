@@ -5,8 +5,8 @@ These tests pin down the three properties we care about most:
 1. ``append_user`` / ``append_assistant`` / ``append_tool_result`` leave the
    session in a consistent, LLM-ready state after a round-trip through the
    tiered store.
-2. ``TieredSessionStore`` survives a flushed in-memory LRU and still
-   round-trips through the SQLite-backed store.
+2. ``TieredSessionStore`` round-trips through the database so a fresh worker
+   can observe state saved by another worker.
 3. ``SessionState.replace_messages`` is wired through the manager so
    auto-compaction can swap the transcript under the lock.
 
@@ -416,10 +416,10 @@ class TestControllerConversationRoundTrip:
 
 @pytest.mark.asyncio
 class TestTieredSessionStoreFallback:
-    async def test_postgres_survives_lru_eviction(
+    async def test_fresh_store_loads_state_saved_by_another_store(
         self, settings_for_session, database
     ) -> None:
-        """Even with a flushed LRU, state must rehydrate from SQLite."""
+        """A fresh worker must observe state persisted by another worker."""
         store = TieredSessionStore(settings_for_session, cache=None, database=database)
 
         sid = uuid4()
@@ -427,7 +427,7 @@ class TestTieredSessionStoreFallback:
         state.append_message(SessionMessage(role="user", content="persist me"))
         await store.save(state)
 
-        # Simulate fresh worker: new store with a fresh LRU.
+        # Simulate a second worker process: an independent store instance.
         restart = TieredSessionStore(settings_for_session, cache=None, database=database)
         loaded = await restart.load(sid)
         assert loaded is not None
