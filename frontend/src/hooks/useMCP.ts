@@ -18,6 +18,8 @@ export interface MCPServerDetail extends MCPServerInfo {
   args?: string[];
   url?: string;
   env?: Record<string, string>;
+  headers?: Record<string, string>;
+  timeout_sec?: number;
   description?: string;
   health?: Record<string, unknown>;
   tools?: Array<{ name: string; description?: string }>;
@@ -42,11 +44,13 @@ export interface MCPToolCallResponse {
 
 export interface MCPServerCreateInput {
   name: string;
-  transport: 'stdio' | 'sse';
+  transport: 'stdio' | 'http' | 'sse' | 'streamableHttp';
   command?: string;
   args?: string[];
   url?: string;
   env?: Record<string, string>;
+  headers?: Record<string, string>;
+  timeout_sec?: number;
   enabled?: boolean;
   auto_connect?: boolean;
   description?: string;

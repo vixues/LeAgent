@@ -15,8 +15,41 @@ class MCPTransport(str, Enum):
     """Transport protocol for MCP server communication."""
 
     STDIO = "stdio"
+    #: Legacy single-endpoint JSON-RPC over ``POST /rpc`` (non-standard).
     HTTP = "http"
+    #: Legacy HTTP+SSE dual-endpoint transport.
     SSE = "sse"
+    #: MCP standard Streamable HTTP transport: a single endpoint URL that
+    #: accepts ``POST`` JSON-RPC and may reply with either ``application/json``
+    #: or a ``text/event-stream`` SSE body.
+    STREAMABLE_HTTP = "streamableHttp"
+
+
+#: External config keys (Claude Code / Cursor style) mapped to a transport.
+_TRANSPORT_ALIASES: dict[str, MCPTransport] = {
+    "stdio": MCPTransport.STDIO,
+    "http": MCPTransport.HTTP,
+    "streamable-http": MCPTransport.STREAMABLE_HTTP,
+    "streamable_http": MCPTransport.STREAMABLE_HTTP,
+    "streamablehttp": MCPTransport.STREAMABLE_HTTP,
+    "http-stream": MCPTransport.STREAMABLE_HTTP,
+    "sse": MCPTransport.SSE,
+}
+
+#: Transports that talk over HTTP and therefore require a ``url``.
+_HTTP_TRANSPORTS = (MCPTransport.HTTP, MCPTransport.SSE, MCPTransport.STREAMABLE_HTTP)
+
+
+def _coerce_transport(value: Any) -> MCPTransport:
+    """Resolve a transport from an enum, or an external/internal string key."""
+    if isinstance(value, MCPTransport):
+        return value
+    if isinstance(value, str):
+        key = value.strip()
+        if key in _TRANSPORT_ALIASES:
+            return _TRANSPORT_ALIASES[key]
+        return _TRANSPORT_ALIASES.get(key.lower(), MCPTransport(key))
+    return MCPTransport.STDIO
 
 
 @dataclass
@@ -44,6 +77,11 @@ class MCPServer:
     args: list[str] = field(default_factory=list)
     env: dict[str, str] = field(default_factory=dict)
     url: str | None = None
+    #: Extra HTTP headers merged into every request for HTTP-family transports.
+    #: Used by the standard ``streamableHttp`` transport to carry bespoke
+    #: ``Authorization`` values (Bearer tokens, custom schemes) without going
+    #: through the OAuth flow.
+    headers: dict[str, str] = field(default_factory=dict)
     api_key: str | None = None
     # OAuth 2.0 fields
     oauth_token: str | None = None
@@ -61,12 +99,21 @@ class MCPServer:
         """Validate configuration after initialization."""
         if self.transport == MCPTransport.STDIO and not self.command:
             raise ValueError("stdio transport requires a command")
-        if self.transport in (MCPTransport.HTTP, MCPTransport.SSE) and not self.url:
+        if self.transport in _HTTP_TRANSPORTS and not self.url:
             raise ValueError(f"{self.transport.value} transport requires a URL")
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> MCPServer:
         """Create an MCPServer from a dictionary.
+
+        Accepts both the LeAgent-internal shape and the Claude Code / Cursor
+        style ``mcpServers`` entry:
+
+        - ``transport`` or ``transportType`` — transport key (see
+          :data:`_TRANSPORT_ALIASES` for accepted values).
+        - ``headers`` — bag of custom HTTP headers merged into every request.
+        - ``disabled`` — inverse of ``enabled`` (Claude Code convention).
+        - ``timeout`` — alias for ``timeout_sec`` in seconds.
 
         Args:
             data: Configuration dictionary.
@@ -74,13 +121,31 @@ class MCPServer:
         Returns:
             MCPServer instance.
         """
-        transport_str = data.get("transport", "stdio")
-        transport = MCPTransport(transport_str) if isinstance(transport_str, str) else transport_str
+        transport_val = data.get("transport", data.get("transportType", "stdio"))
+        transport = _coerce_transport(transport_val)
 
         meta = dict(data.get("metadata") or {})
         description = data.get("description")
         if description is None:
             description = meta.pop("description", None)
+
+        # ``disabled: true`` is the Claude Code / Cursor way of turning a
+        # server off; treat it as the inverse of the internal ``enabled`` flag.
+        if "enabled" in data:
+            enabled = bool(data["enabled"])
+        elif "disabled" in data:
+            enabled = not bool(data["disabled"])
+        else:
+            enabled = True
+
+        # External configs use ``timeout`` (seconds); keep ``timeout_sec`` for
+        # anyone using the internal name.
+        if "timeout_sec" in data:
+            timeout_sec = int(data["timeout_sec"])
+        elif "timeout" in data:
+            timeout_sec = int(data["timeout"])
+        else:
+            timeout_sec = 30
 
         return cls(
             name=data["name"],
@@ -89,14 +154,15 @@ class MCPServer:
             args=data.get("args", []),
             env=data.get("env", {}),
             url=data.get("url"),
+            headers=dict(data.get("headers") or {}),
             api_key=data.get("api_key"),
             oauth_token=data.get("oauth_token"),
             oauth_client_id=data.get("oauth_client_id"),
             oauth_client_secret=data.get("oauth_client_secret"),
             oauth_token_url=data.get("oauth_token_url"),
             oauth_scopes=data.get("oauth_scopes", []),
-            timeout_sec=data.get("timeout_sec", 30),
-            enabled=data.get("enabled", True),
+            timeout_sec=timeout_sec,
+            enabled=enabled,
             auto_connect=data.get("auto_connect", True),
             description=description,
             metadata=meta,
@@ -111,6 +177,7 @@ class MCPServer:
             "args": self.args,
             "env": self.env,
             "url": self.url,
+            "headers": self.headers,
             "api_key": self.api_key,
             "oauth_token": self.oauth_token,
             "oauth_client_id": self.oauth_client_id,
@@ -123,6 +190,49 @@ class MCPServer:
             "description": self.description,
             "metadata": self.metadata,
         }
+
+    def to_external_dict(self) -> dict[str, Any]:
+        """Serialize in the standard ``mcpServers`` JSON shape.
+
+        Mirrors the layout used by Claude Code / Cursor's config files:
+        ``transportType``, ``headers``, ``disabled``, ``timeout`` — with empty
+        optional fields elided so the file stays readable.
+        """
+        out: dict[str, Any] = {"transportType": self.transport.value}
+        if self.transport == MCPTransport.STDIO:
+            if self.command:
+                out["command"] = self.command
+            if self.args:
+                out["args"] = list(self.args)
+        else:
+            if self.url:
+                out["url"] = self.url
+        if self.env:
+            out["env"] = dict(self.env)
+        if self.headers:
+            out["headers"] = dict(self.headers)
+        # Bearer-style auth: prefer ``headers`` in external form when unset.
+        if self.api_key and "Authorization" not in out.get("headers", {}):
+            out.setdefault("headers", {})["Authorization"] = f"Bearer {self.api_key}"
+        for key in ("oauth_token", "oauth_client_id", "oauth_client_secret", "oauth_token_url"):
+            val = getattr(self, key)
+            if val:
+                out[key] = val
+        if self.oauth_scopes:
+            out["oauth_scopes"] = list(self.oauth_scopes)
+        # ``disabled`` is the external convention; only emit when the server
+        # is actually off so default-on entries stay minimal.
+        if not self.enabled:
+            out["disabled"] = True
+        if not self.auto_connect:
+            out["auto_connect"] = False
+        if self.timeout_sec and self.timeout_sec != 30:
+            out["timeout"] = self.timeout_sec
+        if self.description:
+            out["description"] = self.description
+        if self.metadata:
+            out["metadata"] = dict(self.metadata)
+        return out
 
 
 @dataclass

@@ -378,7 +378,18 @@ def _normalize_changes(changes: list[dict[str, Any]]) -> list[dict[str, Any]]:
             name = str(raw.get("name") or "").strip()
             if not name:
                 raise SettingsConfigureError("mcp change requires name")
-            transport = str(raw.get("transport") or "stdio").strip().lower()
+            transport = str(
+                raw.get("transport") or raw.get("transportType") or "stdio"
+            ).strip()
+            timeout_raw = raw.get("timeout_sec")
+            if timeout_raw is None:
+                timeout_raw = raw.get("timeout")
+            try:
+                timeout_val = int(timeout_raw) if timeout_raw is not None else None
+            except (TypeError, ValueError):
+                raise SettingsConfigureError(
+                    f"mcp {name}: timeout must be an integer (seconds)"
+                )
             item: dict[str, Any] = {
                 "kind": "mcp",
                 "name": name,
@@ -387,6 +398,8 @@ def _normalize_changes(changes: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 "args": list(raw.get("args") or []),
                 "url": raw.get("url"),
                 "env": dict(raw.get("env") or {}),
+                "headers": dict(raw.get("headers") or {}),
+                "timeout_sec": timeout_val,
                 "enabled": bool(raw.get("enabled", True)),
                 "auto_connect": bool(raw.get("auto_connect", True)),
                 "description": raw.get("description"),
@@ -493,7 +506,8 @@ def inspect_changes(changes: list[dict[str, Any]]) -> InspectResult:
                     result.ok = False
                     result.errors.append(f"mcp {ch['name']}: stdio requires command")
                     return result
-                if transport in ("http", "sse") and not ch.get("url"):
+                url_required = transport in ("http", "sse", "streamableHttp") or "stream" in str(transport).lower()
+                if url_required and not ch.get("url"):
                     result.ok = False
                     result.errors.append(f"mcp {ch['name']}: {transport} requires url")
                     return result
@@ -606,7 +620,7 @@ async def apply_env_changes(
 
 
 def _apply_mcp_changes(changes: list[dict[str, Any]]) -> list[str]:
-    from leagent.mcp.base import MCPServer, MCPTransport
+    from leagent.mcp.base import MCPServer, _coerce_transport
     from leagent.mcp.manager import get_mcp_manager
 
     manager = get_mcp_manager()
@@ -619,7 +633,7 @@ def _apply_mcp_changes(changes: list[dict[str, Any]]) -> list[str]:
             else:
                 raise SettingsConfigureError(f"MCP server '{name}' not found")
             continue
-        transport = MCPTransport(ch.get("transport") or "stdio")
+        transport = _coerce_transport(ch.get("transport") or "stdio")
         config = MCPServer(
             name=name,
             transport=transport,
@@ -627,6 +641,8 @@ def _apply_mcp_changes(changes: list[dict[str, Any]]) -> list[str]:
             args=list(ch.get("args") or []),
             url=ch.get("url"),
             env=dict(ch.get("env") or {}),
+            headers=dict(ch.get("headers") or {}),
+            timeout_sec=ch["timeout_sec"] if ch.get("timeout_sec") is not None else 30,
             enabled=bool(ch.get("enabled", True)),
             auto_connect=bool(ch.get("auto_connect", True)),
             description=ch.get("description"),

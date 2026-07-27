@@ -80,6 +80,9 @@ class MCPClient:
         self._server_info: MCPServerInfo | None = None
         self._read_lock = asyncio.Lock()
         self._write_lock = asyncio.Lock()
+        #: Session id returned by a Streamable HTTP server in the
+        #: ``Mcp-Session-Id`` response header; echoed back on later requests.
+        self._session_id: str | None = None
 
     @property
     def name(self) -> str:
@@ -131,7 +134,11 @@ class MCPClient:
         """Establish the underlying connection based on transport type."""
         if self.config.transport == MCPTransport.STDIO:
             await self._connect_stdio()
-        elif self.config.transport in (MCPTransport.HTTP, MCPTransport.SSE):
+        elif self.config.transport in (
+            MCPTransport.HTTP,
+            MCPTransport.SSE,
+            MCPTransport.STREAMABLE_HTTP,
+        ):
             await self._connect_http()
         else:
             raise MCPConnectionError(self.name, f"Unsupported transport: {self.config.transport}")
@@ -166,6 +173,9 @@ class MCPClient:
             raise MCPConnectionError(self.name, "No URL specified for HTTP transport")
 
         headers: dict[str, str] = {}
+        # Explicit ``headers`` on the config win over derived auth headers so a
+        # user's custom ``Authorization`` value is never silently overwritten.
+        merged_extra = dict(self.config.headers or {})
 
         if self.config.oauth_token:
             # Pre-configured static OAuth token (XAA / personal access token)
@@ -180,6 +190,15 @@ class MCPClient:
         elif self.config.api_key:
             headers["Authorization"] = f"Bearer {self.config.api_key}"
 
+        headers.update(merged_extra)
+
+        if self.config.transport == MCPTransport.STREAMABLE_HTTP:
+            # Streamable HTTP: single endpoint accepting POST JSON-RPC. Servers
+            # may reply with either ``application/json`` (single message) or
+            # ``text/event-stream`` (streamed messages); we advertise both.
+            headers.setdefault("Accept", "application/json, text/event-stream")
+            headers.setdefault("MCP-Protocol-Version", MCP_PROTOCOL_VERSION)
+
         # Direct MCP connections must not inherit HTTP(S)_PROXY — localhost
         # traffic through a broken corporate proxy surfaces as 502 in tests.
         self._http_client = httpx.AsyncClient(
@@ -187,6 +206,7 @@ class MCPClient:
             headers=headers,
             timeout=httpx.Timeout(self.config.timeout_sec),
             trust_env=False,
+            follow_redirects=True,
         )
 
     async def _fetch_oauth_token(self) -> str | None:
@@ -286,8 +306,9 @@ class MCPClient:
 
         if self.config.transport == MCPTransport.STDIO:
             return await self._send_stdio_request(request)
-        else:
-            return await self._send_http_request(request)
+        if self.config.transport == MCPTransport.STREAMABLE_HTTP:
+            return await self._send_streamable_http_request(request)
+        return await self._send_http_request(request)
 
     async def _send_notification(self, method: str, params: dict[str, Any] | None = None) -> None:
         """Send a JSON-RPC notification (no response expected).
@@ -305,6 +326,8 @@ class MCPClient:
 
         if self.config.transport == MCPTransport.STDIO:
             await self._write_stdio(notification)
+        elif self.config.transport == MCPTransport.STREAMABLE_HTTP:
+            await self._send_streamable_http_notification(notification)
         else:
             await self._send_http_notification(notification)
 
@@ -384,6 +407,164 @@ class MCPClient:
             await self._http_client.post("/rpc", json=notification)
         except Exception:
             pass
+
+    # ------------------------------------------------------------------
+    # Streamable HTTP transport (MCP standard)
+    # ------------------------------------------------------------------
+
+    def _streamable_http_headers(self) -> dict[str, str]:
+        """Per-request headers for the Streamable HTTP transport.
+
+        Adds the ``Mcp-Session-Id`` echo header once the server has assigned a
+        session id (returned in the ``initialize`` response headers).
+        """
+        headers: dict[str, str] = {
+            "Accept": "application/json, text/event-stream",
+            "MCP-Protocol-Version": MCP_PROTOCOL_VERSION,
+        }
+        if self._session_id:
+            headers["Mcp-Session-Id"] = self._session_id
+        return headers
+
+    async def _send_streamable_http_request(self, request: dict[str, Any]) -> dict[str, Any]:
+        """POST a JSON-RPC request to the single Streamable HTTP endpoint.
+
+        The server may reply with:
+
+        - ``application/json``: a single JSON-RPC response body.
+        - ``text/event-stream``: an SSE stream of one or more ``message``
+          events; we consume events until we see the response whose ``id``
+          matches the request (server-initiated requests in the same stream
+          are ignored — we only need the reply here).
+
+        The response's ``Mcp-Session-Id`` header (if any) is captured on the
+        first message so subsequent requests can echo it.
+        """
+        if not self._http_client:
+            raise MCPProtocolError("HTTP client not connected")
+
+        try:
+            # Post to the exact configured endpoint URL — the endpoint IS the
+            # ``url`` under the Streamable HTTP transport (no ``/rpc`` suffix).
+            # Passing the absolute URL avoids httpx's base_url normalization,
+            # which would append a trailing slash and 404 on strict servers.
+            target = self.config.url or ""
+            async with self._http_client.stream(
+                "POST",
+                target,
+                json=request,
+                headers=self._streamable_http_headers(),
+            ) as response:
+                response.raise_for_status()
+
+                session_id = response.headers.get("Mcp-Session-Id") or response.headers.get(
+                    "mcp-session-id"
+                )
+                if session_id and not self._session_id:
+                    self._session_id = session_id
+
+                content_type = (response.headers.get("Content-Type") or "").lower()
+
+                if "text/event-stream" in content_type:
+                    payload = await self._read_sse_response(response, request.get("id"))
+                else:
+                    body = await response.aread()
+                    if not body:
+                        raise MCPProtocolError("Empty response from MCP server")
+                    try:
+                        payload = json.loads(body.decode("utf-8"))
+                    except json.JSONDecodeError as exc:
+                        raise MCPProtocolError(f"Invalid JSON response: {exc}")
+
+        except httpx.HTTPStatusError as exc:
+            body_text = ""
+            if exc.response is not None:
+                try:
+                    body_bytes = await exc.response.aread()
+                    body_text = body_bytes.decode("utf-8", errors="replace")
+                except Exception:  # pragma: no cover - best-effort diagnostics
+                    body_text = ""
+            raise MCPProtocolError(
+                f"HTTP error: {exc.response.status_code} {body_text[:200]}"
+            )
+        except httpx.RequestError as exc:
+            raise MCPProtocolError(f"Request failed: {exc}")
+
+        if "error" in payload:
+            error = payload["error"]
+            raise MCPProtocolError(error.get("message", "Unknown error"), error.get("code"))
+
+        return payload.get("result", {})
+
+    async def _send_streamable_http_notification(self, notification: dict[str, Any]) -> None:
+        """POST a JSON-RPC notification over Streamable HTTP (no response body)."""
+        if not self._http_client:
+            return
+        try:
+            target = self.config.url or ""
+            resp = await self._http_client.post(
+                target,
+                json=notification,
+                headers=self._streamable_http_headers(),
+            )
+            session_id = resp.headers.get("Mcp-Session-Id") or resp.headers.get("mcp-session-id")
+            if session_id and not self._session_id:
+                self._session_id = session_id
+        except Exception as exc:
+            logger.debug("mcp_notification_failed", server=self.name, error=str(exc))
+
+    async def _read_sse_response(
+        self,
+        response: httpx.Response,
+        expected_id: Any,
+    ) -> dict[str, Any]:
+        """Consume an SSE stream until a JSON-RPC message with ``expected_id`` arrives.
+
+        The MCP Streamable HTTP transport reuses the SSE wire format: each
+        message is emitted as an ``event: message`` block with one or more
+        ``data:`` lines carrying the JSON-RPC payload. Server-initiated
+        requests may be interleaved; we skip anything that isn't our reply.
+        """
+        data_buffer: list[str] = []
+
+        async for raw_line in response.aiter_lines():
+            line = raw_line.rstrip("\r")
+            if line == "":
+                # End of an SSE event — assemble accumulated ``data:`` lines.
+                if not data_buffer:
+                    continue
+                data = "\n".join(data_buffer)
+                data_buffer = []
+                try:
+                    payload = json.loads(data)
+                except json.JSONDecodeError:
+                    logger.debug("mcp_sse_non_json", server=self.name, data=data[:120])
+                    continue
+
+                # Only JSON-RPC responses carry a matching ``id``. Notifications
+                # and server-initiated requests are ignored — we only surface
+                # the reply the caller is waiting for.
+                if isinstance(payload, dict) and payload.get("id") == expected_id:
+                    return payload
+                continue
+
+            if line.startswith(":"):
+                # SSE comment / keep-alive.
+                continue
+            if line.startswith("data:"):
+                data_buffer.append(line[5:].lstrip(" "))
+            # ``event:``, ``id:``, ``retry:`` — no state we need to track.
+
+        # Stream ended without seeing our reply.
+        if data_buffer:
+            data = "\n".join(data_buffer)
+            try:
+                payload = json.loads(data)
+                if isinstance(payload, dict):
+                    return payload
+            except json.JSONDecodeError:
+                pass
+        raise MCPProtocolError("SSE stream closed before response arrived")
 
     async def list_tools(self) -> list[MCPTool]:
         """List all tools provided by the server.

@@ -35,6 +35,8 @@ class MCPServerDetail(BaseModel):
     command: Optional[str] = None
     args: list[str] = Field(default_factory=list)
     url: Optional[str] = None
+    headers: dict[str, str] = Field(default_factory=dict)
+    timeout_sec: int = 30
     enabled: bool
     auto_connect: bool
     description: Optional[str] = None
@@ -53,6 +55,8 @@ class MCPServerCreateRequest(BaseModel):
     args: list[str] = Field(default_factory=list)
     url: Optional[str] = Field(default=None, max_length=500)
     env: dict[str, str] = Field(default_factory=dict)
+    headers: dict[str, str] = Field(default_factory=dict)
+    timeout_sec: Optional[int] = Field(default=None, ge=1, le=3600)
     enabled: bool = Field(default=True)
     auto_connect: bool = Field(default=True)
     description: Optional[str] = Field(default=None, max_length=500)
@@ -139,6 +143,8 @@ async def add_server(
         args=data.args,
         url=data.url,
         env=data.env,
+        headers=data.headers,
+        timeout_sec=data.timeout_sec if data.timeout_sec is not None else 30,
         enabled=data.enabled,
         auto_connect=data.auto_connect,
         description=data.description,
@@ -186,6 +192,8 @@ async def get_server(
         command=managed.config.command,
         args=managed.config.args,
         url=managed.config.url,
+        headers=dict(managed.config.headers or {}),
+        timeout_sec=managed.config.timeout_sec,
         enabled=managed.config.enabled,
         auto_connect=managed.config.auto_connect,
         description=managed.config.description,

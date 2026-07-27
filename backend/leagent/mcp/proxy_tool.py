@@ -6,6 +6,7 @@ Tools are named ``mcp__<server>__<tool>`` following the reference convention.
 
 from __future__ import annotations
 
+import re
 from typing import TYPE_CHECKING, Any
 
 import structlog
@@ -17,6 +18,24 @@ if TYPE_CHECKING:
     from leagent.mcp.client import MCPClient
 
 logger = structlog.get_logger(__name__)
+
+
+_NAME_SAFE_RE = re.compile(r"[^A-Za-z0-9_]")
+
+
+def _sanitize_name_part(value: str) -> str:
+    """Coerce a server/tool name into ``ToolRegistry``'s allowed charset.
+
+    The registry rejects anything outside ``[A-Za-z0-9_]`` (see
+    ``ToolRegistry._validate_tool``), so hyphens in server names — legal in
+    MCP configs like ``project-search`` — must be normalized before we can
+    register the proxy. We replace disallowed characters with ``_`` and
+    collapse repeats so ``project-search`` becomes ``project_search`` and
+    ``foo--bar`` stays readable as ``foo_bar``.
+    """
+    sanitized = _NAME_SAFE_RE.sub("_", value)
+    sanitized = re.sub(r"_+", "_", sanitized).strip("_")
+    return sanitized or "unnamed"
 
 
 class MCPProxyTool(BaseTool):
@@ -39,11 +58,42 @@ class MCPProxyTool(BaseTool):
         self._mcp_tool = mcp_tool
         self._server_name = server_name
         self._client = client
-        self.name = f"mcp__{server_name}__{mcp_tool.name}"
+        safe_server = _sanitize_name_part(server_name)
+        safe_tool = _sanitize_name_part(mcp_tool.name)
+        self.name = f"mcp__{safe_server}__{safe_tool}"
         self.description = (
             f"[MCP:{server_name}] {mcp_tool.description or mcp_tool.name}"
         )
         self.search_hint = f"mcp {server_name} {mcp_tool.name}"
+
+    @property
+    def parameters(self) -> dict[str, Any]:
+        """Return the MCP tool's input schema."""
+        return self._mcp_tool.input_schema or {"type": "object", "properties": {}}
+
+    async def execute(self, params: dict[str, Any], context: ToolContext) -> Any:
+        """Forward the call to the MCP server and return the result."""
+        if not self._client.is_connected:
+            return {"error": f"MCP server '{self._server_name}' is not connected"}
+
+        try:
+            # Strip the namespace prefix before forwarding
+            result = await self._client.call_tool(self._mcp_tool.name, params)
+            logger.debug(
+                "mcp_tool_called",
+                server=self._server_name,
+                tool=self._mcp_tool.name,
+            )
+            return result
+        except Exception as e:
+            logger.warning(
+                "mcp_tool_failed",
+                server=self._server_name,
+                tool=self._mcp_tool.name,
+                error=str(e),
+            )
+            return {"error": str(e)}
+
 
     @property
     def parameters(self) -> dict[str, Any]:

@@ -261,6 +261,18 @@ class TestMCPProxyTool:
         proxy = self._make_proxy("read_file", "file_server")
         assert proxy.name == "mcp__file_server__read_file"
 
+    def test_hyphenated_server_name_sanitized(self) -> None:
+        # ``project-search`` is a valid MCP server name but the tool registry
+        # rejects hyphens; the proxy must normalize to ``project_search``.
+        proxy = self._make_proxy("searchProjects", "project-search")
+        assert proxy.name == "mcp__project_search__searchProjects"
+        # Registry acceptance is the real contract we care about.
+        from leagent.tools.registry import ToolRegistry
+
+        reg = ToolRegistry()
+        reg.register(proxy)
+        assert reg.get_optional("mcp__project_search__searchProjects") is not None
+
     def test_description_includes_server(self) -> None:
         proxy = self._make_proxy("read_file", "my_server")
         assert "my_server" in proxy.description
