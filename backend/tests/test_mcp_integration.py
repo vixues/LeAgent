@@ -12,6 +12,7 @@ import pytest
 
 from tests.fixtures.mcp_mock_http import mcp_rpc_http_server
 from tests.fixtures.mcp_mock_protocol import handle_mcp_message
+from tests.fixtures.mcp_mock_streamable import mcp_streamable_http_server
 
 from leagent.mcp.base import MCPServer, MCPTransport
 from leagent.mcp.client import MCPClient, MCPConnectionError, MCPProtocolError
@@ -73,6 +74,28 @@ async def test_mcp_client_http_list_and_echo() -> None:
             assert any(t.name == "echo" for t in tools)
             out = await client.call_tool("echo", {"x": 1})
             assert json.loads(str(out)) == {"x": 1}
+
+
+@pytest.mark.asyncio
+async def test_mcp_client_streamable_http_list_and_echo() -> None:
+    """Streamable HTTP: JSON init, SSE-framed tool call, custom headers propagated."""
+    async with mcp_streamable_http_server() as url:
+        cfg = MCPServer(
+            name="streamable_mock",
+            transport=MCPTransport.STREAMABLE_HTTP,
+            url=url,
+            headers={"Authorization": "Bearer test-token"},
+            timeout_sec=30,
+        )
+        client = MCPClient(cfg)
+        async with client.connect():
+            # Session id should have been captured from the initialize response.
+            assert client._session_id == "mock-session-123"
+            tools = await client.list_tools()
+            assert any(t.name == "echo" for t in tools)
+            out = await client.call_tool("echo", {"x": 1})
+            assert json.loads(str(out)) == {"x": 1}
+
 
 
 @pytest.mark.asyncio

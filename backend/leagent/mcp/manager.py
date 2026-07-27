@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import json
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -21,6 +22,50 @@ from leagent.mcp.client import MCPClient, MCPConnectionError, MCPProtocolError
 from leagent.mcp.proxy_tool import MCPProxyTool
 
 logger = structlog.get_logger(__name__)
+
+
+#: Standard MCP configuration filename (Claude Code / Cursor convention).
+_CONFIG_FILENAME_JSON = "mcp_servers.json"
+#: Legacy YAML config; still loaded automatically when the JSON file is absent.
+_CONFIG_FILENAME_YAML = "mcp_servers.yaml"
+
+
+def _resolve_default_config_path() -> Path:
+    """Pick the default config path, preferring JSON but honouring an existing YAML.
+
+    New installs get ``mcp_servers.json`` — the standard MCP convention. Older
+    installs that still have ``mcp_servers.yaml`` (and no JSON alongside)
+    continue to load from YAML transparently so nothing breaks on upgrade.
+    """
+    from leagent.config.constants import LEAGENT_HOME
+
+    json_path = LEAGENT_HOME / _CONFIG_FILENAME_JSON
+    yaml_path = LEAGENT_HOME / _CONFIG_FILENAME_YAML
+    if not json_path.exists() and yaml_path.exists():
+        return yaml_path
+    return json_path
+
+
+def _parse_config_content(content: str, suffix: str) -> dict[str, Any]:
+    """Parse ``content`` as JSON or YAML based on the file suffix.
+
+    JSON is preferred; YAML is still accepted for the legacy filename so
+    existing ``mcp_servers.yaml`` files keep loading.
+    """
+    suffix = suffix.lower()
+    if suffix == ".json":
+        try:
+            data = json.loads(content) if content.strip() else {}
+        except json.JSONDecodeError as exc:
+            raise ValueError(f"Invalid JSON configuration: {exc}") from exc
+    else:
+        try:
+            data = yaml.safe_load(content) or {}
+        except yaml.YAMLError as exc:
+            raise ValueError(f"Invalid YAML configuration: {exc}") from exc
+    if not isinstance(data, dict):
+        raise ValueError("MCP config root must be a mapping")
+    return data
 
 
 @dataclass
@@ -112,9 +157,7 @@ class MCPClientManager:
         if config_path is not None:
             self._config_path = Path(config_path)
         else:
-            from leagent.config.constants import LEAGENT_HOME
-
-            self._config_path = LEAGENT_HOME / "mcp_servers.yaml"
+            self._config_path = _resolve_default_config_path()
         self._health_check_interval = health_check_interval
         self._max_reconnect_attempts = max_reconnect_attempts
 
@@ -183,10 +226,7 @@ class MCPClientManager:
         if new_hash == self._config_hash:
             return len(self._clients)
 
-        try:
-            config_data = yaml.safe_load(content) or {}
-        except yaml.YAMLError as e:
-            raise ValueError(f"Invalid YAML configuration: {e}")
+        config_data = _parse_config_content(content, self._config_path.suffix)
 
         servers_data = config_data.get("mcpServers", config_data.get("servers", {}))
 
@@ -234,52 +274,43 @@ class MCPClientManager:
             or old.args != new.args
             or old.url != new.url
             or old.env != new.env
+            or old.headers != new.headers
             or old.description != new.description
         )
 
     def save_config(self, config_path: str | Path | None = None) -> Path:
-        """Persist configured servers to YAML (``mcpServers`` dict format).
+        """Persist configured servers in the standard ``mcpServers`` JSON shape.
 
-        Args:
-            config_path: Optional override path; defaults to instance path.
+        The on-disk format matches Claude Code / Cursor: a top-level
+        ``mcpServers`` object keyed by name, with entries carrying
+        ``transportType`` and (for HTTP-family transports) ``url``, ``headers``,
+        ``disabled``, ``timeout``. Empty optional fields are elided so the file
+        stays hand-editable.
 
-        Returns:
-            Path written.
+        A ``.yaml`` target path (either explicit or inherited from an older
+        install) is honoured — the file is written as YAML in the same schema
+        so backwards-compatible workflows keep working.
         """
         path = Path(config_path) if config_path else self._config_path
         path.parent.mkdir(parents=True, exist_ok=True)
+
         servers: dict[str, Any] = {}
         for name, managed in self._clients.items():
-            data = managed.config.to_dict()
-            # Name is the dict key; omit redundant field for cleaner YAML.
-            data.pop("name", None)
-            # Drop empty optional blobs to keep files readable.
-            for empty_key in ("api_key", "oauth_token", "oauth_client_id", "oauth_client_secret", "oauth_token_url"):
-                if not data.get(empty_key):
-                    data.pop(empty_key, None)
-            if not data.get("oauth_scopes"):
-                data.pop("oauth_scopes", None)
-            if not data.get("env"):
-                data.pop("env", None)
-            if not data.get("metadata"):
-                data.pop("metadata", None)
-            if not data.get("description"):
-                data.pop("description", None)
-            if data.get("transport") == "stdio":
-                data.pop("url", None)
-            elif data.get("transport") in ("http", "sse"):
-                data.pop("command", None)
-                if not data.get("args"):
-                    data.pop("args", None)
-            servers[name] = data
+            servers[name] = managed.config.to_external_dict()
 
         payload = {"mcpServers": servers}
-        content = yaml.safe_dump(
-            payload,
-            default_flow_style=False,
-            allow_unicode=True,
-            sort_keys=False,
-        )
+
+        suffix = path.suffix.lower()
+        if suffix == ".yaml" or suffix == ".yml":
+            content = yaml.safe_dump(
+                payload,
+                default_flow_style=False,
+                allow_unicode=True,
+                sort_keys=False,
+            )
+        else:
+            content = json.dumps(payload, indent=2, ensure_ascii=False) + "\n"
+
         path.write_text(content, encoding="utf-8")
         self._config_hash = hashlib.md5(content.encode()).hexdigest()
         self._config_path = path

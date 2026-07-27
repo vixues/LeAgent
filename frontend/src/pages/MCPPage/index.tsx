@@ -531,7 +531,9 @@ export default function MCPPage() {
               }
             >
               <option value="stdio">stdio</option>
+              <option value="streamableHttp">Streamable HTTP</option>
               <option value="sse">SSE</option>
+              <option value="http">HTTP (legacy)</option>
             </Select>
           </div>
           {form.transport === 'stdio' ? (

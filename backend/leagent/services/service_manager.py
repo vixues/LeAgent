@@ -248,6 +248,7 @@ class ServiceManager:
         await self._start_task_manager()
         await self._start_file_processing()
         await self._start_channels()
+        await self._start_mcp()
 
         self._started = True
         logger.info("All services started successfully")
@@ -256,6 +257,12 @@ class ServiceManager:
         logger.info("Stopping services...")
 
         await self._stop_channels()
+
+        if self._mcp_manager is not None:
+            try:
+                await self._mcp_manager.shutdown()
+            except Exception:
+                logger.warning("MCP manager shutdown error", exc_info=True)
 
         if self._task_manager is not None:
             try:
@@ -415,6 +422,119 @@ class ServiceManager:
             logger.info("LLMService initialised with %d provider(s)", len(self._llm_service.list_providers()))
         except Exception:
             logger.warning("LLMService initialisation skipped", exc_info=True)
+
+    async def _start_mcp(self) -> None:
+        """Wire the process-wide MCP client manager into service lifecycle.
+
+        This is the missing bridge between MCP servers configured in
+        ``~/.leagent/mcp_servers.json`` and the agent's tool system. Without
+        this, MCP tools never appear in the LLM's tool list and the model
+        falls back to writing ad-hoc Python (via ``script_agent``) instead of
+        calling the MCP endpoint directly.
+
+        Steps:
+
+        1. Bind the global :class:`MCPClientManager` singleton onto the
+           service manager (so ``ServiceManager.mcp_manager`` is no longer
+           ``None``).
+        2. Load ``mcp_servers.json`` and connect ``auto_connect=True``
+           servers.
+        3. Install ``on_connect`` / ``on_disconnect`` callbacks that
+           add/remove :class:`MCPProxyTool` entries in the global
+           :class:`ToolRegistry`. Proxies are named
+           ``mcp__<server>__<tool>`` so the agent sees them alongside
+           native tools.
+        4. Do a one-shot registration pass for any servers already
+           connected before callbacks were attached.
+        """
+        try:
+            from leagent.mcp.manager import get_mcp_manager
+            from leagent.mcp.proxy_tool import MCPProxyTool, _sanitize_name_part
+            from leagent.tools.registry import get_registry
+
+            manager = get_mcp_manager()
+            self._mcp_manager = manager
+
+            tool_registry = get_registry()
+
+            def _register_server_tools(name: str) -> None:
+                managed = manager._clients.get(name)
+                if not managed or not managed.client:
+                    return
+                for mcp_tool in managed.tools:
+                    try:
+                        proxy = MCPProxyTool(
+                            mcp_tool=mcp_tool,
+                            server_name=name,
+                            client=managed.client,
+                        )
+                        # ``replace=True`` so re-connect refreshes the bound
+                        # client reference (old proxy would hold a stale,
+                        # disconnected client).
+                        tool_registry.register(proxy, replace=True)
+                    except Exception:
+                        logger.warning(
+                            "MCP proxy tool register failed: server=%s tool=%s",
+                            name,
+                            mcp_tool.name,
+                            exc_info=True,
+                        )
+
+            def _unregister_server_tools(name: str) -> None:
+                # Server names may contain characters not allowed in tool
+                # registry names (e.g. ``-``); proxies register under the
+                # sanitized form, so match on that prefix.
+                prefix = f"mcp__{_sanitize_name_part(name)}__"
+                stale = [
+                    tool_name
+                    for tool_name in list(tool_registry._tools.keys())
+                    if tool_name.startswith(prefix)
+                ]
+                for tool_name in stale:
+                    try:
+                        tool_registry.unregister(tool_name)
+                    except Exception:
+                        logger.debug(
+                            "MCP proxy unregister failed: %s",
+                            tool_name,
+                            exc_info=True,
+                        )
+
+            manager.on_connect(_register_server_tools)
+            manager.on_disconnect(_unregister_server_tools)
+
+            try:
+                await manager.load_config()
+            except Exception:
+                logger.warning("MCP config load failed", exc_info=True)
+
+            try:
+                results = await manager.connect_all()
+                connected = sum(1 for ok in results.values() if ok)
+                logger.info(
+                    "MCP servers auto-connected: %d/%d",
+                    connected,
+                    len(results),
+                )
+            except Exception:
+                logger.warning("MCP connect_all failed", exc_info=True)
+
+            # Callbacks handle new connect/disconnect events, but if any
+            # servers came up before we attached them (or via a different
+            # code path), sweep the current state once.
+            try:
+                for name, managed in manager._clients.items():
+                    if managed.client and managed.client.is_connected:
+                        _register_server_tools(name)
+            except Exception:
+                logger.debug("MCP initial proxy sweep failed", exc_info=True)
+
+            logger.info(
+                "MCP integration ready: %d server(s) configured",
+                len(manager._clients),
+            )
+        except Exception:
+            logger.warning("MCP integration initialisation skipped", exc_info=True)
 
     async def _start_rules(self) -> None:
         try:

@@ -78,7 +78,7 @@ class TestINV1_NoDirectWriteInBlobPaths:
         # Durable operational registries with their own file formats.
         "cron/repository.py": "atomic write of the cron jobs registry file",
         "extensions/manager.py": "persists the installed-extensions registry",
-        "mcp/manager.py": "persists the mcp_servers.yaml config file",
+        "mcp/manager.py": "persists the mcp_servers.json config file",
         "channels/weixin/store.py": "atomic write of Weixin credential/context-token store",
         # Security control plane: local secret + setup-state files (0600).
         "services/auth/store.py": "atomic write of the security setup-state file",
