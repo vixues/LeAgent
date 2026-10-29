@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import textwrap
 from pathlib import Path
 
@@ -9,6 +10,7 @@ import pytest
 
 from leagent.llm.provider_config import (
     PROVIDER_PRESETS,
+    ProviderConfig,
     ProviderConfigService,
     ProviderConfigValidationError,
 )
@@ -274,3 +276,99 @@ def test_create_provider_promotes_default_when_empty(tmp_path: Path) -> None:
     chat = raw["routing"]["tasks"]["chat"]
     assert chat["provider"] == "deepseek"
     assert chat["model"] == "deepseek-v4-flash"
+
+
+# ---------------------------------------------------------------------------
+# API-key update semantics (blank / mask-sentinel handling)
+# ---------------------------------------------------------------------------
+
+_CUSTOM_BLOCK = """
+          - name: acme
+            type: custom
+            enabled: true
+            base_url: https://api.example.com/v1
+            api_key: sk-original
+            models:
+              - name: model-a
+                kind: chat
+                capabilities:
+                  input: [text]
+                  output: [text]
+"""
+
+
+def test_update_provider_sets_new_key(tmp_path: Path) -> None:
+    svc = _svc(_v2_yaml(providers_block=_CUSTOM_BLOCK), tmp_path)
+    svc.update_provider("acme", {"api_key": "sk-new"})
+    raw = svc._load_yaml()
+    assert raw["providers"][0]["api_key"] == "sk-new"
+
+
+def test_update_provider_keeps_key_when_blank(tmp_path: Path) -> None:
+    svc = _svc(_v2_yaml(providers_block=_CUSTOM_BLOCK), tmp_path)
+    svc.update_provider("acme", {"api_key": ""})
+    raw = svc._load_yaml()
+    # Blank key means "leave unchanged" (UI sends "" because the real key is hidden).
+    assert raw["providers"][0]["api_key"] == "sk-original"
+
+
+def test_update_provider_ignores_mask_sentinel(tmp_path: Path) -> None:
+    svc = _svc(_v2_yaml(providers_block=_CUSTOM_BLOCK), tmp_path)
+    svc.update_provider("acme", {"api_key": "***"})
+    raw = svc._load_yaml()
+    # The mask sentinel must never be persisted as a literal key.
+    assert raw["providers"][0]["api_key"] == "sk-original"
+
+
+# ---------------------------------------------------------------------------
+# test_provider must probe the persisted config, not a stale in-memory instance
+# ---------------------------------------------------------------------------
+
+
+def test_test_provider_rebuilds_from_persisted_key(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    svc = _svc(_v2_yaml(providers_block=_CUSTOM_BLOCK), tmp_path)
+    svc.update_provider("acme", {"api_key": "sk-original"})
+
+    # Simulate a stale in-memory instance holding a DIFFERENT key: the app built
+    # the provider earlier with a valid key while providers.yaml drifted to a
+    # different (or bad) value. This is the exact precondition behind
+    # "test passes but the live service fails with Invalid API key".
+    svc._registry.unregister("acme")
+    stale = ProviderConfig.from_dict(
+        {
+            "name": "acme",
+            "type": "custom",
+            "enabled": True,
+            "base_url": "https://api.example.com/v1",
+            "api_key": "sk-stale",
+            "models": [
+                {"name": "model-a", "kind": "chat", "capabilities": {"input": ["text"], "output": ["text"]}}
+            ],
+        }
+    )
+    svc._register_single(stale)
+
+    # Avoid any real network request during the probe. The "custom" provider type
+    # is served by CustomOpenAIProvider, which defines its own stream() method.
+    from leagent.llm.providers.custom import CustomOpenAIProvider
+
+    class _FakeChunk:
+        content = ""
+        raw_delta = None
+        tool_calls_delta = []
+        finish_reason = None
+        model = ""
+        usage = None
+
+    async def _fake_stream(*_args: object, **_kwargs: object) -> object:
+        yield _FakeChunk()
+
+    monkeypatch.setattr(CustomOpenAIProvider, "stream", _fake_stream)
+
+    result = asyncio.run(svc.test_provider("acme"))
+    assert result.is_healthy is True
+    live = svc._registry.get_provider_info("acme").provider
+    # The probe must have used the persisted key, not the stale in-memory one.
+    assert live.api_key == "sk-original"

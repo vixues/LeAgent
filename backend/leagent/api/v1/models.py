@@ -427,10 +427,14 @@ async def update_provider(
     """Update an existing provider."""
     try:
         raw = data.model_dump(exclude_none=True)
-        # Treat empty api_key as "keep existing" — the frontend sends "" when
-        # the user leaves the password field blank during edit.
-        if "api_key" in raw and not str(raw["api_key"]).strip():
-            del raw["api_key"]
+        # The UI never receives the real key (GET masks/omits it), so on edit it
+        # echoes back either "" (blank) or the "***" sentinel. In both cases treat
+        # it as "keep existing" — never persist the sentinel or a blank over a
+        # valid key. A real, non-empty, non-sentinel value is applied as-is.
+        if "api_key" in raw:
+            ak = str(raw["api_key"]).strip()
+            if not ak or ak == "***":
+                del raw["api_key"]
         pc = svc.update_provider(provider_name, raw)
     except ProviderConfigValidationError as exc:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc))
